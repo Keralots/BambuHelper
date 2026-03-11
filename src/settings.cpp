@@ -101,6 +101,9 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_on", i);
     cfg.enabled = prefs.getBool(key, false);
 
+    snprintf(key, sizeof(key), "p%d_mdl", i);
+    cfg.model = (PrinterModel)prefs.getUChar(key, MODEL_P1S);
+
     snprintf(key, sizeof(key), "p%d_ip", i);
     strlcpy(cfg.ip, prefs.getString(key, "").c_str(), sizeof(cfg.ip));
 
@@ -204,6 +207,9 @@ void savePrinterConfig(uint8_t index) {
 
   snprintf(key, sizeof(key), "p%d_on", index);
   prefs.putBool(key, cfg.enabled);
+
+  snprintf(key, sizeof(key), "p%d_mdl", index);
+  prefs.putUChar(key, cfg.model);
 
   snprintf(key, sizeof(key), "p%d_ip", index);
   prefs.putString(key, cfg.ip);

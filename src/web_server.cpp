@@ -168,8 +168,16 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
     <input type="checkbox" name="enabled" id="enabled" value="1" %ENABLED%>
     <label for="enabled">Enable Monitoring</label>
   </div>
+  <label for="pmodel">Printer Model</label>
+  <select name="pmodel" id="pmodel" onchange="updateFanLabel()">
+    <option value="0" %MDL0%>Bambu Lab P1S</option>
+    <option value="1" %MDL1%>Bambu Lab P1P</option>
+    <option value="2" %MDL2%>Bambu Lab X1C</option>
+    <option value="3" %MDL3%>Bambu Lab A1</option>
+    <option value="4" %MDL4%>Bambu Lab A1 Mini</option>
+  </select>
   <label for="pname">Printer Name</label>
-  <input type="text" name="pname" id="pname" value="%PNAME%" placeholder="My P1S" maxlength="23">
+  <input type="text" name="pname" id="pname" value="%PNAME%" placeholder="My Printer" maxlength="23">
   <label for="ip">Printer IP Address</label>
   <input type="text" name="ip" id="ip" value="%IP%" placeholder="192.168.1.xxx">
   <label for="serial">Serial Number</label>
@@ -272,7 +280,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="gauge-section">
-    <h3>Chamber Fan</h3>
+    <h3 id="cfnLabel">Chamber Fan</h3>
     <div class="color-row">
       <label>Arc</label><input type="color" name="cfn_a" id="cfn_a" value="%CFN_A%">
       <label>Label</label><input type="color" name="cfn_l" id="cfn_l" value="%CFN_L%">
@@ -301,6 +309,13 @@ function toggleStatic(){
   document.getElementById('staticFields').style.display=(m==='static')?'block':'none';
 }
 toggleStatic();
+
+function updateFanLabel(){
+  var mdl=parseInt(document.getElementById('pmodel').value);
+  var enclosed=(mdl===0||mdl===2);
+  document.getElementById('cfnLabel').textContent=enclosed?'Chamber Fan':'Heatbreak Fan';
+}
+updateFanLabel();
 
 var themes={
   default:{bg:'#081018',track:'#182028',
@@ -456,6 +471,14 @@ static String processTemplate(const String& html) {
   page.replace("%SSID%", wifiSSID);
   page.replace("%PASS%", wifiPass);
   page.replace("%ENABLED%", cfg.enabled ? "checked" : "");
+
+  // Model dropdown
+  for (uint8_t m = 0; m <= 4; m++) {
+    char ph[8];
+    snprintf(ph, sizeof(ph), "%%MDL%d%%", m);
+    page.replace(ph, cfg.model == m ? "selected" : "");
+  }
+
   page.replace("%PNAME%", cfg.name);
   page.replace("%IP%", cfg.ip);
   page.replace("%SERIAL%", cfg.serial);
@@ -586,6 +609,10 @@ static void handleSave() {
 
   PrinterConfig& cfg = printers[0].config;
   cfg.enabled = server.hasArg("enabled");
+  if (server.hasArg("pmodel")) {
+    uint8_t mdl = server.arg("pmodel").toInt();
+    if (mdl <= MODEL_A1_MINI) cfg.model = (PrinterModel)mdl;
+  }
 
   // Network settings
   netSettings.useDHCP = (!server.hasArg("netmode") || server.arg("netmode") == "dhcp");

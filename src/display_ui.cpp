@@ -290,7 +290,7 @@ static void drawIdle() {
   // Printer name
   tft.setTextColor(CLR_GREEN, CLR_BG);
   tft.setTextFont(4);
-  const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
+  const char* name = (p.config.name[0] != '\0') ? p.config.name : defaultModelName(p.config.model);
   tft.drawString(name, SCREEN_W / 2, 30);
 
   // Status badge
@@ -349,7 +349,8 @@ static void drawPrinting() {
   bool fansChanged = forceRedraw ||
                      (s.coolingFanPct != prevState.coolingFanPct) ||
                      (s.auxFanPct != prevState.auxFanPct) ||
-                     (s.chamberFanPct != prevState.chamberFanPct);
+                     (s.chamberFanPct != prevState.chamberFanPct) ||
+                     (s.heatbreakFanPct != prevState.heatbreakFanPct);
   bool stateChanged = forceRedraw ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0);
 
@@ -376,7 +377,7 @@ static void drawPrinting() {
     tft.setTextDatum(ML_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(CLR_TEXT, hdrBg);
-    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : defaultModelName(p.config.model);
     tft.drawString(name, 6, 17);
 
     // State badge (right)
@@ -424,8 +425,11 @@ static void drawPrinting() {
                  s.auxFanPct, dispSettings.auxFan.arc, "Aux", forceRedraw,
                  &dispSettings.auxFan);
 
+    bool enclosed = hasEnclosure(p.config.model);
     drawFanGauge(tft, col3, row2Y, gR,
-                 s.chamberFanPct, dispSettings.chamberFan.arc, "Chamber", forceRedraw,
+                 enclosed ? s.chamberFanPct : s.heatbreakFanPct,
+                 dispSettings.chamberFan.arc,
+                 enclosed ? "Chamber" : "Heatbrk", forceRedraw,
                  &dispSettings.chamberFan);
   }
 
