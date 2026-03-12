@@ -53,6 +53,13 @@ void saveSettings();
 void savePrinterConfig(uint8_t index);
 void resetSettings();
 
+// Cloud token persistence (shared across printer slots)
+extern char cloudEmail[64];
+void saveCloudToken(const char* token);
+bool loadCloudToken(char* buf, size_t bufLen);
+void clearCloudToken();
+void saveCloudEmail(const char* email);
+
 // RGB565 <-> HTML hex conversion
 uint16_t htmlToRgb565(const char* hex);
 void rgb565ToHtml(uint16_t color, char* buf);  // buf must be >= 8 chars

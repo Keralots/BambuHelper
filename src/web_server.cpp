@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
+#include "bambu_cloud.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
 #include "config.h"
@@ -168,14 +169,48 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
     <input type="checkbox" name="enabled" id="enabled" value="1" %ENABLED%>
     <label for="enabled">Enable Monitoring</label>
   </div>
-  <label for="pname">Printer Name</label>
-  <input type="text" name="pname" id="pname" value="%PNAME%" placeholder="My P1S" maxlength="23">
-  <label for="ip">Printer IP Address</label>
-  <input type="text" name="ip" id="ip" value="%IP%" placeholder="192.168.1.xxx">
-  <label for="serial">Serial Number</label>
-  <input type="text" name="serial" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
-  <label for="code">LAN Access Code</label>
-  <input type="text" name="code" id="code" value="%CODE%" placeholder="12345678" maxlength="8">
+
+  <label for="connmode">Connection Mode</label>
+  <select name="connmode" id="connmode" onchange="toggleConnMode()">
+    <option value="local" %MODE_LOCAL%>LAN Direct (P1/X1/A1)</option>
+    <option value="cloud" %MODE_CLOUD%>Bambu Cloud (H2/P2S)</option>
+  </select>
+
+  <div id="localFields">
+    <label for="pname">Printer Name</label>
+    <input type="text" name="pname" id="pname" value="%PNAME%" placeholder="My P1S" maxlength="23">
+    <label for="ip">Printer IP Address</label>
+    <input type="text" name="ip" id="ip" value="%IP%" placeholder="192.168.1.xxx">
+    <label for="serial">Serial Number</label>
+    <input type="text" name="serial" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
+    <label for="code">LAN Access Code</label>
+    <input type="text" name="code" id="code" value="%CODE%" placeholder="12345678" maxlength="8">
+  </div>
+
+  <div id="cloudFields" style="display:none">
+    <p style="font-size:12px;color:#8B949E;margin:10px 0">For H2C/H2D/H2S/P2S printers. Connects via Bambu Cloud.<br>Token valid ~3 months. Your password is NOT stored.</p>
+    <div id="cloudLoginSection">
+      <label for="cl_email">Bambu Account Email</label>
+      <input type="text" id="cl_email" value="%CL_EMAIL%" placeholder="user@example.com">
+      <label for="cl_pass">Password</label>
+      <input type="password" id="cl_pass" placeholder="Account password">
+      <button type="button" class="btn btn-blue" style="margin-top:10px" onclick="cloudLogin()">Login to Bambu Cloud</button>
+    </div>
+    <div id="cloud2FA" style="display:none;margin-top:10px">
+      <label for="cl_code">Verification Code (check your email)</label>
+      <input type="text" id="cl_code" placeholder="123456" maxlength="6">
+      <button type="button" class="btn btn-blue" style="margin-top:8px" onclick="cloudVerify()">Verify Code</button>
+    </div>
+    <div id="cloudStatus" style="margin-top:8px;font-size:13px;color:#8B949E">%CLOUD_STATUS%</div>
+    <div id="cloudDevices" style="display:none;margin-top:10px">
+      <label for="cl_device">Select Printer</label>
+      <select id="cl_device" onchange="selectCloudDevice()"></select>
+    </div>
+    <input type="hidden" name="cl_serial" id="cl_serial" value="%SERIAL%">
+    <input type="hidden" name="cl_pname" id="cl_pname" value="%PNAME%">
+    <button type="button" class="btn btn-danger" style="margin-top:10px;display:none;font-size:12px;padding:6px"
+            id="cloudLogoutBtn" onclick="cloudLogout()">Logout from Cloud</button>
+  </div>
   <div id="liveStats"></div>
 </div>
 <button type="submit" class="btn btn-primary">Save WiFi/Printer &amp; Restart</button>
@@ -301,6 +336,108 @@ function toggleStatic(){
   document.getElementById('staticFields').style.display=(m==='static')?'block':'none';
 }
 toggleStatic();
+
+function toggleConnMode(){
+  var cloud=document.getElementById('connmode').value==='cloud';
+  document.getElementById('localFields').style.display=cloud?'none':'block';
+  document.getElementById('cloudFields').style.display=cloud?'block':'none';
+}
+toggleConnMode();
+
+function cloudLogin(){
+  var email=document.getElementById('cl_email').value;
+  var pass=document.getElementById('cl_pass').value;
+  if(!email||!pass){document.getElementById('cloudStatus').innerHTML='<span style="color:#F85149">Enter email and password</span>';return;}
+  document.getElementById('cloudStatus').innerHTML='<span style="color:#58A6FF">Logging in...</span>';
+  var p=new URLSearchParams();
+  p.append('email',email);p.append('password',pass);
+  fetch('/cloud/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.status==='ok'){
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#3FB950">Logged in!</span>';
+        document.getElementById('cloudLoginSection').style.display='none';
+        document.getElementById('cloudLogoutBtn').style.display='block';
+        cloudFetchDevices();
+      } else if(d.status==='verify'){
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#58A6FF">Check your email for a verification code</span>';
+        document.getElementById('cloud2FA').style.display='block';
+      } else {
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#F85149">'+(d.message||'Login failed')+'</span>';
+      }
+    })
+    .catch(function(){document.getElementById('cloudStatus').innerHTML='<span style="color:#F85149">Network error</span>';});
+}
+
+function cloudVerify(){
+  var email=document.getElementById('cl_email').value;
+  var code=document.getElementById('cl_code').value;
+  if(!code){return;}
+  document.getElementById('cloudStatus').innerHTML='<span style="color:#58A6FF">Verifying...</span>';
+  var p=new URLSearchParams();
+  p.append('email',email);p.append('code',code);
+  fetch('/cloud/verify',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.status==='ok'){
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#3FB950">Verified!</span>';
+        document.getElementById('cloud2FA').style.display='none';
+        document.getElementById('cloudLoginSection').style.display='none';
+        document.getElementById('cloudLogoutBtn').style.display='block';
+        if(d.printers&&d.printers.length>0){
+          var sel=document.getElementById('cl_device');
+          sel.innerHTML='';
+          for(var i=0;i<d.printers.length;i++){
+            var o=document.createElement('option');
+            o.value=d.printers[i].serial;
+            o.setAttribute('data-name',d.printers[i].name);
+            o.textContent=d.printers[i].name+' ('+d.printers[i].model+')';
+            sel.appendChild(o);
+          }
+          document.getElementById('cloudDevices').style.display='block';
+          selectCloudDevice();
+        }
+      } else {
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#F85149">'+(d.message||'Verification failed')+'</span>';
+      }
+    })
+    .catch(function(){document.getElementById('cloudStatus').innerHTML='<span style="color:#F85149">Network error</span>';});
+}
+
+function selectCloudDevice(){
+  var sel=document.getElementById('cl_device');
+  if(sel.selectedIndex<0)return;
+  var opt=sel.options[sel.selectedIndex];
+  document.getElementById('cl_serial').value=sel.value;
+  document.getElementById('cl_pname').value=opt.getAttribute('data-name')||opt.textContent;
+}
+
+function cloudFetchDevices(){
+  fetch('/cloud/devices').then(function(r){return r.json();}).then(function(d){
+    if(d.printers&&d.printers.length>0){
+      var sel=document.getElementById('cl_device');
+      sel.innerHTML='';
+      for(var i=0;i<d.printers.length;i++){
+        var o=document.createElement('option');
+        o.value=d.printers[i].serial;
+        o.setAttribute('data-name',d.printers[i].name);
+        o.textContent=d.printers[i].name+' ('+d.printers[i].model+')';
+        sel.appendChild(o);
+      }
+      document.getElementById('cloudDevices').style.display='block';
+      selectCloudDevice();
+    }
+  }).catch(function(){});
+}
+
+function cloudLogout(){
+  fetch('/cloud/logout',{method:'POST'}).then(function(){
+    document.getElementById('cloudStatus').innerHTML='<span style="color:#8B949E">Not logged in</span>';
+    document.getElementById('cloudDevices').style.display='none';
+    document.getElementById('cloudLogoutBtn').style.display='none';
+    document.getElementById('cloudLoginSection').style.display='block';
+  });
+}
 
 var themes={
   default:{bg:'#081018',track:'#182028',
@@ -456,10 +593,22 @@ static String processTemplate(const String& html) {
   page.replace("%SSID%", wifiSSID);
   page.replace("%PASS%", wifiPass);
   page.replace("%ENABLED%", cfg.enabled ? "checked" : "");
+  page.replace("%MODE_LOCAL%", cfg.mode == CONN_LOCAL ? "selected" : "");
+  page.replace("%MODE_CLOUD%", cfg.mode == CONN_CLOUD ? "selected" : "");
   page.replace("%PNAME%", cfg.name);
   page.replace("%IP%", cfg.ip);
   page.replace("%SERIAL%", cfg.serial);
   page.replace("%CODE%", cfg.accessCode);
+  page.replace("%CL_EMAIL%", cloudEmail);
+
+  // Cloud status text
+  if (cfg.mode == CONN_CLOUD && strlen(cloudEmail) > 0) {
+    char clStatus[96];
+    snprintf(clStatus, sizeof(clStatus), "Logged in as %s", cloudEmail);
+    page.replace("%CLOUD_STATUS%", clStatus);
+  } else {
+    page.replace("%CLOUD_STATUS%", "Not logged in");
+  }
   page.replace("%BRIGHT%", String(brightness));
 
   // Network settings
@@ -587,6 +736,11 @@ static void handleSave() {
   PrinterConfig& cfg = printers[0].config;
   cfg.enabled = server.hasArg("enabled");
 
+  // Connection mode
+  if (server.hasArg("connmode")) {
+    cfg.mode = (server.arg("connmode") == "cloud") ? CONN_CLOUD : CONN_LOCAL;
+  }
+
   // Network settings
   netSettings.useDHCP = (!server.hasArg("netmode") || server.arg("netmode") == "dhcp");
   if (server.hasArg("net_ip"))  strlcpy(netSettings.staticIP, server.arg("net_ip").c_str(), sizeof(netSettings.staticIP));
@@ -596,10 +750,22 @@ static void handleSave() {
   netSettings.showIPAtStartup = server.hasArg("showip");
   if (server.hasArg("tz")) netSettings.gmtOffsetMin = server.arg("tz").toInt();
 
-  if (server.hasArg("pname")) strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
-  if (server.hasArg("ip"))    strlcpy(cfg.ip, server.arg("ip").c_str(), sizeof(cfg.ip));
-  if (server.hasArg("serial"))strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
-  if (server.hasArg("code"))  strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
+  if (cfg.mode == CONN_CLOUD) {
+    // Cloud mode: serial and name come from hidden fields
+    if (server.hasArg("cl_serial")) strlcpy(cfg.serial, server.arg("cl_serial").c_str(), sizeof(cfg.serial));
+    if (server.hasArg("cl_pname"))  strlcpy(cfg.name, server.arg("cl_pname").c_str(), sizeof(cfg.name));
+    // Extract userId from stored token
+    char tokenBuf[1200];
+    if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+      cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId));
+    }
+  } else {
+    // Local mode: standard fields
+    if (server.hasArg("pname")) strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
+    if (server.hasArg("ip"))    strlcpy(cfg.ip, server.arg("ip").c_str(), sizeof(cfg.ip));
+    if (server.hasArg("serial"))strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
+    if (server.hasArg("code"))  strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
+  }
 
   saveSettings();
 
@@ -680,6 +846,85 @@ static void handleDebugToggle() {
   server.send(200, "text/plain", mqttDebugLog ? "ON" : "OFF");
 }
 
+// ---------------------------------------------------------------------------
+//  Cloud login endpoints
+// ---------------------------------------------------------------------------
+static void handleCloudLogin() {
+  String email = server.arg("email");
+  String pass = server.arg("password");
+
+  CloudResult r = cloudLogin(email.c_str(), pass.c_str());
+
+  JsonDocument doc;
+  switch (r) {
+    case CLOUD_OK:          doc["status"] = "ok"; break;
+    case CLOUD_NEED_VERIFY: doc["status"] = "verify"; break;
+    case CLOUD_BAD_CREDS:   doc["status"] = "error"; doc["message"] = "Invalid email or password"; break;
+    default:                doc["status"] = "error"; doc["message"] = "Network or server error"; break;
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+static void handleCloudVerify() {
+  String email = server.arg("email");
+  String code = server.arg("code");
+
+  CloudResult r = cloudVerifyCode(email.c_str(), code.c_str());
+
+  JsonDocument doc;
+  if (r == CLOUD_OK) {
+    doc["status"] = "ok";
+    // Fetch and return device list
+    char tokenBuf[1200];
+    if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+      CloudPrinter devs[8];
+      int count = cloudFetchDevices(tokenBuf, devs, 8);
+      JsonArray arr = doc["printers"].to<JsonArray>();
+      for (int i = 0; i < count; i++) {
+        JsonObject d = arr.add<JsonObject>();
+        d["serial"] = devs[i].serial;
+        d["name"] = devs[i].name;
+        d["model"] = devs[i].model;
+      }
+    }
+  } else {
+    doc["status"] = "error";
+    doc["message"] = (r == CLOUD_BAD_CREDS) ? "Invalid verification code" : "Verification failed";
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+static void handleCloudDevices() {
+  char tokenBuf[1200];
+  if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+    server.send(200, "application/json", "{\"printers\":[]}");
+    return;
+  }
+  CloudPrinter devs[8];
+  int count = cloudFetchDevices(tokenBuf, devs, 8);
+
+  JsonDocument doc;
+  JsonArray arr = doc["printers"].to<JsonArray>();
+  for (int i = 0; i < count; i++) {
+    JsonObject d = arr.add<JsonObject>();
+    d["serial"] = devs[i].serial;
+    d["name"] = devs[i].name;
+    d["model"] = devs[i].model;
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+static void handleCloudLogout() {
+  clearCloudToken();
+  server.send(200, "text/plain", "OK");
+}
+
 // Captive portal: redirect any unknown request to root
 static void handleNotFound() {
   if (isAPMode()) {
@@ -701,6 +946,10 @@ void initWebServer() {
   server.on("/reset", HTTP_GET, handleReset);
   server.on("/debug", HTTP_GET, handleDebug);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
+  server.on("/cloud/login", HTTP_POST, handleCloudLogin);
+  server.on("/cloud/verify", HTTP_POST, handleCloudVerify);
+  server.on("/cloud/devices", HTTP_GET, handleCloudDevices);
+  server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("Web server started on port 80");

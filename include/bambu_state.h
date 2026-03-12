@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "config.h"
 
+enum ConnMode : uint8_t { CONN_LOCAL = 0, CONN_CLOUD = 1 };
+
 struct BambuState {
   bool connected;
   bool printing;
@@ -29,10 +31,12 @@ struct BambuState {
 
 struct PrinterConfig {
   bool enabled;
-  char ip[16];
-  char serial[20];
-  char accessCode[12];
+  ConnMode mode;              // CONN_LOCAL or CONN_CLOUD
+  char ip[16];                // local mode only
+  char serial[20];            // both modes
+  char accessCode[12];        // local mode only
   char name[24];              // friendly name
+  char cloudUserId[32];       // cloud mode: "u_{uid}" for MQTT username
 };
 
 struct PrinterSlot {

@@ -1,10 +1,24 @@
 # BambuHelper
 
-Dedicated Bambu Lab P1S printer monitor built with ESP32-S3 Super Mini and a 1.54" 240x240 color TFT display (ST7789).
+Dedicated Bambu Lab printer monitor built with ESP32-S3 Super Mini and a 1.54" 240x240 color TFT display (ST7789).
 
 Connects to your printer via MQTT over TLS and displays a real-time dashboard with arc gauges, animations, and live stats.
 
-> **Note:** Currently tested and verified only with the Bambu Lab P1S. Other models may work but are not yet officially supported.
+### Supported Printers
+
+| Connection Mode | Printers | How it connects |
+|---|---|---|
+| **LAN Direct** | P1P, P1S, X1, X1C, X1E, A1, A1 Mini | Local MQTT via printer IP + LAN access code |
+| **Bambu Cloud** | H2C, H2D, H2S, P2S | Cloud MQTT via Bambu account login |
+
+### Cloud Mode Security Notice
+
+For H2/P2S series printers, BambuHelper connects through Bambu Lab's cloud MQTT service. This requires a one-time login with your Bambu Lab account credentials. Here's what you need to know:
+
+- **Your email and password are NOT stored** on the device. They are sent directly to Bambu Lab's official API (`api.bambulab.com`) over HTTPS, exactly the same way Bambu Studio and Bambu Handy do it.
+- **Only an auth token is stored** in the ESP32's flash memory. This token expires after ~3 months, at which point you simply re-login via the web interface.
+- **Read-only access** — BambuHelper only reads printer status. It never sends commands or modifies printer settings.
+- **Same approach as other community projects** — this is the same authentication method used by the [Home Assistant Bambu Lab integration](https://github.com/greghesp/ha-bambulab) (15,000+ users), [OctoPrint-Bambu](https://github.com/jneilliii/OctoPrint-Bambu), and other trusted third-party tools.
 
 ## Screenshots
 
@@ -66,11 +80,20 @@ Adjust pin assignments in `platformio.ini` build_flags to match your wiring.
 1. **Flash** the firmware (see above)
 2. **Connect** to the `BambuHelper-XXXX` WiFi network (password: `bambu1234`)
 3. **Open** `192.168.4.1` in your browser
-4. **Enter** your home WiFi credentials and printer details:
+4. **Enter** your home WiFi credentials
+5. **Choose connection mode:**
+
+   **LAN Direct** (P1P, P1S, X1, X1C, X1E, A1, A1 Mini):
    - Printer IP address (found in printer Settings > Network)
    - Serial number
    - LAN access code (8 characters, from printer Settings > Network)
-5. **Save** - the device restarts and connects to your printer
+
+   **Bambu Cloud** (H2C, H2D, H2S, P2S):
+   - Click "Login to Bambu Cloud" and enter your Bambu Lab account email and password
+   - Enter the 6-digit verification code sent to your email (if 2FA is enabled)
+   - Select your printer from the dropdown list
+
+6. **Save** - the device restarts and connects to your printer
 
 ## Web Interface
 
@@ -91,10 +114,12 @@ The built-in web interface (accessible at the device's IP address) provides the 
 
 ### Printer Settings
 - **Enable Monitoring** - toggle printer connection on/off
-- **Printer Name** - friendly name shown on dashboard header
-- **Printer IP Address** - LAN IP of your Bambu printer
-- **Serial Number** - printer serial number
-- **LAN Access Code** - 8-character code from printer network settings
+- **Connection Mode** - LAN Direct or Bambu Cloud
+- **LAN mode fields:**
+  - Printer Name, Printer IP Address, Serial Number, LAN Access Code
+- **Cloud mode fields:**
+  - Bambu account login (email + password + optional 2FA)
+  - Printer selection from your account's device list
 - **Live Stats** - real-time nozzle/bed temp, progress, fan speed, and connection status
 
 ### Display
@@ -145,13 +170,14 @@ The built-in web interface (accessible at the device's IP address) provides the 
 ```
 include/
   config.h              Pin definitions, colors, constants
-  bambu_state.h         Data structures (BambuState, PrinterConfig)
+  bambu_state.h         Data structures (BambuState, PrinterConfig, ConnMode)
 src/
   main.cpp              Setup/loop orchestrator
-  settings.cpp          NVS persistence (WiFi, network, printer, display, power)
+  settings.cpp          NVS persistence (WiFi, network, printer, display, power, cloud token)
   wifi_manager.cpp      WiFi STA + AP fallback, static IP support
-  web_server.cpp        Config portal (HTML embedded)
-  bambu_mqtt.cpp        MQTT over TLS, delta merge
+  web_server.cpp        Config portal (HTML embedded, cloud login endpoints)
+  bambu_mqtt.cpp        MQTT over TLS, delta merge (local + cloud broker)
+  bambu_cloud.cpp       Bambu Cloud API (login, 2FA, device list)
   display_ui.cpp        Screen state machine
   display_gauges.cpp    Arc gauges, progress bar, temp gauges
   display_anim.cpp      Animations (spinner, pulse, dots)
@@ -161,15 +187,14 @@ src/
 ## Requirements
 
 - [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
-- Bambu Lab printer with LAN mode enabled
-- Printer and ESP32 on the same local network
+- **LAN mode:** Bambu Lab printer with LAN mode enabled, printer and ESP32 on the same local network
+- **Cloud mode:** Bambu Lab account, ESP32 with internet access
 
 ## Future Plans
 
 - Multi-printer monitoring (up to 4 printers)
 - Physical buttons for switching between printers
 - OTA firmware updates
-- Additional printer model support (X1C, A1, P1P)
 
 ## License
 

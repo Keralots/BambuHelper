@@ -35,6 +35,8 @@
 // =============================================================================
 #define BAMBU_PORT                  8883
 #define BAMBU_USERNAME              "bblp"
+#define BAMBU_CLOUD_BROKER          "us.mqtt.bambulab.com"
+#define BAMBU_API_BASE              "https://api.bambulab.com"
 #define BAMBU_BUFFER_SIZE           16384   // 16KB for full pushall
 #define BAMBU_RECONNECT_INTERVAL    10000   // 10s between attempts
 #define BAMBU_STALE_TIMEOUT         60000   // 60s no data = stale

@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "display_ui.h"
 #include "config.h"
+#include "bambu_cloud.h"
 
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
@@ -87,8 +88,13 @@ static bool ensureClients() {
   }
 
   PrinterConfig& cfg = activePrinter().config;
-  MQTT_LOG("setServer(%s, %d)", cfg.ip, BAMBU_PORT);
-  mqttClient->setServer(cfg.ip, BAMBU_PORT);
+  if (cfg.mode == CONN_CLOUD) {
+    MQTT_LOG("setServer(%s, %d) [CLOUD]", BAMBU_CLOUD_BROKER, BAMBU_PORT);
+    mqttClient->setServer(BAMBU_CLOUD_BROKER, BAMBU_PORT);
+  } else {
+    MQTT_LOG("setServer(%s, %d) [LOCAL]", cfg.ip, BAMBU_PORT);
+    mqttClient->setServer(cfg.ip, BAMBU_PORT);
+  }
   mqttClient->setBufferSize(BAMBU_BUFFER_SIZE);
   mqttClient->setCallback(mqttCallback);
   mqttClient->setKeepAlive(BAMBU_KEEPALIVE);
@@ -121,7 +127,11 @@ static void requestPushall() {
 // ---------------------------------------------------------------------------
 static void reconnect() {
   PrinterConfig& cfg = activePrinter().config;
-  if (!cfg.enabled || strlen(cfg.ip) == 0) return;
+
+  // Validate config based on mode
+  if (!cfg.enabled) return;
+  if (cfg.mode == CONN_LOCAL && strlen(cfg.ip) == 0) return;
+  if (cfg.mode == CONN_CLOUD && (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0)) return;
 
   unsigned long now = millis();
   if (now - lastReconnectAttempt < BAMBU_RECONNECT_INTERVAL) return;
@@ -130,9 +140,9 @@ static void reconnect() {
   diag.lastAttemptMs = now;
   lastReconnectAttempt = now;
 
-  MQTT_LOG("=== reconnect attempt #%u ===", diag.attempts);
-  MQTT_LOG("IP=%s serial=%s code=%s", cfg.ip, cfg.serial, cfg.accessCode);
-  MQTT_LOG("heap=%u WiFi=%d", ESP.getFreeHeap(), WiFi.status());
+  MQTT_LOG("=== reconnect attempt #%u [%s] ===", diag.attempts,
+           cfg.mode == CONN_CLOUD ? "CLOUD" : "LOCAL");
+  MQTT_LOG("serial=%s heap=%u WiFi=%d", cfg.serial, ESP.getFreeHeap(), WiFi.status());
 
   if (!ensureClients()) {
     MQTT_LOG("ensureClients() FAILED");
@@ -141,8 +151,8 @@ static void reconnect() {
   }
   if (mqttClient->connected()) return;
 
-  // TCP reachability test before TLS
-  {
+  // TCP reachability test (local mode only — cloud broker is on the internet)
+  if (cfg.mode == CONN_LOCAL) {
     WiFiClient tcp;
     tcp.setTimeout(3);
     MQTT_LOG("TCP test to %s:%d...", cfg.ip, BAMBU_PORT);
@@ -155,17 +165,35 @@ static void reconnect() {
       diag.lastRc = -2;
       return;
     }
+  } else {
+    diag.tcpOk = true;  // skip for cloud
   }
 
   char clientId[32];
   snprintf(clientId, sizeof(clientId), "bambu_%08x",
            (uint32_t)(ESP.getEfuseMac() & 0xFFFFFFFF));
 
-  MQTT_LOG("Calling connect(id=%s, user=%s)...", clientId, BAMBU_USERNAME);
   unsigned long t0 = millis();
   esp_task_wdt_reset();
 
-  if (mqttClient->connect(clientId, BAMBU_USERNAME, cfg.accessCode)) {
+  bool connected = false;
+  if (cfg.mode == CONN_CLOUD) {
+    // Cloud: load token from NVS, use cloudUserId as username
+    char tokenBuf[1200];
+    if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+      MQTT_LOG("No cloud token in NVS!");
+      diag.lastRc = -2;
+      return;
+    }
+    MQTT_LOG("Calling connect(id=%s, user=%s) [CLOUD]...", clientId, cfg.cloudUserId);
+    connected = mqttClient->connect(clientId, cfg.cloudUserId, tokenBuf);
+  } else {
+    // Local: use bblp + access code
+    MQTT_LOG("Calling connect(id=%s, user=%s) [LOCAL]...", clientId, BAMBU_USERNAME);
+    connected = mqttClient->connect(clientId, BAMBU_USERNAME, cfg.accessCode);
+  }
+
+  if (connected) {
     char topic[64];
     snprintf(topic, sizeof(topic), "device/%s/report", cfg.serial);
     mqttClient->subscribe(topic);
@@ -182,6 +210,9 @@ static void reconnect() {
     diag.connectDurMs = millis() - t0;
     MQTT_LOG("CONNECT FAILED rc=%d (%s) took %lums",
              diag.lastRc, mqttRcToString(diag.lastRc), diag.connectDurMs);
+    if (cfg.mode == CONN_CLOUD && (diag.lastRc == 4 || diag.lastRc == 5)) {
+      MQTT_LOG("Cloud token may be expired — re-login via web UI");
+    }
   }
 }
 
@@ -342,7 +373,11 @@ void initBambuMqtt() {
   s.printing = false;
   strcpy(s.gcodeState, "UNKNOWN");
 
-  if (!cfg.enabled || strlen(cfg.ip) == 0) {
+  bool notConfigured = (cfg.mode == CONN_LOCAL)
+    ? (strlen(cfg.ip) == 0)
+    : (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0);
+
+  if (!cfg.enabled || notConfigured) {
     Serial.println("MQTT: Printer not configured, skipping");
     if (mqttClient) { delete mqttClient; mqttClient = nullptr; }
     if (tlsClient) { delete tlsClient; tlsClient = nullptr; }
@@ -368,27 +403,30 @@ void handleBambuMqtt() {
   } else {
     mqttClient->loop();
 
-    // Delayed initial pushall
-    if (!initialPushallSent && connectTime > 0 &&
-        millis() - connectTime > BAMBU_PUSHALL_INITIAL_DELAY) {
-      esp_task_wdt_reset();
-      requestPushall();
-      initialPushallSent = true;
-    }
+    // Pushall only for local mode (cloud broker pushes status automatically)
+    if (cfg.mode == CONN_LOCAL) {
+      // Delayed initial pushall
+      if (!initialPushallSent && connectTime > 0 &&
+          millis() - connectTime > BAMBU_PUSHALL_INITIAL_DELAY) {
+        esp_task_wdt_reset();
+        requestPushall();
+        initialPushallSent = true;
+      }
 
-    // Retry pushall if no data received within 10s of sending it
-    if (initialPushallSent && diag.messagesRx == 0 &&
-        millis() - lastPushallRequest > 10000) {
-      MQTT_LOG("No data after pushall, retrying...");
-      esp_task_wdt_reset();
-      requestPushall();
-    }
+      // Retry pushall if no data received within 10s of sending it
+      if (initialPushallSent && diag.messagesRx == 0 &&
+          millis() - lastPushallRequest > 10000) {
+        MQTT_LOG("No data after pushall, retrying...");
+        esp_task_wdt_reset();
+        requestPushall();
+      }
 
-    // Periodic pushall
-    if (initialPushallSent && diag.messagesRx > 0 &&
-        millis() - lastPushallRequest > BAMBU_PUSHALL_INTERVAL) {
-      esp_task_wdt_reset();
-      requestPushall();
+      // Periodic pushall
+      if (initialPushallSent && diag.messagesRx > 0 &&
+          millis() - lastPushallRequest > BAMBU_PUSHALL_INTERVAL) {
+        esp_task_wdt_reset();
+        requestPushall();
+      }
     }
   }
 
@@ -402,7 +440,10 @@ void handleBambuMqtt() {
 
 bool isPrinterConfigured() {
   PrinterConfig& cfg = activePrinter().config;
-  return cfg.enabled && strlen(cfg.ip) > 0;
+  if (!cfg.enabled) return false;
+  if (cfg.mode == CONN_CLOUD)
+    return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;
+  return strlen(cfg.ip) > 0;
 }
 
 void disconnectBambuMqtt() {

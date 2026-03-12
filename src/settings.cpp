@@ -11,6 +11,7 @@ uint8_t brightness = 200;
 DisplaySettings dispSettings;
 NetworkSettings netSettings;
 DisplayPowerSettings dpSettings;
+char cloudEmail[64] = {0};
 
 static Preferences prefs;
 
@@ -113,6 +114,12 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_name", i);
     strlcpy(cfg.name, prefs.getString(key, "").c_str(), sizeof(cfg.name));
 
+    snprintf(key, sizeof(key), "p%d_mode", i);
+    cfg.mode = (ConnMode)prefs.getUChar(key, CONN_LOCAL);
+
+    snprintf(key, sizeof(key), "p%d_cuid", i);
+    strlcpy(cfg.cloudUserId, prefs.getString(key, "").c_str(), sizeof(cfg.cloudUserId));
+
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     strcpy(printers[i].state.gcodeState, "UNKNOWN");
@@ -145,6 +152,9 @@ void loadSettings() {
   // Display power settings
   dpSettings.finishDisplayMins = prefs.getUShort("dp_fmins", 3);
   dpSettings.keepDisplayOn = prefs.getBool("dp_keepon", false);
+
+  // Cloud email (display only)
+  strlcpy(cloudEmail, prefs.getString("cl_email", "").c_str(), sizeof(cloudEmail));
 
   prefs.end();
 }
@@ -217,6 +227,12 @@ void savePrinterConfig(uint8_t index) {
   snprintf(key, sizeof(key), "p%d_name", index);
   prefs.putString(key, cfg.name);
 
+  snprintf(key, sizeof(key), "p%d_mode", index);
+  prefs.putUChar(key, cfg.mode);
+
+  snprintf(key, sizeof(key), "p%d_cuid", index);
+  prefs.putString(key, cfg.cloudUserId);
+
   if (needOpen) prefs.end();
 }
 
@@ -225,4 +241,37 @@ void resetSettings() {
   prefs.clear();
   prefs.end();
   ESP.restart();
+}
+
+// ---------------------------------------------------------------------------
+//  Cloud token persistence
+// ---------------------------------------------------------------------------
+void saveCloudToken(const char* token) {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.putString("cl_token", token);
+  prefs.end();
+}
+
+bool loadCloudToken(char* buf, size_t bufLen) {
+  prefs.begin(NVS_NAMESPACE, true);
+  String t = prefs.getString("cl_token", "");
+  prefs.end();
+  if (t.length() == 0) return false;
+  strlcpy(buf, t.c_str(), bufLen);
+  return true;
+}
+
+void clearCloudToken() {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.remove("cl_token");
+  prefs.remove("cl_email");
+  prefs.end();
+  cloudEmail[0] = '\0';
+}
+
+void saveCloudEmail(const char* email) {
+  strlcpy(cloudEmail, email, sizeof(cloudEmail));
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.putString("cl_email", email);
+  prefs.end();
 }
