@@ -27,7 +27,12 @@ static int httpsRequest(const char* method, const char* url,
     return -1;
   }
 
+  // Browser-like headers to avoid Cloudflare 403 blocks
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+  http.addHeader("Accept", "application/json, text/plain, */*");
+  http.addHeader("Accept-Language", "en-US,en;q=0.9");
+  http.addHeader("Accept-Encoding", "gzip, deflate");
   if (authToken && strlen(authToken) > 0) {
     String auth = "Bearer ";
     auth += authToken;
@@ -182,6 +187,10 @@ CloudResult cloudLogin(const char* email, const char* password) {
   int httpCode = httpsRequest("POST", url.c_str(), bodyStr.c_str(), nullptr, response);
 
   Serial.printf("CLOUD: Login HTTP %d, len=%d\n", httpCode, response.length());
+  if (httpCode == 403) {
+    Serial.println("CLOUD: 403 — likely Cloudflare block. First 200 chars:");
+    Serial.println(response.substring(0, 200));
+  }
   return processLoginResponse(httpCode, response, email);
 }
 

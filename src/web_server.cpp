@@ -174,6 +174,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   <select name="connmode" id="connmode" onchange="toggleConnMode()">
     <option value="local" %MODE_LOCAL%>LAN Direct (P1/X1/A1)</option>
     <option value="cloud" %MODE_CLOUD%>Bambu Cloud (H2/P2S)</option>
+    <option value="cloud_all" %MODE_CLOUD_ALL%>Bambu Cloud (All printers)</option>
   </select>
 
   <div id="localFields">
@@ -188,7 +189,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   </div>
 
   <div id="cloudFields" style="display:none">
-    <p style="font-size:12px;color:#8B949E;margin:10px 0">For H2C/H2D/H2S/P2S printers. Connects via Bambu Cloud.<br>Token valid ~3 months. Your password is NOT stored.</p>
+    <p id="cloudDesc" style="font-size:12px;color:#8B949E;margin:10px 0">Connects via Bambu Cloud.<br>Token valid ~3 months. Your password is NOT stored.</p>
     <div id="cloudLoginSection">
       <label for="cl_email">Bambu Account Email</label>
       <input type="text" id="cl_email" value="%CL_EMAIL%" placeholder="user@example.com">
@@ -210,6 +211,26 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
     <input type="hidden" name="cl_pname" id="cl_pname" value="%PNAME%">
     <button type="button" class="btn btn-danger" style="margin-top:10px;display:none;font-size:12px;padding:6px"
             id="cloudLogoutBtn" onclick="cloudLogout()">Logout from Cloud</button>
+    <div id="pasteTokenSection" style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
+      <p style="font-size:12px;color:#8B949E;margin-bottom:8px">
+        <b>Having trouble logging in?</b> (Cloudflare may block ESP32)<br>
+        Get your token with the Python script or browser DevTools, then paste it here.
+        <a href="https://github.com/rafalz/BambuHelper#getting-a-cloud-token" style="color:#58A6FF" target="_blank">Instructions</a>
+      </p>
+      <label for="cl_token">Access Token (JWT)</label>
+      <textarea id="cl_token" rows="3" style="width:100%;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#E6EDF3;font-size:11px;font-family:monospace;resize:vertical" placeholder="Paste your Bambu Cloud token here..."></textarea>
+      <button type="button" class="btn btn-blue" style="margin-top:8px" onclick="pasteToken()">Save Token &amp; Fetch Printers</button>
+      <div id="pasteStatus" style="margin-top:6px;font-size:13px;color:#8B949E"></div>
+      <div id="manualSerial" style="display:none;margin-top:10px">
+        <label for="cl_manual_serial">Printer Serial Number</label>
+        <input type="text" id="cl_manual_serial" placeholder="01P00A000000000" maxlength="19"
+               oninput="document.getElementById('cl_serial').value=this.value">
+        <label for="cl_manual_name">Printer Name</label>
+        <input type="text" id="cl_manual_name" placeholder="My Printer" maxlength="23"
+               oninput="document.getElementById('cl_pname').value=this.value">
+        <p style="font-size:11px;color:#8B949E;margin-top:6px">Find your serial in Bambu Handy or on the printer's label.</p>
+      </div>
+    </div>
   </div>
   <div id="liveStats"></div>
 </div>
@@ -338,9 +359,12 @@ function toggleStatic(){
 toggleStatic();
 
 function toggleConnMode(){
-  var cloud=document.getElementById('connmode').value==='cloud';
+  var v=document.getElementById('connmode').value;
+  var cloud=(v==='cloud'||v==='cloud_all');
   document.getElementById('localFields').style.display=cloud?'none':'block';
   document.getElementById('cloudFields').style.display=cloud?'block':'none';
+  if(v==='cloud') document.getElementById('cloudDesc').innerHTML='For H2C/H2D/H2S/P2S printers. Connects via Bambu Cloud.<br>Token valid ~3 months. Your password is NOT stored.';
+  else if(v==='cloud_all') document.getElementById('cloudDesc').innerHTML='Connect any printer via Bambu Cloud (no LAN mode needed).<br>Token valid ~3 months. Your password is NOT stored.';
 }
 toggleConnMode();
 
@@ -437,6 +461,43 @@ function cloudLogout(){
     document.getElementById('cloudLogoutBtn').style.display='none';
     document.getElementById('cloudLoginSection').style.display='block';
   });
+}
+
+function pasteToken(){
+  var token=document.getElementById('cl_token').value.trim();
+  if(!token){document.getElementById('pasteStatus').innerHTML='<span style="color:#F85149">Paste a token first</span>';return;}
+  document.getElementById('pasteStatus').innerHTML='<span style="color:#58A6FF">Saving token...</span>';
+  var p=new URLSearchParams();
+  p.append('token',token);
+  fetch('/cloud/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.status==='ok'){
+        document.getElementById('pasteStatus').innerHTML='<span style="color:#3FB950">Token saved!</span>';
+        document.getElementById('cloudStatus').innerHTML='<span style="color:#3FB950">Logged in (token)</span>';
+        document.getElementById('cloudLoginSection').style.display='none';
+        document.getElementById('cloudLogoutBtn').style.display='block';
+        if(d.printers&&d.printers.length>0){
+          var sel=document.getElementById('cl_device');
+          sel.innerHTML='';
+          for(var i=0;i<d.printers.length;i++){
+            var o=document.createElement('option');
+            o.value=d.printers[i].serial;
+            o.setAttribute('data-name',d.printers[i].name);
+            o.textContent=d.printers[i].name+' ('+d.printers[i].model+')';
+            sel.appendChild(o);
+          }
+          document.getElementById('cloudDevices').style.display='block';
+          selectCloudDevice();
+        } else {
+          document.getElementById('pasteStatus').innerHTML+='<br><span style="color:#8B949E">Could not fetch printers (Cloudflare may block device list too). Enter serial manually below.</span>';
+          document.getElementById('manualSerial').style.display='block';
+        }
+      } else {
+        document.getElementById('pasteStatus').innerHTML='<span style="color:#F85149">'+(d.message||'Invalid token')+'</span>';
+      }
+    })
+    .catch(function(){document.getElementById('pasteStatus').innerHTML='<span style="color:#F85149">Network error</span>';});
 }
 
 var themes={
@@ -595,6 +656,7 @@ static String processTemplate(const String& html) {
   page.replace("%ENABLED%", cfg.enabled ? "checked" : "");
   page.replace("%MODE_LOCAL%", cfg.mode == CONN_LOCAL ? "selected" : "");
   page.replace("%MODE_CLOUD%", cfg.mode == CONN_CLOUD ? "selected" : "");
+  page.replace("%MODE_CLOUD_ALL%", cfg.mode == CONN_CLOUD_ALL ? "selected" : "");
   page.replace("%PNAME%", cfg.name);
   page.replace("%IP%", cfg.ip);
   page.replace("%SERIAL%", cfg.serial);
@@ -602,7 +664,7 @@ static String processTemplate(const String& html) {
   page.replace("%CL_EMAIL%", cloudEmail);
 
   // Cloud status text
-  if (cfg.mode == CONN_CLOUD && strlen(cloudEmail) > 0) {
+  if (isCloudMode(cfg.mode) && strlen(cloudEmail) > 0) {
     char clStatus[96];
     snprintf(clStatus, sizeof(clStatus), "Logged in as %s", cloudEmail);
     page.replace("%CLOUD_STATUS%", clStatus);
@@ -738,7 +800,10 @@ static void handleSave() {
 
   // Connection mode
   if (server.hasArg("connmode")) {
-    cfg.mode = (server.arg("connmode") == "cloud") ? CONN_CLOUD : CONN_LOCAL;
+    String cm = server.arg("connmode");
+    if (cm == "cloud") cfg.mode = CONN_CLOUD;
+    else if (cm == "cloud_all") cfg.mode = CONN_CLOUD_ALL;
+    else cfg.mode = CONN_LOCAL;
   }
 
   // Network settings
@@ -750,7 +815,7 @@ static void handleSave() {
   netSettings.showIPAtStartup = server.hasArg("showip");
   if (server.hasArg("tz")) netSettings.gmtOffsetMin = server.arg("tz").toInt();
 
-  if (cfg.mode == CONN_CLOUD) {
+  if (isCloudMode(cfg.mode)) {
     // Cloud mode: serial and name come from hidden fields
     if (server.hasArg("cl_serial")) strlcpy(cfg.serial, server.arg("cl_serial").c_str(), sizeof(cfg.serial));
     if (server.hasArg("cl_pname"))  strlcpy(cfg.name, server.arg("cl_pname").c_str(), sizeof(cfg.name));
@@ -920,6 +985,59 @@ static void handleCloudDevices() {
   server.send(200, "application/json", json);
 }
 
+static void handleCloudToken() {
+  String token = server.arg("token");
+  if (token.length() < 20) {
+    server.send(200, "application/json", "{\"status\":\"error\",\"message\":\"Token too short\"}");
+    return;
+  }
+
+  // Validate: must look like a JWT (3 dot-separated segments)
+  int dots = 0;
+  for (unsigned int i = 0; i < token.length(); i++) {
+    if (token[i] == '.') dots++;
+  }
+  if (dots != 2) {
+    server.send(200, "application/json", "{\"status\":\"error\",\"message\":\"Invalid token format (expected JWT)\"}");
+    return;
+  }
+
+  // Save the token
+  saveCloudToken(token.c_str());
+
+  // Try to extract userId to verify it's valid
+  char uid[32] = {0};
+  if (!cloudExtractUserId(token.c_str(), uid, sizeof(uid))) {
+    server.send(200, "application/json", "{\"status\":\"error\",\"message\":\"Could not extract userId from token\"}");
+    return;
+  }
+
+  Serial.printf("CLOUD: Token pasted, userId=%s\n", uid);
+
+  JsonDocument doc;
+  doc["status"] = "ok";
+
+  // Try to fetch device list (may fail due to Cloudflare)
+  char tokenBuf[1200];
+  if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+    CloudPrinter devs[8];
+    int count = cloudFetchDevices(tokenBuf, devs, 8);
+    if (count > 0) {
+      JsonArray arr = doc["printers"].to<JsonArray>();
+      for (int i = 0; i < count; i++) {
+        JsonObject d = arr.add<JsonObject>();
+        d["serial"] = devs[i].serial;
+        d["name"] = devs[i].name;
+        d["model"] = devs[i].model;
+      }
+    }
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
 static void handleCloudLogout() {
   clearCloudToken();
   server.send(200, "text/plain", "OK");
@@ -949,6 +1067,7 @@ void initWebServer() {
   server.on("/cloud/login", HTTP_POST, handleCloudLogin);
   server.on("/cloud/verify", HTTP_POST, handleCloudVerify);
   server.on("/cloud/devices", HTTP_GET, handleCloudDevices);
+  server.on("/cloud/token", HTTP_POST, handleCloudToken);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
   server.onNotFound(handleNotFound);
   server.begin();

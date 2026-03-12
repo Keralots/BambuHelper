@@ -88,7 +88,7 @@ static bool ensureClients() {
   }
 
   PrinterConfig& cfg = activePrinter().config;
-  if (cfg.mode == CONN_CLOUD) {
+  if (isCloudMode(cfg.mode)) {
     MQTT_LOG("setServer(%s, %d) [CLOUD]", BAMBU_CLOUD_BROKER, BAMBU_PORT);
     mqttClient->setServer(BAMBU_CLOUD_BROKER, BAMBU_PORT);
   } else {
@@ -131,7 +131,7 @@ static void reconnect() {
   // Validate config based on mode
   if (!cfg.enabled) return;
   if (cfg.mode == CONN_LOCAL && strlen(cfg.ip) == 0) return;
-  if (cfg.mode == CONN_CLOUD && (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0)) return;
+  if (isCloudMode(cfg.mode) && (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0)) return;
 
   unsigned long now = millis();
   if (now - lastReconnectAttempt < BAMBU_RECONNECT_INTERVAL) return;
@@ -141,7 +141,7 @@ static void reconnect() {
   lastReconnectAttempt = now;
 
   MQTT_LOG("=== reconnect attempt #%u [%s] ===", diag.attempts,
-           cfg.mode == CONN_CLOUD ? "CLOUD" : "LOCAL");
+           isCloudMode(cfg.mode) ? "CLOUD" : "LOCAL");
   MQTT_LOG("serial=%s heap=%u WiFi=%d", cfg.serial, ESP.getFreeHeap(), WiFi.status());
 
   if (!ensureClients()) {
@@ -177,7 +177,7 @@ static void reconnect() {
   esp_task_wdt_reset();
 
   bool connected = false;
-  if (cfg.mode == CONN_CLOUD) {
+  if (isCloudMode(cfg.mode)) {
     // Cloud: load token from NVS, use cloudUserId as username
     char tokenBuf[1200];
     if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
@@ -210,7 +210,7 @@ static void reconnect() {
     diag.connectDurMs = millis() - t0;
     MQTT_LOG("CONNECT FAILED rc=%d (%s) took %lums",
              diag.lastRc, mqttRcToString(diag.lastRc), diag.connectDurMs);
-    if (cfg.mode == CONN_CLOUD && (diag.lastRc == 4 || diag.lastRc == 5)) {
+    if (isCloudMode(cfg.mode) && (diag.lastRc == 4 || diag.lastRc == 5)) {
       MQTT_LOG("Cloud token may be expired — re-login via web UI");
     }
   }
@@ -373,9 +373,9 @@ void initBambuMqtt() {
   s.printing = false;
   strcpy(s.gcodeState, "UNKNOWN");
 
-  bool notConfigured = (cfg.mode == CONN_LOCAL)
-    ? (strlen(cfg.ip) == 0)
-    : (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0);
+  bool notConfigured = isCloudMode(cfg.mode)
+    ? (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0)
+    : (strlen(cfg.ip) == 0);
 
   if (!cfg.enabled || notConfigured) {
     Serial.println("MQTT: Printer not configured, skipping");
@@ -441,7 +441,7 @@ void handleBambuMqtt() {
 bool isPrinterConfigured() {
   PrinterConfig& cfg = activePrinter().config;
   if (!cfg.enabled) return false;
-  if (cfg.mode == CONN_CLOUD)
+  if (isCloudMode(cfg.mode))
     return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;
   return strlen(cfg.ip) > 0;
 }

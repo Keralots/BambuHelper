@@ -4,7 +4,9 @@
 #include <Arduino.h>
 #include "config.h"
 
-enum ConnMode : uint8_t { CONN_LOCAL = 0, CONN_CLOUD = 1 };
+enum ConnMode : uint8_t { CONN_LOCAL = 0, CONN_CLOUD = 1, CONN_CLOUD_ALL = 2 };
+
+inline bool isCloudMode(ConnMode m) { return m == CONN_CLOUD || m == CONN_CLOUD_ALL; }
 
 struct BambuState {
   bool connected;
@@ -31,7 +33,7 @@ struct BambuState {
 
 struct PrinterConfig {
   bool enabled;
-  ConnMode mode;              // CONN_LOCAL or CONN_CLOUD
+  ConnMode mode;              // CONN_LOCAL, CONN_CLOUD, or CONN_CLOUD_ALL
   char ip[16];                // local mode only
   char serial[20];            // both modes
   char accessCode[12];        // local mode only
