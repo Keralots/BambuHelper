@@ -97,6 +97,10 @@ Touch TTP223 button is optional, it is used to switch between printers, you may 
 
 ## Setup
 
+### Configuration Guide
+
+[![Configuration Guide](https://img.youtube.com/vi/n2RdbeHTMz0/maxresdefault.jpg)](https://youtu.be/n2RdbeHTMz0)
+
 1. **Flash** the firmware (see above)
 2. **Connect** to the `BambuHelper-XXXX` WiFi network (password: `bambu1234`)
 3. **Open** `192.168.4.1` in your browser
