@@ -20,12 +20,25 @@ void drawClock() {
   tft.fillRect(0, 50, 240, 140, bg);
 
   // Time — large 7-segment font
-  char timeBuf[6];
-  snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", now.tm_hour, now.tm_min);
+  char timeBuf[12];
+  if (netSettings.use24h) {
+    snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", now.tm_hour, now.tm_min);
+  } else {
+    int h = now.tm_hour % 12;
+    if (h == 0) h = 12;
+    snprintf(timeBuf, sizeof(timeBuf), "%2d:%02d", h, now.tm_min);
+  }
   tft.setTextDatum(MC_DATUM);
   tft.setTextFont(7);
   tft.setTextColor(CLR_TEXT, bg);
   tft.drawString(timeBuf, 120, 100);
+
+  // AM/PM indicator for 12h mode
+  if (!netSettings.use24h) {
+    tft.setTextFont(4);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString(now.tm_hour < 12 ? "AM" : "PM", 120, 135);
+  }
 
   // Date — smaller font below
   const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};

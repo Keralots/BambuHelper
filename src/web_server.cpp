@@ -188,7 +188,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <label for="ip">Printer IP Address</label>
         <input type="text" id="ip" value="%IP%" placeholder="192.168.1.xxx">
         <label for="serial">Serial Number</label>
-        <input type="text" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
+        <input type="text" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19" style="text-transform:uppercase">
         <label for="code">LAN Access Code</label>
         <input type="text" id="code" value="%CODE%" placeholder="12345678" maxlength="8">
       </div>
@@ -259,6 +259,10 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
       <div class="check-row">
         <input type="checkbox" id="clock" value="1" %CLOCK%>
         <label for="clock">Show clock after print (instead of screen off)</label>
+      </div>
+      <div style="font-size:11px;color:#8B949E;margin-top:4px">
+        Note: Without a physical button, display will show clock instead of turning off (no way to wake manually).
+      </div>
       </div>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
@@ -443,6 +447,10 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <input type="checkbox" id="dst" value="1" %DST%>
         <label for="dst">Daylight Saving Time (+1h)</label>
       </div>
+      <div class="check-row">
+        <input type="checkbox" id="use24h" value="1" %USE24H%>
+        <label for="use24h">24-hour time format</label>
+      </div>
 
       <button type="button" class="btn btn-primary" onclick="saveWifi()">Save WiFi &amp; Restart</button>
 
@@ -509,7 +517,7 @@ function showToast(msg){
   var t=document.getElementById('toast');
   t.textContent=msg||'Applied!';
   t.style.display='block';
-  setTimeout(function(){t.style.display='none';},2000);
+  setTimeout(function(){t.style.display='none';},msg&&msg.length>40?5000:2000);
 }
 
 function toggleStatic(){
@@ -547,7 +555,8 @@ function savePrinter(){
   fetch('/save/printer',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){
-      if(d.status==='ok') showToast('Printer settings saved!');
+      if(d.status==='ok'&&d.warning) showToast('Saved! Warning: '+d.warning);
+      else if(d.status==='ok') showToast('Printer settings saved!');
       else showToast('Error: '+(d.message||'save failed'));
     })
     .catch(function(){showToast('Network error');});
@@ -566,6 +575,7 @@ function saveWifi(){
   if(document.getElementById('showip').checked) p.append('showip','1');
   p.append('tz',document.getElementById('tz').value);
   if(document.getElementById('dst').checked) p.append('dst','1');
+  if(document.getElementById('use24h').checked) p.append('use24h','1');
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(){
       document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting...</p></div>';
@@ -787,6 +797,7 @@ static String processTemplate(const String& html) {
   }
 
   page.replace("%DST%", netSettings.dstEnabled ? "checked" : "");
+  page.replace("%USE24H%", netSettings.use24h ? "checked" : "");
 
   // Rotation dropdown
   page.replace("%ROT0%", dispSettings.rotation == 0 ? "selected" : "");
@@ -938,13 +949,39 @@ static void handleSavePrinter() {
     if (server.hasArg("code"))   strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
   }
 
+  // Serial numbers must be uppercase (Bambu MQTT topics are case-sensitive)
+  for (char* p = cfg.serial; *p; p++) *p = toupper(*p);
+
+  // Validate required fields and build warnings
+  String warnings = "";
+  if (isCloudMode(cfg.mode)) {
+    if (strlen(cfg.serial) == 0)
+      warnings += "Serial number is required for cloud mode. ";
+    if (strlen(cfg.cloudUserId) == 0)
+      warnings += "Cloud token is missing or invalid (userId extraction failed). ";
+  } else {
+    if (strlen(cfg.ip) == 0)
+      warnings += "Printer IP address is required. ";
+    if (strlen(cfg.serial) == 0)
+      warnings += "Serial number is required (used for MQTT topic). ";
+    if (strlen(cfg.accessCode) == 0)
+      warnings += "Access code is required. ";
+    else if (strlen(cfg.accessCode) != 8)
+      warnings += "Access code should be 8 characters (check printer LCD). ";
+  }
+
   savePrinterConfig(slot);
 
   // Reinit MQTT — disconnect changed slot, then reinit all
   disconnectBambuMqtt(slot);
   initBambuMqtt();
 
-  server.send(200, "application/json", "{\"status\":\"ok\"}");
+  if (warnings.length() > 0) {
+    String resp = "{\"status\":\"ok\",\"warning\":\"" + warnings + "\"}";
+    server.send(200, "application/json", resp);
+  } else {
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+  }
 }
 
 // Save WiFi + network settings (requires restart)
@@ -960,6 +997,7 @@ static void handleSaveWifi() {
   netSettings.showIPAtStartup = server.hasArg("showip");
   if (server.hasArg("tz")) netSettings.gmtOffsetMin = server.arg("tz").toInt();
   netSettings.dstEnabled = server.hasArg("dst");
+  netSettings.use24h = server.hasArg("use24h");
 
   saveSettings();
 

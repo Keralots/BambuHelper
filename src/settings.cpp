@@ -153,6 +153,7 @@ void loadSettings() {
   netSettings.showIPAtStartup = prefs.getBool("net_showip", true);
   netSettings.gmtOffsetMin = prefs.getShort("net_tz", 60);  // default UTC+1 (CET)
   netSettings.dstEnabled = prefs.getBool("net_dst", false);
+  netSettings.use24h = prefs.getBool("net_24h", true);
 
   // Display power settings
   dpSettings.finishDisplayMins = prefs.getUShort("dp_fmins", 3);
@@ -213,6 +214,7 @@ void saveSettings() {
   prefs.putBool("net_showip", netSettings.showIPAtStartup);
   prefs.putShort("net_tz", netSettings.gmtOffsetMin);
   prefs.putBool("net_dst", netSettings.dstEnabled);
+  prefs.putBool("net_24h", netSettings.use24h);
 
   // Display power settings
   prefs.putUShort("dp_fmins", dpSettings.finishDisplayMins);

@@ -88,7 +88,7 @@ static void handleRotation() {
 // ---------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n=== BambuHelper Starting ===");
+  Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
 
   loadSettings();
   initDisplay();
@@ -183,7 +183,12 @@ void loop() {
           }
         }
         if (!anyPrinting) {
-          setScreenState(dpSettings.showClockAfterFinish ? SCREEN_CLOCK : SCREEN_OFF);
+          // Never go to SCREEN_OFF without a physical button — no way to wake up
+          if (dpSettings.showClockAfterFinish || buttonType == BTN_DISABLED) {
+            setScreenState(SCREEN_CLOCK);
+          } else {
+            setScreenState(SCREEN_OFF);
+          }
         }
       }
     } else if (s.connected && !s.printing &&

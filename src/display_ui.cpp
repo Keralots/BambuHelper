@@ -90,7 +90,7 @@ ScreenState getScreenState() {
 // ---------------------------------------------------------------------------
 static const char* nozzleLabel(const BambuState& s) {
   if (!s.dualNozzle) return "Nozzle";
-  return s.activeNozzle == 0 ? "Nozzle L" : "Nozzle R";
+  return s.activeNozzle == 0 ? "Nozzle R" : "Nozzle L";
 }
 
 // ---------------------------------------------------------------------------
@@ -213,11 +213,21 @@ static void drawConnectingMQTT() {
   int16_t tw = tft.textWidth("Connecting to Printer");
   drawAnimDots(tft, SCREEN_W / 2 + tw / 2, SCREEN_H / 2 - 6, CLR_TEXT);
 
-  // Show printer name/IP
+  // Show connection mode + printer info
   PrinterSlot& p = displayedPrinter();
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.setTextFont(1);
-  tft.drawString(p.config.ip, SCREEN_W / 2, SCREEN_H / 2 + 20);
+
+  const char* modeStr = isCloudMode(p.config.mode) ? "Cloud" : "LAN";
+  char infoBuf[40];
+  if (isCloudMode(p.config.mode)) {
+    snprintf(infoBuf, sizeof(infoBuf), "[%s] %s", modeStr,
+             strlen(p.config.serial) > 0 ? p.config.serial : "no serial!");
+  } else {
+    snprintf(infoBuf, sizeof(infoBuf), "[%s] %s",  modeStr,
+             strlen(p.config.ip) > 0 ? p.config.ip : "no IP!");
+  }
+  tft.drawString(infoBuf, SCREEN_W / 2, SCREEN_H / 2 + 20);
 
   // Elapsed time
   if (connectScreenStart > 0) {
@@ -514,14 +524,26 @@ static void drawPrinting() {
         localtime_r(&etaEpoch, &etaTm);
 
         char etaBuf[32];
+        int etaH = etaTm.tm_hour;
+        const char* ampm = "";
+        if (!netSettings.use24h) {
+          ampm = etaH < 12 ? "AM" : "PM";
+          etaH = etaH % 12;
+          if (etaH == 0) etaH = 12;
+        }
         // Show date only if finish is not today
         if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %d.%02d %02d:%02d",
-                   etaTm.tm_mday, etaTm.tm_mon + 1,
-                   etaTm.tm_hour, etaTm.tm_min);
+          if (netSettings.use24h)
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d.%02d %02d:%02d",
+                     etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
+          else
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d.%02d %d:%02d%s",
+                     etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min, ampm);
         } else {
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d",
-                   etaTm.tm_hour, etaTm.tm_min);
+          if (netSettings.use24h)
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
+          else
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
         }
         tft.setTextFont(4);
         tft.setTextColor(CLR_GREEN, CLR_BG);

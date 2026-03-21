@@ -364,8 +364,22 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 static void reconnectConn(MqttConn& c) {
   PrinterConfig& cfg = printers[c.slotIndex].config;
 
-  if (cfg.mode == CONN_LOCAL && strlen(cfg.ip) == 0) return;
-  if (isCloudMode(cfg.mode) && (strlen(cfg.cloudUserId) == 0 || strlen(cfg.serial) == 0)) return;
+  if (cfg.mode == CONN_LOCAL && strlen(cfg.ip) == 0) {
+    MQTT_LOG("[%d] skip: no IP configured", c.slotIndex);
+    return;
+  }
+  if (cfg.mode == CONN_LOCAL && strlen(cfg.serial) == 0) {
+    MQTT_LOG("[%d] skip: no serial configured (needed for MQTT topic)", c.slotIndex);
+    return;
+  }
+  if (isCloudMode(cfg.mode) && strlen(cfg.cloudUserId) == 0) {
+    MQTT_LOG("[%d] skip: no cloudUserId — token may be missing or invalid, re-login via web UI", c.slotIndex);
+    return;
+  }
+  if (isCloudMode(cfg.mode) && strlen(cfg.serial) == 0) {
+    MQTT_LOG("[%d] skip: no serial configured", c.slotIndex);
+    return;
+  }
 
   unsigned long now = millis();
 
@@ -456,8 +470,15 @@ static void reconnectConn(MqttConn& c) {
     c.diag.connectDurMs = millis() - t0;
     MQTT_LOG("[%d] CONNECT FAILED rc=%d (%s) took %lums",
              c.slotIndex, c.diag.lastRc, mqttRcToString(c.diag.lastRc), c.diag.connectDurMs);
-    if (isCloudMode(cfg.mode) && (c.diag.lastRc == 4 || c.diag.lastRc == 5)) {
-      MQTT_LOG("[%d] Cloud token may be expired — re-login via web UI", c.slotIndex);
+    if (isCloudMode(cfg.mode)) {
+      MQTT_LOG("[%d] config: serial=%s userId=%s region=%d",
+               c.slotIndex, cfg.serial, cfg.cloudUserId, cfg.region);
+      if (c.diag.lastRc == 4 || c.diag.lastRc == 5) {
+        MQTT_LOG("[%d] Cloud token may be expired — re-login via web UI", c.slotIndex);
+      }
+    } else {
+      MQTT_LOG("[%d] config: ip=%s serial=%s code_len=%d",
+               c.slotIndex, cfg.ip, cfg.serial, (int)strlen(cfg.accessCode));
     }
   }
 }
@@ -524,7 +545,7 @@ bool isPrinterConfigured(uint8_t slot) {
   PrinterConfig& cfg = printers[slot].config;
   if (isCloudMode(cfg.mode))
     return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;
-  return strlen(cfg.ip) > 0;
+  return strlen(cfg.ip) > 0 && strlen(cfg.serial) > 0;
 }
 
 bool isAnyPrinterConfigured() {
