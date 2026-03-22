@@ -188,23 +188,24 @@ static void markBallDamage(int bx, int by) {
 static bool overlapsText(int bx, int by) {
   int bx2 = bx + ARK_BALL_SIZE;
   int by2 = by + ARK_BALL_SIZE;
-  // Time digits zone
+  // Time digits zone (exact bounds of HH:MM)
   if (by2 > ARK_TIME_Y && by < ARK_TIME_Y + DIGIT_H) {
-    int tLeft = digitX(0);
-    int tRight = digitX(4) + DIGIT_W + 2;
+    int tLeft = digitX(0) - 2;
+    int tRight = digitX(4) + DIGIT_W + 4;
     if (bx2 > tLeft && bx < tRight) return true;
   }
-  // Date zone (top of screen)
-  if (by2 > ARK_DATE_Y && by < ARK_DATE_Y + 16) return true;
+  // Date zone (centered text ~150px wide)
+  if (by2 > ARK_DATE_Y && by < ARK_DATE_Y + 16) {
+    if (bx2 > 40 && bx < 200) return true;
+  }
   return false;
 }
 
 static void drawBall() {
   if (prevBallX >= 0) {
-    // Ball passes behind time digits: skip erase if overlapping,
-    // just mark damage so drawTime() redraws cleanly
+    // Ball passes behind text — no erase needed, no damage to repair
     if (overlapsText(prevBallX, prevBallY)) {
-      markBallDamage(prevBallX, prevBallY);
+      // skip — ball was never drawn here
     } else {
       tft.fillRect(prevBallX, prevBallY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_BLACK);
     }
@@ -495,36 +496,20 @@ void tickPongClock() {
   // Detect minute change
   if (curMin != lastMinute) { lastMinute = curMin; animTriggered = false; }
 
-  // Trigger digit transition at second 56
-  if (sec >= 56 && !animTriggered && !breaking) {
+  // Trigger digit transition at second 56 — all changing digits update
+  // at once with a bounce animation (no fragment explosion)
+  if (sec >= 56 && !animTriggered) {
     animTriggered = true;
     calcTargets(dispHour, dispMin);
-    if (numTargets > 0) {
-      currentTarget = 0;
-      breaking = true;
-      int di = targetDigits[0];
-      spawnDigitFragments(digitX(di), ARK_TIME_Y);
-      tft.fillRect(digitX(di), ARK_TIME_Y, DIGIT_W, DIGIT_H, TFT_BLACK);
+    for (int t = 0; t < numTargets; t++) {
+      int di = targetDigits[t];
+      applyDigitValue(di, targetValues[t]);
       prevDigits[di] = 0;  // force redraw
-      applyDigitValue(di, targetValues[0]);
-      timeOverridden = true;
-      timeOverrideStart = millis();
       triggerBounce(di);
     }
-  }
-
-  // Multi-digit transitions
-  if (breaking && fragTimer <= 0) {
-    currentTarget++;
-    if (currentTarget < numTargets) {
-      int di = targetDigits[currentTarget];
-      spawnDigitFragments(digitX(di), ARK_TIME_Y);
-      tft.fillRect(digitX(di), ARK_TIME_Y, DIGIT_W, DIGIT_H, TFT_BLACK);
-      prevDigits[di] = 0;  // force redraw
-      applyDigitValue(di, targetValues[currentTarget]);
-      triggerBounce(di);
-    } else {
-      breaking = false;
+    if (numTargets > 0) {
+      timeOverridden = true;
+      timeOverrideStart = millis();
     }
   }
 
@@ -532,7 +517,6 @@ void tickPongClock() {
   updateBallPhysics();
   updatePaddle();
   updateBounce();
-  updateFragments();
 
   // Draw ball and paddle first (they erase and may damage text)
   drawBall();
@@ -550,7 +534,7 @@ void tickPongClock() {
       tft.setTextSize(1);
       tft.setTextDatum(TC_DATUM);
       tft.setTextColor(TFT_CYAN, TFT_BLACK);
-      tft.fillRect(0, ARK_DATE_Y, SCREEN_W, 16, TFT_BLACK);
+      tft.fillRect(40, ARK_DATE_Y, 160, 16, TFT_BLACK);
       tft.drawString(dateStr, SCREEN_W / 2, ARK_DATE_Y);
       tft.setTextDatum(TL_DATUM);
       strlcpy(prevDateStr, dateStr, sizeof(prevDateStr));
