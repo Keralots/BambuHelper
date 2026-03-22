@@ -439,6 +439,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <input type="text" id="net_dns" value="%NET_DNS%" placeholder="8.8.8.8">
       </div>
       <div class="check-row">
+        <input type="hidden" name="has_showip" value="1">
         <input type="checkbox" id="showip" value="1" %SHOWIP%>
         <label for="showip">Show IP at startup (3s)</label>
       </div>
@@ -616,6 +617,7 @@ function saveWifi(){
   p.append('net_gw',document.getElementById('net_gw').value);
   p.append('net_sn',document.getElementById('net_sn').value);
   p.append('net_dns',document.getElementById('net_dns').value);
+  p.append('has_showip','1');
   if(document.getElementById('showip').checked) p.append('showip','1');
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(){
@@ -1188,7 +1190,8 @@ static void handleSaveWifi() {
   if (server.hasArg("net_gw"))  strlcpy(netSettings.gateway, server.arg("net_gw").c_str(), sizeof(netSettings.gateway));
   if (server.hasArg("net_sn"))  strlcpy(netSettings.subnet, server.arg("net_sn").c_str(), sizeof(netSettings.subnet));
   if (server.hasArg("net_dns")) strlcpy(netSettings.dns, server.arg("net_dns").c_str(), sizeof(netSettings.dns));
-  netSettings.showIPAtStartup = server.hasArg("showip");
+  if (server.hasArg("has_showip"))  // full page sends this; AP page doesn't
+    netSettings.showIPAtStartup = server.hasArg("showip");
 
   saveSettings();
 
