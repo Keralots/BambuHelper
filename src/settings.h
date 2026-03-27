@@ -13,12 +13,13 @@ struct GaugeColors {
 
 // All display customization settings
 struct DisplaySettings {
-  uint8_t  rotation;       // 0, 1, 2, 3 (x90 degrees)
-  uint16_t bgColor;        // background color
-  uint16_t trackColor;     // inactive arc track color
-  bool     animatedBar;    // shimmer effect on progress bar
-  bool     pongClock;      // Pong/Breakout animated clock
-  bool     smallLabels;    // use smaller gauge labels (Font 1 instead of Font 2)
+  uint8_t  rotation;          // 0, 1, 2, 3 (x90 degrees)
+  uint16_t bgColor;           // background color
+  uint16_t trackColor;        // inactive arc track color
+  bool     animatedBar;       // shimmer effect on progress bar
+  bool     pongClock;         // Pong/Breakout animated clock
+  bool     smallLabels;       // use smaller gauge labels (Font 1 instead of Font 2)
+  bool     showTimeRemaining; // always show time remaining
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;
