@@ -9,8 +9,9 @@
 // =============================================================================
 //  Display
 // =============================================================================
-#define SCREEN_W        240
-#define SCREEN_H        240
+#define SCREEN_W        TFT_WIDTH
+#define SCREEN_H        TFT_HEIGHT
+#define SCREEN_MARGINX  TFT_MARGINX
 #define BACKLIGHT_PIN   TFT_BL  // GPIO 13
 #define BACKLIGHT_CH    0
 #define BACKLIGHT_FREQ  5000
