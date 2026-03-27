@@ -225,6 +225,15 @@ static void drawConnectingWiFi() {
   const int16_t barH = 8;
   drawSlideBar(tft, (SCREEN_W - barW) / 2, SCREEN_H / 2 + 4,
                barW, barH, CLR_BLUE, CLR_TRACK);
+
+  // Elapsed time
+  if (connectScreenStart > 0) {
+    unsigned long elapsed = (millis() - connectScreenStart) / 1000;
+    char elBuf[16];
+    snprintf(elBuf, sizeof(elBuf), "%lus", elapsed);
+    tft.fillRect(SCREEN_W / 2 - 30, SCREEN_H / 2 + 22, 60, 16, CLR_BG);
+    tft.drawString(elBuf, SCREEN_W / 2, SCREEN_H / 2 + 30);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -822,7 +831,7 @@ void updateDisplay() {
     tft.setTextSize(1);
     tft.fillScreen(currentScreen == SCREEN_OFF ? TFT_BLACK : dispSettings.bgColor);
     forceRedraw = true;
-    if (currentScreen == SCREEN_CONNECTING_MQTT) {
+    if (currentScreen == SCREEN_CONNECTING_MQTT || SCREEN_CONNECTING_WIFI) {
       connectScreenStart = millis();
     }
     if (currentScreen == SCREEN_CLOCK) {
