@@ -68,17 +68,17 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 
 Display: 1.54": https://a.aliexpress.com/_EG9y7wc
 
-ESP32-S3 SuperMini: https://a.aliexpress.com/_Eyk9GdA
+ESP32-S3 SuperMini: https://a.aliexpress.com/_Eyk9GdA  (Make sure you purchase S3 variant!)
 
-Optional: TTP223 touch button or standard push button for multi-printer switching (auto printer switching works without a button anyway; change settings in the web interface)
+Optional: TTP223 touch button or standard push button for multi-printer switching (auto printer switching works without a button anyway; change settings in the web interface): TTP223 link: https://aliexpress.com/item/1005006246380749.html
 
 Optional: Passive buzzer for print finish and error notifications: https://aliexpress.com/item/1005008825917787.html
 
-Optional case seen on picture: https://makerworld.com/en/models/2501721
+Optional case seen on picture (for ST7789 (240x240) display): https://makerworld.com/en/models/2501721
 
 ### Default Wiring
 
-| Display Pin | ESP32-S3 GPIO |
+| Display Pin ST7789 (240x240) | ESP32-S3 GPIO |
 |---|---|
 | MOSI (SDA) | 11 |
 | SCLK (SCL) | 12 |
