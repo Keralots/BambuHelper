@@ -518,6 +518,20 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <p style="font-size:13px;color:#8B949E;margin-bottom:4px">
           Current version: <b style="color:#58A6FF">%FW_VER%</b>
         </p>
+        <div id="updateCheck" style="margin-bottom:12px">
+          <button type="button" class="btn btn-blue" onclick="checkForUpdates()">Check for Updates</button>
+          <span id="updateResult" style="margin-left:8px;font-size:13px"></span>
+        </div>
+        <div id="updateInfo" style="display:none;margin-bottom:12px;padding:10px;background:#0D1117;border:1px solid #30363D;border-radius:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <b id="updateVer" style="color:#3FB950;font-size:14px"></b>
+              <span id="updateDate" style="color:#8B949E;font-size:12px;margin-left:8px"></span>
+            </div>
+            <a id="updateLink" href="#" target="_blank" class="btn btn-primary" style="font-size:12px;padding:4px 12px;text-decoration:none">Download .bin</a>
+          </div>
+          <p id="updateNotes" style="color:#C9D1D9;font-size:12px;margin-top:8px;white-space:pre-line"></p>
+        </div>
         <p style="font-size:11px;color:#8B949E;margin-bottom:10px">
           Upload a .bin file. Settings are preserved. Device restarts automatically.
         </p>
@@ -1014,6 +1028,55 @@ function startOta(){
     stat.style.color='#F85149';stat.textContent='Upload failed (connection lost)';
   };
   xhr.send(fd);
+}
+
+function checkForUpdates(){
+  var res=document.getElementById('updateResult');
+  var info=document.getElementById('updateInfo');
+  res.style.color='#58A6FF';res.textContent='Checking...';
+  info.style.display='none';
+  fetch('https://api.github.com/repos/Keralots/BambuHelper/releases/latest')
+    .then(function(r){
+      if(!r.ok) throw new Error('GitHub API returned '+r.status);
+      return r.json();
+    })
+    .then(function(d){
+      var latest=d.tag_name;
+      var current='%FW_VER%';
+      if(latest===current){
+        res.style.color='#3FB950';res.textContent='You are up to date ('+current+')';
+        return;
+      }
+      // Find OTA binary in assets
+      var otaBin=null;
+      for(var i=0;i<d.assets.length;i++){
+        if(d.assets[i].name.indexOf('OTA')!==-1 && d.assets[i].name.endsWith('.bin')){
+          otaBin=d.assets[i];break;
+        }
+      }
+      if(!otaBin){
+        // Fallback: any .bin asset
+        for(var i=0;i<d.assets.length;i++){
+          if(d.assets[i].name.endsWith('.bin')){otaBin=d.assets[i];break;}
+        }
+      }
+      res.style.color='#F0883E';res.textContent='Update available!';
+      document.getElementById('updateVer').textContent=latest;
+      var pub=new Date(d.published_at);
+      document.getElementById('updateDate').textContent=pub.toLocaleDateString();
+      document.getElementById('updateNotes').textContent=d.body?d.body.substring(0,300):'';
+      if(otaBin){
+        var link=document.getElementById('updateLink');
+        link.href=otaBin.browser_download_url;
+        link.textContent='Download '+otaBin.name;
+        link.style.display='inline-block';
+      }
+      info.style.display='block';
+    })
+    .catch(function(e){
+      res.style.color='#F85149';res.textContent='Check failed: '+e.message;
+      console.warn('updateCheck:',e);
+    });
 }
 
 // Pong depends on afterprint not being "keepon" (no clock when keeping finish screen on)
