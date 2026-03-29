@@ -551,6 +551,9 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
 </div>
 
 <script>
+// --- HTML escape helper ---
+function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;}
+
 // --- Collapsible sections ---
 function toggleSection(id){
   var content=document.getElementById('sec-'+id);
@@ -673,7 +676,7 @@ function saveWifi(){
 // --- Cloud ---
 function cloudLogout(){
   fetch('/cloud/logout',{method:'POST'}).then(function(){
-    document.getElementById('cloudStatus').innerHTML='<span style="color:#8B949E">No token set</span>';
+    var cs=document.getElementById('cloudStatus');cs.style.color='#8B949E';cs.textContent='No token set';
     document.getElementById('cl_token').value='';
   });
 }
@@ -812,11 +815,11 @@ function refreshDiag(){
     if(d.printers){
       d.printers.forEach(function(p){
         h+='<div style="margin-bottom:8px;padding:6px;border-left:2px solid '+(p.connected?'#3FB950':'#F85149')+'">';
-        h+='<b style="color:#E6EDF3">'+p.name+'</b> (slot '+p.slot+')<br>';
+        h+='<b style="color:#E6EDF3">'+esc(p.name)+'</b> (slot '+p.slot+')<br>';
         h+='<div class="stat-row"><span>MQTT:</span><span class="stat-val">'+(p.connected?'<span style="color:#3FB950">Connected</span>':'<span style="color:#F85149">Disconnected</span>')+'</span></div>';
         h+='<div class="stat-row"><span>Attempts:</span><span class="stat-val">'+p.attempts+'</span></div>';
         h+='<div class="stat-row"><span>Messages RX:</span><span class="stat-val">'+p.messages+'</span></div>';
-        if(p.last_rc!==0) h+='<div class="stat-row"><span>Last error:</span><span class="stat-val" style="color:#F85149">'+p.rc_text+'</span></div>';
+        if(p.last_rc!==0) h+='<div class="stat-row"><span>Last error:</span><span class="stat-val" style="color:#F85149">'+esc(p.rc_text)+'</span></div>';
         h+='</div>';
       });
     }
@@ -834,7 +837,7 @@ setInterval(function(){
     var h='';
     if(d.display_off) h+='<div class="stat-row"><span>Display:</span><span class="stat-val" style="color:#F85149">Off</span></div>';
     if(d.connected){
-      h+='<div class="stat-row"><span>State:</span><span class="stat-val">'+d.state+'</span></div>';
+      h+='<div class="stat-row"><span>State:</span><span class="stat-val">'+esc(d.state)+'</span></div>';
       h+='<div class="stat-row"><span>Nozzle:</span><span class="stat-val">'+d.nozzle+'/'+d.nozzle_t+'&deg;C</span></div>';
       h+='<div class="stat-row"><span>Bed:</span><span class="stat-val">'+d.bed+'/'+d.bed_t+'&deg;C</span></div>';
       if(d.progress>0) h+='<div class="stat-row"><span>Progress:</span><span class="stat-val">'+d.progress+'%</span></div>';
@@ -872,18 +875,18 @@ function importSettings(){
   var fd=new FormData();
   fd.append('settings',f);
   var stat=document.getElementById('importStatus');
-  stat.innerHTML='<span style="color:#58A6FF">Importing...</span>';
+  stat.style.color='#58A6FF';stat.textContent='Importing...';
   fetch('/settings/import',{method:'POST',body:fd})
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.status==='ok'){
-        stat.innerHTML='<span style="color:#3FB950">'+d.message+'</span>';
+        stat.style.color='#3FB950';stat.textContent=d.message;
       } else {
-        stat.innerHTML='<span style="color:#F85149">Error: '+d.message+'</span>';
+        stat.style.color='#F85149';stat.textContent='Error: '+d.message;
       }
     })
     .catch(function(){
-      stat.innerHTML='<span style="color:#F85149">Upload failed</span>';
+      stat.style.color='#F85149';stat.textContent='Upload failed';
     });
 }
 
@@ -911,7 +914,7 @@ function startOta(){
       var p=Math.round(e.loaded/e.total*100);
       bar.style.width=p+'%';
       pct.textContent=p+'%';
-      if(p>=100) stat.innerHTML='<span style="color:#58A6FF">Flashing...</span>';
+      if(p>=100){stat.style.color='#58A6FF';stat.textContent='Flashing...';}
     }
   };
   xhr.onload=function(){
@@ -919,16 +922,16 @@ function startOta(){
       var d=JSON.parse(xhr.responseText);
       if(d.status==='ok'){
         bar.style.width='100%';pct.textContent='100%';
-        stat.innerHTML='<span style="color:#3FB950">'+d.message+'</span>';
+        stat.style.color='#3FB950';stat.textContent=d.message;
       } else {
-        stat.innerHTML='<span style="color:#F85149">Error: '+d.message+'</span>';
+        stat.style.color='#F85149';stat.textContent='Error: '+d.message;
       }
     }catch(e){
-      stat.innerHTML='<span style="color:#F85149">Unexpected response</span>';
+      stat.style.color='#F85149';stat.textContent='Unexpected response';
     }
   };
   xhr.onerror=function(){
-    stat.innerHTML='<span style="color:#F85149">Upload failed (connection lost)</span>';
+    stat.style.color='#F85149';stat.textContent='Upload failed (connection lost)';
   };
   xhr.send(fd);
 }
