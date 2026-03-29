@@ -57,7 +57,7 @@ function saveWifi(){
   var d=new URLSearchParams();d.append('ssid',s);d.append('pass',p);
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:d.toString()})
     .then(function(){document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting... Connect to your WiFi and open the device IP in a browser.</p></div>';})
-    .catch(function(){document.getElementById('msg').innerHTML='<span style="color:#F85149">Error</span>';});
+    .catch(function(e){document.getElementById('msg').style.color='#F85149';document.getElementById('msg').textContent='Connection error';console.warn('saveWifi:',e);});
 }
 </script>
 </body></html>
@@ -601,7 +601,7 @@ function selectPrinterTab(slot){
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
     else if(d.configured){ps.className='status status-off';ps.textContent='Disconnected';}
     else{ps.className='status status-na';ps.textContent='Not configured';}
-  }).catch(function(){});
+  }).catch(function(e){console.warn('selectPrinterTab:',e);});
 }
 
 // --- Utility ---
@@ -651,7 +651,7 @@ function savePrinter(){
       else if(d.status==='ok') showToast('Printer settings saved!');
       else showToast('Error: '+(d.message||'save failed'));
     })
-    .catch(function(){showToast('Network error');});
+    .catch(function(e){showToast('Network error');console.warn('savePrinter:',e);});
 }
 
 // --- Save WiFi (restart) ---
@@ -670,7 +670,7 @@ function saveWifi(){
     .then(function(){
       document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting...</p></div>';
     })
-    .catch(function(){showToast('Error');});
+    .catch(function(e){showToast('Network error');console.warn('saveWifi:',e);});
 }
 
 // --- Cloud ---
@@ -706,7 +706,7 @@ function testBuzzer(){
   fetch('/buzzer/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'sound='+snd.id})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok') showToast('Playing: '+snd.name);})
-    .catch(function(){showToast('Error');});
+    .catch(function(e){showToast('Buzzer test failed');console.warn('testBuzzer:',e);});
   buzTestIdx=(buzTestIdx+1)%buzTestSounds.length;
   document.getElementById('buzTestBtn').textContent='Test: '+buzTestSounds[buzTestIdx].name;
 }
@@ -724,7 +724,7 @@ function saveRotation(){
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok') showToast('Settings saved');})
-    .catch(function(){showToast('Error');});
+    .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
 }
 
 // --- Display ---
@@ -792,7 +792,7 @@ function applyDisplay(){
   }
   fetch('/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).then(function(r){
     if(r.ok) showToast('Applied!'); else showToast('Error');
-  }).catch(function(){showToast('Error');});
+  }).catch(function(e){showToast('Apply failed');console.warn('applyDisplay:',e);});
 }
 
 // --- Instant checkbox toggle ---
@@ -800,7 +800,7 @@ function toggleSetting(key,on){
   fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+(on?'1':'0')}).then(function(r){
     if(r.ok) showToast(on?key+' ON':key+' OFF');
     else showToast('Error');
-  }).catch(function(){showToast('Error');});
+  }).catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
 
 // --- Diagnostics ---
@@ -826,7 +826,7 @@ function refreshDiag(){
     h+='<div class="stat-row"><span>Free heap:</span><span class="stat-val">'+Math.round(d.heap/1024)+'KB</span></div>';
     h+='<div class="stat-row"><span>Uptime:</span><span class="stat-val">'+Math.round(d.uptime/60)+'min</span></div>';
     document.getElementById('diagInfo').innerHTML=h;
-  }).catch(function(){});
+  }).catch(function(e){console.warn('refreshDiag:',e);});
 }
 refreshDiag();
 setInterval(refreshDiag,5000);
@@ -853,7 +853,7 @@ setInterval(function(){
     else if(d.configured){ps.className='status status-off';ps.textContent='Disconnected / Printer Off';}
     else{ps.className='status status-na';ps.textContent='Not configured';}
     if(d.display_off && d.connected){ps.textContent+=' (Display Off)';}
-  }).catch(function(){});
+  }).catch(function(e){console.warn('liveStats:',e);});
 }, 3000);
 
 // --- Settings export/import ---
