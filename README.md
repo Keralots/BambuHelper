@@ -78,20 +78,34 @@ Optional case seen on picture (for ST7789 (240x240) display): https://makerworld
 
 ### Default Wiring
 
-| Display Pin ST7789 (240x240) | ESP32-S3 GPIO |
-|---|---|
-| MOSI (SDA) | 11 |
-| SCLK (SCL) | 12 |
-| CS | 10 |
-| DC | 9 |
-| RST | 8 |
-| BL | 13 |
-| GND | GND |
-| VCC | 3.3V |
+| Display Pin ST7789 (240x240) | ESP32-S3 GPIO | ESP32-C3 GPIO |
+|---|---|---|
+| MOSI (SDA) | 11 | 20 |
+| SCLK (SCL) | 12 | 21 |
+| CS | 10 | 6 |
+| DC | 9 | 7 |
+| RST | 8 | 10 |
+| BL | 13 | 5 |
+| GND | GND | GND |
+| VCC | 3.3V | 3.3V |
 
 Adjust pin assignments in `platformio.ini` `build_flags` to match your wiring.
 
 Touch TTP223 button is optional. It is used to switch between printers. You may also use a standard push button and connect it between pin 4 and GND, then pick the correct button type in the web interface under Multi-Printer support.
+
+### Optional Touch Sensor / Button Wiring
+
+A button or touch sensor is optional. It cycles between printers and wakes the display from sleep. Configure the type and GPIO in the web interface under **Multi-Printer**.
+
+**TTP223 capacitive touch sensor:**
+
+| TTP223 Pin | ESP32-S3 GPIO | ESP32-C3 GPIO |
+|---|---|---|
+| `VCC` | `3.3V` | `3.3V` |
+| `GND` | `GND` | `GND` |
+| `SIG` | `GPIO 4` | `GPIO 4` |
+
+**Standard push button:** connect one leg to `GPIO 4` and the other to `GND`. The internal pull-up is enabled automatically. Select **Push Button** in the web interface.
 
 ### Optional Buzzer Wiring
 
@@ -99,10 +113,10 @@ The buzzer is completely optional. If you do not connect one, BambuHelper works 
 
 Use a **passive buzzer** and connect it like this:
 
-| Buzzer Pin | ESP32 GPIO |
-|---|---|
-| `+` / `SIG` | `GPIO 5` by default |
-| `-` / `GND` | `GND` |
+| Buzzer Pin | ESP32-S3 GPIO | ESP32-C3 GPIO |
+|---|---|---|
+| `+` / `SIG` | `GPIO 5` | `GPIO 3` |
+| `-` / `GND` | `GND` | `GND` |
 
 You can change the buzzer GPIO later in the web interface under **Buzzer**. The buzzer can be used for print-finished, connected, and error notifications.
 
