@@ -1098,8 +1098,21 @@ function checkForUpdates(){
     .then(function(d){
       var latest=d.tag_name;
       var current='%FW_VER%';
-      if(latest===current){
-        res.style.color='#3FB950';res.textContent='You are up to date ('+current+')';
+      // Parse vMAJOR.MINOR[pre] — pre-release suffix (e.g. Beta1) is older than plain release
+      function parseVer(v){
+        var m=v.replace(/^v/,'').match(/^(\d+)\.(\d+)(.*)/);
+        return m?{major:parseInt(m[1]),minor:parseInt(m[2]),pre:m[3]!==''}:null;
+      }
+      function isNewer(a,b){ // is release 'a' newer than current 'b'?
+        var av=parseVer(a),bv=parseVer(b);
+        if(!av||!bv)return a!==b;
+        if(av.major!==bv.major)return av.major>bv.major;
+        if(av.minor!==bv.minor)return av.minor>bv.minor;
+        return !av.pre&&bv.pre; // v2.5 > v2.5Beta2
+      }
+      if(!isNewer(latest,current)){
+        res.style.color='#3FB950';
+        res.textContent=latest===current?'You are up to date ('+current+')':'Running newer version ('+current+')';
         return;
       }
       // Find the OTA binary for this board variant.
