@@ -3,10 +3,19 @@
 #include "layout.h"
 #include "settings.h"
 
+// LovyanGFX does not expose alphaBlend() as a member. Provide a compatible
+// helper: alpha=0 → pure bg, alpha=255 → pure fg (same semantics as TFT_eSPI).
+static inline uint16_t alphaBlend565(uint8_t alpha, uint16_t fg, uint16_t bg) {
+  uint8_t r = ((fg >> 11) & 0x1F) * alpha / 255 + ((bg >> 11) & 0x1F) * (255 - alpha) / 255;
+  uint8_t g = ((fg >>  5) & 0x3F) * alpha / 255 + ((bg >>  5) & 0x3F) * (255 - alpha) / 255;
+  uint8_t b = ( fg        & 0x1F) * alpha / 255 + ( bg        & 0x1F) * (255 - alpha) / 255;
+  return (r << 11) | (g << 5) | b;
+}
+
 // ---------------------------------------------------------------------------
 //  H2-style LED progress bar
 // ---------------------------------------------------------------------------
-void drawLedProgressBar(TFT_eSPI& tft, int16_t y, uint8_t progress) {
+void drawLedProgressBar(lgfx::LGFX_Device& tft, int16_t y, uint8_t progress) {
   uint16_t bg = dispSettings.bgColor;
   uint16_t track = dispSettings.trackColor;
 
@@ -25,7 +34,7 @@ void drawLedProgressBar(TFT_eSPI& tft, int16_t y, uint8_t progress) {
 
   tft.fillRoundRect(barX, y, fillW, barH, 2, barColor);
 
-  uint16_t glowColor = tft.alphaBlend(160, CLR_TEXT, barColor);
+  uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
   tft.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
   if (fillW > 4 && progress < 100) {
@@ -50,7 +59,7 @@ static const uint16_t SHIMMER_INTERVAL = 25;  // ms between steps (~40fps)
 static const uint16_t SHIMMER_PAUSE = 1200;   // ms pause between sweeps
 static const int16_t SHIMMER_STEP = 3;       // pixels per step
 
-void tickProgressShimmer(TFT_eSPI& tft, int16_t y, uint8_t progress, bool printing) {
+void tickProgressShimmer(lgfx::LGFX_Device& tft, int16_t y, uint8_t progress, bool printing) {
   if (!dispSettings.animatedBar || !printing || progress == 0) return;
 
   unsigned long now = millis();
@@ -89,8 +98,8 @@ void tickProgressShimmer(TFT_eSPI& tft, int16_t y, uint8_t progress, bool printi
   if (sx + sw > barX + fillW) sw = barX + fillW - sx;
   if (sw > 0) {
     // Gradient-like shimmer: brighter in center
-    uint16_t bright = tft.alphaBlend(180, CLR_TEXT, barColor);
-    uint16_t mid    = tft.alphaBlend(100, CLR_TEXT, barColor);
+    uint16_t bright = alphaBlend565(180, CLR_TEXT, barColor);
+    uint16_t mid    = alphaBlend565(100, CLR_TEXT, barColor);
     // Edge pixels
     if (sw >= 3) {
       tft.fillRect(sx, y, 2, barH, mid);
@@ -110,7 +119,7 @@ void tickProgressShimmer(TFT_eSPI& tft, int16_t y, uint8_t progress, bool printi
     if (tailX < barX) tailX = barX;
     tft.fillRect(tailX, y, barX + fillW - tailX, barH, barColor);
     // Re-draw center glow line
-    uint16_t glowColor = tft.alphaBlend(160, CLR_TEXT, barColor);
+    uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
     tft.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
     shimmerPos = 0;
@@ -122,37 +131,50 @@ void tickProgressShimmer(TFT_eSPI& tft, int16_t y, uint8_t progress, bool printi
 // ---------------------------------------------------------------------------
 //  Helper: draw arc track + fill, handling decrease properly
 // ---------------------------------------------------------------------------
-static void drawArcFill(TFT_eSPI& tft, int16_t cx, int16_t cy,
+static void drawArcFill(lgfx::LGFX_Device& tft, int16_t cx, int16_t cy,
                         int16_t radius, int16_t thickness,
                         uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
+  // Internal angles use TFT_eSPI convention: 0°=bottom (6 o'clock), clockwise.
+  // LovyanGFX fillArc uses 0°=right (3 o'clock), clockwise — offset by +90°
+  // places the 120° gap at the bottom (6 o'clock), matching the desired layout.
+  // When the converted start > end the arc crosses 0°, so split into two calls.
   const uint16_t startAngle = 60;
   const uint16_t endAngle = 300;
   uint16_t bg = dispSettings.bgColor;
   uint16_t track = dispSettings.trackColor;
 
+  auto arcDraw = [&](uint16_t a0, uint16_t a1, uint16_t color) {
+    float la0 = (float)((a0 + 90u) % 360u);
+    float la1 = (float)((a1 + 90u) % 360u);
+    if (la0 > la1) {
+      // Arc crosses the 0° boundary — split into two segments
+      tft.fillArc(cx, cy, radius, radius - thickness, la0, 360.0f, color);
+      tft.fillArc(cx, cy, radius, radius - thickness, 0.0f,  la1,  color);
+    } else {
+      tft.fillArc(cx, cy, radius, radius - thickness, la0, la1, color);
+    }
+  };
+
   if (forceRedraw) {
     tft.fillCircle(cx, cy, radius + 2, bg);
-    tft.drawSmoothArc(cx, cy, radius, radius - thickness,
-                      startAngle, endAngle, track, bg, false);
+    arcDraw(startAngle, endAngle, track);
   }
 
   // Draw filled portion
   if (fillEnd > startAngle) {
-    tft.drawSmoothArc(cx, cy, radius, radius - thickness,
-                      startAngle, fillEnd, fillColor, bg, false);
+    arcDraw(startAngle, fillEnd, fillColor);
   }
 
   // Always redraw track for unfilled portion (handles value decrease)
   if (fillEnd < endAngle) {
-    tft.drawSmoothArc(cx, cy, radius, radius - thickness,
-                      fillEnd, endAngle, track, bg, false);
+    arcDraw(fillEnd, endAngle, track);
   }
 }
 
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
 // ---------------------------------------------------------------------------
-static void clearGaugeCenter(TFT_eSPI& tft, int16_t cx, int16_t cy,
+static void clearGaugeCenter(lgfx::LGFX_Device& tft, int16_t cx, int16_t cy,
                              int16_t radius, int16_t thickness) {
   int16_t textR = radius - thickness - 1;
   tft.fillCircle(cx, cy, textR, dispSettings.bgColor);
@@ -217,7 +239,7 @@ void resetGaugeTextCache() {
 // ---------------------------------------------------------------------------
 //  Main progress arc
 // ---------------------------------------------------------------------------
-void drawProgressArc(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawProgressArc(lgfx::LGFX_Device& tft, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,
                      uint16_t remainingMin, bool forceRedraw) {
   const uint16_t startAngle = 60;
@@ -270,7 +292,7 @@ void drawProgressArc(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
 // ---------------------------------------------------------------------------
 //  Temperature arc gauge
 // ---------------------------------------------------------------------------
-void drawTempGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawTempGauge(lgfx::LGFX_Device& tft, int16_t cx, int16_t cy, int16_t radius,
                    float current, float target, float maxTemp,
                    uint16_t accentColor, const char* label,
                    const uint8_t* icon, bool forceRedraw,
@@ -328,7 +350,7 @@ void drawTempGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
 // ---------------------------------------------------------------------------
 //  Fan speed gauge (0-100%)
 // ---------------------------------------------------------------------------
-void drawFanGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawFanGauge(lgfx::LGFX_Device& tft, int16_t cx, int16_t cy, int16_t radius,
                   uint8_t percent, uint16_t accentColor, const char* label,
                   bool forceRedraw, const GaugeColors* colors,
                   float arcPercent) {

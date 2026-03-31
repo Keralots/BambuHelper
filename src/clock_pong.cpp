@@ -11,10 +11,7 @@
 #include "layout.h"
 #include "settings.h"
 #include "display_ui.h"
-#include <TFT_eSPI.h>
 #include <time.h>
-
-extern TFT_eSPI tft;
 
 // ========== Layout constants (from layout profile) ==========
 #define ARK_BRICK_ROWS    LY_ARK_BRICK_ROWS

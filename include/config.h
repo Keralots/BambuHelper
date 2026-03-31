@@ -18,7 +18,9 @@
 #include "layout.h"
 #define SCREEN_W        LY_W
 #define SCREEN_H        LY_H
-#define BACKLIGHT_PIN   TFT_BL  // set by build flags per board
+#ifndef BACKLIGHT_PIN
+#define BACKLIGHT_PIN   -1      // set via build_flags -D BACKLIGHT_PIN=<pin>
+#endif
 #define BACKLIGHT_CH    0
 #define BACKLIGHT_FREQ  5000
 #define BACKLIGHT_RES   8
