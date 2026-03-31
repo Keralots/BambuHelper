@@ -117,7 +117,7 @@ You can change the buzzer GPIO later in the web interface under **Buzzer**. The 
 
 ## Flashing
 
-1. Download the latest `BambuHelper-WebFlasher.bin` from [Releases](../../releases)
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (e.g. `BambuHelper-WebFlasher-v2.5-Full.bin`). The regular (non-Full) file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to **CYD only**.
 4. Connect your ESP32 via USB

@@ -112,6 +112,13 @@
 
 - WiFi signal strength (dBm) now included in the `GET /debug` JSON response - useful for diagnosing connectivity issues without a serial connection
 
+## Fix: H2 series printers not working in LAN mode
+
+- H2S, H2C, and H2D printers connected via LAN mode would show "connected" but never receive any data - the display stayed on the loading/idle screen indefinitely
+- **Root cause**: H2 printers with multiple AMS units send ~33KB MQTT payloads (full state on every report, not incremental diffs like P1S/X1C). The 16KB PubSubClient receive buffer silently dropped every message
+- **Fix**: MQTT buffer increased from 16KB to 40KB to accommodate H2 payloads; pushall request updated with `version` and `push_target` fields matching the current Bambu MQTT spec
+- H2 LAN mode requires both LAN-only mode and Developer Mode enabled on the printer
+
 ## Fix: false "Ready" screen during cloud printing
 
 - During long prints on cloud-connected printers (H2C/H2D), the screen could occasionally switch to the "Ready" idle view mid-print, showing correct temperatures but no print progress
