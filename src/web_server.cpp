@@ -200,7 +200,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <label for="serial">Serial Number</label>
         <input type="text" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19" style="text-transform:uppercase">
         <label for="code">LAN Access Code</label>
-        <input type="text" id="code" value="%CODE%" placeholder="12345678" maxlength="8">
+        <input type="text" id="code" placeholder="Leave blank to keep current" maxlength="8">
       </div>
 
       <div id="cloudFields" style="display:none">
@@ -475,7 +475,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
       <label for="ssid">WiFi SSID</label>
       <input type="text" id="ssid" value="%SSID%" placeholder="Your WiFi name">
       <label for="pass">WiFi Password</label>
-      <input type="password" id="pass" value="%PASS%" placeholder="WiFi password">
+      <input type="password" id="pass" placeholder="Leave blank to keep current">
       <div class="check-row"><input type="checkbox" id="showpass2" onchange="document.getElementById('pass').type=this.checked?'text':'password'"><label for="showpass2">Show password</label></div>
 
       <label for="netmode" style="margin-top:16px">IP Assignment</label>
@@ -1272,13 +1272,11 @@ static void processTemplate(String& page) {
   BambuState& st = printers[0].state;
 
   page.replace("%SSID%", wifiSSID);
-  page.replace("%PASS%", wifiPass);
   page.replace("%MODE_LOCAL%", cfg.mode == CONN_LOCAL ? "selected" : "");
   page.replace("%MODE_CLOUD_ALL%", isCloudMode(cfg.mode) ? "selected" : "");
   page.replace("%PNAME%", cfg.name);
   page.replace("%IP%", cfg.ip);
   page.replace("%SERIAL%", cfg.serial);
-  page.replace("%CODE%", cfg.accessCode);
   // Cloud region dropdown
   page.replace("%REGION_US%", cfg.region == REGION_US ? "selected" : "");
   page.replace("%REGION_EU%", cfg.region == REGION_EU ? "selected" : "");
@@ -1591,7 +1589,7 @@ static void handleSavePrinter() {
     if (server.hasArg("pname"))  strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
     if (server.hasArg("ip"))     strlcpy(cfg.ip, server.arg("ip").c_str(), sizeof(cfg.ip));
     if (server.hasArg("serial")) strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
-    if (server.hasArg("code"))   strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
+    if (server.hasArg("code") && server.arg("code").length() > 0) strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
   }
 
   // Serial numbers must be uppercase (Bambu MQTT topics are case-sensitive)
@@ -1632,7 +1630,7 @@ static void handleSavePrinter() {
 // Save WiFi + network settings (requires restart)
 static void handleSaveWifi() {
   if (server.hasArg("ssid")) strlcpy(wifiSSID, server.arg("ssid").c_str(), sizeof(wifiSSID));
-  if (server.hasArg("pass")) strlcpy(wifiPass, server.arg("pass").c_str(), sizeof(wifiPass));
+  if (server.hasArg("pass") && server.arg("pass").length() > 0) strlcpy(wifiPass, server.arg("pass").c_str(), sizeof(wifiPass));
 
   netSettings.useDHCP = (!server.hasArg("netmode") || server.arg("netmode") == "dhcp");
   if (server.hasArg("net_ip"))  strlcpy(netSettings.staticIP, server.arg("net_ip").c_str(), sizeof(netSettings.staticIP));
@@ -1794,7 +1792,6 @@ static void handlePrinterConfig() {
   doc["name"] = cfg.name;
   doc["ip"] = cfg.ip;
   doc["serial"] = cfg.serial;
-  doc["code"] = cfg.accessCode;
   doc["region"] = cfg.region == REGION_EU ? "eu" : (cfg.region == REGION_CN ? "cn" : "us");
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
