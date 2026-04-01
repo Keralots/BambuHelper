@@ -11,6 +11,7 @@
 #include "layout.h"
 #include "settings.h"
 #include "display_ui.h"
+#include "fonts.h"
 #include <time.h>
 
 // ========== Layout constants (from layout profile) ==========
@@ -569,7 +570,7 @@ static void drawTime() {
   bool colon = showColon();
 
   // Draw digits - only redraw changed ones
-  tft.setTextFont(7);
+  setFont(tft, FONT_7SEG);
   tft.setTextSize(1);
   tft.setTextColor(dispSettings.clockTimeColor, TFT_BLACK);
 
@@ -607,7 +608,7 @@ static void drawTime() {
 
   // AM/PM for 12h mode
   if (!netSettings.use24h) {
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
     int ampmX = digitX(4) + DIGIT_W + 2;
     tft.setCursor(ampmX, layout.timeY + DIGIT_H - 16);
@@ -727,7 +728,7 @@ void tickPongClock() {
       default: snprintf(dateStr, sizeof(dateStr), "%s %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
     }
     if (strcmp(dateStr, prevDateStr) != 0) {
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.setTextSize(1);
       tft.setTextDatum(TC_DATUM);
       tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);

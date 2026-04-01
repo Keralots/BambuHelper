@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "config.h"
 #include "layout.h"
+#include "fonts.h"
 #include <time.h>
 
 // Font 7 digit dimensions (same as pong clock)
@@ -53,7 +54,7 @@ void drawClock() {
     int cy = LY_CLK_TIME_Y - CLK_DIGIT_H / 2;
     tft.fillRect(cx, cy, CLK_COLON_W, CLK_DIGIT_H, bg);
     if (colonOn) {
-      tft.setTextFont(7);
+      setFont(tft, FONT_7SEG);
       tft.setTextSize(1);
       tft.setTextColor(timeClr, bg);
       tft.drawChar(':', cx, cy, 7);
@@ -81,7 +82,7 @@ void drawClock() {
   digits[4] = '0' + (now.tm_min % 10);
 
   // Draw only changed digits
-  tft.setTextFont(7);
+  setFont(tft, FONT_7SEG);
   tft.setTextSize(1);
   tft.setTextColor(timeClr, bg);
 
@@ -109,7 +110,7 @@ void drawClock() {
     const char* ampm = now.tm_hour < 12 ? "AM" : "PM";
     if (strcmp(ampm, prevAmPm) != 0) {
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(dateClr, bg);
       int ampmW = tft.textWidth("PM");
       tft.fillRect(LY_W / 2 - ampmW / 2 - 2, LY_CLK_AMPM_Y - 12, ampmW + 4, 24, bg);
@@ -118,7 +119,7 @@ void drawClock() {
     }
   } else if (prevAmPm[0] != '\0') {
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     int ampmW = tft.textWidth("PM");
     tft.fillRect(LY_W / 2 - ampmW / 2 - 2, LY_CLK_AMPM_Y - 12, ampmW + 4, 24, bg);
     prevAmPm[0] = '\0';
@@ -140,7 +141,7 @@ void drawClock() {
 
   if (strcmp(dateBuf, prevDateBuf) != 0) {
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(dateClr, bg);
     // Clear previous date, draw new
     int dateW = tft.textWidth(prevDateBuf[0] ? prevDateBuf : dateBuf);

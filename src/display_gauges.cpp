@@ -2,6 +2,7 @@
 #include "config.h"
 #include "layout.h"
 #include "settings.h"
+#include "fonts.h"
 #include <time.h>
 
 // LovyanGFX does not expose alphaBlend() as a member. Provide a compatible
@@ -274,16 +275,16 @@ void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
 
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(gc.value);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.drawString(pctBuf, cx, cy - (compact ? 4 : 8));
 
-    tft.setTextFont(compact ? 1 : 2);
+    setFont(tft, compact ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM);
     tft.drawString(timeBuf, cx, cy + (compact ? 10 : 18));
 
     if (compact) {
       bool sm = dispSettings.smallLabels;
-      tft.setTextFont(sm ? 1 : 2);
+      setFont(tft, sm ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(gc.label, bg);
       tft.drawString("Progress", cx, cy + radius + (sm ? 3 : -1));
     }
@@ -335,18 +336,18 @@ void drawTempGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
     clearGaugeCenter(tft, cx, cy, radius, thickness);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(valColor);
     tft.drawString(tempBuf, cx, hasTarget ? (cy - 4) : cy);
 
     if (hasTarget) {
-      tft.setTextFont(1);
+      setFont(tft, FONT_SMALL);
       tft.setTextColor(CLR_TEXT_DIM);
       tft.drawString(targetBuf, cx, cy + 10);
     }
 
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(lblColor, bg);
     tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
@@ -391,12 +392,12 @@ void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
     clearGaugeCenter(tft, cx, cy, radius, thickness);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(valColor);
     tft.drawString(buf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(lblColor, bg);
     tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
@@ -445,12 +446,12 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
     clearGaugeCenter(tft, cx, cy, radius, thickness);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(present ? CLR_TEXT : CLR_TEXT_DIM);
     tft.drawString(buf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(arcColor, bg);
     tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
@@ -494,18 +495,18 @@ void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius
     int digits = strlen(layerBuf) + strlen(totalBuf);
     bool useSmall = (digits > 7);
 
-    tft.setTextFont(useSmall ? 2 : 4);
+    setFont(tft, useSmall ? FONT_BODY : FONT_LARGE);
     tft.setTextColor(CLR_TEXT);
     tft.drawString(layerBuf, cx, hasTot ? (cy - 4) : cy);
 
     if (hasTot) {
-      tft.setTextFont(useSmall ? 1 : 2);
+      setFont(tft, useSmall ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM);
       tft.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
     }
 
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(arcColor, bg);
     tft.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
   }
@@ -544,12 +545,12 @@ void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
     tft.fillCircle(cx, cy, radius - 1, bg);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(CLR_TEXT);
     tft.drawString(timeBuf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
   }
