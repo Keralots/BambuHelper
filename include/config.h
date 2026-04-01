@@ -66,6 +66,12 @@
 #define WIFI_AP_PASSWORD    "bambu1234"
 #define WIFI_CONNECT_TIMEOUT 15000  // 15s STA connect timeout
 #define WIFI_RECONNECT_TIMEOUT 60000 // 60s before re-entering AP mode
+#define WIFI_BACKOFF_PHASE1_MS    10000   // 10s between attempts in phase 1
+#define WIFI_BACKOFF_PHASE2_MS    30000   // 30s between attempts after phase 1
+#define WIFI_BACKOFF_PHASE3_MS    60000   // 60s between attempts after phase 2
+#define WIFI_BACKOFF_PHASE2_START 5       // start phase 2 after this many attempts
+#define WIFI_BACKOFF_PHASE3_START 10      // start phase 3 after this many attempts
+#define WIFI_STA_PROBE_INTERVAL   120000  // 2 min between STA probes while in AP mode
 
 // =============================================================================
 //  NVS
