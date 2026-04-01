@@ -384,10 +384,11 @@ static void parseMqttPayload(byte* payload, unsigned int length,
     const char* state = print["gcode_state"];
     strncpy(s.gcodeState, state, 15);
     s.gcodeState[15] = '\0';
+    s.gcodeStateEnum = parseGcodeState(state);
     bool wasActive = s.printing;
-    s.printing = (strcmp(state, "RUNNING") == 0 ||
-                  strcmp(state, "PAUSE") == 0 ||
-                  strcmp(state, "PREPARE") == 0);
+    s.printing = (s.gcodeStateEnum == STATE_RUNNING ||
+                  s.gcodeStateEnum == STATE_PAUSE ||
+                  s.gcodeStateEnum == STATE_PREPARE);
     if (s.printing) {
       idleSince = 0;
     } else if (wasActive || idleSince == 0) {
@@ -752,6 +753,7 @@ static void handleConn(MqttConn& c) {
         // Also reset gcodeState — otherwise state machine shows SCREEN_IDLE
         // with "RUNNING" text (2 gauges) instead of SCREEN_PRINTING (6 gauges)
         strlcpy(s.gcodeState, "IDLE", sizeof(s.gcodeState));
+        s.gcodeStateEnum = STATE_IDLE;
         c.stalePushallSentMs = 0;
       }
     }
@@ -837,6 +839,7 @@ void initBambuMqtt() {
     BambuState& s = printers[i].state;
     memset(&s, 0, sizeof(BambuState));
     strlcpy(s.gcodeState, "UNKNOWN", sizeof(s.gcodeState));
+    s.gcodeStateEnum = STATE_UNKNOWN;
 
     if (isPrinterConfigured(i)) {
       c.active = true;

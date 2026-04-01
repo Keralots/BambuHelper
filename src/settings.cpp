@@ -190,6 +190,7 @@ void loadSettings() {
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     strlcpy(printers[i].state.gcodeState, "UNKNOWN", sizeof(printers[i].state.gcodeState));
+    printers[i].state.gcodeStateEnum = STATE_UNKNOWN;
   }
 
   // Display settings

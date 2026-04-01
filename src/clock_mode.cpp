@@ -1,5 +1,6 @@
 #include "clock_mode.h"
 #include "display_ui.h"
+#include "bambu_state.h"
 #include "settings.h"
 #include "config.h"
 #include "layout.h"
@@ -53,17 +54,16 @@ void drawClock() {
   }
 
   // Date — smaller font below
-  const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  // Shared string arrays from gcode_state.cpp
   char dateBuf[24];
   int day = now.tm_mday, mon = now.tm_mon + 1, year = now.tm_year + 1900;
   switch (netSettings.dateFormat) {
-    case 1:  snprintf(dateBuf, sizeof(dateBuf), "%s  %02d-%02d-%04d", days[now.tm_wday], day, mon, year); break;
-    case 2:  snprintf(dateBuf, sizeof(dateBuf), "%s  %02d/%02d/%04d", days[now.tm_wday], mon, day, year); break;
-    case 3:  snprintf(dateBuf, sizeof(dateBuf), "%s  %04d-%02d-%02d", days[now.tm_wday], year, mon, day); break;
-    case 4:  snprintf(dateBuf, sizeof(dateBuf), "%s  %d %s %04d", days[now.tm_wday], day, months[now.tm_mon], year); break;
-    case 5:  snprintf(dateBuf, sizeof(dateBuf), "%s  %s %d, %04d", days[now.tm_wday], months[now.tm_mon], day, year); break;
-    default: snprintf(dateBuf, sizeof(dateBuf), "%s  %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
+    case 1:  snprintf(dateBuf, sizeof(dateBuf), "%s  %02d-%02d-%04d", DAYS_SHORT[now.tm_wday], day, mon, year); break;
+    case 2:  snprintf(dateBuf, sizeof(dateBuf), "%s  %02d/%02d/%04d", DAYS_SHORT[now.tm_wday], mon, day, year); break;
+    case 3:  snprintf(dateBuf, sizeof(dateBuf), "%s  %04d-%02d-%02d", DAYS_SHORT[now.tm_wday], year, mon, day); break;
+    case 4:  snprintf(dateBuf, sizeof(dateBuf), "%s  %d %s %04d", DAYS_SHORT[now.tm_wday], day, MONTHS_SHORT[now.tm_mon], year); break;
+    case 5:  snprintf(dateBuf, sizeof(dateBuf), "%s  %s %d, %04d", DAYS_SHORT[now.tm_wday], MONTHS_SHORT[now.tm_mon], day, year); break;
+    default: snprintf(dateBuf, sizeof(dateBuf), "%s  %02d.%02d.%04d", DAYS_SHORT[now.tm_wday], day, mon, year); break;
   }
   tft.setTextFont(4);
   tft.setTextColor(CLR_TEXT_DIM, bg);
