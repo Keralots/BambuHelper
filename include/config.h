@@ -97,7 +97,8 @@
 // =============================================================================
 //  Display refresh
 // =============================================================================
-#define DISPLAY_UPDATE_MS   250   // ~4 Hz refresh rate
+#define DISPLAY_UPDATE_MS          250    // ~4 Hz refresh rate
+#define DISPLAY_STATE_TIMEOUT_MS   60000  // 60s timeout for intermediate display states
 
 // =============================================================================
 //  Buzzer (optional passive buzzer)

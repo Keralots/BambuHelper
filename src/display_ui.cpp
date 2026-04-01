@@ -1398,7 +1398,7 @@ void updateDisplay() {
     tft.setTextSize(1);
     tft.fillScreen(currentScreen == SCREEN_OFF ? TFT_BLACK : dispSettings.bgColor);
     forceRedraw = true;
-    if (currentScreen == SCREEN_CONNECTING_MQTT) {
+    if (currentScreen == SCREEN_CONNECTING_WIFI || currentScreen == SCREEN_CONNECTING_MQTT) {
       connectScreenStart = millis();
     }
     if (currentScreen == SCREEN_CLOCK) {
@@ -1407,6 +1407,19 @@ void updateDisplay() {
       setBacklight(getEffectiveBrightness());  // dim for screensaver
     }
     prevScreen = currentScreen;
+  }
+
+  // Stuck-state timeout: recover if stuck in a connecting screen too long
+  if ((currentScreen == SCREEN_CONNECTING_WIFI || currentScreen == SCREEN_CONNECTING_MQTT) &&
+      connectScreenStart > 0 &&
+      millis() - connectScreenStart > DISPLAY_STATE_TIMEOUT_MS) {
+    Serial.println("[DISPLAY] State timeout, recovering to idle");
+    connectScreenStart = 0;
+    if (dpSettings.showClockAfterFinish) {
+      currentScreen = SCREEN_CLOCK;
+    } else {
+      currentScreen = SCREEN_IDLE;
+    }
   }
 
   switch (currentScreen) {
@@ -1457,6 +1470,7 @@ void updateDisplay() {
       if (forceRedraw) {
         tft.fillScreen(TFT_BLACK);
         setBacklight(0);
+        triggerDisplayTransition();  // clear gauge cache so wake shows fresh data
       }
       break;
   }
