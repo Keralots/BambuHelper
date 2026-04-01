@@ -1690,6 +1690,7 @@ static void handleStatus() {
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
   doc["state"] = st.gcodeState;
+  doc["stateLabel"] = gcodeStateLabel(st.gcodeStateEnum);
   doc["progress"] = st.progress;
   doc["nozzle"] = (int)st.nozzleTemp;
   doc["nozzle_t"] = (int)st.nozzleTarget;

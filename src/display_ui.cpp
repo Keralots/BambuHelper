@@ -465,7 +465,7 @@ static void drawIdle() {
 
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
-  bool stateChanged = forceRedraw || (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+  bool stateChanged = forceRedraw || (s.gcodeStateEnum != prevState.gcodeStateEnum);
   bool tempChanged = forceRedraw || animating ||
                      (s.nozzleTemp != prevState.nozzleTemp) ||
                      (s.nozzleTarget != prevState.nozzleTarget) ||
@@ -488,16 +488,9 @@ static void drawIdle() {
   if (stateChanged) {
     tft.setTextFont(2);
     uint16_t stateColor = CLR_TEXT_DIM;
-    const char* stateStr = s.gcodeState;
-    if (strcmp(s.gcodeState, "IDLE") == 0) {
-      stateColor = CLR_GREEN;
-      stateStr = "Ready";
-    } else if (strcmp(s.gcodeState, "FAILED") == 0) {
-      stateColor = CLR_RED;
-      stateStr = "ERROR";
-    } else if (strcmp(s.gcodeState, "UNKNOWN") == 0 || s.gcodeState[0] == '\0') {
-      stateStr = "Waiting...";
-    }
+    if (s.gcodeStateEnum == STATE_IDLE)   stateColor = CLR_GREEN;
+    if (s.gcodeStateEnum == STATE_FAILED) stateColor = CLR_RED;
+    const char* stateStr = gcodeStateLabel(s.gcodeStateEnum);
     tft.fillRect(0, LY_IDLE_STATE_Y, scrW, LY_IDLE_STATE_H, CLR_BG);
     tft.setTextColor(stateColor, CLR_BG);
     tft.drawString(stateStr, cx, LY_IDLE_STATE_TY);
@@ -852,7 +845,7 @@ static void drawPrinting() {
                      (s.auxFanPct != prevState.auxFanPct) ||
                      (s.chamberFanPct != prevState.chamberFanPct);
   bool stateChanged = forceRedraw ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (s.gcodeStateEnum != prevState.gcodeStateEnum);
 
   // 2x3 gauge grid constants (from layout profile)
   const int16_t gR = LY_GAUGE_R;
@@ -915,16 +908,17 @@ static void drawPrinting() {
 
     // State badge (right)
     uint16_t badgeColor = CLR_TEXT_DIM;
-    if (strcmp(s.gcodeState, "RUNNING") == 0) badgeColor = CLR_GREEN;
-    else if (strcmp(s.gcodeState, "PAUSE") == 0) badgeColor = CLR_YELLOW;
-    else if (strcmp(s.gcodeState, "FAILED") == 0) badgeColor = CLR_RED;
-    else if (strcmp(s.gcodeState, "PREPARE") == 0) badgeColor = CLR_BLUE;
+    if (s.gcodeStateEnum == STATE_RUNNING) badgeColor = CLR_GREEN;
+    else if (s.gcodeStateEnum == STATE_PAUSE)   badgeColor = CLR_YELLOW;
+    else if (s.gcodeStateEnum == STATE_FAILED)  badgeColor = CLR_RED;
+    else if (s.gcodeStateEnum == STATE_PREPARE) badgeColor = CLR_BLUE;
 
+    const char* badgeLabel = gcodeStateLabel(s.gcodeStateEnum);
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(badgeColor, hdrBg);
     tft.setTextFont(2);
-    tft.fillCircle(SCREEN_W - LY_HDR_BADGE_RX - tft.textWidth(s.gcodeState) - 10, LY_HDR_CY, 4, badgeColor);
-    tft.drawString(s.gcodeState, SCREEN_W - LY_HDR_BADGE_RX, LY_HDR_CY);
+    tft.fillCircle(SCREEN_W - LY_HDR_BADGE_RX - tft.textWidth(badgeLabel) - 10, LY_HDR_CY, 4, badgeColor);
+    tft.drawString(badgeLabel, SCREEN_W - LY_HDR_BADGE_RX, LY_HDR_CY);
 
     // Printer indicator dots (multi-printer)
     if (getActiveConnCount() > 1) {
@@ -1001,14 +995,14 @@ static void drawPrinting() {
     tft.fillRect(0, eff_etaY, SCREEN_W, eff_etaH, CLR_BG);
     tft.setTextDatum(MC_DATUM);
 
-    if (strcmp(s.gcodeState, "PAUSE") == 0) {
+    if (s.gcodeStateEnum == STATE_PAUSE) {
       tft.setTextFont(4);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
-      tft.drawString("PAUSED", SCREEN_W / 2, eff_etaTextY);
-    } else if (strcmp(s.gcodeState, "FAILED") == 0) {
+      tft.drawString(gcodeStateLabel(STATE_PAUSE), SCREEN_W / 2, eff_etaTextY);
+    } else if (s.gcodeStateEnum == STATE_FAILED) {
       tft.setTextFont(4);
       tft.setTextColor(CLR_RED, CLR_BG);
-      tft.drawString("ERROR!", SCREEN_W / 2, eff_etaTextY);
+      tft.drawString(gcodeStateLabel(STATE_FAILED), SCREEN_W / 2, eff_etaTextY);
     } else if (s.remainingMinutes > 0) {
       // Use time() directly - avoids getLocalTime() race condition with timeout 0.
       // Once NTP syncs the RTC keeps running; ntpSynced latches true forever.
@@ -1242,12 +1236,12 @@ static void drawFinished() {
                   &dispSettings.bed, smoothBedTemp);
   }
 
-  // === "Print Complete!" status ===
+  // === Print complete status ===
   if (forceRedraw) {
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
     tft.setTextFont(4);
-    tft.drawString("Print Complete!", cx, LY_FIN_TEXT_Y);
+    tft.drawString("Print complete", cx, LY_FIN_TEXT_Y);
   }
 
   // === File name ===

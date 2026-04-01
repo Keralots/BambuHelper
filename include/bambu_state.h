@@ -4,6 +4,19 @@
 #include <Arduino.h>
 #include "config.h"
 
+// ── Gcode state machine ─────────────────────────────────────────────────────
+enum GcodeState : uint8_t {
+  STATE_UNKNOWN, STATE_IDLE, STATE_RUNNING,
+  STATE_PAUSE, STATE_PREPARE, STATE_FINISH, STATE_FAILED
+};
+
+GcodeState  parseGcodeState(const char* raw);
+const char* gcodeStateLabel(GcodeState state);
+
+extern const char* const DAYS_SHORT[7];
+extern const char* const MONTHS_SHORT[12];
+
+// ── Connection modes ────────────────────────────────────────────────────────
 enum ConnMode : uint8_t { CONN_LOCAL = 0, CONN_CLOUD = 1, CONN_CLOUD_ALL = 2 };
 enum CloudRegion : uint8_t { REGION_US = 0, REGION_EU = 1, REGION_CN = 2 };
 
@@ -33,7 +46,8 @@ struct AmsState {
 struct BambuState {
   bool connected;
   bool printing;
-  char gcodeState[16];        // RUNNING, PAUSE, FINISH, IDLE, FAILED, PREPARE
+  char gcodeState[16];        // raw MQTT value (kept for web API compat)
+  GcodeState gcodeStateEnum;  // parsed enum — use this for all comparisons
   uint8_t progress;           // 0-100%
   uint16_t remainingMinutes;
   float nozzleTemp;

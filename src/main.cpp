@@ -15,7 +15,7 @@ static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
 static unsigned long idleClockStart = 0;  // when all printers became idle
 static bool idleClockActive = false;      // guards idleClockStart against millis() wrap
-static char prevGcodeState[MAX_ACTIVE_PRINTERS][16] = {{0}};
+static GcodeState prevGcodeStateEnum[MAX_ACTIVE_PRINTERS] = {STATE_UNKNOWN};
 
 // ---------------------------------------------------------------------------
 //  Display rotation logic (multi-printer)
@@ -182,7 +182,7 @@ void loop() {
       s.finishBuzzerPlayed = false;  // reset for next finish event
       s.doorAcknowledged = false;    // reset door ack for next finish
     } else if (s.connected && !s.printing &&
-               strcmp(s.gcodeState, "FINISH") == 0) {
+               s.gcodeStateEnum == STATE_FINISH) {
       if (current != SCREEN_FINISHED && current != SCREEN_OFF && current != SCREEN_CLOCK) {
         if (tasmotaSettings.enabled &&
             (tasmotaSettings.assignedSlot == 255 ||
@@ -236,7 +236,7 @@ void loop() {
         }
       }
     } else if (s.connected && !s.printing &&
-               strcmp(s.gcodeState, "FINISH") != 0) {
+               s.gcodeStateEnum != STATE_FINISH) {
       // SCREEN_CLOCK and SCREEN_OFF are sticky — only button press or
       // new print (s.printing → SCREEN_PRINTING) exits them
       if (current == SCREEN_CLOCK || current == SCREEN_OFF) {
@@ -284,12 +284,12 @@ void loop() {
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
     if (!isPrinterConfigured(i)) continue;
     BambuState& ps = printers[i].state;
-    if (strcmp(ps.gcodeState, "FAILED") == 0 &&
-        strcmp(prevGcodeState[i], "FAILED") != 0 &&
-        prevGcodeState[i][0] != '\0') {
+    if (ps.gcodeStateEnum == STATE_FAILED &&
+        prevGcodeStateEnum[i] != STATE_FAILED &&
+        prevGcodeStateEnum[i] != STATE_UNKNOWN) {
       buzzerPlay(BUZZ_ERROR);
     }
-    strlcpy(prevGcodeState[i], ps.gcodeState, sizeof(prevGcodeState[i]));
+    prevGcodeStateEnum[i] = ps.gcodeStateEnum;
   }
 
   buzzerTick();
