@@ -1,7 +1,7 @@
 #ifndef DISPLAY_UI_H
 #define DISPLAY_UI_H
 
-#include <TFT_eSPI.h>
+#include <LovyanGFX.hpp>
 
 enum ScreenState {
   SCREEN_SPLASH,
@@ -17,7 +17,9 @@ enum ScreenState {
   SCREEN_OTA_UPDATE
 };
 
-extern TFT_eSPI tft;
+extern lgfx::LGFX_Device* tft_ptr;
+// Convenience reference — all callers use `tft.method()` unchanged
+extern lgfx::LGFX_Device& tft;
 
 void initDisplay();
 void updateDisplay();

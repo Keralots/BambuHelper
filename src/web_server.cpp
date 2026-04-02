@@ -1088,6 +1088,7 @@ function startOta(){
 R"rawliteral(
 var _autoOtaUrl='';
 var _autoOtaProgress=0;
+var _otaInstallStarted=false;
 function switchFwTab(t){
   document.getElementById('fw-tab-auto').style.display=t==='auto'?'block':'none';
   document.getElementById('fw-tab-manual').style.display=t==='manual'?'block':'none';
@@ -1167,11 +1168,13 @@ function installUpdate(){
   document.getElementById('autoOtaStatus').style.color='#8B949E';
   document.getElementById('autoOtaStatus').textContent='Starting...';
   _autoOtaProgress=0;
+  _otaInstallStarted=false;
   var p=new URLSearchParams();p.append('url',_autoOtaUrl);
   fetch('/ota/auto',{method:'POST',body:p})
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.error){throw new Error(d.error);}
+      _otaInstallStarted=true;
       pollOtaStatus();
     })
     .catch(function(e){
@@ -1202,9 +1205,11 @@ function pollOtaStatus(){
         st.textContent=d.status+' ('+d.progress+'%)';
       }
     }).catch(function(){
-      // Device went offline or /ota/status no longer exists (rebooted to new firmware).
-      // If download reached >=90%, treat as success — HTTPUpdate doesn't guarantee a 100% tick.
-      if(_autoOtaProgress>=90){
+      // Device went offline or /ota/status no longer exists (new firmware has no /ota/status).
+      // The ESP32 can't serve HTTP while writing flash, so _autoOtaProgress may be low even on
+      // success. Use _otaInstallStarted flag (set after server confirmed the install began)
+      // instead of a progress threshold to avoid getting stuck.
+      if(_otaInstallStarted){
         clearInterval(_otaPoller);_otaPoller=null;
         var bar=document.getElementById('autoOtaBar');
         var st=document.getElementById('autoOtaStatus');

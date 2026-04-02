@@ -95,6 +95,9 @@ static void handleRotation() {
 // ---------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
+#if defined(ARDUINO_USB_CDC_ON_BOOT)
+  delay(2000);  // Wait for USB CDC to re-enumerate after reset before printing
+#endif
   Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
 
   loadSettings();

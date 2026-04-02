@@ -13,7 +13,138 @@
 #include <WiFi.h>
 #include <time.h>
 
-TFT_eSPI tft = TFT_eSPI();
+// =============================================================================
+//  LovyanGFX board-specific configurations
+// =============================================================================
+
+#if defined(BOARD_IS_S3)
+// --- ESP32-S3 Super Mini + ST7789 240x240 ------------------------------------
+class LGFX_S3 : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7789  _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_S3() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 12;
+      cfg.pin_mosi   = 11;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 9;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 10;
+      cfg.pin_rst  = 8;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 240;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 240;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_S3 _tft_instance;
+
+#elif defined(DISPLAY_CYD)
+// --- ESP32-2432S028 (CYD) + ILI9342 240x320 ---------------------------------
+class LGFX_CYD : public lgfx::LGFX_Device {
+  lgfx::Panel_ILI9342 _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_CYD() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = VSPI_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 27000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 14;
+      cfg.pin_mosi   = 13;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 2;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs    = 15;
+      cfg.pin_rst   = 12;
+      cfg.pin_busy  = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 320;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 320;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.invert        = true;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_CYD _tft_instance;
+
+#elif defined(BOARD_IS_C3)
+// --- ESP32-C3 Super Mini + ST7789 240x280 ------------------------------------
+class LGFX_C3 : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7789  _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_C3() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 21;
+      cfg.pin_mosi   = 20;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 7;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 6;
+      cfg.pin_rst  = 10;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 280;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 280;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_C3 _tft_instance;
+
+#else
+  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, or BOARD_IS_C3 to build_flags."
+#endif
+
+// Global pointer + reference — accessed via `tft` throughout the codebase
+lgfx::LGFX_Device* tft_ptr = &_tft_instance;
+lgfx::LGFX_Device& tft     = *tft_ptr;
 
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
@@ -98,8 +229,10 @@ void initDisplay() {
   Serial.println("Display: pre-init delay...");
   delay(500);
   Serial.println("Display: calling tft.init()...");
-  Serial.flush();
-  tft.init();  // TFT_eSPI configures SPI from build flags
+  tft.init();  // LovyanGFX configures SPI from the board class above
+#if defined(BOARD_IS_S3)
+  tft.invertDisplay(true);  // ST7789 on S3 Super Mini requires color inversion
+#endif
   Serial.println("Display: tft.init() done");
 #if defined(DISPLAY_CYD)
   // Clear entire GRAM at rotation 0 first (guarantees all 240x320 pixels
@@ -117,8 +250,9 @@ void initDisplay() {
   Serial.println("Display: fillScreen done");
 
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
-  uint16_t calData[5] = {321, 3498, 280, 3584, 3};
-  tft.setTouch(calData);
+  // LovyanGFX touch calibration
+  uint16_t calData[8] = {0, 0, 0, 65535, 0, 65535, 65535, 65535};
+  tft.setTouchCalibrate(calData);
   Serial.println("Display: touch calibration set");
 #endif
 
@@ -302,7 +436,6 @@ static void drawWiFiConnected() {
 // ---------------------------------------------------------------------------
 //  Screen: OTA firmware update in progress
 // ---------------------------------------------------------------------------
-#ifdef ENABLE_OTA_AUTO
 #include "web_server.h"
 static void drawOtaUpdate() {
   tft.setTextDatum(MC_DATUM);
@@ -341,7 +474,6 @@ static void drawOtaUpdate() {
   tft.setTextColor(CLR_ORANGE, CLR_BG);
   tft.drawString("Do not power off", SCREEN_W / 2, SCREEN_H / 2 + 58);
 }
-#endif // ENABLE_OTA_AUTO
 
 // ---------------------------------------------------------------------------
 //  Screen: Connecting MQTT
@@ -1436,11 +1568,9 @@ void updateDisplay() {
       drawConnectingMQTT();
       break;
 
-#ifdef ENABLE_OTA_AUTO
     case SCREEN_OTA_UPDATE:
       drawOtaUpdate();
       break;
-#endif
 
     case SCREEN_IDLE:
       drawIdle();
