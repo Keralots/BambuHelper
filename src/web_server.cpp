@@ -333,6 +333,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
           <input type="checkbox" id="slbl" value="1" %SLBL% onchange="toggleSetting('slbl',this.checked)">
           <label for="slbl">Smaller gauge labels</label>
         </div>
+%INVCOL_ROW%
       </div>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
@@ -1378,6 +1379,19 @@ static void processTemplate(String& page) {
   page.replace("%ABAR%", dispSettings.animatedBar ? "checked" : "");
   page.replace("%PONG%", dispSettings.pongClock ? "checked" : "");
   page.replace("%SLBL%", dispSettings.smallLabels ? "checked" : "");
+#if defined(DISPLAY_CYD)
+  {
+    String row = "<div class=\"check-row\">"
+      "<input type=\"checkbox\" id=\"invcol\" value=\"1\" ";
+    row += dispSettings.invertColors ? "checked" : "";
+    row += " onchange=\"toggleSetting('invcol',this.checked)\">"
+      "<label for=\"invcol\">Invert display colors (fix white background)</label>"
+      "</div>";
+    page.replace("%INVCOL_ROW%", row);
+  }
+#else
+  page.replace("%INVCOL_ROW%", "");
+#endif
 
   // Global colors
   char buf[8];
@@ -1770,6 +1784,7 @@ static void handleToggleSetting() {
   else if (key == "abar")    dispSettings.animatedBar = on;
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
+  else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
   else {
@@ -1778,6 +1793,7 @@ static void handleToggleSetting() {
   }
 
   saveSettings();
+  if (key == "invcol") applyDisplaySettings();
   server.send(200, "text/plain", "OK");
 }
 

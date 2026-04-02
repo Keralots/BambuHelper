@@ -109,6 +109,9 @@ void initDisplay() {
   tft.fillScreen(TFT_BLACK);
 #endif
   tft.setRotation(dispSettings.rotation);
+#if defined(DISPLAY_CYD)
+  if (dispSettings.invertColors) tft.invertDisplay(false);
+#endif
   Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
@@ -145,6 +148,9 @@ void applyDisplaySettings() {
   tft.fillScreen(TFT_BLACK);
 #endif
   tft.setRotation(dispSettings.rotation);
+#if defined(DISPLAY_CYD)
+  tft.invertDisplay(dispSettings.invertColors ? false : true);
+#endif
   tft.fillScreen(dispSettings.bgColor);
   forceRedraw = true;
   lastDisplayUpdate = 0;  // bypass throttle so redraw is immediate after fillScreen

@@ -107,6 +107,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.animatedBar = true;
   ds.pongClock = false;
   ds.smallLabels = false;
+  ds.invertColors = false;
   ds.cydExtraMode = 0;
 
   // Progress: green arc, green label, white value
@@ -204,6 +205,7 @@ void loadSettings() {
   dispSettings.animatedBar = prefs.getBool("dsp_abar", def.animatedBar);
   dispSettings.pongClock = prefs.getBool("dsp_pong", def.pongClock);
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
+  dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydExtraMode = prefs.getUChar("dsp_cydex", 0);
   dispSettings.cydExtraMode = 0;  // temporary: force AMS-only on CYD
 
@@ -334,6 +336,7 @@ void saveSettings() {
   prefs.putBool("dsp_abar", dispSettings.animatedBar);
   prefs.putBool("dsp_pong", dispSettings.pongClock);
   prefs.putBool("dsp_slbl", dispSettings.smallLabels);
+  prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putUChar("dsp_cydex", dispSettings.cydExtraMode);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
