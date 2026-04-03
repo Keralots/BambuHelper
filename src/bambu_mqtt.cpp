@@ -152,6 +152,21 @@ static void requestPushall(MqttConn& c) {
   c.lastPushallRequest = millis();
 }
 
+static void clearLiveMetrics(BambuState& s) {
+  s.nozzleTemp = 0;    s.nozzleTarget = 0;
+  s.bedTemp = 0;       s.bedTarget = 0;
+  s.chamberTemp = 0;
+  s.progress = 0;
+  s.remainingMinutes = 0;
+  s.layerNum = 0;      s.totalLayers = 0;
+  s.coolingFanPct = 0; s.auxFanPct = 0;
+  s.chamberFanPct = 0; s.heatbreakFanPct = 0;
+  s.speedLevel = 0;
+  s.wifiSignal = 0;
+  s.doorOpen = false;  s.doorSensorPresent = false;
+  s.subtaskName[0] = '\0';
+}
+
 // ---------------------------------------------------------------------------
 //  Find which MqttConn owns a given serial (for callback routing)
 // ---------------------------------------------------------------------------
@@ -754,25 +769,37 @@ static void handleConn(MqttConn& c) {
         strlcpy(s.gcodeState, "IDLE", sizeof(s.gcodeState));
         c.stalePushallSentMs = 0;
       }
+    } else if (strcmp(s.gcodeState, "FINISH") == 0) {
+      // Keep FINISH visible for at least the configured timeout, but do not let
+      // a silent printer leave the dashboard stuck on frozen completion data.
+      unsigned long finishHoldMs = staleMs;
+      if (dpSettings.finishDisplayMins > 0) {
+        unsigned long configuredHoldMs = (unsigned long)dpSettings.finishDisplayMins * 60000UL;
+        if (configuredHoldMs > finishHoldMs) finishHoldMs = configuredHoldMs;
+      }
+
+      if (millis() - s.lastUpdate > finishHoldMs) {
+        if (isConnected && c.stalePushallSentMs == 0) {
+          MQTT_LOG("[%d] stale finish - sending recovery pushall", c.slotIndex);
+          esp_task_wdt_reset();
+          requestPushall(c);
+          c.stalePushallSentMs = millis();
+        } else if (c.stalePushallSentMs == 0 ||
+                   millis() - c.stalePushallSentMs > 30000) {
+          MQTT_LOG("[%d] stale finish - clearing cached state", c.slotIndex);
+          clearLiveMetrics(s);
+          strlcpy(s.gcodeState, "UNKNOWN", sizeof(s.gcodeState));
+          c.stalePushallSentMs = 0;
+        }
+      }
     } else if (isConnected && isCloudMode(cfg.mode) &&
                strcmp(s.gcodeState, "IDLE") == 0) {
       // Cloud broker connected but idle printer is unresponsive (powered off).
-      // Only clear IDLE state - leave FINISH/FAILED alone so the user can
-      // still see the print result after powering down the printer.
+      // IDLE can be cleared immediately; FINISH has its own grace window above
+      // and FAILED is intentionally left untouched.
       MQTT_LOG("[%d] stale idle on cloud - clearing cached state", c.slotIndex);
-      s.nozzleTemp = 0;    s.nozzleTarget = 0;
-      s.bedTemp = 0;       s.bedTarget = 0;
-      s.chamberTemp = 0;
-      s.progress = 0;
-      s.remainingMinutes = 0;
-      s.layerNum = 0;      s.totalLayers = 0;
-      s.coolingFanPct = 0; s.auxFanPct = 0;
-      s.chamberFanPct = 0; s.heatbreakFanPct = 0;
-      s.speedLevel = 0;
-      s.wifiSignal = 0;
-      s.doorOpen = false;  s.doorSensorPresent = false;
+      clearLiveMetrics(s);
       strlcpy(s.gcodeState, "UNKNOWN", sizeof(s.gcodeState));
-      s.subtaskName[0] = '\0';
       // Single recovery pushall - if printer just came back online this
       // gets fresh data immediately.  No periodic retries to avoid
       // access_denied (TLS alert 49) on the cloud broker.
