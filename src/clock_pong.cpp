@@ -69,6 +69,7 @@ static bool ballActive = false;
 static int prevBallX = -1, prevBallY = -1;
 
 static int paddleX = LY_W / 2, prevPaddleX = LY_W / 2;
+static uint8_t paddleBouncesWithoutHit = 0;
 
 static bool initialized = false;
 static unsigned long lastUpdateMs = 0;
@@ -95,7 +96,7 @@ static int prevDigitY[5] = {0};
 // Draw cache - avoid redrawing unchanged digits
 static char prevDigits[6] = {0};  // 5 chars + null
 static bool prevColon = false;
-static char prevDateStr[20] = {0};
+static char prevDateStr[28] = {0};
 
 // ========== Digit bounce (inlined) ==========
 static void triggerBounce(int i) {
@@ -165,6 +166,7 @@ static void spawnBall() {
   if (fabsf(ballVX) < 1.2f) ballVX = (ballVX >= 0) ? 1.2f : -1.2f;
   if (fabsf(ballVY) < 1.0f) ballVY = -2.0f;
   ballActive = true;
+  paddleBouncesWithoutHit = 0;
 }
 
 static int digitX(int i);  // forward declaration
@@ -250,6 +252,8 @@ static void updatePaddle() {
 // ========== Brick collision ==========
 static bool checkBrickCollision() {
   int bx = (int)ballX, by = (int)ballY;
+  bool hitX = false, hitY = false;
+  bool hit = false;
   for (int r = 0; r < ARK_BRICK_ROWS; r++) {
     for (int c = 0; c < ARK_BRICK_COLS; c++) {
       if (!arkBricks[r][c]) continue;
@@ -260,14 +264,23 @@ static bool checkBrickCollision() {
         arkBricks[r][c] = false;
         arkBrickCount--;
         clearBrick(r, c);
+        // Determine bounce axis from overlap (accumulated, not per-brick)
         float oL = (bx + ARK_BALL_SIZE) - rx, oR = (rx + ARK_BRICK_W) - bx;
         float oT = (by + ARK_BALL_SIZE) - ry, oB = (ry + ARK_BRICK_H) - by;
-        if (min(oL, oR) < min(oT, oB)) ballVX = -ballVX; else ballVY = -ballVY;
-        return true;
+        if (min(oL, oR) < min(oT, oB)) hitX = true; else hitY = true;
+        hit = true;
       }
     }
   }
-  return false;
+  if (hitX) ballVX = -ballVX;
+  if (hitY) ballVY = -ballVY;
+  // Push ball out of brick zone to prevent re-collision next frame
+  if (hit) {
+    ballX += ballVX;
+    ballY += ballVY;
+    paddleBouncesWithoutHit = 0;
+  }
+  return hit;
 }
 
 // ========== Ball physics ==========
@@ -293,6 +306,13 @@ static void updateBallPhysics() {
       // Enforce minimum horizontal speed for more natural movement
       if (fabsf(ballVX) < 1.2f) ballVX = (ballVX >= 0) ? 1.2f : -1.2f;
       if (fabsf(ballVY) < 1.0f) ballVY = -1.5f;
+      paddleBouncesWithoutHit++;
+      // Ball stuck in a loop missing the last brick(s) - reset the board
+      if (paddleBouncesWithoutHit >= 20) {
+        paddleBouncesWithoutHit = 0;
+        initBricks();
+        drawAllBricks();
+      }
     }
   }
 
@@ -402,7 +422,7 @@ static void drawTime() {
   // Draw digits - only redraw changed ones
   tft.setTextFont(7);
   tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(dispSettings.clockTimeColor, TFT_BLACK);
 
   for (int i = 0; i < 5; i++) {
     if (i == 2) continue;  // skip colon slot, handled separately
@@ -439,7 +459,7 @@ static void drawTime() {
   // AM/PM for 12h mode
   if (!netSettings.use24h) {
     tft.setTextFont(2);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
     int ampmX = digitX(4) + DIGIT_W + 2;
     tft.setCursor(ampmX, ARK_TIME_Y + DIGIT_H - 16);
     tft.print(dispHour < 12 ? "AM" : "PM");
@@ -531,18 +551,22 @@ void tickPongClock() {
   // Date (Font 2, smooth)
   {
     const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    char dateStr[20];
-    if (netSettings.use24h)
-      snprintf(dateStr, sizeof(dateStr), "%s %02d.%02d.%04d",
-               days[now.tm_wday], now.tm_mday, now.tm_mon + 1, now.tm_year + 1900);
-    else
-      snprintf(dateStr, sizeof(dateStr), "%s %02d/%02d/%04d",
-               days[now.tm_wday], now.tm_mon + 1, now.tm_mday, now.tm_year + 1900);
+    const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+    char dateStr[28];
+    int day = now.tm_mday, mon = now.tm_mon + 1, year = now.tm_year + 1900;
+    switch (netSettings.dateFormat) {
+      case 1:  snprintf(dateStr, sizeof(dateStr), "%s %02d-%02d-%04d", days[now.tm_wday], day, mon, year); break;
+      case 2:  snprintf(dateStr, sizeof(dateStr), "%s %02d/%02d/%04d", days[now.tm_wday], mon, day, year); break;
+      case 3:  snprintf(dateStr, sizeof(dateStr), "%s %04d-%02d-%02d", days[now.tm_wday], year, mon, day); break;
+      case 4:  snprintf(dateStr, sizeof(dateStr), "%s %d %s %04d", days[now.tm_wday], day, months[now.tm_mon], year); break;
+      case 5:  snprintf(dateStr, sizeof(dateStr), "%s %s %d, %04d", days[now.tm_wday], months[now.tm_mon], day, year); break;
+      default: snprintf(dateStr, sizeof(dateStr), "%s %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
+    }
     if (strcmp(dateStr, prevDateStr) != 0) {
       tft.setTextFont(2);
       tft.setTextSize(1);
       tft.setTextDatum(TC_DATUM);
-      tft.setTextColor(TFT_CYAN, TFT_BLACK);
+      tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
       tft.fillRect(LY_ARK_DATE_CLR_X, ARK_DATE_Y, LY_ARK_DATE_CLR_W, 16, TFT_BLACK);
       tft.drawString(dateStr, SCREEN_W / 2, ARK_DATE_Y);
       tft.setTextDatum(TL_DATUM);

@@ -11,6 +11,7 @@
 #include "timezones.h"
 #include "tasmota.h"
 #include "clock_mode.h"
+#include "clock_pong.h"
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
@@ -2027,7 +2028,7 @@ static void handleToggleSetting() {
 
   saveSettings();
   if (key == "invcol") applyDisplaySettings();
-  if (key == "use24h") { resetClock(); triggerDisplayTransition(); }
+  if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   server.send(200, "text/plain", "OK");
 }
 
