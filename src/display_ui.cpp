@@ -109,6 +109,9 @@ void initDisplay() {
   tft.fillScreen(TFT_BLACK);
 #endif
   tft.setRotation(dispSettings.rotation);
+#if defined(DISPLAY_CYD)
+  if (dispSettings.invertColors) tft.invertDisplay(false);
+#endif
   Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
@@ -145,6 +148,9 @@ void applyDisplaySettings() {
   tft.fillScreen(TFT_BLACK);
 #endif
   tft.setRotation(dispSettings.rotation);
+#if defined(DISPLAY_CYD)
+  tft.invertDisplay(dispSettings.invertColors ? false : true);
+#endif
   tft.fillScreen(dispSettings.bgColor);
   forceRedraw = true;
   lastDisplayUpdate = 0;  // bypass throttle so redraw is immediate after fillScreen
@@ -506,6 +512,30 @@ static void drawIdle() {
   // Connected indicator
   if (connChanged) {
     tft.fillCircle(cx, LY_IDLE_DOT_Y, 5, s.connected ? CLR_GREEN : CLR_RED);
+  }
+
+  // "Press to refresh" hint for cloud printers stuck in UNKNOWN state
+  {
+    static unsigned long unknownSinceMs = 0;
+    static bool hintShown = false;
+    bool isUnknown = (strcmp(s.gcodeState, "UNKNOWN") == 0);
+    if (isUnknown && unknownSinceMs == 0) unknownSinceMs = millis();
+    if (!isUnknown) unknownSinceMs = 0;
+    bool showHint = isUnknown && unknownSinceMs > 0 &&
+                    millis() - unknownSinceMs > 60000 &&
+                    buttonType != BTN_DISABLED &&
+                    isCloudMode(p.config.mode) && s.connected;
+    if (stateChanged || showHint != hintShown) {
+      const int16_t hintY = LY_IDLE_DOT_Y + 15;
+      tft.fillRect(0, hintY - 6, scrW, 14, CLR_BG);
+      if (showHint) {
+        tft.setTextFont(1);
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
+        tft.drawString("Press to refresh", cx, hintY);
+      }
+      hintShown = showHint;
+    }
   }
 
   // Nozzle temp gauge
@@ -1398,7 +1428,7 @@ void updateDisplay() {
     tft.setTextSize(1);
     tft.fillScreen(currentScreen == SCREEN_OFF ? TFT_BLACK : dispSettings.bgColor);
     forceRedraw = true;
-    if (currentScreen == SCREEN_CONNECTING_MQTT) {
+    if (currentScreen == SCREEN_CONNECTING_WIFI || currentScreen == SCREEN_CONNECTING_MQTT) {
       connectScreenStart = millis();
     }
     if (currentScreen == SCREEN_CLOCK) {
@@ -1457,6 +1487,7 @@ void updateDisplay() {
       if (forceRedraw) {
         tft.fillScreen(TFT_BLACK);
         setBacklight(0);
+        triggerDisplayTransition();  // clear gauge cache so wake shows fresh data
       }
       break;
   }

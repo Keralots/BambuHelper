@@ -66,6 +66,14 @@
 #define WIFI_AP_PASSWORD    "bambu1234"
 #define WIFI_CONNECT_TIMEOUT 15000  // 15s STA connect timeout
 #define WIFI_RECONNECT_TIMEOUT 60000 // 60s before re-entering AP mode
+#define WIFI_BACKOFF_PHASE1_MS    10000   // 10s between attempts in phase 1
+#define WIFI_BACKOFF_PHASE2_MS    30000   // 30s between attempts after phase 1
+#define WIFI_BACKOFF_PHASE3_MS    60000   // 60s between attempts after phase 2
+#define WIFI_BACKOFF_PHASE2_START 5       // start phase 2 after this many attempts
+#define WIFI_BACKOFF_PHASE3_START 10      // start phase 3 after this many attempts
+#define WIFI_STA_PROBE_INTERVAL   120000  // 2 min between STA probes while in AP mode
+#define WIFI_STA_PROBE_CHECK_MS    10000  // 10s after probe start before checking result
+#define WIFI_AP_FALLBACK_MS       900000  // 15 min in phase 3 before falling back to AP
 
 // =============================================================================
 //  NVS
@@ -98,6 +106,7 @@
 //  Display refresh
 // =============================================================================
 #define DISPLAY_UPDATE_MS   250   // ~4 Hz refresh rate
+#define DISPLAY_STATE_TIMEOUT_MS   60000  // 60s timeout for intermediate display states
 
 // =============================================================================
 //  Buzzer (optional passive buzzer)

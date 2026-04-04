@@ -28,6 +28,7 @@ uint8_t getActiveConnCount();            // how many connections are live
 const MqttDiag& getMqttDiag(uint8_t slot = 0);
 
 void resetMqttBackoff();                 // reset backoff + force immediate reconnect
+void requestCloudRefresh(uint8_t slot);  // manual pushall for cloud UNKNOWN state (debounced)
 
 // Human-readable error string for PubSubClient rc
 const char* mqttRcToString(int rc);

@@ -37,7 +37,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 
 | Preview | Notes |
 |---|---|
-| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** support is available and currently **beta**. This is the larger `320x240` display version. Flashing is done the same way as the standard `240x240` build, but on [ESP Web Flasher](https://espressif.github.io/esptool-js/) you should set **Baudrate: 115200** before clicking **Connect**. This low baudrate note is for **CYD only**. The standard ESP32-S3 240x240 version does not require this change. Tested behavior so far: The first connection attempt may fail - click **Disconnect** in the web tool, then **Connect** again and it should work on the second try. **Do not physically unplug the USB cable between attempts** - just use the buttons in the web flasher. [Use this firmware](https://github.com/Keralots/BambuHelper/blob/main/firmware/v2.4-CYD/BambuHelper-CYD-WebFlasher-v2.4.bin) |
+| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** support is available and currently **beta**. This is the larger `320x240` display version. Flashing is done the same way as the standard `240x240` build, but on [ESP Web Flasher](https://espressif.github.io/esptool-js/) you should set **Baudrate: 115200** before clicking **Connect**. This low baudrate note is for **CYD only**. The standard ESP32-S3 240x240 version does not require this change. Tested behavior so far: The first connection attempt may fail - click **Disconnect** in the web tool, then **Connect** again and it should work on the second try. **Do not physically unplug the USB cable between attempts** - just use the buttons in the web flasher. [Use this firmware](https://github.com/Keralots/BambuHelper/releases/download/v2.5/BambuHelper-cyd-v2.5-Full.bin) If the display colors appear reversed (white background instead of dark), go to the web interface under **Display** and enable **Invert display colors (fix white background)**. |
 
 ## Features
 
@@ -52,7 +52,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Auto AP mode** - creates WiFi hotspot on first boot or when WiFi is lost
 - **Smart redraw** - only redraws changed UI elements for smooth performance
 - **Customizable gauge colors** - per-gauge arc/label/value colors with preset themes
-- **Multi-printer support** - monitor up to 2 printers simultaneously with auto-rotating display
+- **Multi-printer support** - monitor up to 2 printers simultaneously with auto-rotating display (ESP32-S3 only - CYD/C3 limited to 1 printer due to RAM)
 - **Smart rotation** - automatically shows the printing printer; cycles between both when both are printing
 - **Physical button** - optional push button or TTP223 touch sensor to cycle printers and wake display
 - **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events
@@ -318,6 +318,8 @@ tools/
 ## Multi-Printer Monitoring
 
 BambuHelper supports monitoring up to 2 printers simultaneously via dual MQTT connections.
+
+> **CYD and ESP32-C3 boards are limited to 1 printer.** Each MQTT connection requires ~85 KB of RAM (TLS session + message buffer), and the classic ESP32 / C3 do not have enough free heap for two simultaneous connections. The web interface on these boards hides the second printer tab and shows a notice. Use an ESP32-S3 board if you need two printers.
 
 ### Rotation Modes
 

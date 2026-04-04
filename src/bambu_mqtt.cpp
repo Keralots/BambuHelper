@@ -152,6 +152,21 @@ static void requestPushall(MqttConn& c) {
   c.lastPushallRequest = millis();
 }
 
+static void clearLiveMetrics(BambuState& s) {
+  s.nozzleTemp = 0;    s.nozzleTarget = 0;
+  s.bedTemp = 0;       s.bedTarget = 0;
+  s.chamberTemp = 0;
+  s.progress = 0;
+  s.remainingMinutes = 0;
+  s.layerNum = 0;      s.totalLayers = 0;
+  s.coolingFanPct = 0; s.auxFanPct = 0;
+  s.chamberFanPct = 0; s.heatbreakFanPct = 0;
+  s.speedLevel = 0;
+  s.wifiSignal = 0;
+  s.doorOpen = false;  s.doorSensorPresent = false;
+  s.subtaskName[0] = '\0';
+}
+
 // ---------------------------------------------------------------------------
 //  Find which MqttConn owns a given serial (for callback routing)
 // ---------------------------------------------------------------------------
@@ -739,24 +754,61 @@ static void handleConn(MqttConn& c) {
   if (s.lastUpdate > 0 && millis() - s.lastUpdate > staleMs) {
     if (s.printing) {
       if (isConnected && c.stalePushallSentMs == 0) {
-        // Cloud went quiet during printing — request a refresh before clearing state.
+        // Cloud went quiet during printing - request a refresh before clearing state.
         // Prevents a false "Ready" screen when the broker stops pushing updates mid-print.
-        MQTT_LOG("[%d] stale during print — sending recovery pushall", c.slotIndex);
+        MQTT_LOG("[%d] stale during print - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
         requestPushall(c);
         c.stalePushallSentMs = millis();
       } else if (c.stalePushallSentMs == 0 ||
                  millis() - c.stalePushallSentMs > 30000) {
-        // Not connected, or recovery pushall sent 30s ago with no response — give up
+        // Not connected, or recovery pushall sent 30s ago with no response - give up
         s.printing = false;
-        // Also reset gcodeState — otherwise state machine shows SCREEN_IDLE
+        // Also reset gcodeState - otherwise state machine shows SCREEN_IDLE
         // with "RUNNING" text (2 gauges) instead of SCREEN_PRINTING (6 gauges)
         strlcpy(s.gcodeState, "IDLE", sizeof(s.gcodeState));
         c.stalePushallSentMs = 0;
       }
+    } else if (strcmp(s.gcodeState, "FINISH") == 0) {
+      // Keep FINISH visible for at least the configured timeout, but do not let
+      // a silent printer leave the dashboard stuck on frozen completion data.
+      unsigned long finishHoldMs = staleMs;
+      if (dpSettings.finishDisplayMins > 0) {
+        unsigned long configuredHoldMs = (unsigned long)dpSettings.finishDisplayMins * 60000UL;
+        if (configuredHoldMs > finishHoldMs) finishHoldMs = configuredHoldMs;
+      }
+
+      if (millis() - s.lastUpdate > finishHoldMs) {
+        if (isConnected && c.stalePushallSentMs == 0) {
+          MQTT_LOG("[%d] stale finish - sending recovery pushall", c.slotIndex);
+          esp_task_wdt_reset();
+          requestPushall(c);
+          c.stalePushallSentMs = millis();
+        } else if (c.stalePushallSentMs == 0 ||
+                   millis() - c.stalePushallSentMs > 30000) {
+          MQTT_LOG("[%d] stale finish - clearing cached state", c.slotIndex);
+          clearLiveMetrics(s);
+          strlcpy(s.gcodeState, "UNKNOWN", sizeof(s.gcodeState));
+          c.stalePushallSentMs = 0;
+        }
+      }
+    } else if (isConnected && isCloudMode(cfg.mode) &&
+               strcmp(s.gcodeState, "IDLE") == 0) {
+      // Cloud broker connected but idle printer is unresponsive (powered off).
+      // IDLE can be cleared immediately; FINISH has its own grace window above
+      // and FAILED is intentionally left untouched.
+      MQTT_LOG("[%d] stale idle on cloud - clearing cached state", c.slotIndex);
+      clearLiveMetrics(s);
+      strlcpy(s.gcodeState, "UNKNOWN", sizeof(s.gcodeState));
+      // Single recovery pushall - if printer just came back online this
+      // gets fresh data immediately.  No periodic retries to avoid
+      // access_denied (TLS alert 49) on the cloud broker.
+      esp_task_wdt_reset();
+      requestPushall(c);
+      c.stalePushallSentMs = millis();
     }
   } else {
-    c.stalePushallSentMs = 0;  // fresh data arrived — reset recovery state
+    c.stalePushallSentMs = 0;  // fresh data arrived - reset recovery state
   }
 }
 
@@ -865,6 +917,23 @@ void resetMqttBackoff() {
     conns[i].lastReconnectAttempt = 0;  // force immediate retry
   }
   Serial.println("MQTT: backoff reset, reconnecting immediately");
+}
+
+void requestCloudRefresh(uint8_t slot) {
+  if (slot >= MAX_ACTIVE_PRINTERS) return;
+  MqttConn& c = conns[slot];
+  PrinterConfig& cfg = printers[slot].config;
+  BambuState& s = printers[slot].state;
+  if (!isCloudMode(cfg.mode)) return;
+  if (!c.mqtt || !c.mqtt->connected()) return;
+  if (strcmp(s.gcodeState, "UNKNOWN") != 0) return;
+  // Debounce: at most once per 5 seconds
+  static unsigned long lastRefreshMs = 0;
+  if (lastRefreshMs > 0 && millis() - lastRefreshMs < 5000) return;
+  lastRefreshMs = millis();
+  MQTT_LOG("[%d] manual cloud refresh (pushall)", c.slotIndex);
+  esp_task_wdt_reset();
+  requestPushall(c);
 }
 
 void disconnectBambuMqtt() {

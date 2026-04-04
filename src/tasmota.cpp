@@ -6,11 +6,12 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#define TASMOTA_TIMEOUT_MS        1500      // HTTP timeout when plug is known-online
-#define TASMOTA_TIMEOUT_FAST_MS    200      // HTTP timeout when plug is offline - fail fast
-#define TASMOTA_STALE_MS         90000UL   // consider offline after 90s without data
-#define TASMOTA_OFFLINE_RETRY_MS  60000UL  // retry every 60s when offline
-#define TASMOTA_DEFAULT_INTERVAL   10      // seconds, used when pollInterval not set
+#define TASMOTA_TIMEOUT_MS              1500      // HTTP timeout when plug is known-online
+#define TASMOTA_TIMEOUT_FAST_MS          700      // shorter timeout once plug is confirmed offline
+#define TASMOTA_STALE_MS               90000UL   // consider offline after 90s without data
+#define TASMOTA_OFFLINE_RETRY_MS       10000UL   // retry quickly after confirmed offline
+#define TASMOTA_DEFAULT_INTERVAL         10      // seconds, used when pollInterval not set
+#define TASMOTA_FAILS_BEFORE_OFFLINE      3      // tolerate a few transient misses before hiding watts
 
 static volatile float    g_watts              = -1.0f;
 static volatile float    g_todayKwh           = -1.0f;
@@ -20,8 +21,16 @@ static volatile float    g_printUsedKwh       = -1.0f;
 static volatile uint32_t g_lastUpdateMs       = 0;
 static volatile bool     g_kwhChanged         = false;
 static volatile bool     g_plugOffline        = false;
+static volatile uint8_t  g_failCount          = 0;
 
 static TaskHandle_t g_taskHandle = NULL;
+
+static void markPollFailure() {
+  if (g_failCount < 255) g_failCount++;
+  if (g_failCount >= TASMOTA_FAILS_BEFORE_OFFLINE) {
+    g_plugOffline = true;
+  }
+}
 
 static void doPoll() {
   if (!tasmotaSettings.enabled || tasmotaSettings.ip[0] == '\0') return;
@@ -33,7 +42,7 @@ static void doPoll() {
   http.setTimeout(g_plugOffline ? TASMOTA_TIMEOUT_FAST_MS : TASMOTA_TIMEOUT_MS);
   if (!http.begin(url)) {
     Serial.printf("[Tasmota] begin failed: %s\n", url);
-    g_plugOffline = true;
+    markPollFailure();
     return;
   }
 
@@ -41,7 +50,7 @@ static void doPoll() {
   if (code != 200) {
     Serial.printf("[Tasmota] HTTP %d from %s\n", code, tasmotaSettings.ip);
     http.end();
-    g_plugOffline = true;
+    markPollFailure();
     return;
   }
 
@@ -52,6 +61,7 @@ static void doPoll() {
   DeserializationError err = deserializeJson(doc, body);
   if (err) {
     Serial.printf("[Tasmota] JSON parse error: %s\n", err.c_str());
+    markPollFailure();
     return;
   }
 
@@ -59,6 +69,7 @@ static void doPoll() {
   if (energy.isNull()) energy = doc["ENERGY"];
   if (energy.isNull()) {
     Serial.println("[Tasmota] ENERGY object missing in response");
+    markPollFailure();
     return;
   }
 
@@ -68,6 +79,7 @@ static void doPoll() {
 
   if (power.isNull()) {
     Serial.println("[Tasmota] Power field missing");
+    markPollFailure();
     return;
   }
 
@@ -77,6 +89,7 @@ static void doPoll() {
 
   g_watts        = newWatts;
   g_lastUpdateMs = millis();
+  g_failCount    = 0;
   g_plugOffline  = false;
 
   if (newToday >= 0.0f && newToday != (float)g_todayKwh) {
@@ -118,6 +131,7 @@ void tasmotaInit() {
   g_lastUpdateMs       = 0;
   g_kwhChanged         = false;
   g_plugOffline        = false;
+  g_failCount          = 0;
 
   if (tasmotaSettings.enabled && tasmotaSettings.ip[0] != '\0') {
     xTaskCreate(pollTask, "tasmota", 6144, NULL, 1, &g_taskHandle);

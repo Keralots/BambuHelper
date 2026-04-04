@@ -13,6 +13,7 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
+#include "esp_ota_ops.h"
 #ifdef ENABLE_OTA_AUTO
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
@@ -20,6 +21,15 @@ extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_star
 #endif
 
 static WebServer server(80);
+
+// ---------------------------------------------------------------------------
+//  Deferred restart — avoids blocking delay() before ESP.restart()
+// ---------------------------------------------------------------------------
+static unsigned long pendingRestartAt = 0;
+
+static void scheduleRestart(unsigned long delayMs = 1000) {
+  pendingRestartAt = millis() + delayMs;
+}
 
 // ---------------------------------------------------------------------------
 //  AP-mode page (minimal WiFi setup only)
@@ -179,12 +189,24 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   </div>
   <div class="section-content" id="sec-printer">
     <div class="section-body">
+)rawliteral"
+#ifdef BOARD_LOW_RAM
+R"rawliteral(
+      <div style="padding:10px;margin-bottom:12px;background:#0D1117;border:1px solid #30363D;border-radius:6px;font-size:12px;color:#8B949E">
+        &#9432; This board supports one printer. Use ESP32-S3 for two printers.
+      </div>
+)rawliteral"
+#else
+R"rawliteral(
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <button class="tab-btn" id="tab0" onclick="selectPrinterTab(0)"
                 style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#238636;color:#fff;cursor:pointer;font-weight:600">Printer 1</button>
         <button class="tab-btn" id="tab1" onclick="selectPrinterTab(1)"
                 style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#8B949E;cursor:pointer">Printer 2</button>
       </div>
+)rawliteral"
+#endif
+R"rawliteral(
       <div id="printerStatus" class="%STATUS_CLASS%">%STATUS_TEXT%</div>
       <label for="connmode">Connection Mode</label>
       <select id="connmode" onchange="toggleConnMode()">
@@ -200,7 +222,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         <label for="serial">Serial Number</label>
         <input type="text" id="serial" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19" style="text-transform:uppercase">
         <label for="code">LAN Access Code</label>
-        <input type="text" id="code" value="%CODE%" placeholder="12345678" maxlength="8">
+        <input type="text" id="code" placeholder="Leave blank to keep current" maxlength="8">
       </div>
 
       <div id="cloudFields" style="display:none">
@@ -323,6 +345,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
           <input type="checkbox" id="slbl" value="1" %SLBL% onchange="toggleSetting('slbl',this.checked)">
           <label for="slbl">Smaller gauge labels</label>
         </div>
+%INVCOL_ROW%
       </div>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
@@ -475,7 +498,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
       <label for="ssid">WiFi SSID</label>
       <input type="text" id="ssid" value="%SSID%" placeholder="Your WiFi name">
       <label for="pass">WiFi Password</label>
-      <input type="password" id="pass" value="%PASS%" placeholder="WiFi password">
+      <input type="password" id="pass" placeholder="Leave blank to keep current">
       <div class="check-row"><input type="checkbox" id="showpass2" onchange="document.getElementById('pass').type=this.checked?'text':'password'"><label for="showpass2">Show password</label></div>
 
       <label for="netmode" style="margin-top:16px">IP Assignment</label>
@@ -1272,13 +1295,11 @@ static void processTemplate(String& page) {
   BambuState& st = printers[0].state;
 
   page.replace("%SSID%", wifiSSID);
-  page.replace("%PASS%", wifiPass);
   page.replace("%MODE_LOCAL%", cfg.mode == CONN_LOCAL ? "selected" : "");
   page.replace("%MODE_CLOUD_ALL%", isCloudMode(cfg.mode) ? "selected" : "");
   page.replace("%PNAME%", cfg.name);
   page.replace("%IP%", cfg.ip);
   page.replace("%SERIAL%", cfg.serial);
-  page.replace("%CODE%", cfg.accessCode);
   // Cloud region dropdown
   page.replace("%REGION_US%", cfg.region == REGION_US ? "selected" : "");
   page.replace("%REGION_EU%", cfg.region == REGION_EU ? "selected" : "");
@@ -1370,6 +1391,19 @@ static void processTemplate(String& page) {
   page.replace("%ABAR%", dispSettings.animatedBar ? "checked" : "");
   page.replace("%PONG%", dispSettings.pongClock ? "checked" : "");
   page.replace("%SLBL%", dispSettings.smallLabels ? "checked" : "");
+#if defined(DISPLAY_CYD)
+  {
+    String row = "<div class=\"check-row\">"
+      "<input type=\"checkbox\" id=\"invcol\" value=\"1\" ";
+    row += dispSettings.invertColors ? "checked" : "";
+    row += " onchange=\"toggleSetting('invcol',this.checked)\">"
+      "<label for=\"invcol\">Invert display colors (fix white background)</label>"
+      "</div>";
+    page.replace("%INVCOL_ROW%", row);
+  }
+#else
+  page.replace("%INVCOL_ROW%", "");
+#endif
 
   // Global colors
   char buf[8];
@@ -1558,6 +1592,14 @@ static void handleSavePrinter() {
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
 
+#ifdef BOARD_LOW_RAM
+  if (slot > 0) {
+    server.send(200, "application/json",
+      "{\"status\":\"error\",\"message\":\"This board supports only one printer due to RAM limits. Use ESP32-S3 for two printers.\"}");
+    return;
+  }
+#endif
+
   PrinterConfig& cfg = printers[slot].config;
   if (server.hasArg("connmode")) {
     String cm = server.arg("connmode");
@@ -1591,7 +1633,7 @@ static void handleSavePrinter() {
     if (server.hasArg("pname"))  strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
     if (server.hasArg("ip"))     strlcpy(cfg.ip, server.arg("ip").c_str(), sizeof(cfg.ip));
     if (server.hasArg("serial")) strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
-    if (server.hasArg("code"))   strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
+    if (server.hasArg("code") && server.arg("code").length() > 0) strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
   }
 
   // Serial numbers must be uppercase (Bambu MQTT topics are case-sensitive)
@@ -1632,7 +1674,7 @@ static void handleSavePrinter() {
 // Save WiFi + network settings (requires restart)
 static void handleSaveWifi() {
   if (server.hasArg("ssid")) strlcpy(wifiSSID, server.arg("ssid").c_str(), sizeof(wifiSSID));
-  if (server.hasArg("pass")) strlcpy(wifiPass, server.arg("pass").c_str(), sizeof(wifiPass));
+  if (server.hasArg("pass") && server.arg("pass").length() > 0) strlcpy(wifiPass, server.arg("pass").c_str(), sizeof(wifiPass));
 
   netSettings.useDHCP = (!server.hasArg("netmode") || server.arg("netmode") == "dhcp");
   if (server.hasArg("net_ip"))  strlcpy(netSettings.staticIP, server.arg("net_ip").c_str(), sizeof(netSettings.staticIP));
@@ -1645,8 +1687,7 @@ static void handleSaveWifi() {
   saveSettings();
 
   server.send(200, "application/json", "{\"status\":\"ok\"}");
-  delay(1000);
-  ESP.restart();
+  scheduleRestart();
 }
 
 // Live brightness preview (no save, just PWM update)
@@ -1710,8 +1751,7 @@ static void handleReset() {
     "<html><body style='background:#0D1117;color:#E6EDF3;text-align:center;padding-top:80px;font-family:sans-serif'>"
     "<h2 style='color:#F85149'>Factory Reset</h2>"
     "<p>Restarting...</p></body></html>");
-  delay(1000);
-  resetSettings();
+  resetSettings();  // clears NVS and calls ESP.restart()
 }
 
 static void handleDebug() {
@@ -1764,6 +1804,7 @@ static void handleToggleSetting() {
   else if (key == "abar")    dispSettings.animatedBar = on;
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
+  else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
   else {
@@ -1772,6 +1813,7 @@ static void handleToggleSetting() {
   }
 
   saveSettings();
+  if (key == "invcol") applyDisplaySettings();
   server.send(200, "text/plain", "OK");
 }
 
@@ -1794,7 +1836,6 @@ static void handlePrinterConfig() {
   doc["name"] = cfg.name;
   doc["ip"] = cfg.ip;
   doc["serial"] = cfg.serial;
-  doc["code"] = cfg.accessCode;
   doc["region"] = cfg.region == REGION_EU ? "eu" : (cfg.region == REGION_CN ? "cn" : "us");
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
@@ -1847,8 +1888,14 @@ static void handleSaveRotation() {
     uint8_t bp = server.arg("buzpin").toInt();
     if (bp > 0 && bp <= 48) buzzerSettings.pin = bp;
   }
-  if (server.hasArg("buzqs")) buzzerSettings.quietStartHour = server.arg("buzqs").toInt();
-  if (server.hasArg("buzqe")) buzzerSettings.quietEndHour = server.arg("buzqe").toInt();
+  if (server.hasArg("buzqs")) {
+    int qs = server.arg("buzqs").toInt();
+    if (qs >= 0 && qs <= 23) buzzerSettings.quietStartHour = qs;
+  }
+  if (server.hasArg("buzqe")) {
+    int qe = server.arg("buzqe").toInt();
+    if (qe >= 0 && qe <= 23) buzzerSettings.quietEndHour = qe;
+  }
   saveBuzzerSettings();
   initBuzzer();
 
@@ -2124,8 +2171,14 @@ static void handleSettingsImportFinish() {
   if (buz) {
     if (buz["enabled"].is<bool>())    buzzerSettings.enabled = buz["enabled"].as<bool>();
     if (buz["pin"].is<uint8_t>())     buzzerSettings.pin = buz["pin"].as<uint8_t>();
-    if (buz["quietStart"].is<uint8_t>()) buzzerSettings.quietStartHour = buz["quietStart"].as<uint8_t>();
-    if (buz["quietEnd"].is<uint8_t>())   buzzerSettings.quietEndHour = buz["quietEnd"].as<uint8_t>();
+    if (buz["quietStart"].is<uint8_t>()) {
+      uint8_t qs = buz["quietStart"].as<uint8_t>();
+      if (qs <= 23) buzzerSettings.quietStartHour = qs;
+    }
+    if (buz["quietEnd"].is<uint8_t>()) {
+      uint8_t qe = buz["quietEnd"].as<uint8_t>();
+      if (qe <= 23) buzzerSettings.quietEndHour = qe;
+    }
   }
 
   // Save everything to NVS
@@ -2135,8 +2188,7 @@ static void handleSettingsImportFinish() {
   saveBuzzerSettings();
 
   server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Settings imported. Restarting...\"}");
-  delay(1000);
-  ESP.restart();
+  scheduleRestart();
 }
 
 // ---------------------------------------------------------------------------
@@ -2167,9 +2219,8 @@ static void otaAutoTaskFn(void* param) {
     case HTTP_UPDATE_OK:
       otaAutoProgress = 100;
       otaAutoStatus = "done";
-      Serial.println("OTA auto: success, restarting in 4s");
-      delay(4000);   // long enough for JS poller to detect "done" before reboot
-      ESP.restart();
+      Serial.println("OTA auto: success, scheduling restart");
+      scheduleRestart(4000);  // let JS poller detect "done" before reboot
       break;
     case HTTP_UPDATE_NO_UPDATES:
       otaAutoStatus = "already_current";
@@ -2185,8 +2236,7 @@ static void otaAutoTaskFn(void* param) {
         if (ret == HTTP_UPDATE_OK) {
           otaAutoProgress = 100;
           otaAutoStatus = "done";
-          delay(4000);
-          ESP.restart();
+          scheduleRestart(4000);
           break;
         }
       }
@@ -2251,10 +2301,28 @@ static void handleOtaUpload() {
 
     disconnectBambuMqtt();
 
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-      otaError = Update.errorString();
+    const esp_partition_t* partition = esp_ota_get_next_update_partition(NULL);
+    if (!partition) {
+      otaError = "No OTA partition found";
+      Serial.println("OTA: no OTA partition found");
+      otaInProgress = false;
+      return;
+    }
+    Serial.printf("OTA: firmware upload started, partition size: %u bytes\n", partition->size);
+
+    if (!Update.begin(partition->size)) {
+      otaError = "OTA begin failed: " + String(Update.errorString());
       Serial.printf("OTA: begin failed: %s\n", otaError.c_str());
       otaInProgress = false;
+      return;
+    }
+
+    if (server.hasHeader("X-MD5")) {
+      String md5 = server.header("X-MD5");
+      if (md5.length() == 32) {
+        Update.setMD5(md5.c_str());
+        Serial.printf("OTA: MD5 checksum set: %s\n", md5.c_str());
+      }
     }
 
   } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -2304,8 +2372,7 @@ static void handleOtaFinish() {
   }
   server.send(200, "application/json",
     "{\"status\":\"ok\",\"message\":\"Update successful. Restarting...\"}");
-  delay(1500);
-  ESP.restart();
+  scheduleRestart(1500);
 }
 
 // Captive portal: redirect any unknown request to root
@@ -2362,10 +2429,16 @@ void initWebServer() {
   server.on("/ota/status", HTTP_GET,  handleOtaStatus);
 #endif
   server.onNotFound(handleNotFound);
+  const char* otaHeaders[] = {"X-MD5"};
+  server.collectHeaders(otaHeaders, 1);
   server.begin();
   Serial.println("Web server started on port 80");
 }
 
 void handleWebServer() {
   server.handleClient();
+  if (pendingRestartAt && millis() >= pendingRestartAt) {
+    Serial.println("Deferred restart triggered");
+    ESP.restart();
+  }
 }

@@ -107,6 +107,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.animatedBar = true;
   ds.pongClock = false;
   ds.smallLabels = false;
+  ds.invertColors = false;
   ds.cydExtraMode = 0;
 
   // Progress: green arc, green label, white value
@@ -150,7 +151,9 @@ static void loadGaugeColors(const char* prefix, GaugeColors& gc, const GaugeColo
 //  Load settings
 // ---------------------------------------------------------------------------
 void loadSettings() {
-  prefs.begin(NVS_NAMESPACE, true);  // read-only
+  // Open read-write from the start: we may need to write a migration flag.
+  // This is safe and avoids closing/reopening the partition mid-load.
+  prefs.begin(NVS_NAMESPACE, false);
 
   // WiFi credentials
   strlcpy(wifiSSID, prefs.getString("wifiSSID", "").c_str(), sizeof(wifiSSID));
@@ -202,6 +205,7 @@ void loadSettings() {
   dispSettings.animatedBar = prefs.getBool("dsp_abar", def.animatedBar);
   dispSettings.pongClock = prefs.getBool("dsp_pong", def.pongClock);
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
+  dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydExtraMode = prefs.getUChar("dsp_cydex", 0);
   dispSettings.cydExtraMode = 0;  // temporary: force AMS-only on CYD
 
@@ -219,49 +223,48 @@ void loadSettings() {
   strlcpy(netSettings.subnet, prefs.getString("net_sn", "255.255.255.0").c_str(), sizeof(netSettings.subnet));
   strlcpy(netSettings.dns, prefs.getString("net_dns", "").c_str(), sizeof(netSettings.dns));
   netSettings.showIPAtStartup = prefs.getBool("net_showip", true);
-  // Timezone: load new POSIX format, migrate from old gmtOffsetMin if needed
+
+  // Timezone: load POSIX string, migrating from legacy gmtOffsetMin if needed.
+  // All reads and any migration writes happen in the same open transaction to
+  // prevent incomplete state if power is lost mid-migration.
+  bool tzMigrated = prefs.getBool("tz_migrated", false);
   String tzStr = prefs.getString("net_tzstr", "");
-  if (tzStr.length() > 0) {
-    strlcpy(netSettings.timezoneStr, tzStr.c_str(), sizeof(netSettings.timezoneStr));
-    // Re-resolve index from TZ string (handles database reordering across updates)
-    size_t cnt;
-    const TimezoneRegion* tz = getSupportedTimezones(&cnt);
-    netSettings.timezoneIndex = 14; // default: CET (Amsterdam, Berlin, Rome)
-    for (size_t i = 0; i < cnt; i++) {
-      if (strcmp(tz[i].posixString, netSettings.timezoneStr) == 0) {
-        netSettings.timezoneIndex = (uint8_t)i;
-        break;
-      }
-    }
-  } else {
-    // Migration: convert old gmtOffsetMin to POSIX string
+  if (tzStr.isEmpty() && !tzMigrated) {
+    // Legacy migration: convert old integer offset to POSIX timezone string.
     int16_t oldOffset = prefs.getShort("net_tz", 60);
     const char* migrated = getDefaultTimezoneForOffset(oldOffset);
     if (migrated) {
-      strlcpy(netSettings.timezoneStr, migrated, sizeof(netSettings.timezoneStr));
+      tzStr = migrated;
     } else {
-      strlcpy(netSettings.timezoneStr, "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00", sizeof(netSettings.timezoneStr));
+      tzStr = "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00";
     }
-    // Find matching index in database
-    size_t count;
-    const TimezoneRegion* regions = getSupportedTimezones(&count);
-    netSettings.timezoneIndex = 14; // default: CET (Amsterdam, Berlin, Rome)
-    for (size_t i = 0; i < count; i++) {
+    // Write both the migrated value and the completion flag in the same
+    // transaction so a power loss cannot leave migration half-done.
+    prefs.putString("net_tzstr", tzStr);
+    prefs.putBool("tz_migrated", true);
+    Serial.printf("[SETTINGS] Migrated timezone: offset %d -> %s\n", oldOffset, tzStr.c_str());
+  } else if (!tzStr.isEmpty() && !tzMigrated) {
+    // Recovery: net_tzstr already exists but flag is absent — this device ran
+    // the old migration code and lost power before it could be marked done.
+    // Stamp the flag now so future boots skip migration entirely.
+    prefs.putBool("tz_migrated", true);
+  }
+  strlcpy(netSettings.timezoneStr, tzStr.c_str(), sizeof(netSettings.timezoneStr));
+
+  // Re-resolve the index from the POSIX string (handles database reordering
+  // across firmware updates without relying on a stored index value).
+  {
+    size_t cnt;
+    const TimezoneRegion* regions = getSupportedTimezones(&cnt);
+    netSettings.timezoneIndex = 14;  // default: CET (Amsterdam, Berlin, Rome)
+    for (size_t i = 0; i < cnt; i++) {
       if (strcmp(regions[i].posixString, netSettings.timezoneStr) == 0) {
         netSettings.timezoneIndex = (uint8_t)i;
         break;
       }
     }
-    // Save new format so migration only happens once.
-    // prefs is open read-only here, so reopen in write mode for migration.
-    prefs.end();
-    prefs.begin(NVS_NAMESPACE, false);
-    prefs.putString("net_tzstr", netSettings.timezoneStr);
-    prefs.putUChar("net_tzidx", netSettings.timezoneIndex);
-    prefs.end();
-    prefs.begin(NVS_NAMESPACE, true);  // back to read-only for remaining loads
-    Serial.printf("Timezone migrated from offset %d -> %s\n", oldOffset, netSettings.timezoneStr);
   }
+
   netSettings.use24h = prefs.getBool("net_24h", true);
   netSettings.dateFormat = prefs.getUChar("net_datefmt", 0);
 
@@ -333,6 +336,7 @@ void saveSettings() {
   prefs.putBool("dsp_abar", dispSettings.animatedBar);
   prefs.putBool("dsp_pong", dispSettings.pongClock);
   prefs.putBool("dsp_slbl", dispSettings.smallLabels);
+  prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putUChar("dsp_cydex", dispSettings.cydExtraMode);
 
   saveGaugeColors("gc_prg", dispSettings.progress);

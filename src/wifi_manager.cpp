@@ -10,8 +10,10 @@ static DNSServer* dnsServer = nullptr;
 static unsigned long disconnectTime = 0;
 static unsigned long lastReconnectAttempt = 0;
 static uint8_t reconnectAttempts = 0;
-static const uint8_t MAX_RECONNECT_ATTEMPTS = 5;
-static const unsigned long RECONNECT_INTERVAL = 10000;  // 10s between attempts
+static unsigned long lastStaProbe = 0;
+static unsigned long probeStartTime = 0;
+static bool staProbing = false;
+static unsigned long phase3StartTime = 0;
 static String apSSID;
 
 bool isWiFiConnected() {
@@ -41,7 +43,8 @@ static void startAP() {
   snprintf(ssidBuf, sizeof(ssidBuf), "%s%04X", WIFI_AP_PREFIX, mac);
   apSSID = ssidBuf;
 
-  WiFi.mode(WIFI_AP);
+  // Use AP+STA so we can probe STA while serving the config portal
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ssidBuf, WIFI_AP_PASSWORD);
 
   // Captive portal: redirect all DNS to our IP
@@ -52,6 +55,8 @@ static void startAP() {
 
   apMode = true;
   disconnectTime = 0;
+  lastStaProbe = millis();
+  staProbing = false;
 
   Serial.printf("AP started: %s (IP: %s)\n", ssidBuf,
                 WiFi.softAPIP().toString().c_str());
@@ -125,9 +130,52 @@ void initWiFi() {
   startAP();
 }
 
+// Return the reconnect interval for the current attempt count.
+static unsigned long reconnectInterval() {
+  if (reconnectAttempts < WIFI_BACKOFF_PHASE2_START) {
+    return WIFI_BACKOFF_PHASE1_MS;      // phase 1: 10s
+  }
+  if (reconnectAttempts < WIFI_BACKOFF_PHASE3_START) {
+    return WIFI_BACKOFF_PHASE2_MS;      // phase 2: 30s
+  }
+  return WIFI_BACKOFF_PHASE3_MS;        // phase 3: 60s, indefinite
+}
+
 void handleWiFi() {
   if (apMode) {
     if (dnsServer) dnsServer->processNextRequest();
+
+    // Periodically probe STA to recover without user interaction
+    unsigned long now = millis();
+    if (!staProbing && now - lastStaProbe >= WIFI_STA_PROBE_INTERVAL) {
+      // Start a non-blocking STA probe; result checked after WIFI_STA_PROBE_CHECK_MS
+      Serial.println("AP mode: probing STA connection...");
+      WiFi.begin(wifiSSID, wifiPass);
+      staProbing = true;
+      probeStartTime = now;
+    } else if (staProbing && now - probeStartTime >= WIFI_STA_PROBE_CHECK_MS) {
+      // Check result of the in-flight probe
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("STA probe succeeded, IP: %s — leaving AP mode\n",
+                      WiFi.localIP().toString().c_str());
+        stopAP();
+        WiFi.mode(WIFI_STA);
+        apMode = false;
+        staProbing = false;
+        disconnectTime = 0;
+        reconnectAttempts = 0;
+        lastReconnectAttempt = 0;
+        phase3StartTime = 0;
+
+        configTzTime(netSettings.timezoneStr, "pool.ntp.org", "time.nist.gov");
+        setScreenState(SCREEN_WIFI_CONNECTED);
+      } else {
+        Serial.println("STA probe failed, staying in AP mode");
+        WiFi.disconnect(false);
+        staProbing = false;
+        lastStaProbe = now;  // reset the 2-min cycle
+      }
+    }
     return;
   }
 
@@ -140,19 +188,35 @@ void handleWiFi() {
       Serial.println("WiFi disconnected, will try to reconnect...");
     }
 
-    // Actively try to reconnect at intervals
-    if (millis() - lastReconnectAttempt > RECONNECT_INTERVAL) {
+    // Try to reconnect using the current backoff interval (non-blocking)
+    if (lastReconnectAttempt == 0 ||
+        millis() - lastReconnectAttempt > reconnectInterval()) {
       lastReconnectAttempt = millis();
       reconnectAttempts++;
-      Serial.printf("WiFi reconnect attempt %d/%d\n", reconnectAttempts, MAX_RECONNECT_ATTEMPTS);
+
+      const char* phase = reconnectAttempts <= WIFI_BACKOFF_PHASE2_START ? "phase1"
+                        : reconnectAttempts <= WIFI_BACKOFF_PHASE3_START ? "phase2"
+                        : "phase3";
+      Serial.printf("WiFi reconnect attempt %d (%s, interval %lus)\n",
+                    reconnectAttempts, phase, reconnectInterval() / 1000UL);
+
+      // Record when we first enter phase 3
+      if (reconnectAttempts == WIFI_BACKOFF_PHASE3_START) {
+        phase3StartTime = millis();
+      }
+
+      // After phase 3 has run for WIFI_AP_FALLBACK_MS, fall back to AP so
+      // the user can reconfigure the device if credentials have changed
+      if (reconnectAttempts > WIFI_BACKOFF_PHASE3_START &&
+          phase3StartTime > 0 &&
+          millis() - phase3StartTime >= WIFI_AP_FALLBACK_MS) {
+        Serial.println("Phase 3 timeout — falling back to AP mode");
+        startAP();
+        return;
+      }
+
       WiFi.disconnect();
       WiFi.begin(wifiSSID, wifiPass);
-    }
-
-    // Only fall back to AP after all attempts exhausted
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      Serial.println("WiFi reconnect failed, switching to AP mode");
-      startAP();
     }
   } else {
     if (disconnectTime > 0) {
@@ -160,5 +224,7 @@ void handleWiFi() {
     }
     disconnectTime = 0;
     reconnectAttempts = 0;
+    lastReconnectAttempt = 0;
+    phase3StartTime = 0;
   }
 }
