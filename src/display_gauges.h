@@ -32,6 +32,10 @@ void drawFanGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
                   bool forceRedraw, const GaugeColors* colors = nullptr,
                   float arcPercent = -1.0f);
 
+// Draw clock widget (HH:MM inside track ring)
+void drawClockWidget(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+                     int16_t thickness, bool forceRedraw);
+
 // Reset cached text (call on screen/printer transitions)
 void resetGaugeTextCache();
 

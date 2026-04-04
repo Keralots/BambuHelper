@@ -258,6 +258,27 @@ R"rawliteral(
 
       <div id="liveStats"></div>
       <button type="button" class="btn btn-primary" onclick="savePrinter()">Save Printer Settings</button>
+
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
+        <h3 style="color:#58A6FF;font-size:14px;margin-bottom:4px">Gauge Layout</h3>
+        <p style="font-size:12px;color:#8B949E;margin-bottom:10px">Choose which widget goes in each of the 6 display positions. Set any slot to <i>Empty</i> to hide it.</p>
+        <p style="font-size:11px;color:#58A6FF;margin-bottom:6px">&#9650; Top row</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+          <div><label style="font-size:11px;color:#8B949E">Top-left</label><select id="gs0" class="gauge-slot-sel"></select></div>
+          <div><label style="font-size:11px;color:#8B949E">Top-center</label><select id="gs1" class="gauge-slot-sel"></select></div>
+          <div><label style="font-size:11px;color:#8B949E">Top-right</label><select id="gs2" class="gauge-slot-sel"></select></div>
+        </div>
+        <p style="font-size:11px;color:#58A6FF;margin-bottom:6px">&#9660; Bottom row</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <div><label style="font-size:11px;color:#8B949E">Bot-left</label><select id="gs3" class="gauge-slot-sel"></select></div>
+          <div><label style="font-size:11px;color:#8B949E">Bot-center</label><select id="gs4" class="gauge-slot-sel"></select></div>
+          <div><label style="font-size:11px;color:#8B949E">Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
+        </div>
+        <button type="button" style="margin-top:8px;padding:4px 10px;font-size:11px;background:transparent;color:#8B949E;border:1px solid #30363D;border-radius:4px;cursor:pointer" onclick="resetGaugeLayout()">Reset to default</button>
+        <div style="margin-top:12px">
+          <button type="button" class="btn btn-blue" onclick="saveGaugeLayout()">Save Gauge Layout</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -419,6 +440,16 @@ R"rawliteral(
           <label>Arc</label><input type="color" id="cfn_a" value="%CFN_A%">
           <label>Label</label><input type="color" id="cfn_l" value="%CFN_L%">
           <label>Value</label><input type="color" id="cfn_v" value="%CFN_V%">
+        </div></div>
+        <div class="gauge-section"><h3>Chamber Temp</h3><div class="color-row">
+          <label>Arc</label><input type="color" id="cht_a" value="%CHT_A%">
+          <label>Label</label><input type="color" id="cht_l" value="%CHT_L%">
+          <label>Value</label><input type="color" id="cht_v" value="%CHT_V%">
+        </div></div>
+        <div class="gauge-section"><h3>Heatbreak Fan</h3><div class="color-row">
+          <label>Arc</label><input type="color" id="hbk_a" value="%HBK_A%">
+          <label>Label</label><input type="color" id="hbk_l" value="%HBK_L%">
+          <label>Value</label><input type="color" id="hbk_v" value="%HBK_V%">
         </div></div>
       </div>
 
@@ -721,8 +752,40 @@ function toggleSection(id){
   if(saved) toggleSection(saved); else toggleSection('printer');
 })();
 
+// --- Gauge slot type labels ---
+var gaugeTypes=[
+  '-- Empty --','Progress','Nozzle Temp','Bed Temp',
+  'Part Fan','Aux Fan','Chamber Fan','Chamber Temp',
+  'Heatbreak Fan','Clock'
+];
+(function(){
+  var sels=document.querySelectorAll('.gauge-slot-sel');
+  sels.forEach(function(sel){
+    gaugeTypes.forEach(function(name,i){
+      var o=document.createElement('option');
+      o.value=i;o.textContent=name;
+      sel.appendChild(o);
+    });
+  });
+})();
+
+function resetGaugeLayout(){
+  var d=[1,2,3,4,5,6];
+  for(var i=0;i<6;i++){var s=document.getElementById('gs'+i);if(s)s.value=d[i];}
+}
+function saveGaugeLayout(){
+  var p=new URLSearchParams();
+  p.append('slot',currentSlot);
+  for(var g=0;g<6;g++){var s=document.getElementById('gs'+g);if(s)p.append('gs'+g,s.value);}
+  fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.status==='ok')showToast('Gauge layout saved!');else showToast('Error');})
+    .catch(function(){showToast('Save failed');});
+}
+
 // --- Multi-printer tab selection ---
 var currentSlot=0;
+setTimeout(function(){selectPrinterTab(0);},100);
 function selectPrinterTab(slot){
   currentSlot=slot;
   document.querySelectorAll('.tab-btn').forEach(function(btn,i){
@@ -741,6 +804,7 @@ function selectPrinterTab(slot){
     document.getElementById('cl_pname').value=d.name||'';
     document.getElementById('region').value=d.region||'us';
     document.getElementById('cl_token').value='';
+    if(d.gaugeSlots){for(var g=0;g<6;g++){var sel=document.getElementById('gs'+g);if(sel)sel.value=d.gaugeSlots[g]||0;}}
     toggleConnMode();
     var ps=document.getElementById('printerStatus');
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
@@ -915,7 +979,7 @@ function applyTheme(name){
   var t=themes[name]; if(!t) return;
   document.getElementById('clr_bg').value=t.bg;
   document.getElementById('clr_track').value=t.track;
-  var g=['prg','noz','bed','pfn','afn','cfn'];
+  var g=['prg','noz','bed','pfn','afn','cfn','cht','hbk'];
   for(var i=0;i<g.length;i++){
     var c=t[g[i]];
     document.getElementById(g[i]+'_a').value=c.a;
@@ -946,7 +1010,7 @@ function applyDisplay(){
   p.append('datefmt',document.getElementById('datefmt').value);
   p.append('clr_bg',document.getElementById('clr_bg').value);
   p.append('clr_track',document.getElementById('clr_track').value);
-  var g=['prg','noz','bed','pfn','afn','cfn'];
+  var g=['prg','noz','bed','pfn','afn','cfn','cht','hbk'];
   for(var i=0;i<g.length;i++){
     p.append(g[i]+'_a',document.getElementById(g[i]+'_a').value);
     p.append(g[i]+'_l',document.getElementById(g[i]+'_l').value);
@@ -1419,6 +1483,8 @@ static void processTemplate(String& page) {
   replaceGaugeColors(page, "PFN", dispSettings.partFan);
   replaceGaugeColors(page, "AFN", dispSettings.auxFan);
   replaceGaugeColors(page, "CFN", dispSettings.chamberFan);
+  replaceGaugeColors(page, "CHT", dispSettings.chamberTemp);
+  replaceGaugeColors(page, "HBK", dispSettings.heatbreak);
 
   page.replace("%DBGLOG%", mqttDebugLog ? "checked" : "");
   page.replace("%FW_VER%", FW_VERSION);
@@ -1540,6 +1606,8 @@ static void readDisplayFromForm() {
   readGaugeColorsFromForm("pfn", dispSettings.partFan);
   readGaugeColorsFromForm("afn", dispSettings.auxFan);
   readGaugeColorsFromForm("cfn", dispSettings.chamberFan);
+  readGaugeColorsFromForm("cht", dispSettings.chamberTemp);
+  readGaugeColorsFromForm("hbk", dispSettings.heatbreak);
 
   if (server.hasArg("fmins")) {
     dpSettings.finishDisplayMins = server.arg("fmins").toInt();
@@ -1659,7 +1727,7 @@ static void handleSavePrinter() {
 
   savePrinterConfig(slot);
 
-  // Reinit MQTT — disconnect changed slot, then reinit all
+  // Reinit MQTT - disconnect changed slot, then reinit all
   disconnectBambuMqtt(slot);
   initBambuMqtt();
 
@@ -1669,6 +1737,26 @@ static void handleSavePrinter() {
   } else {
     server.send(200, "application/json", "{\"status\":\"ok\"}");
   }
+}
+
+// Save gauge layout only (no MQTT reinit needed)
+static void handleSaveGaugeLayout() {
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+
+  PrinterConfig& cfg = printers[slot].config;
+  for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
+    char argName[8];
+    snprintf(argName, sizeof(argName), "gs%d", g);
+    if (server.hasArg(argName)) {
+      uint8_t val = server.arg(argName).toInt();
+      cfg.gaugeSlots[g] = (val < GAUGE_TYPE_COUNT) ? val : GAUGE_EMPTY;
+    }
+  }
+
+  savePrinterConfig(slot);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 // Save WiFi + network settings (requires restart)
@@ -1839,6 +1927,8 @@ static void handlePrinterConfig() {
   doc["region"] = cfg.region == REGION_EU ? "eu" : (cfg.region == REGION_CN ? "cn" : "us");
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
+  JsonArray slots = doc["gaugeSlots"].to<JsonArray>();
+  for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
 
   String json;
   serializeJson(doc, json);
@@ -1956,6 +2046,8 @@ static void handleSettingsExport() {
     p["accessCode"] = cfg.accessCode;
     p["cloudUserId"] = cfg.cloudUserId;
     p["region"] = (uint8_t)cfg.region;
+    JsonArray slots = p["gaugeSlots"].to<JsonArray>();
+    for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
   }
 
   // Display
@@ -1976,6 +2068,8 @@ static void handleSettingsExport() {
   JsonObject gPfn = gauges["partFan"].to<JsonObject>();  gaugeColorsToJson(gPfn, dispSettings.partFan);
   JsonObject gAfn = gauges["auxFan"].to<JsonObject>();   gaugeColorsToJson(gAfn, dispSettings.auxFan);
   JsonObject gCfn = gauges["chamberFan"].to<JsonObject>(); gaugeColorsToJson(gCfn, dispSettings.chamberFan);
+  JsonObject gCht = gauges["chamberTemp"].to<JsonObject>(); gaugeColorsToJson(gCht, dispSettings.chamberTemp);
+  JsonObject gHbk = gauges["heatbreak"].to<JsonObject>(); gaugeColorsToJson(gHbk, dispSettings.heatbreak);
 
   // Display power
   JsonObject dp = doc["displayPower"].to<JsonObject>();
@@ -2092,6 +2186,13 @@ static void handleSettingsImportFinish() {
       if (p["accessCode"].is<const char*>())  strlcpy(cfg.accessCode, p["accessCode"], sizeof(cfg.accessCode));
       if (p["cloudUserId"].is<const char*>()) strlcpy(cfg.cloudUserId, p["cloudUserId"], sizeof(cfg.cloudUserId));
       if (p["region"].is<uint8_t>())          cfg.region = (CloudRegion)p["region"].as<uint8_t>();
+      JsonArray slots = p["gaugeSlots"];
+      if (slots && slots.size() == GAUGE_SLOT_COUNT) {
+        for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
+          uint8_t v = slots[g].as<uint8_t>();
+          cfg.gaugeSlots[g] = (v < GAUGE_TYPE_COUNT) ? v : GAUGE_PROGRESS;
+        }
+      }
     }
   }
 
@@ -2114,6 +2215,8 @@ static void handleSettingsImportFinish() {
       if (gauges["partFan"].is<JsonObject>())  { JsonObject g = gauges["partFan"];  gaugeColorsFromJson(g, dispSettings.partFan); }
       if (gauges["auxFan"].is<JsonObject>())   { JsonObject g = gauges["auxFan"];   gaugeColorsFromJson(g, dispSettings.auxFan); }
       if (gauges["chamberFan"].is<JsonObject>()){ JsonObject g = gauges["chamberFan"]; gaugeColorsFromJson(g, dispSettings.chamberFan); }
+      if (gauges["chamberTemp"].is<JsonObject>()){ JsonObject g = gauges["chamberTemp"]; gaugeColorsFromJson(g, dispSettings.chamberTemp); }
+      if (gauges["heatbreak"].is<JsonObject>()){ JsonObject g = gauges["heatbreak"]; gaugeColorsFromJson(g, dispSettings.heatbreak); }
     }
   }
 
@@ -2409,6 +2512,7 @@ void initWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save/wifi", HTTP_POST, handleSaveWifi);
   server.on("/save/printer", HTTP_POST, handleSavePrinter);
+  server.on("/save/gaugelayout", HTTP_POST, handleSaveGaugeLayout);
   server.on("/save/rotation", HTTP_POST, handleSaveRotation);
   server.on("/save/power", HTTP_POST, handleSavePower);
   server.on("/buzzer/test", HTTP_POST, handleBuzzerTest);

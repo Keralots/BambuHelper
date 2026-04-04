@@ -122,6 +122,20 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.auxFan = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
   // Chamber fan: green arc, green label, white value
   ds.chamberFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  // Chamber temp: cyan arc, cyan label, white value
+  ds.chamberTemp = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
+  // Heatbreak fan: orange arc, orange label, white value
+  ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+}
+
+// Default gauge slot layout: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan
+static void defaultGaugeSlots(uint8_t* slots) {
+  slots[0] = GAUGE_PROGRESS;
+  slots[1] = GAUGE_NOZZLE;
+  slots[2] = GAUGE_BED;
+  slots[3] = GAUGE_PART_FAN;
+  slots[4] = GAUGE_AUX_FAN;
+  slots[5] = GAUGE_CHAMBER_FAN;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +204,21 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_region", i);
     cfg.region = (CloudRegion)prefs.getUChar(key, REGION_US);
 
+    // Gauge slot layout (per-printer)
+    snprintf(key, sizeof(key), "p%d_slots", i);
+    size_t read = prefs.getBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
+    if (read != GAUGE_SLOT_COUNT) {
+      defaultGaugeSlots(cfg.gaugeSlots);
+    } else {
+      for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
+        if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) {
+          uint8_t def[GAUGE_SLOT_COUNT];
+          defaultGaugeSlots(def);
+          cfg.gaugeSlots[g] = def[g];
+        }
+      }
+    }
+
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     strlcpy(printers[i].state.gcodeState, "UNKNOWN", sizeof(printers[i].state.gcodeState));
@@ -206,8 +235,7 @@ void loadSettings() {
   dispSettings.pongClock = prefs.getBool("dsp_pong", def.pongClock);
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
-  dispSettings.cydExtraMode = prefs.getUChar("dsp_cydex", 0);
-  dispSettings.cydExtraMode = 0;  // temporary: force AMS-only on CYD
+  dispSettings.cydExtraMode = 0;  // extra gauges removed - AMS only on CYD
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -215,6 +243,8 @@ void loadSettings() {
   loadGaugeColors("gc_pfn", dispSettings.partFan, def.partFan);
   loadGaugeColors("gc_afn", dispSettings.auxFan, def.auxFan);
   loadGaugeColors("gc_cfn", dispSettings.chamberFan, def.chamberFan);
+  loadGaugeColors("gc_cht", dispSettings.chamberTemp, def.chamberTemp);
+  loadGaugeColors("gc_hbk", dispSettings.heatbreak, def.heatbreak);
 
   // Network settings
   netSettings.useDHCP = prefs.getBool("net_dhcp", true);
@@ -345,6 +375,8 @@ void saveSettings() {
   saveGaugeColors("gc_pfn", dispSettings.partFan);
   saveGaugeColors("gc_afn", dispSettings.auxFan);
   saveGaugeColors("gc_cfn", dispSettings.chamberFan);
+  saveGaugeColors("gc_cht", dispSettings.chamberTemp);
+  saveGaugeColors("gc_hbk", dispSettings.heatbreak);
 
   // Network settings
   prefs.putBool("net_dhcp", netSettings.useDHCP);
@@ -409,6 +441,9 @@ void savePrinterConfig(uint8_t index) {
 
   snprintf(key, sizeof(key), "p%d_region", index);
   prefs.putUChar(key, cfg.region);
+
+  snprintf(key, sizeof(key), "p%d_slots", index);
+  prefs.putBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
 
   if (needOpen) prefs.end();
 }

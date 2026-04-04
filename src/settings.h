@@ -4,6 +4,23 @@
 #include <Arduino.h>
 #include "bambu_state.h"
 
+// Gauge type identifiers for configurable slot layout
+enum GaugeType : uint8_t {
+  GAUGE_EMPTY       = 0,
+  GAUGE_PROGRESS    = 1,
+  GAUGE_NOZZLE      = 2,
+  GAUGE_BED         = 3,
+  GAUGE_PART_FAN    = 4,
+  GAUGE_AUX_FAN     = 5,
+  GAUGE_CHAMBER_FAN = 6,
+  GAUGE_CHAMBER_TEMP= 7,
+  GAUGE_HEATBREAK   = 8,
+  GAUGE_CLOCK       = 9,
+  GAUGE_TYPE_COUNT  // sentinel - always last
+};
+
+static const uint8_t GAUGE_SLOT_COUNT = 6;
+
 // Per-gauge color config
 struct GaugeColors {
   uint16_t arc;       // arc fill color (RGB565)
@@ -27,6 +44,8 @@ struct DisplaySettings {
   GaugeColors partFan;
   GaugeColors auxFan;
   GaugeColors chamberFan;
+  GaugeColors chamberTemp;
+  GaugeColors heatbreak;
 };
 
 // Network settings
