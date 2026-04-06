@@ -389,7 +389,8 @@ Perform an antenna mod by soldering two individual goldpins to the antenna pads,
 
 ## Future Plans
 
-- Multi-language support
+- Planned display support: Waveshare [ESP32-S3-LCD-1.54](https://www.waveshare.com/esp32-s3-lcd-1.54.htm) (240x240, ST7789)
+- Planned display support: Waveshare [ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm) (240x320, ST7789T3 / CST816D touch)
 
 ## License
 
