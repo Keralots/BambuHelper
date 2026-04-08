@@ -1016,7 +1016,7 @@ static void drawPrinting() {
         }
         if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
           if (netSettings.use24h)
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d.%02d %02d:%02d",
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
                      etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
           else
             snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
