@@ -261,7 +261,12 @@ void loop() {
 
   if ((cur == SCREEN_IDLE || cur == SCREEN_CONNECTING_MQTT) &&
       !dpSettings.keepDisplayOn && dpSettings.finishDisplayMins > 0) {
-    if (!anyPrinterPrinting()) {
+    // Don't sleep while AMS is drying — the drying screen is useful
+    bool anyDrying = false;
+    for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+      if (isPrinterConfigured(i) && printers[i].state.ams.anyDrying) { anyDrying = true; break; }
+    }
+    if (!anyPrinterPrinting() && !anyDrying) {
       if (!idleClockActive) { idleClockStart = millis(); idleClockActive = true; }
       if (millis() - idleClockStart > (unsigned long)dpSettings.finishDisplayMins * 60000UL) {
         transitionToClockOrOff();

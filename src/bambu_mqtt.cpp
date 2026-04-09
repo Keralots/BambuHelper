@@ -310,12 +310,39 @@ static void parseMqttPayload(byte* payload, unsigned int length,
           if (amsDoc["tray_now"].is<const char*>() && !s.dualNozzle)
             s.ams.activeTray = atoi(amsDoc["tray_now"].as<const char*>());
 
+          s.ams.anyDrying = false;
           JsonArray units = amsDoc["ams"];
+          uint8_t unitIdx = 0;  // sequential index for unit-level storage
           for (JsonObject unit : units) {
             if (!unit["id"].is<const char*>()) continue;
             uint8_t uid = atoi(unit["id"].as<const char*>());
-            if (uid >= AMS_MAX_UNITS) continue;
+            if (unitIdx >= AMS_MAX_UNITS) continue;
             s.ams.unitCount++;
+
+            // Unit-level data (drying, humidity, temperature)
+            AmsUnit& u = s.ams.units[unitIdx];
+            u.present = true;
+            u.id = uid;
+            if (!unit["dry_time"].isNull()) {
+              uint16_t dt = unit["dry_time"].as<uint16_t>();
+              // Capture total when drying starts (or after reboot mid-drying)
+              if (dt > 0 && (u.dryRemainMin == 0 || dt > u.dryTotalMin))
+                u.dryTotalMin = dt;
+              if (dt == 0) u.dryTotalMin = 0;
+              u.dryRemainMin = dt;
+            }
+            if (unit["humidity"].is<const char*>())
+              u.humidity = atoi(unit["humidity"].as<const char*>());
+            if (unit["humidity_raw"].is<const char*>())
+              u.humidityRaw = atoi(unit["humidity_raw"].as<const char*>());
+            if (unit["temp"].is<const char*>())
+              u.temp = atof(unit["temp"].as<const char*>());
+            if (u.dryRemainMin > 0) s.ams.anyDrying = true;
+
+            unitIdx++;
+
+            // Tray data (skip if uid out of range for tray indexing, e.g. AMS HT id=128)
+            if (uid >= AMS_MAX_UNITS) continue;
 
             JsonArray trays = unit["tray"];
             for (JsonObject tray : trays) {
@@ -347,7 +374,9 @@ static void parseMqttPayload(byte* payload, unsigned int length,
               }
             }
           }
-          MQTT_LOG("AMS: %d units, active tray=%d", s.ams.unitCount, s.ams.activeTray);
+          MQTT_LOG("AMS: %d units, active tray=%d, drying=%s",
+                   s.ams.unitCount, s.ams.activeTray,
+                   s.ams.anyDrying ? "YES" : "no");
         }
       }
     }

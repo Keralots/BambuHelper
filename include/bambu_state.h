@@ -20,11 +20,23 @@ struct AmsTray {
   char     type[16];       // "PLA Matte" etc.
 };
 
+struct AmsUnit {
+  bool     present;               // unit detected in MQTT data
+  uint8_t  id;                    // raw id from MQTT (0-3 for AMS2, 128 for AMS HT)
+  uint8_t  humidity;              // 0-5 scale (lower = dryer)
+  uint8_t  humidityRaw;           // raw sensor value (likely %RH or similar)
+  float    temp;                  // current temperature inside AMS
+  uint16_t dryRemainMin;          // minutes remaining, 0 = not drying
+  uint16_t dryTotalMin;           // captured at drying start (for progress calc)
+};
+
 struct AmsState {
   bool     present;               // any AMS data received
   uint8_t  unitCount;             // detected AMS units (0-4)
   uint8_t  activeTray;            // tray_now (0-15), 255 = none
   AmsTray  trays[AMS_MAX_TRAYS];  // indexed by unit*4 + trayId
+  AmsUnit  units[AMS_MAX_UNITS];  // unit-level data (indexed sequentially)
+  bool     anyDrying;             // true if any unit has dryRemainMin > 0
   bool     vtPresent;             // external spool configured
   uint16_t vtColorRgb565;
   char     vtType[16];

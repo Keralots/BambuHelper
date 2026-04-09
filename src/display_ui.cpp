@@ -441,6 +441,241 @@ static void drawIdleNoPrinter() {
   tft.drawString(WiFi.localIP().toString().c_str(), SCREEN_W / 2, LY_IDLE_NP_IP_Y);
 }
 
+// ---------------------------------------------------------------------------
+//  Screen: Idle Drying (AMS drying active while printer idle)
+//  Shows ONE drying AMS at a time. Rotates between drying units every 60s.
+//  Layout: progress bar, header, large temp, time remaining, humidity, ETA.
+// ---------------------------------------------------------------------------
+static bool wasDrying = false;
+static uint8_t dryDisplayIdx = 0;           // which drying unit we're showing
+static unsigned long dryRotateMs = 0;       // last rotation timestamp
+static const unsigned long DRY_ROTATE_MS = 60000;  // 60s rotation interval
+
+static uint16_t humidityColor(uint8_t level) {
+  if (level <= 2) return CLR_GREEN;
+  if (level == 3) return CLR_YELLOW;
+  if (level == 4) return CLR_ORANGE;
+  return CLR_RED;
+}
+
+// Find the N-th actively drying unit (or first if idx out of range)
+static int8_t findDryingUnit(AmsState& ams, uint8_t idx) {
+  uint8_t found = 0;
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++) {
+    if (ams.units[i].dryRemainMin > 0) {
+      if (found == idx) return i;
+      found++;
+    }
+  }
+  // Wrap around: return first drying unit
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++) {
+    if (ams.units[i].dryRemainMin > 0) return i;
+  }
+  return -1;
+}
+
+static uint8_t countDryingUnits(AmsState& ams) {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++)
+    if (ams.units[i].dryRemainMin > 0) n++;
+  return n;
+}
+
+static void drawIdleDrying(PrinterSlot& p) {
+  BambuState& s = p.state;
+  const int16_t cx = SCREEN_W / 2;
+
+  // Count drying units and handle rotation
+  uint8_t dryCount = countDryingUnits(s.ams);
+  if (dryCount > 1 && millis() - dryRotateMs >= DRY_ROTATE_MS) {
+    dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
+    dryRotateMs = millis();
+    forceRedraw = true;
+    tft.fillScreen(CLR_BG);
+    resetGaugeTextCache();
+  }
+  if (dryCount <= 1) dryDisplayIdx = 0;
+
+  int8_t ui = findDryingUnit(s.ams, dryDisplayIdx);
+  if (ui < 0) return;  // no drying unit found (shouldn't happen)
+  AmsUnit& u = s.ams.units[ui];
+
+  // Change detection
+  static uint16_t prevDryMin = 0;
+  static uint8_t  prevHumidity = 0xFF;
+  static float    prevTemp = -999;
+  static uint8_t  prevHumRaw = 0xFF;
+
+  bool dataChanged = forceRedraw ||
+                     u.dryRemainMin != prevDryMin ||
+                     u.humidity != prevHumidity ||
+                     u.humidityRaw != prevHumRaw ||
+                     (int)(u.temp * 10) != (int)(prevTemp * 10);
+  prevDryMin = u.dryRemainMin;
+  prevHumidity = u.humidity;
+  prevHumRaw = u.humidityRaw;
+  prevTemp = u.temp;
+
+  // === Progress bar (top, y=0-5) ===
+  if (dataChanged) {
+    uint8_t progress = 0;
+    if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
+      progress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
+    drawLedProgressBar(tft, 0, progress);
+    tickProgressShimmer(tft, 0, progress, true);
+  }
+
+  // === Header bar ===
+  if (forceRedraw) {
+    tft.fillRect(0, LY_HDR_Y, SCREEN_W, LY_HDR_H, CLR_BG);
+
+    // Printer name (left)
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu";
+    tft.drawString(name, LY_HDR_NAME_X, LY_HDR_CY);
+
+    // "DRYING" badge (right, orange)
+    tft.setTextDatum(MR_DATUM);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    const char* badge = "DRYING";
+    tft.fillCircle(SCREEN_W - LY_HDR_BADGE_RX - tft.textWidth(badge) - 10, LY_HDR_CY, 4, CLR_ORANGE);
+    tft.drawString(badge, SCREEN_W - LY_HDR_BADGE_RX, LY_HDR_CY);
+
+    // Multi-printer dots
+    if (getActiveConnCount() > 1) {
+      for (uint8_t di = 0; di < MAX_ACTIVE_PRINTERS; di++) {
+        if (!isPrinterConfigured(di)) continue;
+        uint16_t dotClr = (di == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
+        tft.fillCircle(cx - 5 + di * 10, LY_HDR_DOT_CY, 3, dotClr);
+      }
+    }
+  }
+
+  if (!dataChanged) return;
+
+  // === AMS unit name (below header) ===
+  {
+    uint8_t displayNum = (u.id >= 128) ? (u.id - 128 + 1) : (u.id + 1);
+    char unitName[20];
+    if (dryCount > 1)
+      snprintf(unitName, sizeof(unitName), "AMS %d  (%d/%d)", displayNum, dryDisplayIdx + 1, dryCount);
+    else
+      snprintf(unitName, sizeof(unitName), "AMS %d", displayNum);
+
+    tft.fillRect(0, 30, SCREEN_W, 20, CLR_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    tft.drawString(unitName, cx, 40);
+  }
+
+  // === Large temperature display (center) ===
+  {
+    tft.fillRect(0, 55, SCREEN_W, 65, CLR_BG);
+
+    // Big temperature number + degree C together
+    char tempBuf[14];
+    snprintf(tempBuf, sizeof(tempBuf), "%.1f", u.temp);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(7);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    int16_t tempW = tft.textWidth(tempBuf);
+    tft.drawString(tempBuf, cx - 10, 82);
+
+    // Degree symbol - same color, font 4, positioned right of the number
+    tft.setTextFont(4);
+    tft.setTextDatum(ML_DATUM);
+    tft.drawString("'C", cx - 10 + tempW / 2 + 2, 68);
+  }
+
+  // === Remaining time ===
+  {
+    tft.fillRect(0, 125, SCREEN_W, 30, CLR_BG);
+    char timeBuf[20];
+    uint16_t h = u.dryRemainMin / 60;
+    uint16_t m = u.dryRemainMin % 60;
+    if (h > 0)
+      snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm remaining", h, m);
+    else
+      snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(CLR_YELLOW, CLR_BG);
+    tft.drawString(timeBuf, cx, 140);
+  }
+
+  // === Humidity ===
+  {
+    tft.fillRect(0, 158, SCREEN_W, 25, CLR_BG);
+    char humBuf[24];
+    snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(humidityColor(u.humidity), CLR_BG);
+    tft.drawString(humBuf, cx, 170);
+  }
+
+  // === ETA ===
+  {
+    tft.fillRect(0, LY_ETA_Y, SCREEN_W, LY_ETA_H, CLR_BG);
+    tft.setTextDatum(MC_DATUM);
+
+    time_t nowEpoch = time(nullptr);
+    struct tm now;
+    localtime_r(&nowEpoch, &now);
+    bool ntpOk = (now.tm_year > (2020 - 1900));
+
+    char etaBuf[32];
+    if (ntpOk && u.dryRemainMin > 0) {
+      time_t etaEpoch = nowEpoch + (time_t)u.dryRemainMin * 60;
+      struct tm etaTm;
+      localtime_r(&etaEpoch, &etaTm);
+      int etaH = etaTm.tm_hour;
+      const char* ampm = "";
+      if (!netSettings.use24h) {
+        ampm = etaH < 12 ? "AM" : "PM";
+        etaH = etaH % 12;
+        if (etaH == 0) etaH = 12;
+      }
+      if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
+        if (netSettings.use24h)
+          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
+                   etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
+        else
+          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
+                   etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
+      } else {
+        if (netSettings.use24h)
+          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
+        else
+          snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
+      }
+    } else if (u.dryRemainMin > 0) {
+      uint16_t h = u.dryRemainMin / 60;
+      uint16_t m = u.dryRemainMin % 60;
+      snprintf(etaBuf, sizeof(etaBuf), "ETA: %dh %02dm", h, m);
+    } else {
+      snprintf(etaBuf, sizeof(etaBuf), "---");
+    }
+    tft.setTextFont(4);
+    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.drawString(etaBuf, cx, LY_ETA_TEXT_Y);
+  }
+
+  // === Bottom bar — connected indicator ===
+  {
+    bool connChanged = forceRedraw || (s.connected != prevState.connected);
+    if (connChanged) {
+      tft.fillRect(0, LY_BOT_Y, SCREEN_W, LY_BOT_H, CLR_BG);
+      tft.fillCircle(cx, LY_BOT_CY, 4, s.connected ? CLR_GREEN : CLR_RED);
+    }
+  }
+}
+
 static bool wasNoPrinter = false;
 
 static void drawIdle() {
@@ -460,6 +695,33 @@ static void drawIdle() {
 
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
+
+  // AMS drying active — switch to dedicated drying layout
+  // Grace period: stay on drying screen for 5s after anyDrying drops,
+  // to avoid flashing back to idle during brief state transitions (PREPARE etc.)
+  static unsigned long dryingDropMs = 0;
+  if (s.ams.anyDrying) {
+    dryingDropMs = 0;
+    if (!wasDrying) {
+      wasDrying = true;
+      tft.fillScreen(dispSettings.bgColor);
+      forceRedraw = true;
+    }
+    drawIdleDrying(p);
+    return;
+  }
+  if (wasDrying) {
+    if (dryingDropMs == 0) dryingDropMs = millis();
+    if (millis() - dryingDropMs < 5000) {
+      drawIdleDrying(p);  // keep showing drying screen during grace
+      return;
+    }
+    wasDrying = false;
+    dryingDropMs = 0;
+    tft.fillScreen(dispSettings.bgColor);
+    memset(&prevState, 0, sizeof(prevState));
+    forceRedraw = true;
+  }
 
   // Effective screen dimensions — idle uses full screen (no AMS sidebar)
 #if defined(DISPLAY_CYD)
