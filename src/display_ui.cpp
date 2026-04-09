@@ -902,6 +902,9 @@ static void drawAmsTrayBar(int16_t x, int16_t y, int16_t w, int16_t h,
     if (isActive) {
       tft.fillRect(x, y, w, h, TFT_WHITE);
       tft.fillRect(x + 2, y + 2, w - 4, h - 4, tray.colorRgb565);
+      // Active slot marker triangle
+      tft.fillTriangle(x, y, x + w / 2, y + 8, x + w, y, CLR_BG);
+      tft.fillTriangle(x + 2, y + 2, x + w / 2, y + 6, x + w - 2, y + 2, TFT_RED);
     } else {
       tft.drawRect(x, y, w, h, CLR_TEXT_DARK);
       tft.fillRect(x + 1, y + 1, w - 2, h - 2, tray.colorRgb565);
