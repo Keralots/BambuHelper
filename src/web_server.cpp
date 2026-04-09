@@ -490,7 +490,7 @@ R"rawliteral(
           <option value="0" %BTN_OFF%>Disabled</option>
           <option value="1" %BTN_PUSH%>Push Button (active LOW)</option>
           <option value="2" %BTN_TOUCH%>TTP223 Touch (active HIGH)</option>
-          <option value="3" %BTN_SCREEN%>Touchscreen (XPT2046)</option>
+          <option value="3" %BTN_SCREEN%>Touchscreen</option>
         </select>
         <div id="btnPinRow">
           <label for="btnpin">Button GPIO Pin</label>

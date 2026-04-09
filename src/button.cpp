@@ -7,6 +7,11 @@
   static SPIClass touchSPI(HSPI);
   static XPT2046_Touchscreen ts(TOUCH_CS, TOUCH_IRQ);
   static bool touchReady = false;
+#elif defined(USE_CST816)
+  #include <Wire.h>
+  #define CST816_ADDR          0x15
+  #define CST816_TOUCH_NUM_REG 0x02
+  static bool cst816Ready = false;
 #elif defined(TOUCH_CS)
   #include "display_ui.h"  // extern tft for getTouch()
 #endif
@@ -24,6 +29,14 @@ void initButton() {
     ts.begin(touchSPI);
     touchReady = true;
     Serial.println("XPT2046 touch initialized (separate SPI)");
+    return;
+  }
+#elif defined(USE_CST816)
+  if (buttonType == BTN_TOUCHSCREEN) {
+    Wire.begin(CST816_SDA, CST816_SCL);
+    Wire.setClock(400000);
+    cst816Ready = true;
+    Serial.println("CST816 touch initialized (I2C)");
     return;
   }
 #endif
@@ -47,6 +60,16 @@ bool wasButtonPressed() {
 #if defined(USE_XPT2046)
     if (!touchReady) return false;
     raw = ts.touched();
+#elif defined(USE_CST816)
+    if (!cst816Ready) return false;
+    uint8_t touchNum = 0;
+    Wire.beginTransmission(CST816_ADDR);
+    Wire.write(CST816_TOUCH_NUM_REG);
+    if (Wire.endTransmission(true) == 0) {
+      Wire.requestFrom((uint8_t)CST816_ADDR, (uint8_t)1);
+      if (Wire.available()) touchNum = Wire.read();
+    }
+    raw = (touchNum > 0);
 #elif defined(TOUCH_CS)
     uint16_t tx, ty;
     raw = tft.getTouch(&tx, &ty);
