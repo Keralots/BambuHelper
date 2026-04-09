@@ -200,7 +200,8 @@ void loop() {
       s.doorAcknowledged = false;    // reset door ack for next finish
     } else if (s.connected && !s.printing &&
                strcmp(s.gcodeState, "FINISH") == 0) {
-      if (current != SCREEN_FINISHED && current != SCREEN_OFF && current != SCREEN_CLOCK) {
+      if (current != SCREEN_FINISHED && current != SCREEN_OFF && current != SCREEN_CLOCK
+          && !(current == SCREEN_IDLE && s.ams.anyDrying)) {
         if (tasmotaSettings.enabled &&
             (tasmotaSettings.assignedSlot == 255 ||
              tasmotaSettings.assignedSlot == rotState.displayIndex))
