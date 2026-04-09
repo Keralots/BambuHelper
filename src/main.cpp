@@ -223,6 +223,14 @@ void loop() {
         finishActive = true;
         Serial.println("Door opened - print removal acknowledged, starting timeout");
       }
+
+      // AMS drying started while on finish screen — switch to idle so
+      // drawIdleDrying() can take over
+      if (current == SCREEN_FINISHED && s.ams.anyDrying) {
+        setScreenState(SCREEN_IDLE);
+        finishActive = false;
+        idleClockActive = false;
+      }
     } else if (s.connected && !s.printing &&
                strcmp(s.gcodeState, "FINISH") != 0) {
       // SCREEN_CLOCK and SCREEN_OFF are sticky — only button press or
