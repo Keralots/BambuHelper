@@ -989,8 +989,9 @@ static void drawAmsZone(const BambuState& s, bool force) {
       }
 
       // AMS label below bars
-      char label[6];
-      snprintf(label, sizeof(label), "AMS %c", 'A' + u);
+      char label[11];
+	  const AmsUnit &cu = s.ams.units[u];
+	  snprintf(label, sizeof(label), "AMS %c %d%%", 'A' + u, cu.humidityRaw);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       tft.setTextFont(sm ? 1 : 2);
@@ -1030,9 +1031,10 @@ static void drawAmsZone(const BambuState& s, bool force) {
                        s.ams.trays[trayIdx], trayIdx == s.ams.activeTray);
       }
 
-      char label[6];
-      snprintf(label, sizeof(label), "AMS %c", 'A' + u);
-      tft.setTextDatum(TC_DATUM);
+      char label[11];
+	  const AmsUnit &cu = s.ams.units[u];
+	  snprintf(label, sizeof(label), "AMS %c %d%%", 'A' + u, cu.humidityRaw);
+	  tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       tft.setTextFont(sm ? 1 : 2);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
@@ -1269,7 +1271,7 @@ static void drawPrinting() {
   // === AMS zone (CYD: portrait + landscape) ===
 #if defined(DISPLAY_CYD) || defined(DISPLAY_RAK14014)
   if (s.ams.present && s.ams.unitCount > 0) {
-    drawAmsZone(s, forceRedraw);
+	drawAmsZone(s, forceRedraw);
   }
 #endif
 
