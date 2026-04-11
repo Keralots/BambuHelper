@@ -571,11 +571,60 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.drawString(unitName, cx, 40);
   }
 
-  // === Large temperature display (center) ===
+#if defined(DISPLAY_240x320)
+  // === 240x320: Centered large temp + remaining + humidity ===
+  // Vertically centered between unit name (y~50) and ETA (y=260)
+  {
+    tft.fillRect(0, 55, SCREEN_W, 75, CLR_BG);
+
+    char tempBuf[14];
+    snprintf(tempBuf, sizeof(tempBuf), "%.1f", u.temp);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(7);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    int16_t tempW = tft.textWidth(tempBuf);
+    tft.drawString(tempBuf, cx - 10, 100);
+
+    tft.setTextFont(4);
+    tft.setTextDatum(ML_DATUM);
+    tft.drawString("'C", cx - 10 + tempW / 2 + 2, 86);
+  }
+
+  // === Remaining time ===
+  {
+    const int16_t timeY = 160;
+    tft.fillRect(0, timeY - 14, SCREEN_W, 30, CLR_BG);
+    char timeBuf[20];
+    uint16_t h = u.dryRemainMin / 60;
+    uint16_t m = u.dryRemainMin % 60;
+    if (h > 0)
+      snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm remaining", h, m);
+    else
+      snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(4);
+    tft.setTextColor(CLR_YELLOW, CLR_BG);
+    tft.drawString(timeBuf, cx, timeY);
+  }
+
+  // === Humidity ===
+  {
+    const int16_t humY = 200;
+    tft.fillRect(0, humY - 14, SCREEN_W, 30, CLR_BG);
+    char humBuf[24];
+    snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(4);
+    tft.setTextColor(humidityColor(u.humidity), CLR_BG);
+    tft.drawString(humBuf, cx, humY);
+  }
+#else
+  // === 240x240: Large temperature display (center) ===
   {
     tft.fillRect(0, 55, SCREEN_W, 65, CLR_BG);
 
-    // Big temperature number + degree C together
     char tempBuf[14];
     snprintf(tempBuf, sizeof(tempBuf), "%.1f", u.temp);
     tft.setTextDatum(MC_DATUM);
@@ -584,7 +633,6 @@ static void drawIdleDrying(PrinterSlot& p) {
     int16_t tempW = tft.textWidth(tempBuf);
     tft.drawString(tempBuf, cx - 10, 82);
 
-    // Degree symbol - same color, font 4, positioned right of the number
     tft.setTextFont(4);
     tft.setTextDatum(ML_DATUM);
     tft.drawString("'C", cx - 10 + tempW / 2 + 2, 68);
@@ -618,6 +666,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.setTextColor(humidityColor(u.humidity), CLR_BG);
     tft.drawString(humBuf, cx, 170);
   }
+#endif
 
   // === ETA ===
   {

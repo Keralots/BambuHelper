@@ -328,11 +328,13 @@ static void parseMqttPayload(byte* payload, unsigned int length,
           memset(s.ams.trays, 0, sizeof(s.ams.trays));
           for (auto& t : s.ams.trays) t.remain = -1;
 
-          // Reset unit runtime fields, preserve dryTotalMin
+          // Reset unit runtime fields, preserve drying state
           for (auto& u : s.ams.units) {
             uint16_t savedDryTotal = u.dryTotalMin;
+            uint16_t savedDryRemain = u.dryRemainMin;
             memset(&u, 0, sizeof(u));
             u.dryTotalMin = savedDryTotal;
+            u.dryRemainMin = savedDryRemain;
           }
 
           // Reset external spool
