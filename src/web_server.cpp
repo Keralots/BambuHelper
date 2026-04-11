@@ -863,6 +863,30 @@ function showToast(msg){
   setTimeout(function(){t.style.display='none';},msg&&msg.length>40?5000:2000);
 }
 
+function readJsonResponse(r){
+  return r.text().then(function(text){
+    var data={};
+    if(text){
+      try{data=JSON.parse(text);}catch(e){data={message:text};}
+    }
+    data._httpOk=r.ok;
+    data._httpStatus=r.status;
+    return data;
+  });
+}
+
+function isValidIpv4(v){
+  if(!v) return false;
+  var m=v.match(/^(\d{1,3})(\.\d{1,3}){3}$/);
+  if(!m) return false;
+  var parts=v.split('.');
+  for(var i=0;i<parts.length;i++){
+    var n=parseInt(parts[i],10);
+    if(n<0||n>255) return false;
+  }
+  return true;
+}
+
 function toggleStatic(){
   var m=document.getElementById('netmode').value;
   document.getElementById('staticFields').style.display=(m==='static')?'block':'none';
@@ -882,46 +906,80 @@ function savePrinter(){
   var p=new URLSearchParams();
   p.append('slot',currentSlot);
   var mode=document.getElementById('connmode').value;
+  var nameField=mode==='cloud_all'?document.getElementById('cl_pname'):document.getElementById('pname');
+  var serialField=mode==='cloud_all'?document.getElementById('cl_serial'):document.getElementById('serial');
+  var serial=serialField.value.trim().toUpperCase();
+  var token=document.getElementById('cl_token').value.trim();
+  if(nameField&&nameField.value.trim().length===0){showToast('Printer name is required');return;}
+  if(serial.length===0){showToast(mode==='cloud_all'?'Cloud mode requires a printer serial number':'LAN mode requires a printer serial number');return;}
   p.append('connmode',mode);
   if(mode==='cloud_all'){
-    p.append('serial',document.getElementById('cl_serial').value);
-    p.append('pname',document.getElementById('cl_pname').value);
+    var cloudStatus=document.getElementById('cloudStatus').textContent||'';
+    if(token.length===0&&cloudStatus.indexOf('Token active')===-1){
+      showToast('Cloud mode requires a valid token');
+      return;
+    }
+    p.append('serial',serial);
+    p.append('pname',nameField.value.trim());
     p.append('region',document.getElementById('region').value);
-    var token=document.getElementById('cl_token').value.trim();
     if(token) p.append('token',token);
   } else {
-    p.append('pname',document.getElementById('pname').value);
-    p.append('ip',document.getElementById('ip').value);
-    p.append('serial',document.getElementById('serial').value);
-    p.append('code',document.getElementById('code').value);
+    var ip=document.getElementById('ip').value.trim();
+    var code=document.getElementById('code').value.trim();
+    if(ip.length===0){showToast('LAN mode requires a printer IP address');return;}
+    if(!isValidIpv4(ip)){showToast('Printer IP address is not valid');return;}
+    if(code.length>0&&code.length!==8){showToast('LAN access code should be 8 characters');return;}
+    p.append('pname',nameField.value.trim());
+    p.append('ip',ip);
+    p.append('serial',serial);
+    p.append('code',code);
   }
   fetch('/save/printer',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-    .then(function(r){return r.json();})
+    .then(readJsonResponse)
     .then(function(d){
-      if(d.status==='ok'&&d.warning) showToast('Saved! Warning: '+d.warning);
-      else if(d.status==='ok') showToast('Printer settings saved!');
-      else showToast('Error: '+(d.message||'save failed'));
+      if(d.status==='ok'&&d.warning) showToast('Saved with warning: '+d.warning);
+      else if(d.status==='ok') showToast('Printer settings saved');
+      else if(d.message) showToast('Save failed: '+d.message);
+      else showToast('Save failed');
     })
-    .catch(function(e){showToast('Network error');console.warn('savePrinter:',e);});
+    .catch(function(e){showToast('Save failed: network error');console.warn('savePrinter:',e);});
 }
 
 // --- Save WiFi (restart) ---
 function saveWifi(){
+  var ssid=document.getElementById('ssid').value.trim();
+  var netmode=document.getElementById('netmode').value;
+  var ip=document.getElementById('net_ip').value.trim();
+  var gw=document.getElementById('net_gw').value.trim();
+  var sn=document.getElementById('net_sn').value.trim();
+  var dns=document.getElementById('net_dns').value.trim();
+  if(!ssid){showToast('WiFi SSID is required');return;}
+  if(netmode==='static'){
+    if(!ip||!gw||!sn){showToast('Static IP mode requires IP, gateway, and subnet mask');return;}
+    if(!isValidIpv4(ip)){showToast('Static IP address is not valid');return;}
+    if(!isValidIpv4(gw)){showToast('Gateway address is not valid');return;}
+    if(!isValidIpv4(sn)){showToast('Subnet mask is not valid');return;}
+    if(dns&&!isValidIpv4(dns)){showToast('DNS server address is not valid');return;}
+  }
   var p=new URLSearchParams();
-  p.append('ssid',document.getElementById('ssid').value);
+  p.append('ssid',ssid);
   p.append('pass',document.getElementById('pass').value);
-  p.append('netmode',document.getElementById('netmode').value);
-  p.append('net_ip',document.getElementById('net_ip').value);
-  p.append('net_gw',document.getElementById('net_gw').value);
-  p.append('net_sn',document.getElementById('net_sn').value);
-  p.append('net_dns',document.getElementById('net_dns').value);
+  p.append('netmode',netmode);
+  p.append('net_ip',ip);
+  p.append('net_gw',gw);
+  p.append('net_sn',sn);
+  p.append('net_dns',dns);
   p.append('has_showip','1');
   if(document.getElementById('showip').checked) p.append('showip','1');
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-    .then(function(){
+    .then(readJsonResponse)
+    .then(function(d){
+      if(d.status&&d.status!=='ok'){
+        throw new Error(d.message||'settings were not accepted');
+      }
       document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting...</p></div>';
     })
-    .catch(function(e){showToast('Network error');console.warn('saveWifi:',e);});
+    .catch(function(e){showToast('WiFi save failed: '+(e&&e.message?e.message:'network error'));console.warn('saveWifi:',e);});
 }
 
 // --- Cloud ---
@@ -1151,31 +1209,41 @@ function exportSettings(){
 function importSettings(){
   var f=document.getElementById('importFile').files[0];
   if(!f){showToast('Select a JSON file first');return;}
+  if(!f.name.toLowerCase().endsWith('.json')){showToast('Import file must be a JSON backup');return;}
   if(!confirm('Import settings and restart? Current settings will be overwritten.')) return;
   var fd=new FormData();
   fd.append('settings',f);
   var stat=document.getElementById('importStatus');
   stat.style.color='#58A6FF';stat.textContent='Importing...';
   fetch('/settings/import',{method:'POST',body:fd})
-    .then(function(r){return r.json();})
+    .then(readJsonResponse)
     .then(function(d){
       if(d.status==='ok'){
         stat.style.color='#3FB950';stat.textContent=d.message;
+      } else if(d.message){
+        stat.style.color='#F85149';stat.textContent='Import failed: '+d.message;
       } else {
-        stat.style.color='#F85149';stat.textContent='Error: '+d.message;
+        stat.style.color='#F85149';stat.textContent='Import failed';
       }
     })
-    .catch(function(){
-      stat.style.color='#F85149';stat.textContent='Upload failed';
+    .catch(function(e){
+      stat.style.color='#F85149';stat.textContent='Import failed: upload or parsing error';
+      console.warn('importSettings:',e);
     });
 }
 
 function startOta(){
   var f=document.getElementById('otaFile').files[0];
   if(!f){showToast('Select a .bin file first');return;}
-  if(!f.name.endsWith('.bin')){showToast('File must be .bin');return;}
+  if(!f.name.toLowerCase().endsWith('.bin')){showToast('Firmware file must end with .bin');return;}
   if(f.size<32768){showToast('File too small');return;}
   if(f.size>1835008){showToast('File too large (max 1.75MB)');return;}
+  var lowerName=f.name.toLowerCase();
+  var board='%BOARD%'.toLowerCase();
+  if(lowerName.indexOf('bambuhelper-')===0&&lowerName.indexOf('-'+board+'-')===-1){
+    showToast('Selected firmware looks like a different board variant');
+    return;
+  }
   if(!confirm('Upload firmware and restart?')) return;
   var prog=document.getElementById('otaProgress');
   var bar=document.getElementById('otaBar');
@@ -1204,14 +1272,16 @@ function startOta(){
         bar.style.width='100%';pct.textContent='100%';
         stat.style.color='#3FB950';stat.textContent=d.message;
       } else {
-        stat.style.color='#F85149';stat.textContent='Error: '+d.message;
+        var msg=d.message||'Firmware update failed';
+        if(msg==='Invalid firmware file') msg='Invalid firmware file or wrong board build';
+        stat.style.color='#F85149';stat.textContent='Update failed: '+msg;
       }
     }catch(e){
-      stat.style.color='#F85149';stat.textContent='Unexpected response';
+      stat.style.color='#F85149';stat.textContent='Update failed: unexpected response';
     }
   };
   xhr.onerror=function(){
-    stat.style.color='#F85149';stat.textContent='Upload failed (connection lost)';
+    stat.style.color='#F85149';stat.textContent='Update failed: upload interrupted or connection lost';
   };
   xhr.send(fd);
 }
