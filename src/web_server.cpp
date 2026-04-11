@@ -1755,10 +1755,6 @@ static void readDisplayFromForm() {
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
   dispSettings.showTimeRemaining = server.hasArg("shtire");
-  if (server.hasArg("cydextra")) {
-    uint8_t mode = server.arg("cydextra").toInt();
-    if (mode <= 1) dispSettings.cydExtraMode = mode;
-  }
 
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {

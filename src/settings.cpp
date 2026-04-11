@@ -109,7 +109,6 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.smallLabels = false;
   ds.showTimeRemaining = false;
   ds.invertColors = false;
-  ds.cydExtraMode = 0;
   ds.clockTimeColor = CLR_TEXT;
   ds.clockDateColor = CLR_TEXT_DIM;
 
@@ -239,7 +238,6 @@ void loadSettings() {
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
   dispSettings.showTimeRemaining = prefs.getBool("dsp_shtire", def.showTimeRemaining);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
-  dispSettings.cydExtraMode = 0;  // extra gauges removed - AMS only on CYD
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
   dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM);
 
@@ -376,7 +374,6 @@ void saveSettings() {
   prefs.putBool("dsp_slbl", dispSettings.smallLabels);
   prefs.putBool("dsp_shtire", dispSettings.showTimeRemaining);
   prefs.putBool("dsp_inv", dispSettings.invertColors);
-  prefs.putUChar("dsp_cydex", dispSettings.cydExtraMode);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
   prefs.putUShort("dsp_clkd", dispSettings.clockDateColor);
 
