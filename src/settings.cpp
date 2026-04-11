@@ -16,7 +16,7 @@ DisplayPowerSettings dpSettings;
 char cloudEmail[64] = {0};
 
 #if defined (DISPLAY_RAK14014)
-ButtonType buttonType = BTN_TOUCH;
+ButtonType buttonType = BTN_TOUCHSCREEN;
 #else
 ButtonType buttonType = BTN_DISABLED;
 #endif
@@ -284,7 +284,7 @@ void loadSettings() {
     prefs.putBool("tz_migrated", true);
     Serial.printf("[SETTINGS] Migrated timezone: offset %d -> %s\n", oldOffset, tzStr.c_str());
   } else if (!tzStr.isEmpty() && !tzMigrated) {
-    // Recovery: net_tzstr already exists but flag is absent — this device ran
+    // Recovery: net_tzstr already exists but flag is absent ï¿½ this device ran
     // the old migration code and lost power before it could be marked done.
     // Stamp the flag now so future boots skip migration entirely.
     prefs.putBool("tz_migrated", true);
@@ -304,6 +304,7 @@ void loadSettings() {
       }
     }
   }
+
   netSettings.use24h = prefs.getBool("net_24h", true);
   netSettings.dateFormat = prefs.getUChar("net_datefmt", 0);
 
@@ -312,6 +313,7 @@ void loadSettings() {
   dpSettings.keepDisplayOn = prefs.getBool("dp_keepon", false);
   dpSettings.showClockAfterFinish = prefs.getBool("dp_clock", true);
   dpSettings.doorAckEnabled = prefs.getBool("dp_dack", false);
+  dpSettings.keepPrintScreen = prefs.getBool("dp_kps", false);
   dpSettings.nightModeEnabled = prefs.getBool("dp_night", false);
   dpSettings.nightStartHour = prefs.getUChar("dp_nstart", 22);
   dpSettings.nightEndHour = prefs.getUChar("dp_nend", 7);
@@ -408,6 +410,7 @@ void saveSettings() {
   prefs.putBool("dp_keepon", dpSettings.keepDisplayOn);
   prefs.putBool("dp_clock", dpSettings.showClockAfterFinish);
   prefs.putBool("dp_dack", dpSettings.doorAckEnabled);
+  prefs.putBool("dp_kps", dpSettings.keepPrintScreen);
   prefs.putBool("dp_night", dpSettings.nightModeEnabled);
   prefs.putUChar("dp_nstart", dpSettings.nightStartHour);
   prefs.putUChar("dp_nend", dpSettings.nightEndHour);

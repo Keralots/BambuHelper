@@ -104,14 +104,14 @@ static void handleRotation() {
 
 // ---------------------------------------------------------------------------
 void setup() {
-  Serial.begin(115200);
-  Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
-
 #if defined (DISPLAY_RAK14014)
   // Power up the display
   pinMode(WB_IO2, OUTPUT);
   digitalWrite(WB_IO2, HIGH);
 #endif
+
+  Serial.begin(115200);
+  Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
 
   loadSettings();
   initDisplay();
@@ -206,16 +206,18 @@ void loop() {
       s.doorAcknowledged = false;    // reset door ack for next finish
     } else if (s.connected && !s.printing &&
                strcmp(s.gcodeState, "FINISH") == 0) {
-      if (current != SCREEN_FINISHED && current != SCREEN_OFF && current != SCREEN_CLOCK) {
+      if (current != SCREEN_FINISHED && current != SCREEN_OFF && current != SCREEN_CLOCK
+          && !(current == SCREEN_IDLE && s.ams.anyDrying)
+          && !(current == SCREEN_PRINTING && finishActive)) {
         if (tasmotaSettings.enabled &&
             (tasmotaSettings.assignedSlot == 255 ||
              tasmotaSettings.assignedSlot == rotState.displayIndex))
           tasmotaMarkPrintEnd();
-        setScreenState(SCREEN_FINISHED);
+        setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
         finishScreenStart = millis();
         finishActive = true;
         if (!s.finishBuzzerPlayed) {
-        buzzerPlay(BUZZ_PRINT_FINISHED);
+          buzzerPlay(BUZZ_PRINT_FINISHED);
           s.finishBuzzerPlayed = true;
         }
       }
@@ -230,17 +232,30 @@ void loop() {
         Serial.println("Door opened - print removal acknowledged, starting timeout");
       }
 
+      // AMS drying started while on finish/kept-print screen — switch to idle so
+      // drawIdleDrying() can take over
+      if ((current == SCREEN_FINISHED ||
+           (current == SCREEN_PRINTING && dpSettings.keepPrintScreen && finishActive))
+          && s.ams.anyDrying) {
+        setScreenState(SCREEN_IDLE);
+        finishActive = false;
+        idleClockActive = false;
+      }
     } else if (s.connected && !s.printing &&
                strcmp(s.gcodeState, "FINISH") != 0) {
       // SCREEN_CLOCK and SCREEN_OFF are sticky — only button press or
       // new print (s.printing → SCREEN_PRINTING) exits them
       if (current == SCREEN_CLOCK || current == SCREEN_OFF) {
         // nothing — stay asleep while printer is idle
-      } else if (current != SCREEN_IDLE) {
-        if (current == SCREEN_CONNECTING_MQTT) buzzerPlay(BUZZ_CONNECTED);
-        setScreenState(SCREEN_IDLE);
-        finishActive = false;
-        idleClockActive = false;
+      } else {
+        ScreenState target = (dpSettings.keepPrintScreen && !s.ams.anyDrying)
+                             ? SCREEN_PRINTING : SCREEN_IDLE;
+        if (current != target) {
+          if (current == SCREEN_CONNECTING_MQTT) buzzerPlay(BUZZ_CONNECTED);
+          setScreenState(target);
+          finishActive = false;
+          idleClockActive = false;
+        }
       }
     }
   }
@@ -250,7 +265,8 @@ void loop() {
   // Covers both SCREEN_IDLE (printer connected but not printing) and
   // SCREEN_CONNECTING_MQTT (printer offline/unreachable at startup).
   ScreenState cur = getScreenState();
-  if (cur == SCREEN_FINISHED && !dpSettings.keepDisplayOn && finishActive) {
+  if ((cur == SCREEN_FINISHED || (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen))
+      && !dpSettings.keepDisplayOn && finishActive) {
     BambuState& fs = displayedPrinter().state;
     bool waitingForDoor = dpSettings.doorAckEnabled && fs.doorSensorPresent &&
                           !fs.doorAcknowledged;
@@ -265,9 +281,16 @@ void loop() {
       }
     }
   }
-  if ((cur == SCREEN_IDLE || cur == SCREEN_CONNECTING_MQTT) &&
+
+  if ((cur == SCREEN_IDLE || cur == SCREEN_CONNECTING_MQTT ||
+       (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen)) &&
       !dpSettings.keepDisplayOn && dpSettings.finishDisplayMins > 0) {
-    if (!anyPrinterPrinting()) {
+    // Don't sleep while AMS is drying — the drying screen is useful
+    bool anyDrying = false;
+    for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+      if (isPrinterConfigured(i) && printers[i].state.ams.anyDrying) { anyDrying = true; break; }
+    }
+    if (!anyPrinterPrinting() && !anyDrying) {
       if (!idleClockActive) { idleClockStart = millis(); idleClockActive = true; }
       if (millis() - idleClockStart > (unsigned long)dpSettings.finishDisplayMins * 60000UL) {
         transitionToClockOrOff();

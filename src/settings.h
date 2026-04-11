@@ -16,6 +16,15 @@ enum GaugeType : uint8_t {
   GAUGE_CHAMBER_TEMP= 7,
   GAUGE_HEATBREAK   = 8,
   GAUGE_CLOCK       = 9,
+  GAUGE_AMS_HUM_1   = 10,  // AMS unit 1 humidity
+  GAUGE_AMS_HUM_2   = 11,  // AMS unit 2 humidity
+  GAUGE_AMS_HUM_3   = 12,  // AMS unit 3 humidity
+  GAUGE_AMS_HUM_4   = 13,  // AMS unit 4 humidity
+  GAUGE_LAYER       = 14,  // layer progress (current/total)
+  GAUGE_AMS_TEMP_1  = 15,  // AMS unit 1 temperature
+  GAUGE_AMS_TEMP_2  = 16,  // AMS unit 2 temperature
+  GAUGE_AMS_TEMP_3  = 17,  // AMS unit 3 temperature
+  GAUGE_AMS_TEMP_4  = 18,  // AMS unit 4 temperature
   GAUGE_TYPE_COUNT  // sentinel - always last
 };
 
@@ -71,6 +80,7 @@ struct DisplayPowerSettings {
   bool keepDisplayOn;          // override: never turn off display
   bool showClockAfterFinish;   // show clock instead of turning display off
   bool doorAckEnabled;         // wait for door open after print finish before timeout
+  bool keepPrintScreen;        // show printing screen instead of finish screen after print
   // Night mode (scheduled dimming)
   bool nightModeEnabled;       // enable time-based dimming
   uint8_t nightStartHour;      // dim start hour (0-23)

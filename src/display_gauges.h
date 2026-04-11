@@ -36,6 +36,16 @@ void drawFanGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
 void drawClockWidget(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, bool forceRedraw);
 
+// Draw AMS humidity gauge (humidityRaw % with color from humidity level)
+void drawHumidityGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+                       uint8_t humidityRaw, uint8_t humidityLevel, bool present,
+                       const char* label, bool forceRedraw);
+
+// Draw layer progress gauge (current / total layers)
+void drawLayerGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+                    int16_t thickness, uint16_t layerNum, uint16_t totalLayers,
+                    bool forceRedraw);
+
 // Reset cached text (call on screen/printer transitions)
 void resetGaugeTextCache();
 

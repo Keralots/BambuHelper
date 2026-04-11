@@ -36,9 +36,7 @@ static int clkDigitX(int i) {
     if (i == 2)
       return clk_time_x_l + 2 * CLK_DIGIT_W; // colon
     return clk_time_x_l + 2 * CLK_DIGIT_W + CLK_COLON_W + (i - 3) * CLK_DIGIT_W;
-  }
-  else
-  {
+  } else {
     if (i < 2)
       return CLK_TIME_X + i * CLK_DIGIT_W;
     if (i == 2)
@@ -122,8 +120,7 @@ void drawClock() {
   int ly_w_clk;
   if ((dispSettings.rotation == 1 || dispSettings.rotation == 3)) {
     ly_w_clk = LY_H;
-  }
-  else {
+  } else {
     ly_w_clk = LY_W;
   }
 

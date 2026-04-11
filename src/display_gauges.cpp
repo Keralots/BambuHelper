@@ -381,6 +381,115 @@ void drawFanGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
 }
 
 // ---------------------------------------------------------------------------
+//  AMS humidity gauge (percentage from humidityRaw, color from humidity level)
+// ---------------------------------------------------------------------------
+void drawHumidityGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+                       uint8_t humidityRaw, uint8_t humidityLevel, bool present,
+                       const char* label, bool forceRedraw) {
+  const uint16_t startAngle = 60;
+  const int16_t thickness = 6;
+  uint16_t bg = dispSettings.bgColor;
+
+  uint8_t pct = present ? humidityRaw : 0;
+  if (pct > 100) pct = 100;
+
+  uint16_t fillEnd = startAngle + (uint16_t)(pct * 240 / 100);
+  if (fillEnd > 300) fillEnd = 300;
+
+  // Color based on humidity level (0-5): green = dry, red = humid
+  uint16_t arcColor;
+  if (!present || humidityLevel == 0) {
+    arcColor = CLR_TEXT_DIM;
+  } else if (humidityLevel <= 2) {
+    arcColor = CLR_GREEN;
+  } else if (humidityLevel <= 3) {
+    arcColor = CLR_YELLOW;
+  } else {
+    arcColor = CLR_RED;
+  }
+
+  uint16_t drawFill = (pct > 0) ? fillEnd : startAngle;
+  drawArcFill(tft, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
+
+  // Build display string
+  char buf[8];
+  if (present) {
+    snprintf(buf, sizeof(buf), "%d%%", humidityRaw);
+  } else {
+    strlcpy(buf, "--", sizeof(buf));
+  }
+
+  if (gaugeTextChanged(cx, cy, buf, "", forceRedraw)) {
+    clearGaugeCenter(tft, cx, cy, radius, thickness);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(4);
+    tft.setTextColor(present ? CLR_TEXT : CLR_TEXT_DIM);
+    tft.drawString(buf, cx, cy);
+
+    bool sm = dispSettings.smallLabels;
+    tft.setTextFont(sm ? 1 : 2);
+    tft.setTextColor(arcColor, bg);
+    tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Layer progress gauge (current / total)
+// ---------------------------------------------------------------------------
+void drawLayerGauge(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+                    int16_t thickness, uint16_t layerNum, uint16_t totalLayers,
+                    bool forceRedraw) {
+  const uint16_t startAngle = 60;
+  uint16_t bg = dispSettings.bgColor;
+  uint16_t arcColor = dispSettings.progress.arc;
+
+  float ratio = (totalLayers > 0) ? ((float)layerNum / totalLayers) : 0;
+  if (ratio > 1.0f) ratio = 1.0f;
+
+  uint16_t fillEnd = startAngle + (uint16_t)(ratio * 240);
+  if (fillEnd > 300) fillEnd = 300;
+
+  uint16_t drawFill = (ratio > 0.01f) ? fillEnd : startAngle;
+  drawArcFill(tft, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
+
+  // Build display strings - use smaller font for large numbers
+  char layerBuf[12], totalBuf[12];
+  snprintf(layerBuf, sizeof(layerBuf), "%d", layerNum);
+  if (totalLayers > 0) {
+    snprintf(totalBuf, sizeof(totalBuf), "/%d", totalLayers);
+  } else {
+    totalBuf[0] = '\0';
+  }
+
+  if (gaugeTextChanged(cx, cy, layerBuf, totalBuf, forceRedraw)) {
+    clearGaugeCenter(tft, cx, cy, radius, thickness);
+
+    tft.setTextDatum(MC_DATUM);
+
+    // Pick font size based on digit count to fit inside gauge
+    bool hasTot = (totalLayers > 0);
+    int digits = strlen(layerBuf) + strlen(totalBuf);
+    uint8_t mainFont = (digits > 7) ? 2 : 4;
+
+    tft.setTextFont(mainFont);
+    tft.setTextColor(CLR_TEXT);
+    tft.drawString(layerBuf, cx, hasTot ? (cy - 4) : cy);
+
+    if (hasTot) {
+      tft.setTextFont((digits > 7) ? 1 : 2);
+      tft.setTextColor(CLR_TEXT_DIM);
+      tft.drawString(totalBuf, cx, cy + (mainFont == 2 ? 8 : 10));
+    }
+
+    bool sm = dispSettings.smallLabels;
+    tft.setTextFont(sm ? 1 : 2);
+    tft.setTextColor(arcColor, bg);
+    tft.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
+  }
+}
+
+// ---------------------------------------------------------------------------
 //  Clock widget - shows current time HH:MM inside a track ring
 // ---------------------------------------------------------------------------
 void drawClockWidget(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,

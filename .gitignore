@@ -8,3 +8,4 @@ codex/
 *.elf
 *.map
 tools/pushall_dump.json
+tools/ams_dump.json
