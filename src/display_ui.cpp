@@ -517,12 +517,11 @@ static void drawIdleDrying(PrinterSlot& p) {
   prevTemp = u.temp;
 
   // === Progress bar (top, y=0-5) ===
+  uint8_t dryProgress = 0;
+  if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
+    dryProgress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
   if (dataChanged) {
-    uint8_t progress = 0;
-    if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
-      progress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
-    drawLedProgressBar(tft, 0, progress);
-    tickProgressShimmer(tft, 0, progress, true);
+    drawLedProgressBar(tft, 0, dryProgress);
   }
 
   // === Header bar ===
@@ -1843,6 +1842,19 @@ void updateDisplay() {
   if (currentScreen == SCREEN_PRINTING) {
     BambuState& sh = displayedPrinter().state;
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
+  }
+  if (currentScreen == SCREEN_IDLE && isPrinterConfigured(rotState.displayIndex)) {
+    BambuState& sh = displayedPrinter().state;
+    if (sh.ams.anyDrying) {
+      uint8_t dp = 0;
+      AmsUnit* du = nullptr;
+      for (uint8_t i = 0; i < sh.ams.unitCount; i++) {
+        if (sh.ams.units[i].dryRemainMin > 0) { du = &sh.ams.units[i]; break; }
+      }
+      if (du && du->dryTotalMin > 0 && du->dryRemainMin <= du->dryTotalMin)
+        dp = 100 - (uint8_t)((uint32_t)du->dryRemainMin * 100 / du->dryTotalMin);
+      tickProgressShimmer(tft, 0, dp, true);
+    }
   }
   // Pong clock runs at ~50fps, independent of display refresh
   if (currentScreen == SCREEN_CLOCK && dispSettings.pongClock) {
