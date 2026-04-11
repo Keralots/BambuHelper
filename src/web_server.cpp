@@ -57,15 +57,15 @@ input:focus{border-color:#58A6FF}
 <h1>BambuHelper</h1>
 <p class="sub">Initial Setup</p>
 <div class="card">
-  <h2>Connect to WiFi</h2>
+  <h2>Connect to WiFi Network</h2>
   <p style="font-size:12px;color:#8B949E;margin-bottom:10px">Enter your WiFi credentials. After saving, the device will restart and connect to your network. You can then access the full settings at the device's IP address.</p>
   <label for="ssid">WiFi SSID</label>
   <input type="text" id="ssid" placeholder="Your WiFi network name">
   <label for="pass">WiFi Password</label>
   <input type="password" id="pass" placeholder="WiFi password">
   <div style="margin-top:6px"><input type="checkbox" id="showpass" onchange="document.getElementById('pass').type=this.checked?'text':'password'" style="vertical-align:middle"><label for="showpass" style="color:#8B949E;font-size:12px;margin:0 0 0 4px;display:inline">Show password</label></div>
-  <button class="btn" onclick="saveWifi()">Save &amp; Connect</button>
-  <div id="msg" style="margin-top:10px;font-size:13px;text-align:center"></div>
+  <button class="btn" onclick="saveWifi()">Save WiFi &amp; Restart</button>
+  <div id="msg" role="status" aria-live="polite" aria-atomic="true" style="margin-top:10px;font-size:13px;text-align:center"></div>
 </div>
 <script>
 function saveWifi(){
@@ -74,7 +74,7 @@ function saveWifi(){
   document.getElementById('msg').innerHTML='<span style="color:#58A6FF">Saving...</span>';
   var d=new URLSearchParams();d.append('ssid',s);d.append('pass',p);
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:d.toString()})
-    .then(function(){document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting... Connect to your WiFi and open the device IP in a browser.</p></div>';})
+    .then(function(){document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting... Connect to your WiFi and open the device IP address in a browser.</p></div>';})
     .catch(function(e){document.getElementById('msg').style.color='#F85149';document.getElementById('msg').textContent='Connection error';console.warn('saveWifi:',e);});
 }
 </script>
@@ -153,6 +153,20 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   .theme-btn:hover { border-color: #58A6FF; color: #E6EDF3; }
   .global-colors { display: flex; gap: 16px; margin-bottom: 8px; }
   .global-colors .color-row { margin: 0; }
+  .subsection-toggle {
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid #30363D;
+  }
+  .subsection-toggle summary {
+    display: flex; align-items: center; justify-content: space-between;
+    color: #58A6FF; font-size: 14px; font-weight: 600; cursor: pointer;
+    list-style: none;
+  }
+  .subsection-toggle summary::-webkit-details-marker { display: none; }
+  .subsection-toggle summary::after {
+    content: '\25B6'; color: #8B949E; font-size: 12px; transition: transform 0.2s ease;
+  }
+  .subsection-toggle[open] summary::after { transform: rotate(90deg); }
+  .subsection-body { margin-top: 10px; }
 
   /* Collapsible sections */
   .section { margin-bottom: 12px; }
@@ -181,11 +195,11 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
 <body>
 <h1>BambuHelper</h1>
 <p class="subtitle">Bambu Lab Printer Monitor</p>
-<div id="toast" class="toast">Applied!</div>
+<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">Applied!</div>
 
 <!-- ===== Section 1: Printer Settings ===== -->
 <div class="section" id="s-printer">
-  <div class="section-header" onclick="toggleSection('printer')">
+  <div class="section-header" onclick="toggleSection('printer')" aria-expanded="false" aria-controls="sec-printer">
     <h2>Printer Settings</h2>
     <span class="arrow" id="arr-printer">&#9654;</span>
   </div>
@@ -209,7 +223,7 @@ R"rawliteral(
 )rawliteral"
 #endif
 R"rawliteral(
-      <div id="printerStatus" class="%STATUS_CLASS%">%STATUS_TEXT%</div>
+      <div id="printerStatus" class="%STATUS_CLASS%" role="status" aria-live="polite" aria-atomic="true">%STATUS_TEXT%</div>
       <label for="connmode">Connection Mode</label>
       <select id="connmode" onchange="toggleConnMode()">
         <option value="local" %MODE_LOCAL%>LAN Mode</option>
@@ -235,7 +249,7 @@ R"rawliteral(
           <option value="eu" %REGION_EU%>Europe (EU)</option>
           <option value="cn" %REGION_CN%>China (CN)</option>
         </select>
-        <div id="cloudStatus" style="margin-top:8px;font-size:13px;color:#8B949E">%CLOUD_STATUS%</div>
+        <div id="cloudStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px;font-size:13px;color:#8B949E">%CLOUD_STATUS%</div>
         <div style="margin-top:10px">
           <p style="font-size:12px;color:#8B949E;margin-bottom:8px">
             <b>How to get your token:</b><br>
@@ -287,7 +301,7 @@ R"rawliteral(
 
 <!-- ===== Section 2: Display ===== -->
 <div class="section" id="s-display">
-  <div class="section-header" onclick="toggleSection('display')">
+  <div class="section-header" onclick="toggleSection('display')" aria-expanded="false" aria-controls="sec-display">
     <h2>Display</h2>
     <span class="arrow" id="arr-display">&#9654;</span>
   </div>
@@ -321,16 +335,16 @@ R"rawliteral(
       </div>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
-        <h3 style="color:#58A6FF;font-size:14px;margin-bottom:10px">After Print Completes</h3>
-        <label for="afterprint">When print finishes</label>
+        <h3 style="color:#58A6FF;font-size:14px;margin-bottom:10px">After a Print Completes</h3>
+        <label for="afterprint">After a print finishes</label>
         <select id="afterprint" onchange="toggleAfterPrint()">
-          <option value="0" %AP_CLOCK0%>Go to clock/screensaver immediately</option>
+          <option value="0" %AP_CLOCK0%>Switch to clock/screensaver immediately</option>
           <option value="1" %AP_F1%>Show finish screen for 1 minute</option>
           <option value="3" %AP_F3%>Show finish screen for 3 minutes</option>
           <option value="5" %AP_F5%>Show finish screen for 5 minutes</option>
           <option value="10" %AP_F10%>Show finish screen for 10 minutes</option>
-          <option value="custom" %AP_CUSTOM%>Custom duration...</option>
-          <option value="keepon" %AP_KEEPON%>Keep finish screen on</option>
+          <option value="custom" %AP_CUSTOM%>Custom duration</option>
+          <option value="keepon" %AP_KEEPON%>Keep finish screen visible</option>
         </select>
         <div id="customMinsWrap" style="display:%CUSTOM_DISP%;margin-top:6px">
           <label for="fmins" style="font-size:12px">Minutes</label>
@@ -342,7 +356,7 @@ R"rawliteral(
         </div>
         <div class="check-row" style="margin-top:4px">
           <input type="checkbox" id="kps" value="1" %KPS% onchange="toggleSetting('kps',this.checked)">
-          <label for="kps">Keep printing screen after print completes</label>
+          <label for="kps">Keep print status screen after completion</label>
         </div>
         <p style="font-size:11px;color:#8B949E;margin-top:2px">Show last print stats instead of the finish screen. Drying screen still takes priority.</p>
         <label for="ssbright" style="margin-top:12px;font-size:12px">Screensaver brightness: <span id="ssbrightVal">%SSBRIGHT%</span></label>
@@ -373,6 +387,10 @@ R"rawliteral(
           <input type="checkbox" id="slbl" value="1" %SLBL% onchange="toggleSetting('slbl',this.checked)">
           <label for="slbl">Smaller gauge labels</label>
         </div>
+        <div class="check-row">
+          <input type="checkbox" id="shtire" value="1" %SHTIRE% onchange="toggleSetting('shtire',this.checked)">
+          <label for="shtire">Show remaining time instead of ETA</label>
+        </div>
 %INVCOL_ROW%
       </div>
 
@@ -397,74 +415,72 @@ R"rawliteral(
           <label>Time color</label><input type="color" id="clk_time" value="%CLK_TIME%">
           <label>Date color</label><input type="color" id="clk_date" value="%CLK_DATE%">
         </div>
-        <div class="check-row">
-          <input type="checkbox" id="shtire" value="1" %SHTIRE% onchange="toggleSetting('shtire',this.checked)">
-          <label for="shtire">Always show time remaining</label>
-        </div>
       </div>
 
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
-        <h3 style="color:#58A6FF;font-size:14px;margin-bottom:10px">Gauge Colors</h3>
-        <div class="theme-bar">
-          <button type="button" class="theme-btn" onclick="applyTheme('default')">Default</button>
-          <button type="button" class="theme-btn" onclick="applyTheme('mono_green')">Mono Green</button>
-          <button type="button" class="theme-btn" onclick="applyTheme('neon')">Neon</button>
-          <button type="button" class="theme-btn" onclick="applyTheme('warm')">Warm</button>
-          <button type="button" class="theme-btn" onclick="applyTheme('ocean')">Ocean</button>
-        </div>
-
-        <div class="global-colors">
-          <div class="color-row">
-            <label>Background</label>
-            <input type="color" id="clr_bg" value="%CLR_BG%">
+      <details class="subsection-toggle">
+        <summary>Gauge Colors</summary>
+        <div class="subsection-body">
+          <div class="theme-bar">
+            <button type="button" class="theme-btn" onclick="applyTheme('default')">Default</button>
+            <button type="button" class="theme-btn" onclick="applyTheme('mono_green')">Mono Green</button>
+            <button type="button" class="theme-btn" onclick="applyTheme('neon')">Neon</button>
+            <button type="button" class="theme-btn" onclick="applyTheme('warm')">Warm</button>
+            <button type="button" class="theme-btn" onclick="applyTheme('ocean')">Ocean</button>
           </div>
-          <div class="color-row">
-            <label>Track</label>
-            <input type="color" id="clr_track" value="%CLR_TRACK%">
-          </div>
-        </div>
 
-        <div class="gauge-section"><h3>Progress</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="prg_a" value="%PRG_A%">
-          <label>Label</label><input type="color" id="prg_l" value="%PRG_L%">
-          <label>Value</label><input type="color" id="prg_v" value="%PRG_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Nozzle</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="noz_a" value="%NOZ_A%">
-          <label>Label</label><input type="color" id="noz_l" value="%NOZ_L%">
-          <label>Value</label><input type="color" id="noz_v" value="%NOZ_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Bed</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="bed_a" value="%BED_A%">
-          <label>Label</label><input type="color" id="bed_l" value="%BED_L%">
-          <label>Value</label><input type="color" id="bed_v" value="%BED_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Part Fan</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="pfn_a" value="%PFN_A%">
-          <label>Label</label><input type="color" id="pfn_l" value="%PFN_L%">
-          <label>Value</label><input type="color" id="pfn_v" value="%PFN_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Aux Fan</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="afn_a" value="%AFN_A%">
-          <label>Label</label><input type="color" id="afn_l" value="%AFN_L%">
-          <label>Value</label><input type="color" id="afn_v" value="%AFN_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Chamber Fan</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="cfn_a" value="%CFN_A%">
-          <label>Label</label><input type="color" id="cfn_l" value="%CFN_L%">
-          <label>Value</label><input type="color" id="cfn_v" value="%CFN_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Chamber Temp</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="cht_a" value="%CHT_A%">
-          <label>Label</label><input type="color" id="cht_l" value="%CHT_L%">
-          <label>Value</label><input type="color" id="cht_v" value="%CHT_V%">
-        </div></div>
-        <div class="gauge-section"><h3>Heatbreak Fan</h3><div class="color-row">
-          <label>Arc</label><input type="color" id="hbk_a" value="%HBK_A%">
-          <label>Label</label><input type="color" id="hbk_l" value="%HBK_L%">
-          <label>Value</label><input type="color" id="hbk_v" value="%HBK_V%">
-        </div></div>
-      </div>
+          <div class="global-colors">
+            <div class="color-row">
+              <label>Background</label>
+              <input type="color" id="clr_bg" value="%CLR_BG%">
+            </div>
+            <div class="color-row">
+              <label>Track</label>
+              <input type="color" id="clr_track" value="%CLR_TRACK%">
+            </div>
+          </div>
+
+          <div class="gauge-section"><h3>Progress</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="prg_a" value="%PRG_A%">
+            <label>Label</label><input type="color" id="prg_l" value="%PRG_L%">
+            <label>Value</label><input type="color" id="prg_v" value="%PRG_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Nozzle</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="noz_a" value="%NOZ_A%">
+            <label>Label</label><input type="color" id="noz_l" value="%NOZ_L%">
+            <label>Value</label><input type="color" id="noz_v" value="%NOZ_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Bed</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="bed_a" value="%BED_A%">
+            <label>Label</label><input type="color" id="bed_l" value="%BED_L%">
+            <label>Value</label><input type="color" id="bed_v" value="%BED_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Part Fan</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="pfn_a" value="%PFN_A%">
+            <label>Label</label><input type="color" id="pfn_l" value="%PFN_L%">
+            <label>Value</label><input type="color" id="pfn_v" value="%PFN_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Aux Fan</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="afn_a" value="%AFN_A%">
+            <label>Label</label><input type="color" id="afn_l" value="%AFN_L%">
+            <label>Value</label><input type="color" id="afn_v" value="%AFN_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Chamber Fan</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="cfn_a" value="%CFN_A%">
+            <label>Label</label><input type="color" id="cfn_l" value="%CFN_L%">
+            <label>Value</label><input type="color" id="cfn_v" value="%CFN_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Chamber Temp</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="cht_a" value="%CHT_A%">
+            <label>Label</label><input type="color" id="cht_l" value="%CHT_L%">
+            <label>Value</label><input type="color" id="cht_v" value="%CHT_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Heatbreak Fan</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="hbk_a" value="%HBK_A%">
+            <label>Label</label><input type="color" id="hbk_l" value="%HBK_L%">
+            <label>Value</label><input type="color" id="hbk_v" value="%HBK_V%">
+          </div></div>
+        </div>
+      </details>
 
       <button type="button" class="btn btn-blue" onclick="applyDisplay()">Apply Display Settings</button>
     </div>
@@ -473,13 +489,13 @@ R"rawliteral(
 
 <!-- ===== Section 3: Hardware & Multi-Printer ===== -->
 <div class="section" id="s-rotate">
-  <div class="section-header" onclick="toggleSection('rotate')">
+  <div class="section-header" onclick="toggleSection('rotate')" aria-expanded="false" aria-controls="sec-rotate">
     <h2>Hardware &amp; Multi-Printer</h2>
     <span class="arrow" id="arr-rotate">&#9654;</span>
   </div>
   <div class="section-content" id="sec-rotate">
     <div class="section-body">
-      <label for="rotmode">Display Rotation Mode</label>
+      <label for="rotmode">Printer Rotation Mode</label>
       <select id="rotmode">
         <option value="0" %RMODE_OFF%>Off (show selected printer only)</option>
         <option value="1" %RMODE_AUTO%>Auto-rotate (cycle all connected)</option>
@@ -490,7 +506,7 @@ R"rawliteral(
       <p style="font-size:11px;color:#8B949E;margin-top:4px">Smart mode shows the printing printer. Rotates only when both are printing.</p>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
-        <label for="btntype">Physical Button</label>
+        <label for="btntype">External Button</label>
         <select id="btntype" onchange="toggleBtnPin()">
           <option value="0" %BTN_OFF%>Disabled</option>
           <option value="1" %BTN_PUSH%>Push Button (active LOW)</option>
@@ -505,7 +521,7 @@ R"rawliteral(
       </div>
 
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
-        <label for="buzzen">Buzzer (optional)</label>
+        <label for="buzzen">Buzzer</label>
         <select id="buzzen" onchange="toggleBuzPin()">
           <option value="0" %BUZ_OFF%>Disabled</option>
           <option value="1" %BUZ_ON%>Enabled</option>
@@ -529,18 +545,18 @@ R"rawliteral(
             <p style="font-size:11px;color:#8B949E;margin-top:2px">Audible feedback for capacitive touch buttons</p>
           </div>
           <button type="button" id="buzTestBtn" class="btn btn-blue" style="margin-top:12px;width:auto;padding:8px 16px"
-                  onclick="testBuzzer()">Test: Print Finished</button>
+                  onclick="testBuzzer()">Test Finished Sound</button>
         </div>
       </div>
 
-      <button type="button" class="btn btn-blue" onclick="saveRotation()">Apply</button>
+      <button type="button" class="btn btn-blue" onclick="saveRotation()">Save Hardware Settings</button>
     </div>
   </div>
 </div>
 
 <!-- ===== Section 5: WiFi & System ===== -->
 <div class="section" id="s-wifi">
-  <div class="section-header" onclick="toggleSection('wifi')">
+  <div class="section-header" onclick="toggleSection('wifi')" aria-expanded="false" aria-controls="sec-wifi">
     <h2>WiFi &amp; System</h2>
     <span class="arrow" id="arr-wifi">&#9654;</span>
   </div>
@@ -570,7 +586,7 @@ R"rawliteral(
       <div class="check-row">
         <input type="hidden" name="has_showip" value="1">
         <input type="checkbox" id="showip" value="1" %SHOWIP%>
-        <label for="showip">Show IP at startup (3s)</label>
+        <label for="showip">Show IP on startup (3 s)</label>
       </div>
 
       <button type="button" class="btn btn-primary" onclick="saveWifi()">Save WiFi &amp; Restart</button>
@@ -582,14 +598,14 @@ R"rawliteral(
           Note: Cloud token is NOT included — you'll need to re-login after import.
         </p>
         <button type="button" class="btn btn-blue" style="display:inline-block;width:auto;padding:8px 16px"
-                onclick="exportSettings()">Export Settings</button>
+                onclick="exportSettings()">Export Backup</button>
         <div style="margin-top:12px">
-          <label for="importFile" style="font-size:12px">Import Settings</label>
+          <label for="importFile" style="font-size:12px">Import Backup</label>
           <input type="file" id="importFile" accept=".json"
                  style="width:100%;margin-top:4px;padding:6px;background:#0D1117;border:1px solid #30363D;border-radius:6px;color:#C9D1D9">
           <button type="button" class="btn btn-primary" style="margin-top:8px;font-size:13px;padding:8px"
-                  onclick="importSettings()">Import &amp; Restart</button>
-          <div id="importStatus" style="margin-top:8px;font-size:13px"></div>
+                  onclick="importSettings()">Import Backup &amp; Restart</button>
+          <div id="importStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px;font-size:13px"></div>
         </div>
       </div>
       <div style="margin-top:20px;padding-top:12px;border-top:1px solid #30363D">
@@ -602,9 +618,9 @@ R"rawliteral(
 R"rawliteral(
         <div style="display:flex;gap:4px;margin-bottom:12px">
           <button type="button" id="tab-auto-btn" onclick="switchFwTab('auto')"
-            style="flex:1;padding:8px;border:1px solid #58A6FF;border-radius:6px;background:#21262D;color:#E6EDF3;font-size:13px;cursor:pointer">Auto Update</button>
+            style="flex:1;padding:8px;border:1px solid #58A6FF;border-radius:6px;background:#21262D;color:#E6EDF3;font-size:13px;cursor:pointer">Online Update</button>
           <button type="button" id="tab-manual-btn" onclick="switchFwTab('manual')"
-            style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#8B949E;font-size:13px;cursor:pointer">Manual Upload</button>
+            style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#8B949E;font-size:13px;cursor:pointer">Manual Update</button>
         </div>
         <div id="fw-tab-auto">
           <p style="font-size:12px;color:#8B949E;margin-bottom:10px">
@@ -612,7 +628,7 @@ R"rawliteral(
           </p>
           <div id="updateCheck" style="margin-bottom:12px">
             <button type="button" class="btn btn-blue" onclick="checkForUpdates()">Check for Updates</button>
-            <span id="updateResult" style="margin-left:8px;font-size:13px"></span>
+            <span id="updateResult" role="status" aria-live="polite" aria-atomic="true" style="margin-left:8px;font-size:13px"></span>
           </div>
           <div id="updateInfo" style="display:none;margin-bottom:12px;padding:10px;background:#0D1117;border:1px solid #30363D;border-radius:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -621,7 +637,7 @@ R"rawliteral(
                 <span id="updateDate" style="color:#8B949E;font-size:12px;margin-left:8px"></span>
               </div>
               <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                <button id="installBtn" type="button" class="btn btn-primary" style="font-size:12px;padding:4px 12px" onclick="installUpdate()">Install on BambuHelper</button>
+                <button id="installBtn" type="button" class="btn btn-primary" style="font-size:12px;padding:4px 12px" onclick="installUpdate()">Install Update</button>
                 <a id="updateLink" href="#" target="_blank" class="btn" style="font-size:12px;padding:4px 12px;text-decoration:none;background:#21262D;color:#C9D1D9;border:1px solid #30363D;border-radius:6px">Manual download</a>
               </div>
             </div>
@@ -629,7 +645,7 @@ R"rawliteral(
               <div style="background:#30363D;border-radius:4px;height:16px;overflow:hidden">
                 <div id="autoOtaBar" style="background:#238636;height:100%;width:0%;transition:width 0.4s;border-radius:4px"></div>
               </div>
-              <div id="autoOtaStatus" style="text-align:center;font-size:12px;color:#8B949E;margin-top:4px">Starting...</div>
+              <div id="autoOtaStatus" role="status" aria-live="polite" aria-atomic="true" style="text-align:center;font-size:12px;color:#8B949E;margin-top:4px">Starting...</div>
               <p style="font-size:11px;color:#F0883E;margin-top:6px;text-align:center">&#9888; Do not power off or close this page</p>
             </div>
           </div>
@@ -655,8 +671,8 @@ R"rawliteral(
             </div>
             <div id="otaPct" style="text-align:center;font-size:13px;color:#E6EDF3;margin-top:4px">0%</div>
           </div>
-          <div id="otaStatus" style="margin-top:8px;font-size:13px"></div>
-          <button type="button" class="btn btn-primary" style="margin-top:8px" onclick="startOta()">Upload &amp; Update</button>
+          <div id="otaStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px;font-size:13px"></div>
+          <button type="button" class="btn btn-primary" style="margin-top:8px" onclick="startOta()">Upload Firmware</button>
 )rawliteral"
 #ifdef ENABLE_OTA_AUTO
 R"rawliteral(
@@ -674,7 +690,7 @@ R"rawliteral(
 
 <!-- ===== Section 5: Power Monitoring ===== -->
 <div class="section" id="s-power">
-  <div class="section-header" onclick="toggleSection('power')">
+  <div class="section-header" onclick="toggleSection('power')" aria-expanded="false" aria-controls="sec-power">
     <h2>Power Monitoring</h2>
     <span class="arrow" id="arr-power">&#9654;</span>
   </div>
@@ -704,14 +720,14 @@ R"rawliteral(
       <label for="tsm_pi" style="margin-top:12px">Poll interval</label>
       <select id="tsm_pi">%TSM_PI_OPTIONS%</select>
       <button type="button" class="btn btn-primary" onclick="savePower()">Save Power Settings</button>
-      <div id="powerStatus" style="margin-top:8px;font-size:13px"></div>
+      <div id="powerStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px;font-size:13px"></div>
     </div>
   </div>
 </div>
 
 <!-- ===== Section 6: Diagnostics ===== -->
 <div class="section" id="s-diag">
-  <div class="section-header" onclick="toggleSection('diag')">
+  <div class="section-header" onclick="toggleSection('diag')" aria-expanded="false" aria-controls="sec-diag">
     <h2>Diagnostics</h2>
     <span class="arrow" id="arr-diag">&#9654;</span>
   </div>
@@ -751,16 +767,19 @@ function toggleSection(id){
   var content=document.getElementById('sec-'+id);
   var arrow=document.getElementById('arr-'+id);
   var sect=document.getElementById('s-'+id);
+  var header=sect ? sect.querySelector('.section-header') : null;
   var isOpen=content.classList.contains('open');
   // Close all
   document.querySelectorAll('.section-content').forEach(function(el){el.classList.remove('open');});
   document.querySelectorAll('.arrow').forEach(function(el){el.classList.remove('open');});
   document.querySelectorAll('.section').forEach(function(el){el.classList.remove('open');});
+  document.querySelectorAll('.section-header').forEach(function(el){el.setAttribute('aria-expanded','false');});
   stopPolling();
   if(!isOpen){
     content.classList.add('open');
     arrow.classList.add('open');
     sect.classList.add('open');
+    if(header) header.setAttribute('aria-expanded','true');
     localStorage.setItem('bambu_section',id);
     startPolling(id);
   } else {
@@ -832,7 +851,7 @@ function selectPrinterTab(slot){
     var ps=document.getElementById('printerStatus');
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
     else if(d.configured){ps.className='status status-off';ps.textContent='Disconnected';}
-    else{ps.className='status status-na';ps.textContent='Not configured';}
+    else{ps.className='status status-na';ps.textContent='Not Configured';}
   }).catch(function(e){console.warn('selectPrinterTab:',e);});
 }
 
@@ -1106,13 +1125,13 @@ function refreshLiveStats(){
     } else if(d.configured) {
       h+='<span style="color:#8B949E">Not connected (printer may be off)</span>';
     } else {
-      h+='<span style="color:#8B949E">Not configured</span>';
+      h+='<span style="color:#8B949E">Not Configured</span>';
     }
     document.getElementById('liveStats').innerHTML=h;
     var ps=document.getElementById('printerStatus');
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
-    else if(d.configured){ps.className='status status-off';ps.textContent='Disconnected / Printer Off';}
-    else{ps.className='status status-na';ps.textContent='Not configured';}
+    else if(d.configured){ps.className='status status-off';ps.textContent='Disconnected / Powered Off';}
+    else{ps.className='status status-na';ps.textContent='Not Configured';}
     if(d.display_off && d.connected){ps.textContent+=' (Display Off)';}
   }).catch(function(e){console.warn('liveStats:',e);});
 }
@@ -1291,7 +1310,7 @@ function installUpdate(){
     .catch(function(e){
       document.getElementById('autoOtaStatus').style.color='#F85149';
       document.getElementById('autoOtaStatus').textContent='Error: '+e.message;
-      btn.disabled=false;btn.textContent='Install on BambuHelper';
+      btn.disabled=false;btn.textContent='Install Update';
     });
 }
 var _otaPoller=null;
@@ -1530,7 +1549,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "STATUS_TEXT") == 0) {
-    out = st.connected ? "Connected" : isPrinterConfigured(0) ? "Disconnected" : "Not configured";
+    out = st.connected ? "Connected" : isPrinterConfigured(0) ? "Disconnected" : "Not Configured";
     return true;
   }
 
