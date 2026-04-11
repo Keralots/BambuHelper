@@ -2074,7 +2074,7 @@ static void handleToggleSetting() {
         (cur == SCREEN_IDLE || cur == SCREEN_FINISHED)) {
       setScreenState(SCREEN_PRINTING);
     } else if (!on && cur == SCREEN_PRINTING && !st.printing) {
-      setScreenState(strcmp(st.gcodeState, "FINISH") == 0
+      setScreenState(st.gcodeStateId == GCODE_FINISH
                      ? SCREEN_FINISHED : SCREEN_IDLE);
     }
   }

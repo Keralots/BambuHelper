@@ -6,6 +6,16 @@
 
 enum ConnMode : uint8_t { CONN_LOCAL = 0, CONN_CLOUD = 1, CONN_CLOUD_ALL = 2 };
 enum CloudRegion : uint8_t { REGION_US = 0, REGION_EU = 1, REGION_CN = 2 };
+enum PrinterGcodeState : uint8_t {
+  GCODE_UNKNOWN = 0,
+  GCODE_IDLE,
+  GCODE_RUNNING,
+  GCODE_PAUSE,
+  GCODE_PREPARE,
+  GCODE_FINISH,
+  GCODE_FAILED,
+  GCODE_OTHER
+};
 
 inline bool isCloudMode(ConnMode m) { return m == CONN_CLOUD || m == CONN_CLOUD_ALL; }
 
@@ -48,6 +58,7 @@ struct BambuState {
   bool connected;
   bool printing;
   char gcodeState[16];        // RUNNING, PAUSE, FINISH, IDLE, FAILED, PREPARE
+  PrinterGcodeState gcodeStateId;
   uint8_t progress;           // 0-100%
   uint16_t remainingMinutes;
   float nozzleTemp;
@@ -73,6 +84,64 @@ struct BambuState {
   bool doorAcknowledged;      // true after door opened on FINISH screen (print removed)
   AmsState ams;               // AMS tray data
 };
+
+inline PrinterGcodeState parsePrinterGcodeState(const char* state) {
+  if (!state || state[0] == '\0') return GCODE_UNKNOWN;
+  if (strcmp(state, "UNKNOWN") == 0) return GCODE_UNKNOWN;
+  if (strcmp(state, "IDLE") == 0) return GCODE_IDLE;
+  if (strcmp(state, "RUNNING") == 0) return GCODE_RUNNING;
+  if (strcmp(state, "PAUSE") == 0) return GCODE_PAUSE;
+  if (strcmp(state, "PREPARE") == 0) return GCODE_PREPARE;
+  if (strcmp(state, "FINISH") == 0) return GCODE_FINISH;
+  if (strcmp(state, "FAILED") == 0) return GCODE_FAILED;
+  return GCODE_OTHER;
+}
+
+inline bool isPrintingGcodeState(PrinterGcodeState state) {
+  return state == GCODE_RUNNING ||
+         state == GCODE_PAUSE ||
+         state == GCODE_PREPARE;
+}
+
+inline void setPrinterGcodeStateRaw(BambuState& state, const char* rawState) {
+  strlcpy(state.gcodeState, rawState ? rawState : "", sizeof(state.gcodeState));
+  state.gcodeStateId = parsePrinterGcodeState(state.gcodeState);
+}
+
+inline void setPrinterGcodeStateCanonical(BambuState& state, PrinterGcodeState gcodeState) {
+  state.gcodeStateId = gcodeState;
+  switch (gcodeState) {
+    case GCODE_IDLE:
+      strlcpy(state.gcodeState, "IDLE", sizeof(state.gcodeState));
+      break;
+    case GCODE_RUNNING:
+      strlcpy(state.gcodeState, "RUNNING", sizeof(state.gcodeState));
+      break;
+    case GCODE_PAUSE:
+      strlcpy(state.gcodeState, "PAUSE", sizeof(state.gcodeState));
+      break;
+    case GCODE_PREPARE:
+      strlcpy(state.gcodeState, "PREPARE", sizeof(state.gcodeState));
+      break;
+    case GCODE_FINISH:
+      strlcpy(state.gcodeState, "FINISH", sizeof(state.gcodeState));
+      break;
+    case GCODE_FAILED:
+      strlcpy(state.gcodeState, "FAILED", sizeof(state.gcodeState));
+      break;
+    case GCODE_OTHER:
+      if (state.gcodeState[0] == '\0') {
+        strlcpy(state.gcodeState, "UNKNOWN", sizeof(state.gcodeState));
+        state.gcodeStateId = GCODE_UNKNOWN;
+      }
+      break;
+    case GCODE_UNKNOWN:
+    default:
+      strlcpy(state.gcodeState, "UNKNOWN", sizeof(state.gcodeState));
+      state.gcodeStateId = GCODE_UNKNOWN;
+      break;
+  }
+}
 
 struct PrinterConfig {
   ConnMode mode;              // CONN_LOCAL, CONN_CLOUD, or CONN_CLOUD_ALL

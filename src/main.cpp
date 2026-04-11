@@ -16,7 +16,8 @@ static bool finishActive = false;          // guards finishScreenStart against m
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
 static unsigned long connectingScreenStart = 0;  // for stuck-state timeout
-static char prevGcodeState[MAX_ACTIVE_PRINTERS][16] = {{0}};
+static PrinterGcodeState prevGcodeStateId[MAX_ACTIVE_PRINTERS] = { GCODE_UNKNOWN };
+static bool prevGcodeStateSeen[MAX_ACTIVE_PRINTERS] = { false };
 
 static bool anyPrinterPrinting() {
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
@@ -115,7 +116,7 @@ static void handleWakeButton() {
 
   if (cur == SCREEN_IDLE &&
       isCloudMode(displayedPrinter().config.mode) &&
-      strcmp(displayedPrinter().state.gcodeState, "UNKNOWN") == 0) {
+      displayedPrinter().state.gcodeStateId == GCODE_UNKNOWN) {
     // Single printer, cloud, UNKNOWN - manual refresh
     requestCloudRefresh(rotState.displayIndex);
   }
@@ -187,7 +188,7 @@ static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState
     return;
   }
 
-  if (strcmp(s.gcodeState, "FINISH") == 0) {
+  if (s.gcodeStateId == GCODE_FINISH) {
     handleDisplayedPrinterFinishState(current, s);
     return;
   }
@@ -291,12 +292,13 @@ static void handleErrorBuzzers() {
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
     if (!isPrinterConfigured(i)) continue;
     BambuState& ps = printers[i].state;
-    if (strcmp(ps.gcodeState, "FAILED") == 0 &&
-        strcmp(prevGcodeState[i], "FAILED") != 0 &&
-        prevGcodeState[i][0] != '\0') {
+    if (ps.gcodeStateId == GCODE_FAILED &&
+        prevGcodeStateId[i] != GCODE_FAILED &&
+        prevGcodeStateSeen[i]) {
       buzzerPlay(BUZZ_ERROR);
     }
-    strlcpy(prevGcodeState[i], ps.gcodeState, sizeof(prevGcodeState[i]));
+    prevGcodeStateId[i] = ps.gcodeStateId;
+    prevGcodeStateSeen[i] = true;
   }
 }
 

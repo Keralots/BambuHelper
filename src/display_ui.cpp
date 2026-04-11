@@ -789,7 +789,9 @@ static void drawIdle() {
 
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
-  bool stateChanged = forceRedraw || (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+  bool stateChanged = forceRedraw ||
+                      (s.gcodeStateId != prevState.gcodeStateId) ||
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
   bool tempChanged = forceRedraw || animating ||
                      (s.nozzleTemp != prevState.nozzleTemp) ||
                      (s.nozzleTarget != prevState.nozzleTarget) ||
@@ -813,13 +815,13 @@ static void drawIdle() {
     tft.setTextFont(2);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
-    if (strcmp(s.gcodeState, "IDLE") == 0) {
+    if (s.gcodeStateId == GCODE_IDLE) {
       stateColor = CLR_GREEN;
       stateStr = "Ready";
-    } else if (strcmp(s.gcodeState, "FAILED") == 0) {
+    } else if (s.gcodeStateId == GCODE_FAILED) {
       stateColor = CLR_RED;
       stateStr = "ERROR";
-    } else if (strcmp(s.gcodeState, "UNKNOWN") == 0 || s.gcodeState[0] == '\0') {
+    } else if (s.gcodeStateId == GCODE_UNKNOWN) {
       stateStr = "Waiting...";
     }
     tft.fillRect(0, LY_IDLE_STATE_Y, scrW, LY_IDLE_STATE_H, CLR_BG);
@@ -836,7 +838,7 @@ static void drawIdle() {
   {
     static unsigned long unknownSinceMs = 0;
     static bool hintShown = false;
-    bool isUnknown = (strcmp(s.gcodeState, "UNKNOWN") == 0);
+    bool isUnknown = (s.gcodeStateId == GCODE_UNKNOWN);
     if (isUnknown && unknownSinceMs == 0) unknownSinceMs = millis();
     if (!isUnknown) unknownSinceMs = 0;
     bool showHint = isUnknown && unknownSinceMs > 0 &&
@@ -1203,6 +1205,7 @@ static void drawPrinting() {
   bool etaChanged = forceRedraw ||
                      (s.remainingMinutes != prevState.remainingMinutes);
   bool stateChanged = forceRedraw ||
+                      (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0);
 
   // 2x3 gauge grid constants (from layout profile)
@@ -1261,10 +1264,10 @@ static void drawPrinting() {
 
     // State badge (right)
     uint16_t badgeColor = CLR_TEXT_DIM;
-    if (strcmp(s.gcodeState, "RUNNING") == 0) badgeColor = CLR_GREEN;
-    else if (strcmp(s.gcodeState, "PAUSE") == 0) badgeColor = CLR_YELLOW;
-    else if (strcmp(s.gcodeState, "FAILED") == 0) badgeColor = CLR_RED;
-    else if (strcmp(s.gcodeState, "PREPARE") == 0) badgeColor = CLR_BLUE;
+    if (s.gcodeStateId == GCODE_RUNNING) badgeColor = CLR_GREEN;
+    else if (s.gcodeStateId == GCODE_PAUSE) badgeColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED) badgeColor = CLR_RED;
+    else if (s.gcodeStateId == GCODE_PREPARE) badgeColor = CLR_BLUE;
 
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(badgeColor, hdrBg);
@@ -1412,11 +1415,11 @@ static void drawPrinting() {
     tft.fillRect(0, eff_etaY, SCREEN_W, eff_etaH, CLR_BG);
     tft.setTextDatum(MC_DATUM);
 
-    if (strcmp(s.gcodeState, "PAUSE") == 0) {
+    if (s.gcodeStateId == GCODE_PAUSE) {
       tft.setTextFont(4);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString("PAUSED", SCREEN_W / 2, eff_etaTextY);
-    } else if (strcmp(s.gcodeState, "FAILED") == 0) {
+    } else if (s.gcodeStateId == GCODE_FAILED) {
       tft.setTextFont(4);
       tft.setTextColor(CLR_RED, CLR_BG);
       tft.drawString("ERROR!", SCREEN_W / 2, eff_etaTextY);
