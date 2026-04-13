@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v2.7"
+#define FW_VERSION          "v2.7.1"
 
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
@@ -54,7 +54,7 @@
 #define BAMBU_BACKOFF_PHASE2        10      // next N attempts at phase 2 interval
 #define BAMBU_BACKOFF_PHASE3_MS     120000  // 120s after phase 2 exhausted
 #define BAMBU_STALE_TIMEOUT         60000   // 60s no data = stale
-#define BAMBU_PRINT_STALE_TIMEOUT   30000   // 30s no core print data = stale during active print
+#define BAMBU_PRINT_STALE_TIMEOUT   60000   // 60s no core print data = stale during active print
 #define BAMBU_PUSHALL_INTERVAL      30000   // request full status every 30s
 #define BAMBU_PUSHALL_INITIAL_DELAY 2000    // wait 2s after connect
 #define BAMBU_MIN_FREE_HEAP         40000   // min heap for TLS allocation

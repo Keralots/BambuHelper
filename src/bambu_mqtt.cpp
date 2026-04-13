@@ -241,6 +241,8 @@ static void parseMqttPayload(byte* payload, unsigned int length,
   pf["bed_temper"] = true;
   pf["bed_target_temper"] = true;
   pf["chamber_temper"] = true;
+  pf["ctc"]["info"]["temp"] = true;           // legacy/alternate chamber temp path
+  pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
   pf["layer_num"] = true;
   pf["total_layer_num"] = true;
@@ -627,6 +629,26 @@ static void parseMqttPayload(byte* payload, unsigned int length,
   } else if (print["chamber_temper"].is<int>()) {
     corePrintData = true;
     s.chamberTemp = print["chamber_temper"].as<int>();
+  } else if (print["ctc"]["info"]["temp"].is<float>()) {
+    // Some firmware reports chamber temperature under ctc.info.temp
+    corePrintData = true;
+    s.chamberTemp = print["ctc"]["info"]["temp"].as<float>();
+  } else if (print["ctc"]["info"]["temp"].is<int>()) {
+    corePrintData = true;
+    s.chamberTemp = print["ctc"]["info"]["temp"].as<int>();
+  } else if (print["ctc"]["info"]["temp"].is<const char*>()) {
+    corePrintData = true;
+    s.chamberTemp = atof(print["ctc"]["info"]["temp"].as<const char*>());
+  } else if (print["device"]["ctc"]["info"]["temp"].is<float>()) {
+    // H2C/H2D push_status reports chamber temperature under device.ctc.info.temp
+    corePrintData = true;
+    s.chamberTemp = print["device"]["ctc"]["info"]["temp"].as<float>();
+  } else if (print["device"]["ctc"]["info"]["temp"].is<int>()) {
+    corePrintData = true;
+    s.chamberTemp = print["device"]["ctc"]["info"]["temp"].as<int>();
+  } else if (print["device"]["ctc"]["info"]["temp"].is<const char*>()) {
+    corePrintData = true;
+    s.chamberTemp = atof(print["device"]["ctc"]["info"]["temp"].as<const char*>());
   }
 
   if (print["subtask_name"].is<const char*>()) {
