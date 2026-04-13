@@ -31,6 +31,9 @@ extern TFT_eSPI tft;
 #define DIGIT_W           LY_ARK_DIGIT_W
 #define DIGIT_H           LY_ARK_DIGIT_H
 #define COLON_W           LY_ARK_COLON_W
+#define TIME_TOTAL_W      (4 * DIGIT_W + COLON_W)
+#define ARK_MAX_BRICK_COLS 13
+#define ARK_LAND_BRICK_COLS 13
 
 // ========== Gameplay constants (not layout-dependent) ==========
 #define ARK_BALL_SIZE     4
@@ -40,6 +43,10 @@ extern TFT_eSPI tft;
 #define ARK_UPDATE_MS     20    // ~50fps
 #define ARK_MAX_FRAGS     20
 #define ARK_TIME_OVERRIDE_MS 60000
+#define ARK_PADDLE_JITTER_DEG 4.0f
+#define ARK_STICKY_JITTER_DEG 10.0f
+#define ARK_STICKY_MS     120
+#define ARK_STICKY_TRIGGER_BOUNCES 4
 
 // Brick colors per row (classic Arcanoid rainbow).
 // BRICK_COLOR_COUNT is the authoritative size; ARK_BRICK_ROWS must not exceed it.
@@ -53,6 +60,10 @@ static const uint16_t brickColors[BRICK_COLOR_COUNT] = {
 };
 static_assert(ARK_BRICK_ROWS <= BRICK_COLOR_COUNT,
               "ARK_BRICK_ROWS exceeds brickColors array size");
+static_assert(ARK_BRICK_COLS <= ARK_MAX_BRICK_COLS,
+              "ARK_BRICK_COLS exceeds arkBricks storage");
+static_assert(ARK_LAND_BRICK_COLS <= ARK_MAX_BRICK_COLS,
+              "ARK_LAND_BRICK_COLS exceeds arkBricks storage");
 
 // ========== Fragment struct ==========
 struct PongFragment {
@@ -60,15 +71,50 @@ struct PongFragment {
   bool active;
 };
 
+struct PongLayout {
+  int16_t screenW;
+  int16_t screenH;
+  int16_t brickRows;
+  int16_t brickCols;
+  int16_t brickStartX;
+  int16_t brickStartY;
+  int16_t paddleY;
+  int16_t paddleW;
+  int16_t timeY;
+  int16_t dateY;
+  int16_t timeStartX;
+  int16_t dateClearX;
+  int16_t dateClearW;
+};
+
 // ========== State ==========
-static bool arkBricks[ARK_BRICK_ROWS][ARK_BRICK_COLS];
+static bool arkBricks[ARK_BRICK_ROWS][ARK_MAX_BRICK_COLS];
 static int arkBrickCount = 0;
 
 static float ballX, ballY, ballVX, ballVY;
 static bool ballActive = false;
+static bool ballStuckToPaddle = false;
+static unsigned long ballStickyUntilMs = 0;
+static float ballStickyHit = 0.5f;
 static int prevBallX = -1, prevBallY = -1;
 
-static int paddleX = LY_W / 2, prevPaddleX = LY_W / 2;
+static PongLayout pongLayout = {
+  SCREEN_W,
+  SCREEN_H,
+  ARK_BRICK_ROWS,
+  ARK_BRICK_COLS,
+  ARK_BRICK_START_X,
+  ARK_BRICK_START_Y,
+  ARK_PADDLE_Y,
+  ARK_PADDLE_W,
+  ARK_TIME_Y,
+  ARK_DATE_Y,
+  (SCREEN_W - TIME_TOTAL_W) / 2,
+  LY_ARK_DATE_CLR_X,
+  LY_ARK_DATE_CLR_W
+};
+
+static int paddleX = SCREEN_W / 2, prevPaddleX = SCREEN_W / 2;
 static uint8_t paddleBouncesWithoutHit = 0;
 
 static bool initialized = false;
@@ -97,6 +143,48 @@ static int prevDigitY[5] = {0};
 static char prevDigits[6] = {0};  // 5 chars + null
 static bool prevColon = false;
 static char prevDateStr[28] = {0};
+
+static void refreshPongLayout() {
+  PongLayout next = {
+    SCREEN_W,
+    SCREEN_H,
+    ARK_BRICK_ROWS,
+    ARK_BRICK_COLS,
+    ARK_BRICK_START_X,
+    ARK_BRICK_START_Y,
+    ARK_PADDLE_Y,
+    ARK_PADDLE_W,
+    ARK_TIME_Y,
+    ARK_DATE_Y,
+    0,
+    LY_ARK_DATE_CLR_X,
+    LY_ARK_DATE_CLR_W
+  };
+
+#if defined(DISPLAY_240x320)
+  const int16_t scrW = (int16_t)tft.width();
+  const int16_t scrH = (int16_t)tft.height();
+  if (scrW > 0 && scrH > 0) {
+    next.screenW = scrW;
+    next.screenH = scrH;
+    if (scrW > scrH) {
+      next.brickCols = ARK_LAND_BRICK_COLS;
+      next.brickStartX = (scrW - (next.brickCols * ARK_BRICK_W +
+                                  (next.brickCols - 1) * ARK_BRICK_GAP)) / 2;
+      next.brickStartY = 28;
+      next.paddleY = 224;
+      next.paddleW = 30;
+      next.timeY = 130;
+      next.dateY = 8;
+      next.dateClearX = 0;
+      next.dateClearW = scrW;
+    }
+  }
+#endif
+
+  next.timeStartX = (next.screenW - TIME_TOTAL_W) / 2;
+  pongLayout = next;
+}
 
 // ========== Digit bounce (inlined) ==========
 static void triggerBounce(int i) {
@@ -127,45 +215,86 @@ static bool showColon() {
 
 // ========== Bricks ==========
 static void initBricks() {
+  const PongLayout& layout = pongLayout;
   arkBrickCount = 0;
-  for (int r = 0; r < ARK_BRICK_ROWS; r++)
-    for (int c = 0; c < ARK_BRICK_COLS; c++) {
-      arkBricks[r][c] = true;
-      arkBrickCount++;
+  for (int r = 0; r < ARK_BRICK_ROWS; r++) {
+    for (int c = 0; c < ARK_MAX_BRICK_COLS; c++) {
+      bool active = (r < layout.brickRows && c < layout.brickCols);
+      arkBricks[r][c] = active;
+      if (active) arkBrickCount++;
     }
+  }
 }
 
 static void drawBrick(int r, int c) {
-  int x = ARK_BRICK_START_X + c * (ARK_BRICK_W + ARK_BRICK_GAP);
-  int y = ARK_BRICK_START_Y + r * (ARK_BRICK_H + ARK_BRICK_GAP);
+  const PongLayout& layout = pongLayout;
+  int x = layout.brickStartX + c * (ARK_BRICK_W + ARK_BRICK_GAP);
+  int y = layout.brickStartY + r * (ARK_BRICK_H + ARK_BRICK_GAP);
   tft.fillRect(x, y, ARK_BRICK_W, ARK_BRICK_H, brickColors[r]);
   tft.drawFastHLine(x, y, ARK_BRICK_W, TFT_WHITE);
   tft.drawFastHLine(x, y + ARK_BRICK_H - 1, ARK_BRICK_W, TFT_BLACK);
 }
 
 static void drawAllBricks() {
-  for (int r = 0; r < ARK_BRICK_ROWS; r++)
-    for (int c = 0; c < ARK_BRICK_COLS; c++)
+  const PongLayout& layout = pongLayout;
+  for (int r = 0; r < layout.brickRows; r++)
+    for (int c = 0; c < layout.brickCols; c++)
       if (arkBricks[r][c]) drawBrick(r, c);
 }
 
 static void clearBrick(int r, int c) {
-  int x = ARK_BRICK_START_X + c * (ARK_BRICK_W + ARK_BRICK_GAP);
-  int y = ARK_BRICK_START_Y + r * (ARK_BRICK_H + ARK_BRICK_GAP);
+  const PongLayout& layout = pongLayout;
+  int x = layout.brickStartX + c * (ARK_BRICK_W + ARK_BRICK_GAP);
+  int y = layout.brickStartY + r * (ARK_BRICK_H + ARK_BRICK_GAP);
   tft.fillRect(x, y, ARK_BRICK_W, ARK_BRICK_H, TFT_BLACK);
 }
 
 // ========== Ball ==========
-static void spawnBall() {
-  ballX = paddleX;
-  ballY = ARK_PADDLE_Y - ARK_BALL_SIZE - 2;
-  float angle = random(40, 140) * PI / 180.0f;
+static void launchBallFromPaddle(float hit, float jitterDeg) {
+  const PongLayout& layout = pongLayout;
+  hit = constrain(hit, 0.08f, 0.92f);
+  ballX = paddleX - layout.paddleW / 2 + hit * layout.paddleW - ARK_BALL_SIZE / 2.0f;
+  ballY = layout.paddleY - ARK_BALL_SIZE;
+
+  float angleDeg = 150.0f - hit * 120.0f + jitterDeg;
+  if (angleDeg < 30.0f) angleDeg = 30.0f;
+  if (angleDeg > 150.0f) angleDeg = 150.0f;
+  float angle = angleDeg * PI / 180.0f;
+
   ballVX = ARK_BALL_SPEED * cos(angle);
   ballVY = -ARK_BALL_SPEED * sin(angle);
-  // Ensure minimum horizontal movement
   if (fabsf(ballVX) < 1.2f) ballVX = (ballVX >= 0) ? 1.2f : -1.2f;
-  if (fabsf(ballVY) < 1.0f) ballVY = -2.0f;
+  if (fabsf(ballVY) < 1.0f) ballVY = -1.5f;
+
   ballActive = true;
+  ballStuckToPaddle = false;
+  ballStickyUntilMs = 0;
+}
+
+static bool shouldUseStickyAssist() {
+  if (paddleBouncesWithoutHit < ARK_STICKY_TRIGGER_BOUNCES) return false;
+  int chancePct = 15 + (paddleBouncesWithoutHit - ARK_STICKY_TRIGGER_BOUNCES) * 10;
+  if (chancePct > 70) chancePct = 70;
+  return random(100) < chancePct;
+}
+
+static void stickBallToPaddle(float hit) {
+  const PongLayout& layout = pongLayout;
+  float assistOffset = random(-18, 19) / 100.0f;
+  ballStickyHit = constrain(hit + assistOffset, 0.18f, 0.82f);
+  ballStuckToPaddle = true;
+  ballStickyUntilMs = millis() + ARK_STICKY_MS;
+  ballActive = true;
+  ballVX = 0;
+  ballVY = 0;
+  ballX = paddleX - layout.paddleW / 2 + ballStickyHit * layout.paddleW - ARK_BALL_SIZE / 2.0f;
+  ballY = layout.paddleY - ARK_BALL_SIZE;
+}
+
+static void spawnBall() {
+  ballStuckToPaddle = false;
+  ballStickyUntilMs = 0;
+  launchBallFromPaddle(0.5f, (float)random(-50, 51) / 10.0f);
   paddleBouncesWithoutHit = 0;
 }
 
@@ -173,37 +302,41 @@ static int digitX(int i);  // forward declaration
 
 // Mark cached text dirty if ball erase overlaps it
 static void markBallDamage(int bx, int by) {
+  const PongLayout& layout = pongLayout;
   int bx2 = bx + ARK_BALL_SIZE;
   int by2 = by + ARK_BALL_SIZE;
   // Check time digits and colon
   for (int i = 0; i < 5; i++) {
     int dx = digitX(i);
     int dw = (i == 2) ? COLON_W : DIGIT_W + 2;
-    int dy = (i == 2) ? ARK_TIME_Y : (prevDigitY[i] ? prevDigitY[i] : ARK_TIME_Y);
+    int dy = (i == 2) ? layout.timeY : (prevDigitY[i] ? prevDigitY[i] : layout.timeY);
     if (bx2 > dx && bx < dx + dw && by2 > dy && by < dy + DIGIT_H) {
       if (i == 2) prevColon = !showColon();  // force colon redraw
       else prevDigits[i] = 0;
     }
   }
   // Check date area
-  if (by2 > ARK_DATE_Y && by < ARK_DATE_Y + 16) {
+  if (by2 > layout.dateY && by < layout.dateY + 16) {
     prevDateStr[0] = '\0';
   }
 }
 
 // Check if ball rect overlaps the time digits or date text
 static bool overlapsText(int bx, int by) {
+  const PongLayout& layout = pongLayout;
   int bx2 = bx + ARK_BALL_SIZE;
   int by2 = by + ARK_BALL_SIZE;
   // Time digits zone (exact bounds of HH:MM)
-  if (by2 > ARK_TIME_Y && by < ARK_TIME_Y + DIGIT_H) {
+  if (by2 > layout.timeY && by < layout.timeY + DIGIT_H) {
     int tLeft = digitX(0) - 2;
     int tRight = digitX(4) + DIGIT_W + 4;
     if (bx2 > tLeft && bx < tRight) return true;
   }
-  // Date zone (centered text ~150px wide)
-  if (by2 > ARK_DATE_Y && by < ARK_DATE_Y + 16) {
-    if (bx2 > 40 && bx < 200) return true;
+  // Date zone (centered text clear width, scaled to the active screen width)
+  if (by2 > layout.dateY && by < layout.dateY + 16) {
+    int dateLeft = (layout.screenW - LY_ARK_DATE_CLR_W) / 2;
+    int dateRight = dateLeft + LY_ARK_DATE_CLR_W;
+    if (bx2 > dateLeft && bx < dateRight) return true;
   }
   return false;
 }
@@ -227,38 +360,44 @@ static void drawBall() {
 
 // ========== Paddle ==========
 static void drawPaddle() {
+  const PongLayout& layout = pongLayout;
   if (prevPaddleX != paddleX)
-    tft.fillRect(prevPaddleX - ARK_PADDLE_W / 2, ARK_PADDLE_Y, ARK_PADDLE_W, ARK_PADDLE_H, TFT_BLACK);
-  tft.fillRect(paddleX - ARK_PADDLE_W / 2, ARK_PADDLE_Y, ARK_PADDLE_W, ARK_PADDLE_H, TFT_CYAN);
-  tft.drawFastHLine(paddleX - ARK_PADDLE_W / 2, ARK_PADDLE_Y, ARK_PADDLE_W, TFT_WHITE);
+    tft.fillRect(prevPaddleX - layout.paddleW / 2, layout.paddleY, layout.paddleW, ARK_PADDLE_H, TFT_BLACK);
+  tft.fillRect(paddleX - layout.paddleW / 2, layout.paddleY, layout.paddleW, ARK_PADDLE_H, TFT_CYAN);
+  tft.drawFastHLine(paddleX - layout.paddleW / 2, layout.paddleY, layout.paddleW, TFT_WHITE);
   prevPaddleX = paddleX;
 }
 
 static void updatePaddle() {
+  const PongLayout& layout = pongLayout;
+  if (ballStuckToPaddle) return;
+
   int target;
   if (ballActive && ballVY > 0) {
     // Ball falling - follow ball X position with slight offset for variety
     target = (int)ballX;
   } else {
     // Ball going up - drift toward center for variety
-    target = LY_W / 2;
+    target = layout.screenW / 2;
   }
   if (paddleX < target - 2) paddleX += ARK_PADDLE_SPEED;
   else if (paddleX > target + 2) paddleX -= ARK_PADDLE_SPEED;
-  if (paddleX < ARK_PADDLE_W / 2) paddleX = ARK_PADDLE_W / 2;
-  if (paddleX > SCREEN_W - ARK_PADDLE_W / 2) paddleX = SCREEN_W - ARK_PADDLE_W / 2;
+  if (paddleX < layout.paddleW / 2) paddleX = layout.paddleW / 2;
+  if (paddleX > layout.screenW - layout.paddleW / 2)
+    paddleX = layout.screenW - layout.paddleW / 2;
 }
 
 // ========== Brick collision ==========
 static bool checkBrickCollision() {
+  const PongLayout& layout = pongLayout;
   int bx = (int)ballX, by = (int)ballY;
   bool hitX = false, hitY = false;
   bool hit = false;
-  for (int r = 0; r < ARK_BRICK_ROWS; r++) {
-    for (int c = 0; c < ARK_BRICK_COLS; c++) {
+  for (int r = 0; r < layout.brickRows; r++) {
+    for (int c = 0; c < layout.brickCols; c++) {
       if (!arkBricks[r][c]) continue;
-      int rx = ARK_BRICK_START_X + c * (ARK_BRICK_W + ARK_BRICK_GAP);
-      int ry = ARK_BRICK_START_Y + r * (ARK_BRICK_H + ARK_BRICK_GAP);
+      int rx = layout.brickStartX + c * (ARK_BRICK_W + ARK_BRICK_GAP);
+      int ry = layout.brickStartY + r * (ARK_BRICK_H + ARK_BRICK_GAP);
       if (bx + ARK_BALL_SIZE > rx && bx < rx + ARK_BRICK_W &&
           by + ARK_BALL_SIZE > ry && by < ry + ARK_BRICK_H) {
         arkBricks[r][c] = false;
@@ -285,28 +424,43 @@ static bool checkBrickCollision() {
 
 // ========== Ball physics ==========
 static void updateBallPhysics() {
+  const PongLayout& layout = pongLayout;
   if (!ballActive) return;
+  if (ballStuckToPaddle) {
+    ballX = paddleX - layout.paddleW / 2 + ballStickyHit * layout.paddleW - ARK_BALL_SIZE / 2.0f;
+    ballY = layout.paddleY - ARK_BALL_SIZE;
+    if ((long)(millis() - ballStickyUntilMs) >= 0) {
+      float jitter = (float)random(-(int)(ARK_STICKY_JITTER_DEG * 10.0f),
+                                   (int)(ARK_STICKY_JITTER_DEG * 10.0f) + 1) / 10.0f;
+      launchBallFromPaddle(ballStickyHit, jitter);
+    }
+    return;
+  }
+
   ballX += ballVX;
   ballY += ballVY;
 
   if (ballX <= 0) { ballX = 0; ballVX = fabsf(ballVX); }
-  if (ballX >= SCREEN_W - ARK_BALL_SIZE) { ballX = SCREEN_W - ARK_BALL_SIZE; ballVX = -fabsf(ballVX); }
+  if (ballX >= layout.screenW - ARK_BALL_SIZE) {
+    ballX = layout.screenW - ARK_BALL_SIZE;
+    ballVX = -fabsf(ballVX);
+  }
   if (ballY <= 0) { ballY = 0; ballVY = fabsf(ballVY); }
 
   // Paddle collision
-  if (ballVY > 0 && ballY + ARK_BALL_SIZE >= ARK_PADDLE_Y && ballY < ARK_PADDLE_Y + ARK_PADDLE_H) {
-    int pL = paddleX - ARK_PADDLE_W / 2, pR = paddleX + ARK_PADDLE_W / 2;
+  if (ballVY > 0 && ballY + ARK_BALL_SIZE >= layout.paddleY &&
+      ballY < layout.paddleY + ARK_PADDLE_H) {
+    int pL = paddleX - layout.paddleW / 2, pR = paddleX + layout.paddleW / 2;
     if (ballX + ARK_BALL_SIZE >= pL && ballX <= pR) {
-      ballY = ARK_PADDLE_Y - ARK_BALL_SIZE;
-      float hit = (ballX + ARK_BALL_SIZE / 2.0f - pL) / (float)ARK_PADDLE_W;
-      // Wider angle range: 30-150 degrees (was 30-150 but with steeper minimum)
-      float angle = (150.0f - hit * 120.0f) * PI / 180.0f;
-      ballVX = ARK_BALL_SPEED * cos(angle);
-      ballVY = -ARK_BALL_SPEED * sin(angle);
-      // Enforce minimum horizontal speed for more natural movement
-      if (fabsf(ballVX) < 1.2f) ballVX = (ballVX >= 0) ? 1.2f : -1.2f;
-      if (fabsf(ballVY) < 1.0f) ballVY = -1.5f;
+      float hit = (ballX + ARK_BALL_SIZE / 2.0f - pL) / (float)layout.paddleW;
       paddleBouncesWithoutHit++;
+      if (shouldUseStickyAssist()) {
+        stickBallToPaddle(hit);
+      } else {
+        float jitter = (float)random(-(int)(ARK_PADDLE_JITTER_DEG * 10.0f),
+                                     (int)(ARK_PADDLE_JITTER_DEG * 10.0f) + 1) / 10.0f;
+        launchBallFromPaddle(hit, jitter);
+      }
       // Ball stuck in a loop missing the last brick(s) - reset the board
       if (paddleBouncesWithoutHit >= 20) {
         paddleBouncesWithoutHit = 0;
@@ -316,7 +470,7 @@ static void updateBallPhysics() {
     }
   }
 
-  if (ballY > SCREEN_H) spawnBall();
+  if (ballY > layout.screenH) spawnBall();
   checkBrickCollision();
   if (arkBrickCount <= 0) { initBricks(); drawAllBricks(); }
 }
@@ -334,6 +488,7 @@ static void spawnDigitFragments(int dx, int dy) {
 }
 
 static void updateFragments() {
+  const PongLayout& layout = pongLayout;
   if (fragTimer <= 0) return;
   fragTimer--;
   for (int i = 0; i < ARK_MAX_FRAGS; i++) {
@@ -342,7 +497,7 @@ static void updateFragments() {
     frags[i].x += frags[i].vx;
     frags[i].y += frags[i].vy;
     frags[i].vy += 0.3f;
-    if (frags[i].y > SCREEN_H || frags[i].x < -10 || frags[i].x > SCREEN_W + 10) {
+    if (frags[i].y > layout.screenH || frags[i].x < -10 || frags[i].x > layout.screenW + 10) {
       frags[i].active = false;
       continue;
     }
@@ -389,19 +544,16 @@ static void applyDigitValue(int di, int dv) {
 // Layout: HH:MM centered horizontally
 // Each digit ~32px wide, colon ~12px, total ~148px
 
-// X positions for 5 slots: d0 d1 : d3 d4
-// Total width: 4*DIGIT_W + COLON_W = 4*32 + 12 = 140
-#define TIME_TOTAL_W  (4 * DIGIT_W + COLON_W)
-#define TIME_START_X  ((SCREEN_W - TIME_TOTAL_W) / 2)
-
 static int digitX(int i) {
+  const PongLayout& layout = pongLayout;
   // i: 0,1 = hour digits, 2 = colon, 3,4 = minute digits
-  if (i < 2) return TIME_START_X + i * DIGIT_W;
-  if (i == 2) return TIME_START_X + 2 * DIGIT_W;  // colon position
-  return TIME_START_X + 2 * DIGIT_W + COLON_W + (i - 3) * DIGIT_W;
+  if (i < 2) return layout.timeStartX + i * DIGIT_W;
+  if (i == 2) return layout.timeStartX + 2 * DIGIT_W;  // colon position
+  return layout.timeStartX + 2 * DIGIT_W + COLON_W + (i - 3) * DIGIT_W;
 }
 
 static void drawTime() {
+  const PongLayout& layout = pongLayout;
   tft.setTextSize(1);  // no scaling, Font 7 is already 48px
   char digits[5];
   if (netSettings.use24h) {
@@ -428,7 +580,7 @@ static void drawTime() {
     if (i == 2) continue;  // skip colon slot, handled separately
 
     int x = digitX(i);
-    int y = ARK_TIME_Y + (int)digitOffsetY[i];
+    int y = layout.timeY + (int)digitOffsetY[i];
     bool bouncing = (digitOffsetY[i] != 0 || digitVelocity[i] != 0);
     bool changed = (digits[i] != prevDigits[i]) || bouncing || (prevDigitY[i] != y);
 
@@ -449,9 +601,9 @@ static void drawTime() {
   // Colon - blinks, draw only when state changes
   if (colon != prevColon) {
     int cx = digitX(2);
-    tft.fillRect(cx, ARK_TIME_Y, COLON_W, DIGIT_H, TFT_BLACK);
+    tft.fillRect(cx, layout.timeY, COLON_W, DIGIT_H, TFT_BLACK);
     if (colon) {
-      tft.drawChar(':', cx, ARK_TIME_Y, 7);
+      tft.drawChar(':', cx, layout.timeY, 7);
     }
     prevColon = colon;
   }
@@ -461,7 +613,7 @@ static void drawTime() {
     tft.setTextFont(2);
     tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
     int ampmX = digitX(4) + DIGIT_W + 2;
-    tft.setCursor(ampmX, ARK_TIME_Y + DIGIT_H - 16);
+    tft.setCursor(ampmX, layout.timeY + DIGIT_H - 16);
     tft.print(dispHour < 12 ? "AM" : "PM");
   }
 }
@@ -476,12 +628,25 @@ void tickPongClock() {
   if (!dpSettings.showClockAfterFinish && !dpSettings.keepDisplayOn) return;
   if (!dispSettings.pongClock) return;
 
+  PongLayout prevLayout = pongLayout;
+  refreshPongLayout();
+  if (initialized &&
+      (prevLayout.screenW != pongLayout.screenW ||
+       prevLayout.screenH != pongLayout.screenH ||
+       prevLayout.brickCols != pongLayout.brickCols ||
+       prevLayout.paddleY != pongLayout.paddleY ||
+       prevLayout.timeY != pongLayout.timeY)) {
+    initialized = false;
+  }
+
   struct tm now;
   if (!getLocalTime(&now, 0)) return;
 
   // First-time init
   if (!initialized) {
     tft.fillScreen(TFT_BLACK);
+    paddleX = pongLayout.screenW / 2;
+    prevPaddleX = paddleX;
     initBricks();
     drawAllBricks();
     spawnBall();
@@ -494,7 +659,9 @@ void tickPongClock() {
     memset(prevDigits, 0, sizeof(prevDigits));
     prevColon = false;
     prevBallX = -1;
-    prevPaddleX = paddleX;
+    ballStuckToPaddle = false;
+    ballStickyUntilMs = 0;
+    ballStickyHit = 0.5f;
     // Force date redraw after fillScreen
     prevDateStr[0] = '\0';
   }
@@ -567,8 +734,8 @@ void tickPongClock() {
       tft.setTextSize(1);
       tft.setTextDatum(TC_DATUM);
       tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
-      tft.fillRect(LY_ARK_DATE_CLR_X, ARK_DATE_Y, LY_ARK_DATE_CLR_W, 16, TFT_BLACK);
-      tft.drawString(dateStr, SCREEN_W / 2, ARK_DATE_Y);
+      tft.fillRect(pongLayout.dateClearX, pongLayout.dateY, pongLayout.dateClearW, 16, TFT_BLACK);
+      tft.drawString(dateStr, pongLayout.screenW / 2, pongLayout.dateY);
       tft.setTextDatum(TL_DATUM);
       strlcpy(prevDateStr, dateStr, sizeof(prevDateStr));
     }
