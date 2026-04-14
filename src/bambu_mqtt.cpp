@@ -25,7 +25,7 @@ struct MqttConn {
   uint32_t pushallSeqId;
   unsigned long connectTime;
   bool initialPushallSent;
-  unsigned long idleSince;
+  bool gotDataSinceConnect;  // true after first message on current connection
   bool active;           // connection slot in use
   uint16_t consecutiveFails;  // for exponential backoff
   unsigned long disconnectSince;  // grace period before showing "connecting" screen
@@ -146,7 +146,12 @@ static bool ensureClients(MqttConn& c) {
     MQTT_LOG("[%d] setServer(%s, %d) [LOCAL]", c.slotIndex, cfg.ip, BAMBU_PORT);
     c.mqtt->setServer(cfg.ip, BAMBU_PORT);
   }
-  c.mqtt->setBufferSize(BAMBU_BUFFER_SIZE);
+  if (!c.mqtt->setBufferSize(BAMBU_BUFFER_SIZE)) {
+    MQTT_LOG("[%d] setBufferSize(%d) FAILED — not enough heap!", c.slotIndex, BAMBU_BUFFER_SIZE);
+    delete c.mqtt; c.mqtt = nullptr;
+    delete c.tls;  c.tls  = nullptr;
+    return false;
+  }
   c.mqtt->setCallback(mqttCallback);
   c.mqtt->setKeepAlive(isCloudMode(cfg.mode) ? 5 : BAMBU_KEEPALIVE);
 
@@ -156,8 +161,8 @@ static bool ensureClients(MqttConn& c) {
 // ---------------------------------------------------------------------------
 //  Request pushall for one connection
 // ---------------------------------------------------------------------------
-static void requestPushall(MqttConn& c, PushallReason reason) {
-  if (!c.mqtt) return;
+static bool requestPushall(MqttConn& c, PushallReason reason) {
+  if (!c.mqtt) return false;
 
   PrinterConfig& cfg = printers[c.slotIndex].config;
   char topic[64];
@@ -170,12 +175,16 @@ static void requestPushall(MqttConn& c, PushallReason reason) {
            c.pushallSeqId++);
 
   MQTT_LOG("[%d] pushall (%s) -> %s", c.slotIndex, pushallReasonToString(reason), topic);
-  c.mqtt->publish(topic, payload);
+  if (!c.mqtt->publish(topic, payload)) {
+    MQTT_LOG("[%d] pushall publish FAILED", c.slotIndex);
+    return false;
+  }
   c.lastPushallRequest = millis();
   c.diag.pushallTotal++;
   if (isRecoveryPushallReason(reason)) c.diag.pushallRecovery++;
   c.diag.lastPushallMs = c.lastPushallRequest;
   c.diag.lastPushallReason = (uint8_t)reason;
+  return true;
 }
 
 static void clearLiveMetrics(BambuState& s) {
@@ -191,6 +200,10 @@ static void clearLiveMetrics(BambuState& s) {
   s.wifiSignal = 0;
   s.doorOpen = false;  s.doorSensorPresent = false;
   s.subtaskName[0] = '\0';
+  // Clear AMS drying state so stale drying doesn't block screen sleep
+  s.ams.anyDrying = false;
+  for (uint8_t i = 0; i < AMS_MAX_UNITS; i++)
+    s.ams.units[i].dryRemainMin = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,8 +239,7 @@ static uint8_t normalizeTrayIndex(const AmsState& ams,
 // ---------------------------------------------------------------------------
 //  Parse MQTT payload into a BambuState (extracted for routing)
 // ---------------------------------------------------------------------------
-static void parseMqttPayload(byte* payload, unsigned int length,
-                             BambuState& s, MqttDiag& diag, unsigned long& idleSince) {
+static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) {
   const char* payloadEnd = (const char*)payload + length;
 
   // Filter document to reduce parse memory
@@ -568,13 +580,7 @@ static void parseMqttPayload(byte* payload, unsigned int length,
     corePrintData = true;
     const char* state = print["gcode_state"];
     setPrinterGcodeStateRaw(s, state);
-    bool wasActive = s.printing;
     s.printing = isPrintingGcodeState(s.gcodeStateId);
-    if (s.printing) {
-      idleSince = 0;
-    } else if (wasActive || idleSince == 0) {
-      idleSince = millis();
-    }
   }
 
   if (print["mc_percent"].is<int>()) {
@@ -654,8 +660,7 @@ static void parseMqttPayload(byte* payload, unsigned int length,
   if (print["subtask_name"].is<const char*>()) {
     corePrintData = true;
     const char* name = print["subtask_name"];
-    strncpy(s.subtaskName, name, sizeof(s.subtaskName) - 1);
-    s.subtaskName[sizeof(s.subtaskName) - 1] = '\0';
+    strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
   }
 
   if (print["layer_num"].is<int>()) {
@@ -736,8 +741,9 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   c->diag.messagesRx++;
   MQTT_LOG("[%d] callback #%u topic=%s len=%u", c->slotIndex, c->diag.messagesRx, topic, length);
 
+  c->gotDataSinceConnect = true;
   BambuState& s = printers[c->slotIndex].state;
-  parseMqttPayload(payload, length, s, c->diag, c->idleSince);
+  parseMqttPayload(payload, length, s);
 }
 
 // ---------------------------------------------------------------------------
@@ -796,6 +802,7 @@ static void reconnectConn(MqttConn& c) {
   if (!ensureClients(c)) {
     MQTT_LOG("[%d] ensureClients() FAILED", c.slotIndex);
     c.diag.lastRc = -2;
+    c.consecutiveFails++;
     return;
   }
   if (c.mqtt->connected()) return;
@@ -853,7 +860,13 @@ static void reconnectConn(MqttConn& c) {
   if (connected) {
     char topic[64];
     snprintf(topic, sizeof(topic), "device/%s/report", cfg.serial);
-    c.mqtt->subscribe(topic);
+    if (!c.mqtt->subscribe(topic)) {
+      MQTT_LOG("[%d] subscribe FAILED for %s — disconnecting", c.slotIndex, topic);
+      c.mqtt->disconnect();
+      c.consecutiveFails++;
+      c.diag.lastRc = -2;
+      return;
+    }
 
     printers[c.slotIndex].state.connected = true;
     // Detect "quick disconnect" pattern: if last connection lasted < 30s,
@@ -862,6 +875,7 @@ static void reconnectConn(MqttConn& c) {
                            (millis() - c.connectTime < 30000);
     c.connectTime = millis();
     c.initialPushallSent = false;
+    c.gotDataSinceConnect = false;
     if (!quickDisconnect) {
       c.consecutiveFails = 0;  // only reset backoff on stable connections
     } else {
@@ -918,6 +932,7 @@ static void handleConn(MqttConn& c) {
 
   if (isConnected) {
     c.mqtt->loop();
+    isConnected = c.mqtt->connected();  // re-evaluate: loop() can disconnect
   }
 
   if (!isConnected) {
@@ -940,22 +955,22 @@ static void handleConn(MqttConn& c) {
     if (!c.initialPushallSent && c.connectTime > 0 &&
         millis() - c.connectTime > BAMBU_PUSHALL_INITIAL_DELAY) {
       esp_task_wdt_reset();
-      requestPushall(c, PUSHALL_INITIAL);
-      c.initialPushallSent = true;
+      if (requestPushall(c, PUSHALL_INITIAL))
+        c.initialPushallSent = true;
     }
 
     // Periodic pushall and retry: LAN only.
     // Cloud pushes data automatically; repeated publish to request topic
     // may trigger access_denied (TLS alert 49) on the cloud broker.
     if (!isCloudMode(cfg.mode)) {
-      if (c.initialPushallSent && c.diag.messagesRx == 0 &&
+      if (c.initialPushallSent && !c.gotDataSinceConnect &&
           millis() - c.lastPushallRequest > 10000) {
         MQTT_LOG("[%d] No data after pushall, retrying...", c.slotIndex);
         esp_task_wdt_reset();
         requestPushall(c, PUSHALL_RETRY_NO_DATA);
       }
 
-      if (c.initialPushallSent && c.diag.messagesRx > 0 &&
+      if (c.initialPushallSent && c.gotDataSinceConnect &&
           millis() - c.lastPushallRequest > BAMBU_PUSHALL_INTERVAL) {
         esp_task_wdt_reset();
         requestPushall(c, PUSHALL_PERIODIC);
@@ -993,8 +1008,8 @@ static void handleConn(MqttConn& c) {
       if (isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled) {
         MQTT_LOG("[%d] core print data stale - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
-        requestPushall(c, PUSHALL_RECOVERY_PRINT);
-        c.stalePushallSentMs = millis();
+        if (requestPushall(c, PUSHALL_RECOVERY_PRINT))
+          c.stalePushallSentMs = millis();
       }
       // Don't give up - connection is alive, keep printing screen
     } else if (coreStale && !connAlive) {
@@ -1002,8 +1017,8 @@ static void handleConn(MqttConn& c) {
       if (isConnected && c.stalePushallSentMs == 0) {
         MQTT_LOG("[%d] connection dead during print - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
-        requestPushall(c, PUSHALL_RECOVERY_CONN_DEAD);
-        c.stalePushallSentMs = millis();
+        if (requestPushall(c, PUSHALL_RECOVERY_CONN_DEAD))
+          c.stalePushallSentMs = millis();
       } else if (c.stalePushallSentMs == 0 ||
                  millis() - c.stalePushallSentMs > 30000) {
         // Recovery pushall sent 30s ago with no response - give up
@@ -1029,8 +1044,8 @@ static void handleConn(MqttConn& c) {
       if (connAlive && isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled) {
         MQTT_LOG("[%d] stale finish - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
-        requestPushall(c, PUSHALL_RECOVERY_FINISH);
-        c.stalePushallSentMs = millis();
+        if (requestPushall(c, PUSHALL_RECOVERY_FINISH))
+          c.stalePushallSentMs = millis();
       } else if (!connAlive &&
                  (c.stalePushallSentMs == 0 || millis() - c.stalePushallSentMs > 30000)) {
         MQTT_LOG("[%d] stale finish, connection dead - clearing cached state", c.slotIndex);
@@ -1052,20 +1067,15 @@ static void handleConn(MqttConn& c) {
       clearLiveMetrics(s);
       setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
       esp_task_wdt_reset();
-      requestPushall(c, PUSHALL_RECOVERY_IDLE);
-      c.stalePushallSentMs = millis();
+      if (requestPushall(c, PUSHALL_RECOVERY_IDLE))
+        c.stalePushallSentMs = millis();
     } else {
       c.stalePushallSentMs = 0;
     }
 
   // --- Any other state: connection freshness ---
   } else {
-    if (s.lastUpdate > 0 && millis() - s.lastUpdate > connStaleMs) {
-      // Stale but not printing/finish/idle - just reset recovery state
-      c.stalePushallSentMs = 0;
-    } else {
-      c.stalePushallSentMs = 0;
-    }
+    c.stalePushallSentMs = 0;
   }
 }
 
@@ -1118,7 +1128,10 @@ void initBambuMqtt() {
       // userId extraction uses HTTPClient (TLS) — must complete before MQTT TLS
       char tokenBuf[1200];
       if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
-        cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId));
+        if (!cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId))) {
+          Serial.printf("MQTT: [%d] JWT extract failed, trying API\n", i);
+          cloudFetchUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId), cfg.region);
+        }
         if (strlen(cfg.cloudUserId) > 0) {
           Serial.printf("MQTT: [%d] userId=%s\n", i, cfg.cloudUserId);
           savePrinterConfig(i);
@@ -1137,7 +1150,7 @@ void initBambuMqtt() {
     c.pushallSeqId = 0;
     c.connectTime = 0;
     c.initialPushallSent = false;
-    c.idleSince = 0;
+    c.gotDataSinceConnect = false;
     c.consecutiveFails = 0;
     c.disconnectSince = 0;
     c.wasConnected = false;
