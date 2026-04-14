@@ -31,6 +31,7 @@ struct MqttConn {
   unsigned long disconnectSince;  // grace period before showing "connecting" screen
   bool wasConnected;              // track connected->disconnected transitions for logging
   unsigned long stalePushallSentMs;  // when recovery pushall was sent on stale detection
+  unsigned long lastRecoveryResolvedMs;  // when last recovery resolved (cooldown timer)
 };
 
 static MqttConn conns[MAX_ACTIVE_PRINTERS];
@@ -147,7 +148,7 @@ static bool ensureClients(MqttConn& c) {
     return false;
   }
   c.mqtt->setCallback(mqttCallback);
-  c.mqtt->setKeepAlive(isCloudMode(cfg.mode) ? 5 : BAMBU_KEEPALIVE);
+  c.mqtt->setKeepAlive(isCloudMode(cfg.mode) ? BAMBU_CLOUD_KEEPALIVE : BAMBU_KEEPALIVE);
 
   return true;
 }
@@ -803,6 +804,7 @@ static void reconnectConn(MqttConn& c) {
     MQTT_LOG("[%d] ensureClients() FAILED", c.slotIndex);
     c.diag.lastRc = -2;
     c.consecutiveFails++;
+    c.lastReconnectAttempt = millis();  // respect backoff on OOM
     return;
   }
   if (c.mqtt->connected()) return;
@@ -997,6 +999,11 @@ static void handleConn(MqttConn& c) {
   bool cloudPushallThrottled = cloud &&
       c.lastPushallRequest > 0 && millis() - c.lastPushallRequest < 120000;
 
+  // Cloud recovery cooldown: after a recovery resolves, don't re-enter for 5 min.
+  // Prevents chatty recovery cycles when cloud has frequent >120s gaps in core data.
+  bool recoveryCooldown = cloud &&
+      c.lastRecoveryResolvedMs > 0 && millis() - c.lastRecoveryResolvedMs < 300000;
+
   // --- Active print: core data freshness ---
   if (s.printing) {
     unsigned long printStaleMs = cloud ? BAMBU_PRINT_STALE_TIMEOUT : BAMBU_STALE_TIMEOUT;
@@ -1005,7 +1012,7 @@ static void handleConn(MqttConn& c) {
     if (coreStale && connAlive) {
       // Messages flowing but no core print data - send recovery pushall (rate-limited).
       // Keep showing printing screen with stale values.
-      if (isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled) {
+      if (isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled && !recoveryCooldown) {
         MQTT_LOG("[%d] core print data stale - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
         if (requestPushall(c, PUSHALL_RECOVERY_PRINT))
@@ -1028,6 +1035,7 @@ static void handleConn(MqttConn& c) {
         c.stalePushallSentMs = 0;
       }
     } else {
+      if (c.stalePushallSentMs > 0) c.lastRecoveryResolvedMs = millis();
       c.stalePushallSentMs = 0;  // core data is fresh
     }
 
@@ -1041,7 +1049,7 @@ static void handleConn(MqttConn& c) {
     }
 
     if (s.lastPrintDataMs > 0 && millis() - s.lastPrintDataMs > finishHoldMs) {
-      if (connAlive && isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled) {
+      if (connAlive && isConnected && c.stalePushallSentMs == 0 && !cloudPushallThrottled && !recoveryCooldown) {
         MQTT_LOG("[%d] stale finish - sending recovery pushall", c.slotIndex);
         esp_task_wdt_reset();
         if (requestPushall(c, PUSHALL_RECOVERY_FINISH))
@@ -1070,6 +1078,7 @@ static void handleConn(MqttConn& c) {
       if (requestPushall(c, PUSHALL_RECOVERY_IDLE))
         c.stalePushallSentMs = millis();
     } else {
+      if (c.stalePushallSentMs > 0) c.lastRecoveryResolvedMs = millis();
       c.stalePushallSentMs = 0;
     }
 
@@ -1171,6 +1180,7 @@ void initBambuMqtt() {
     c.disconnectSince = 0;
     c.wasConnected = false;
     c.stalePushallSentMs = 0;
+    c.lastRecoveryResolvedMs = 0;
 
     BambuState& s = printers[i].state;
     memset(&s, 0, sizeof(BambuState));

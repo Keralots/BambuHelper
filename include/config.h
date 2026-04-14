@@ -59,6 +59,7 @@
 #define BAMBU_PUSHALL_INITIAL_DELAY 2000    // wait 2s after connect
 #define BAMBU_MIN_FREE_HEAP         40000   // min heap for TLS allocation
 #define BAMBU_KEEPALIVE             60
+#define BAMBU_CLOUD_KEEPALIVE       30      // cloud: longer than LAN to tolerate internet jitter
 
 // =============================================================================
 //  WiFi
