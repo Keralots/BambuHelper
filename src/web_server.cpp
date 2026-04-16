@@ -527,9 +527,14 @@ R"rawliteral(
           <option value="1" %BUZ_ON%>Enabled</option>
         </select>
         <div id="buzFields" style="display:none">
-          <label for="buzpin">Buzzer GPIO Pin</label>
-          <input type="number" id="buzpin" min="1" max="48" value="%BUZ_PIN%">
-          <p style="font-size:11px;color:#8B949E;margin-top:4px">Passive buzzer. Beeps on print complete and errors.</p>
+          <div id="buzPinRow">
+            <label for="buzpin">Buzzer GPIO Pin</label>
+            <input type="number" id="buzpin" min="1" max="48" value="%BUZ_PIN%">
+            <p style="font-size:11px;color:#8B949E;margin-top:4px">Passive buzzer. Beeps on print complete and errors.</p>
+          </div>
+          <div id="buzEs8311Info" style="display:none">
+            <p style="font-size:11px;color:#8B949E;margin-top:4px">Built-in ES8311 I2S audio codec. No GPIO configuration needed.</p>
+          </div>
           <label style="margin-top:8px">Quiet Hours (optional)</label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="number" id="buzqs" min="0" max="23" value="%BUZ_QS%" style="width:60px" placeholder="22">
@@ -1002,6 +1007,9 @@ toggleBtnPin();
 function toggleBuzPin(){
   var buzOn=document.getElementById('buzzen').value!=='0';
   document.getElementById('buzFields').style.display=buzOn?'block':'none';
+  var isES8311='%ES8311_AUDIO%'==='1';
+  document.getElementById('buzPinRow').style.display=(buzOn&&!isES8311)?'block':'none';
+  document.getElementById('buzEs8311Info').style.display=(buzOn&&isES8311)?'block':'none';
   var btnOn=document.getElementById('btntype').value!=='0';
   document.getElementById('buzClickRow').style.display=(buzOn&&btnOn)?'block':'none';
 }
@@ -1659,6 +1667,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BUZ_OFF") == 0) { out = buzzerSettings.enabled ? "" : "selected"; return true; }
   if (strcmp(name, "BUZ_ON") == 0)  { out = buzzerSettings.enabled ? "selected" : ""; return true; }
   if (strcmp(name, "BUZ_PIN") == 0) { out = String(buzzerSettings.pin); return true; }
+  if (strcmp(name, "ES8311_AUDIO") == 0) {
+#if defined(BOARD_HAS_ES8311_AUDIO)
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "BUZ_QS") == 0)  { out = String(buzzerSettings.quietStartHour); return true; }
   if (strcmp(name, "BUZ_QE") == 0)  { out = String(buzzerSettings.quietEndHour); return true; }
   if (strcmp(name, "BUZ_CLICK") == 0) { out = buzzerSettings.buttonClick ? "checked" : ""; return true; }

@@ -28,4 +28,8 @@ void buzzerBackendStop() {
 void buzzerBackendTick() {
 }
 
+void buzzerBackendShutdown() {
+  buzzerBackendStop();
+}
+
 #endif // !BOARD_HAS_ES8311_AUDIO

@@ -41,24 +41,33 @@ constexpr uint8_t  kCodecVolume    = 75;            // percent
 constexpr uint16_t kEnvMax  = 256;
 constexpr uint16_t kEnvStep = 4;   // ~4ms full ramp at 16 kHz / 128 frames
 
-// State
+// Idle timeout - shutdown audio pipeline after this much silence
+constexpr uint32_t kIdleTimeoutMs = 1500;
+
+// Audio lifecycle state
+enum AudioState : uint8_t { AUDIO_OFF = 0, AUDIO_RUNNING };
+volatile AudioState gAudioState = AUDIO_OFF;
+volatile bool gShutdownRequested = false;
+uint32_t gIdleStartMs = 0;
+
+// Tone state - shared between main loop and audio task
 volatile uint16_t gCurrentFreq  = 0;
 volatile uint32_t gPhaseStep    = 0;
 volatile uint16_t gTargetGain   = 0;
+volatile uint16_t gCurrentGain  = 0;
 
+// Internal state
 bool     gWireReady   = false;
 bool     gI2sReady    = false;
 bool     gCodecReady  = false;
-bool     gTaskStarted = false;
+volatile bool gTaskStarted = false;
 bool     gAmpEnabled  = false;
-bool     gInitDone    = false;
 uint32_t gPhase       = 0;
 uint32_t gLastTonePhaseStep = 0;
-uint16_t gCurrentGain = 0;
 
 int16_t  gWaveTable[256];
 bool     gWaveReady = false;
-TaskHandle_t gAudioTask = nullptr;
+volatile TaskHandle_t gAudioTask = nullptr;
 
 // ----- helpers -----
 
@@ -210,13 +219,6 @@ bool initCodec() {
   return true;
 }
 
-bool ensureAudioReady() {
-  buildWaveTable();
-  if (!initI2s()) return false;
-  if (!initCodec()) return false;
-  return true;
-}
-
 // ----- tone generation -----
 
 uint32_t phaseStepFor(uint16_t freq) {
@@ -254,37 +256,109 @@ void fillChunk(int16_t* out) {
 }
 
 // ----- audio task -----
-// Always-running: streams silence when idle, tones when requested.
-// PA stays on permanently so there is zero latency when a tone starts.
-// This matches the Waveshare reference (PA enabled at setup, never disabled).
+// Streams tones when requested, silence between tones.
+// Exits cooperatively when gShutdownRequested is set.
 
 void audioTask(void*) {
   static int16_t chunk[kChunkSamples];
 
-  while (true) {
-    if (!ensureAudioReady()) {
-      vTaskDelay(pdMS_TO_TICKS(100));
-      continue;
-    }
-
-    setAmpEnabled(true);
+  while (!gShutdownRequested) {
     fillChunk(chunk);
-
     size_t written = 0;
     i2s_write((i2s_port_t)AUDIO_I2S_PORT, chunk, sizeof(chunk),
               &written, pdMS_TO_TICKS(50));
   }
+
+  // Clean self-exit
+  gTaskStarted = false;
+  gAudioTask = nullptr;
+  vTaskDelete(nullptr);
 }
 
 void ensureTaskStarted() {
   if (gTaskStarted) return;
+  gShutdownRequested = false;
   BaseType_t ok = xTaskCreatePinnedToCore(
-      audioTask, "buzzer_es8311", 4096, nullptr, 1, &gAudioTask, tskNO_AFFINITY);
+      audioTask, "buzzer_es8311", 4096, nullptr, 1, (TaskHandle_t*)&gAudioTask, tskNO_AFFINITY);
   if (ok == pdPASS) {
     gTaskStarted = true;
   } else {
     Serial.println("ES8311: failed to start audio task");
   }
+}
+
+// ----- lifecycle management -----
+
+// PA amplifier settling time after power-on.
+// Coupling capacitors need to charge before clean audio output.
+constexpr uint32_t kPaSettleMs = 30;
+
+bool ensureAudioRunning() {
+  if (gAudioState == AUDIO_RUNNING) return true;
+
+  if (!initI2s()) return false;
+  if (!initCodec()) return false;
+  setAmpEnabled(true);
+  ensureTaskStarted();
+
+  // Let PA settle while task streams silence through DMA.
+  // Without this, the first ~30ms of audio is muffled/cut.
+  delay(kPaSettleMs);
+
+  gAudioState = AUDIO_RUNNING;
+  gIdleStartMs = 0;
+  Serial.println("ES8311: audio activated");
+  return true;
+}
+
+void shutdownAudio() {
+  if (gAudioState == AUDIO_OFF) return;
+
+  // Signal task to stop cooperatively
+  gShutdownRequested = true;
+
+  // Wait for task to finish current i2s_write and self-exit
+  if (gTaskStarted && gAudioTask != nullptr) {
+    uint32_t waitStart = millis();
+    while (gTaskStarted && (millis() - waitStart < 100)) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    // Forceful delete as fallback
+    if (gTaskStarted) {
+      vTaskDelete(gAudioTask);
+      gTaskStarted = false;
+    }
+    gAudioTask = nullptr;
+  }
+
+  // Disable PA before I2S teardown (envelope already at 0, no pop)
+  setAmpEnabled(false);
+
+  // Tear down I2S
+  if (gI2sReady) {
+    i2s_zero_dma_buffer((i2s_port_t)AUDIO_I2S_PORT);
+    i2s_driver_uninstall((i2s_port_t)AUDIO_I2S_PORT);
+    gI2sReady = false;
+  }
+
+  // Put codec in standby for real power savings
+  // Do NOT call Wire.end() - shared with CST816D touch controller
+  if (gCodecReady) {
+    esWrite(ES_REG_SYS_0D, 0x00);  // power down DAC
+    esWrite(ES_REG_SYS_0E, 0x00);  // power down analog
+    gCodecReady = false;
+  }
+
+  // Reset tone state
+  gCurrentFreq = 0;
+  gPhaseStep = 0;
+  gTargetGain = 0;
+  gCurrentGain = 0;
+  gIdleStartMs = 0;
+  gShutdownRequested = false;
+
+  gAudioState = AUDIO_OFF;
+  Serial.println("ES8311: audio shutdown");
 }
 
 }  // namespace
@@ -295,20 +369,23 @@ void buzzerBackendInit() {
   pinMode(AUDIO_PA_CTRL, OUTPUT);
   digitalWrite(AUDIO_PA_CTRL, LOW);
   gAmpEnabled = false;
+  buildWaveTable();
   gCurrentFreq = 0;
   gPhaseStep = 0;
   gTargetGain = 0;
   gCurrentGain = 0;
   gLastTonePhaseStep = 0;
-  ensureAudioReady();
-  ensureTaskStarted();
-  gInitDone = true;
+  gAudioState = AUDIO_OFF;
+  // Do NOT start I2S/codec/task here - lazy init on first sound
 }
 
 void buzzerBackendApplyStep(uint16_t freq) {
-  if (freq > 0 && gPhaseStep == 0) {
-    // New tone starting - reset phase for clean waveform
-    gPhase = 0;
+  if (freq > 0) {
+    if (!ensureAudioRunning()) return;
+    gIdleStartMs = 0;  // reset idle timer
+    if (gPhaseStep == 0) {
+      gPhase = 0;  // new tone starting - reset phase for clean waveform
+    }
   }
   gCurrentFreq = freq;
   gPhaseStep = phaseStepFor(freq);
@@ -320,10 +397,32 @@ void buzzerBackendStop() {
   gCurrentFreq = 0;
   gPhaseStep = 0;
   gTargetGain = 0;
-  // Envelope decays naturally; PA stays on; task keeps streaming silence.
+  // Envelope decays naturally in audio task.
+  // Idle timer will be armed by buzzerBackendTick() once gCurrentGain reaches 0.
 }
 
 void buzzerBackendTick() {
+  if (gAudioState != AUDIO_RUNNING) return;
+
+  // Check if audio pipeline is idle (silence + envelope fully decayed)
+  if (gTargetGain == 0 && gCurrentGain == 0) {
+    if (gIdleStartMs == 0) {
+      gIdleStartMs = millis();
+    } else if (millis() - gIdleStartMs >= kIdleTimeoutMs) {
+      shutdownAudio();
+    }
+  } else {
+    gIdleStartMs = 0;  // sound is playing or envelope ramping
+  }
+}
+
+void buzzerBackendShutdown() {
+  // Force immediate silence (skip envelope ramp)
+  gCurrentGain = 0;
+  gTargetGain = 0;
+  gPhaseStep = 0;
+  gCurrentFreq = 0;
+  shutdownAudio();
 }
 
 #endif // BOARD_HAS_ES8311_AUDIO

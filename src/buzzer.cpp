@@ -44,6 +44,10 @@ void initBuzzer() {
   currentMelody = nullptr;
   melodyIdx = 0;
   melodyLen = 0;
+  if (!buzzerSettings.enabled) {
+    buzzerBackendShutdown();
+    return;
+  }
   buzzerBackendInit();
   buzzerBackendStop();
 }
@@ -87,9 +91,9 @@ void buzzerPlay(BuzzerEvent event) {
   }
 
   melodyIdx = 0;
-  stepStartMs = millis();
   playing = true;
   buzzerBackendApplyStep(currentMelody[0].freq);
+  stepStartMs = millis();
 }
 
 void buzzerPlayClick() {
@@ -111,8 +115,8 @@ void buzzerPlayClick() {
 }
 
 void buzzerTick() {
+  buzzerBackendTick();  // always tick - handles idle timeout shutdown
   if (!playing || !currentMelody) return;
-  buzzerBackendTick();
 
   if (millis() - stepStartMs < currentMelody[melodyIdx].ms) return;
 
@@ -124,6 +128,6 @@ void buzzerTick() {
     return;
   }
 
-  stepStartMs = millis();
   buzzerBackendApplyStep(currentMelody[melodyIdx].freq);
+  stepStartMs = millis();
 }
