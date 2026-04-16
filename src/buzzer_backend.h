@@ -1,0 +1,11 @@
+#ifndef BUZZER_BACKEND_H
+#define BUZZER_BACKEND_H
+
+#include <Arduino.h>
+
+void buzzerBackendInit();
+void buzzerBackendApplyStep(uint16_t freq);
+void buzzerBackendStop();
+void buzzerBackendTick();
+
+#endif // BUZZER_BACKEND_H
