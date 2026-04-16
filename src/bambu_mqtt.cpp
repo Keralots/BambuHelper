@@ -636,26 +636,20 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) 
   } else if (print["chamber_temper"].is<int>()) {
     corePrintData = true;
     s.chamberTemp = print["chamber_temper"].as<int>();
-  } else if (print["ctc"]["info"]["temp"].is<float>()) {
-    // Some firmware reports chamber temperature under ctc.info.temp
-    corePrintData = true;
-    s.chamberTemp = print["ctc"]["info"]["temp"].as<float>();
   } else if (print["ctc"]["info"]["temp"].is<int>()) {
+    // ctc.info.temp may be packed: (target << 16) | current — extract current
     corePrintData = true;
-    s.chamberTemp = print["ctc"]["info"]["temp"].as<int>();
+    s.chamberTemp = (float)(print["ctc"]["info"]["temp"].as<int>() & 0xFFFF);
   } else if (print["ctc"]["info"]["temp"].is<const char*>()) {
     corePrintData = true;
-    s.chamberTemp = atof(print["ctc"]["info"]["temp"].as<const char*>());
-  } else if (print["device"]["ctc"]["info"]["temp"].is<float>()) {
-    // H2C/H2D push_status reports chamber temperature under device.ctc.info.temp
-    corePrintData = true;
-    s.chamberTemp = print["device"]["ctc"]["info"]["temp"].as<float>();
+    s.chamberTemp = (float)((int)atof(print["ctc"]["info"]["temp"].as<const char*>()) & 0xFFFF);
   } else if (print["device"]["ctc"]["info"]["temp"].is<int>()) {
+    // H2C/H2D: device.ctc.info.temp — packed: (target << 16) | current
     corePrintData = true;
-    s.chamberTemp = print["device"]["ctc"]["info"]["temp"].as<int>();
+    s.chamberTemp = (float)(print["device"]["ctc"]["info"]["temp"].as<int>() & 0xFFFF);
   } else if (print["device"]["ctc"]["info"]["temp"].is<const char*>()) {
     corePrintData = true;
-    s.chamberTemp = atof(print["device"]["ctc"]["info"]["temp"].as<const char*>());
+    s.chamberTemp = (float)((int)atof(print["device"]["ctc"]["info"]["temp"].as<const char*>()) & 0xFFFF);
   }
 
   // H2D/H2C fallback: parse ctc.info.temp from raw payload via memmem
@@ -670,8 +664,9 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) 
       if (tempPos) {
         const char* valStart = tempPos + 7;
         while (valStart < payloadEnd && *valStart == ' ') valStart++;
-        float ctcTemp = atof(valStart);
-        if (ctcTemp > 0 && ctcTemp < 100) {
+        int rawVal = atoi(valStart);
+        float ctcTemp = (float)(rawVal & 0xFFFF);
+        if (ctcTemp > 0 && ctcTemp < 200) {
           s.chamberTemp = ctcTemp;
           corePrintData = true;
           MQTT_LOG("chamber temp from memmem ctc: %.1f", ctcTemp);
