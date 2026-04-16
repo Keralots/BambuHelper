@@ -19,16 +19,6 @@ TFT_eSPI tft = TFT_eSPI();
 #undef  CLR_BG
 #define CLR_BG  (dispSettings.bgColor)
 
-// Compensate AMS filament colors for CYD panels that use hardware inversion.
-// invertDisplay() inverts ALL pixels; pre-inverting AMS colors restores them.
-static inline uint16_t amsDispColor(uint16_t c) {
-#if defined(DISPLAY_240x320)
-  return dispSettings.invertColors ? (uint16_t)~c : c;
-#else
-  return c;
-#endif
-}
-
 static ScreenState currentScreen = SCREEN_SPLASH;
 static ScreenState prevScreen = SCREEN_SPLASH;
 static bool forceRedraw = true;
@@ -941,7 +931,7 @@ static void drawIdle() {
     if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS && s.ams.trays[s.ams.activeTray].present) {
       AmsTray& t = s.ams.trays[s.ams.activeTray];
       tft.drawCircle(10, botCY, 5, CLR_TEXT_DARK);
-      tft.fillCircle(10, botCY, 4, amsDispColor(t.colorRgb565));
+      tft.fillCircle(10, botCY, 4, t.colorRgb565);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString(t.type, 19, botCY);
@@ -1020,9 +1010,9 @@ static void drawAmsTrayBar(int16_t x, int16_t y, int16_t w, int16_t h,
       int16_t fillH = (int16_t)((int32_t)ih * tray.remain / 100);
       int16_t emptyH = ih - fillH;
       if (emptyH > 0) tft.fillRect(ix, iy, iw, emptyH, CLR_TRACK);
-      if (fillH > 0)  tft.fillRect(ix, iy + emptyH, iw, fillH, amsDispColor(tray.colorRgb565));
+      if (fillH > 0)  tft.fillRect(ix, iy + emptyH, iw, fillH, tray.colorRgb565);
     } else {
-      tft.fillRect(ix, iy, iw, ih, amsDispColor(tray.colorRgb565));
+      tft.fillRect(ix, iy, iw, ih, tray.colorRgb565);
     }
 
     // Active slot marker triangle
@@ -1537,7 +1527,7 @@ static void drawPrinting() {
       AmsTray& t = s.ams.trays[s.ams.activeTray];
       if (t.present) {
         tft.drawCircle(10, eff_botCY, 5, CLR_TEXT_DARK);
-        tft.fillCircle(10, eff_botCY, 4, amsDispColor(t.colorRgb565));
+        tft.fillCircle(10, eff_botCY, 4, t.colorRgb565);
         tft.setTextDatum(ML_DATUM);
         tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
         tft.drawString(t.type, 19, eff_botCY);
