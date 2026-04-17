@@ -18,7 +18,9 @@
 #include "layout.h"
 #define SCREEN_W        LY_W
 #define SCREEN_H        LY_H
-#define BACKLIGHT_PIN   TFT_BL  // set by build flags per board
+#ifndef BACKLIGHT_PIN
+#define BACKLIGHT_PIN   TFT_BL  // TFT_eSPI: set via -D TFT_BL=N; LovyanGFX: set via -D BACKLIGHT_PIN=N
+#endif
 #define BACKLIGHT_CH    0
 #define BACKLIGHT_FREQ  5000
 #define BACKLIGHT_RES   8

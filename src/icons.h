@@ -2,6 +2,7 @@
 #define ICONS_H
 
 #include <Arduino.h>
+#include <LovyanGFX.hpp>
 
 // 16x16 1-bit icons stored as PROGMEM byte arrays (1 bit per pixel).
 // Draw with: for each bit, if set draw accentColor, else skip (transparent).
@@ -264,7 +265,7 @@ const uint8_t PROGMEM icon_lightning[] = {
 };
 
 // Helper: draw a 16x16 1-bit icon at (x, y) with given color, transparent bg
-inline void drawIcon16(TFT_eSPI& tft, int16_t x, int16_t y,
+inline void drawIcon16(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
                        const uint8_t* icon, uint16_t color) {
   for (int row = 0; row < 16; row++) {
     uint8_t b0 = pgm_read_byte(&icon[row * 2]);
@@ -279,7 +280,7 @@ inline void drawIcon16(TFT_eSPI& tft, int16_t x, int16_t y,
 }
 
 // Helper: draw a 32x32 1-bit icon at (x, y) with given color, transparent bg
-inline void drawIcon32(TFT_eSPI& tft, int16_t x, int16_t y,
+inline void drawIcon32(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
                        const uint8_t* icon, uint16_t color) {
   for (int row = 0; row < 32; row++) {
     uint32_t bits = ((uint32_t)pgm_read_byte(&icon[row * 4]) << 24) |

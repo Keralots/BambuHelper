@@ -12,19 +12,19 @@
 // ---------------------------------------------------------------------------
 static uint16_t spinnerAngle = 0;
 
-void drawSpinner(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawSpinner(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                  uint16_t color) {
   // Erase previous arc segment (handle wrap-around)
   uint16_t prevStart = (spinnerAngle + 360 - 12) % 360;
   uint16_t prevEnd = (prevStart + 60) % 360;
   if (prevEnd > prevStart) {
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      prevStart, prevEnd, CLR_BG, CLR_BG, false);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                prevStart, prevEnd, CLR_BG);
   } else {
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      prevStart, 360, CLR_BG, CLR_BG, false);
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      0, prevEnd, CLR_BG, CLR_BG, false);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                prevStart, 360, CLR_BG);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                0, prevEnd, CLR_BG);
   }
 
   // Advance angle
@@ -34,20 +34,20 @@ void drawSpinner(TFT_eSPI& tft, int16_t cx, int16_t cy, int16_t radius,
 
   // Draw arc segment (handle wrap-around)
   if (arcEnd > arcStart) {
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      arcStart, arcEnd, color, CLR_BG, false);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                arcStart, arcEnd, color);
   } else {
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      arcStart, 360, color, CLR_BG, false);
-    tft.drawSmoothArc(cx, cy, radius, radius - 4,
-                      0, arcEnd, color, CLR_BG, false);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                arcStart, 360, color);
+    tft.drawArc(cx, cy, radius, radius - 4,
+                0, arcEnd, color);
   }
 }
 
 // ---------------------------------------------------------------------------
 //  Animated dots "..."
 // ---------------------------------------------------------------------------
-void drawAnimDots(TFT_eSPI& tft, int16_t x, int16_t y, uint16_t color) {
+void drawAnimDots(lgfx::LovyanGFX& tft, int16_t x, int16_t y, uint16_t color) {
   unsigned long ms = millis();
   int phase = (ms / 400) % 4;
 
@@ -64,7 +64,7 @@ void drawAnimDots(TFT_eSPI& tft, int16_t x, int16_t y, uint16_t color) {
 // ---------------------------------------------------------------------------
 //  Indeterminate slide bar — a glowing segment slides back and forth
 // ---------------------------------------------------------------------------
-void drawSlideBar(TFT_eSPI& tft, int16_t x, int16_t y, int16_t w, int16_t h,
+void drawSlideBar(lgfx::LovyanGFX& tft, int16_t x, int16_t y, int16_t w, int16_t h,
                   uint16_t color, uint16_t trackColor) {
   // Draw track (also erases previous segment position)
   tft.fillRoundRect(x, y, w, h, h / 2, trackColor);
@@ -95,7 +95,7 @@ static unsigned long completionStart = 0;
 static bool completionDone = false;
 static int16_t prevRing = 0;
 
-void drawCompletionAnim(TFT_eSPI& tft, int16_t cx, int16_t cy, bool reset) {
+void drawCompletionAnim(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, bool reset) {
   if (reset) {
     completionStart = millis();
     completionDone = false;
@@ -113,18 +113,18 @@ void drawCompletionAnim(TFT_eSPI& tft, int16_t cx, int16_t cy, bool reset) {
     int16_t r = 10 + (elapsed * (finalR - 10)) / 400;
     // Erase previous ring
     if (prevRing > 0 && prevRing != r) {
-      tft.drawSmoothArc(cx, cy, prevRing, prevRing - 3, 0, 360, CLR_BG, CLR_BG, false);
+      tft.drawArc(cx, cy, prevRing, prevRing - 3, 0, 360, CLR_BG);
     }
-    tft.drawSmoothArc(cx, cy, r, r - 3, 0, 360, CLR_GREEN, CLR_BG, false);
+    tft.drawArc(cx, cy, r, r - 3, 0, 360, CLR_GREEN);
     prevRing = r;
   }
   // Phase 2 (400-600ms): settle to final ring
   else if (elapsed < 600) {
-    tft.drawSmoothArc(cx, cy, finalR, finalR - 4, 0, 360, CLR_GREEN, CLR_BG, false);
+    tft.drawArc(cx, cy, finalR, finalR - 4, 0, 360, CLR_GREEN);
   }
   // Phase 3 (600ms+): static ring + large checkmark, done
   else {
-    tft.drawSmoothArc(cx, cy, finalR, finalR - 4, 0, 360, CLR_GREEN, CLR_BG, false);
+    tft.drawArc(cx, cy, finalR, finalR - 4, 0, 360, CLR_GREEN);
     // Clear center for checkmark
     tft.fillCircle(cx, cy, finalR - 5, CLR_BG);
     // Draw 32x32 checkmark centered
