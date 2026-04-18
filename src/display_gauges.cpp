@@ -3,6 +3,7 @@
 #include "layout.h"
 #include "settings.h"
 #include <time.h>
+#include <math.h>
 
 // LovyanGFX does not expose alphaBlend() as a member. Provide a compatible
 // helper: alpha=0 → pure bg, alpha=255 → pure fg (same semantics as TFT_eSPI).
@@ -13,10 +14,22 @@ static inline uint16_t alphaBlend565(uint8_t alpha, uint16_t fg, uint16_t bg) {
   return (r << 11) | (g << 5) | b;
 }
 
+// Holds the SPI bus for an entire gauge update. Without this, each primitive
+// (fillArc, fillCircle, drawString) opens+closes its own transaction and the
+// scheduler can interleave between them — producing visible intermediate
+// states (flicker). startWrite is refcounted in LovyanGFX so nesting is safe.
+class ScopedWrite {
+  lgfx::LovyanGFX& _t;
+public:
+  explicit ScopedWrite(lgfx::LovyanGFX& t) : _t(t) { _t.startWrite(); }
+  ~ScopedWrite() { _t.endWrite(); }
+};
+
 // ---------------------------------------------------------------------------
 //  H2-style LED progress bar
 // ---------------------------------------------------------------------------
 void drawLedProgressBar(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress) {
+  ScopedWrite sw(tft);
   uint16_t bg = dispSettings.bgColor;
   uint16_t track = dispSettings.trackColor;
 
@@ -82,6 +95,8 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
   if (fillW < SHIMMER_W + 4) return;  // too small for shimmer
 
   uint16_t barColor = dispSettings.progress.arc;
+
+  ScopedWrite sw_(tft);
 
   // Erase previous shimmer position (redraw base bar segment)
   if (shimmerPos > 0) {
@@ -174,6 +189,147 @@ static void drawArcFillLegacy(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
   }
 }
 
+// Integer square-root fraction — U8.8 fixed point. Port of TFT_eSPI helper
+// used to derive AA alpha from squared distance without an FPU roundtrip.
+static inline uint8_t sqrt_fraction(uint32_t num) {
+  if (num > 0x40000000) return 0;
+  uint32_t bsh = 0x00004000;
+  uint32_t fpr = 0;
+  uint32_t osh = 0;
+  while (num > bsh) { bsh <<= 2; osh++; }
+  do {
+    uint32_t bod = bsh + fpr;
+    if (num >= bod) { num -= bod; fpr = bsh + bod; }
+    num <<= 1;
+  } while (bsh >>= 1);
+  return fpr >> osh;
+}
+
+// Scan-quadrant AA annulus slice. Port of TFT_eSPI::drawArc (smooth=true).
+// Angles: 0°=6 o'clock, clockwise, range 0-360. r=outer, ir=inner (inclusive).
+// Ends are NOT anti-aliased — caller adds radial AA wedges for smooth ends.
+static void drawArcAA(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
+                      int32_t r, int32_t ir,
+                      uint32_t startAngle, uint32_t endAngle,
+                      uint16_t fg_color, uint16_t bg_color) {
+  constexpr float deg2rad = 3.14159265358979f / 180.0f;
+  if (endAngle > 360) endAngle = 360;
+  if (startAngle > 360) startAngle = 360;
+  if (startAngle == endAngle) return;
+  if (r < ir) { int32_t t = r; r = ir; ir = t; }
+  if (r <= 0 || ir < 0) return;
+
+  if (endAngle < startAngle) {
+    if (startAngle < 360) drawArcAA(tft, x, y, r, ir, startAngle, 360, fg_color, bg_color);
+    if (endAngle == 0) return;
+    startAngle = 0;
+  }
+
+  int32_t xs = 0;
+  uint8_t alpha = 0;
+  uint32_t r2 = r * r;
+  r++;
+  uint32_t r1 = r * r;
+  int32_t w = r - ir;
+  uint32_t r3 = ir * ir;
+  ir--;
+  uint32_t r4 = ir * ir;
+
+  uint32_t startSlope[4] = {0, 0, 0xFFFFFFFF, 0};
+  uint32_t endSlope[4]   = {0, 0xFFFFFFFF, 0, 0};
+  constexpr float minDivisor = 1.0f / 0x8000;
+
+  float fabscos = fabsf(cosf(startAngle * deg2rad));
+  float fabssin = fabsf(sinf(startAngle * deg2rad));
+  uint32_t slope = (uint32_t)((fabscos / (fabssin + minDivisor)) * (float)(1UL << 16));
+  if (startAngle <= 90) {
+    startSlope[0] = slope;
+  } else if (startAngle <= 180) {
+    startSlope[1] = slope;
+  } else if (startAngle <= 270) {
+    startSlope[1] = 0xFFFFFFFF;
+    startSlope[2] = slope;
+  } else {
+    startSlope[1] = 0xFFFFFFFF;
+    startSlope[2] = 0;
+    startSlope[3] = slope;
+  }
+
+  fabscos = fabsf(cosf(endAngle * deg2rad));
+  fabssin = fabsf(sinf(endAngle * deg2rad));
+  slope = (uint32_t)((fabscos / (fabssin + minDivisor)) * (float)(1UL << 16));
+  if (endAngle <= 90) {
+    endSlope[0] = slope;
+    endSlope[1] = 0;
+    startSlope[2] = 0;
+  } else if (endAngle <= 180) {
+    endSlope[1] = slope;
+    startSlope[2] = 0;
+  } else if (endAngle <= 270) {
+    endSlope[2] = slope;
+  } else {
+    endSlope[3] = slope;
+  }
+
+  for (int32_t cy = r - 1; cy > 0; cy--) {
+    uint32_t len[4] = {0, 0, 0, 0};
+    int32_t xst[4]  = {-1, -1, -1, -1};
+    uint32_t dy2 = (r - cy) * (r - cy);
+    while ((r - xs) * (r - xs) + dy2 >= r1) xs++;
+
+    for (int32_t cx = xs; cx < r; cx++) {
+      uint32_t hyp = (r - cx) * (r - cx) + dy2;
+      if (hyp > r2) {
+        alpha = ~sqrt_fraction(hyp);
+      } else if (hyp >= r3) {
+        slope = ((r - cy) << 16) / (r - cx);
+        if (slope <= startSlope[0] && slope >= endSlope[0]) { xst[0] = cx; len[0]++; }
+        if (slope >= startSlope[1] && slope <= endSlope[1]) { xst[1] = cx; len[1]++; }
+        if (slope <= startSlope[2] && slope >= endSlope[2]) { xst[2] = cx; len[2]++; }
+        if (slope <= endSlope[3] && slope >= startSlope[3]) { xst[3] = cx; len[3]++; }
+        continue;
+      } else {
+        if (hyp <= r4) break;
+        alpha = sqrt_fraction(hyp);
+      }
+      if (alpha < 16) continue;
+      uint16_t pcol = alphaBlend565(alpha, fg_color, bg_color);
+      slope = ((r - cy) << 16) / (r - cx);
+      if (slope <= startSlope[0] && slope >= endSlope[0]) tft.drawPixel(x + cx - r, y - cy + r, pcol);
+      if (slope >= startSlope[1] && slope <= endSlope[1]) tft.drawPixel(x + cx - r, y + cy - r, pcol);
+      if (slope <= startSlope[2] && slope >= endSlope[2]) tft.drawPixel(x - cx + r, y + cy - r, pcol);
+      if (slope <= endSlope[3] && slope >= startSlope[3]) tft.drawPixel(x - cx + r, y - cy + r, pcol);
+    }
+    if (len[0]) tft.drawFastHLine(x + xst[0] - len[0] + 1 - r, y - cy + r, len[0], fg_color);
+    if (len[1]) tft.drawFastHLine(x + xst[1] - len[1] + 1 - r, y + cy - r, len[1], fg_color);
+    if (len[2]) tft.drawFastHLine(x - xst[2] + r, y + cy - r, len[2], fg_color);
+    if (len[3]) tft.drawFastHLine(x - xst[3] + r, y - cy + r, len[3], fg_color);
+  }
+
+  if (startAngle ==   0 || endAngle == 360) tft.drawFastVLine(x, y + r - w, w, fg_color);
+  if (startAngle <=  90 && endAngle >=  90) tft.drawFastHLine(x - r + 1, y, w, fg_color);
+  if (startAngle <= 180 && endAngle >= 180) tft.drawFastVLine(x, y - r + 1, w, fg_color);
+  if (startAngle <= 270 && endAngle >= 270) tft.drawFastHLine(x + r - w, y, w, fg_color);
+}
+
+// Equivalent to TFT_eSPI::drawSmoothArc with square ends. Adds AA radial
+// wedge caps at startAngle and endAngle, then calls drawArcAA for body.
+static void drawSmoothArcLGFX(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
+                              int32_t r, int32_t ir,
+                              uint32_t startAngle, uint32_t endAngle,
+                              uint16_t fg_color, uint16_t bg_color) {
+  constexpr float deg2rad = 3.14159265358979f / 180.0f;
+  if (endAngle != startAngle && (startAngle != 0 || endAngle != 360)) {
+    float sx = -sinf(startAngle * deg2rad);
+    float sy = +cosf(startAngle * deg2rad);
+    float ex = -sinf(endAngle * deg2rad);
+    float ey = +cosf(endAngle * deg2rad);
+    tft.drawWedgeLine(sx * ir + x, sy * ir + y, sx * r + x, sy * r + y, 0.3f, 0.3f, fg_color);
+    tft.drawWedgeLine(ex * ir + x, ey * ir + y, ex * r + x, ey * r + y, 0.3f, 0.3f, fg_color);
+  }
+  drawArcAA(tft, x, y, r, ir, startAngle, endAngle, fg_color, bg_color);
+}
+
 static void drawArcFill(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
                         int16_t radius, int16_t thickness,
                         uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
@@ -185,14 +341,7 @@ static void drawArcFill(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
 
   auto arcDraw = [&](uint16_t a0, uint16_t a1, uint16_t color) {
     if (a1 <= a0) return;
-    float la0 = (float)((a0 + 90u) % 360u);
-    float la1 = (float)((a1 + 90u) % 360u);
-    if (la0 > la1) {
-      tft.fillArc(cx, cy, radius, radius - thickness, la0, 360.0f, color);
-      tft.fillArc(cx, cy, radius, radius - thickness, 0.0f,  la1,  color);
-    } else {
-      tft.fillArc(cx, cy, radius, radius - thickness, la0, la1, color);
-    }
+    drawSmoothArcLGFX(tft, cx, cy, radius, radius - thickness, a0, a1, color, bg);
   };
 
   if (forceRedraw) {
@@ -279,6 +428,7 @@ void resetGaugeTextCache() {
 void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,
                      uint16_t remainingMin, bool forceRedraw) {
+  ScopedWrite sw(tft);
   const uint16_t startAngle = 60;
   const GaugeColors& gc = dispSettings.progress;
   uint16_t bg = dispSettings.bgColor;
@@ -334,6 +484,7 @@ void drawTempGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                    uint16_t accentColor, const char* label,
                    const uint8_t* icon, bool forceRedraw,
                    const GaugeColors* colors, float arcValue) {
+  ScopedWrite sw(tft);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -395,6 +546,7 @@ void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                   uint8_t percent, uint16_t accentColor, const char* label,
                   bool forceRedraw, const GaugeColors* colors,
                   float arcPercent) {
+  ScopedWrite sw(tft);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -444,6 +596,7 @@ void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
 void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                        uint8_t humidityRaw, uint8_t humidityLevel, bool present,
                        const char* label, bool forceRedraw) {
+  ScopedWrite sw(tft);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -498,6 +651,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
 void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                     int16_t thickness, uint16_t layerNum, uint16_t totalLayers,
                     bool forceRedraw) {
+  ScopedWrite sw(tft);
   const uint16_t startAngle = 60;
   uint16_t bg = dispSettings.bgColor;
   uint16_t arcColor = dispSettings.progress.arc;
@@ -552,6 +706,7 @@ void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius
 // ---------------------------------------------------------------------------
 void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, bool forceRedraw) {
+  ScopedWrite sw(tft);
   uint16_t bg = dispSettings.bgColor;
 
   if (forceRedraw) {
