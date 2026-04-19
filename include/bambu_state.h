@@ -153,6 +153,12 @@ struct PrinterConfig {
   char cloudUserId[32];       // cloud mode: "u_{uid}" for MQTT username
   CloudRegion region;          // cloud mode: US, EU, or CN server region
   uint8_t gaugeSlots[6];       // configurable gauge layout (GaugeType values, see settings.h)
+  // Portrait-only sparse AMS side gauges (per-printer, 240x320 portrait only).
+  // Engaged only when exactly 1 AMS unit is detected AND enabled AND at least
+  // one side gauge is non-empty. Otherwise the centered AMS strip is used.
+  bool     portraitAmsExtrasEnabled;
+  uint8_t  portraitAmsGaugeLeft;   // GaugeType value
+  uint8_t  portraitAmsGaugeRight;  // GaugeType value
 };
 
 struct PrinterSlot {

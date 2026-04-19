@@ -996,6 +996,14 @@ static bool wasNoPrinter = false;
 #if defined(DISPLAY_240x320)
 static bool isLandscape();
 static void drawAmsStrip(const AmsState& ams, int16_t zoneY, int16_t zoneH, int16_t barH);
+static bool useSparsePortraitAms(const PrinterConfig& cfg, const AmsState& ams);
+static bool sideGaugeDataChanged(uint8_t gt, const BambuState& s,
+                                 const BambuState& prev, bool animating);
+static void drawSparsePortraitAms(const BambuState& s, const PrinterConfig& cfg,
+                                  int16_t zoneY, int16_t zoneH, int16_t barH,
+                                  bool forceFull, bool amsChanged,
+                                  bool sideLeftChanged, bool sideRightChanged,
+                                  bool compactProfile);
 #endif
 
 static void drawIdle() {
@@ -1157,7 +1165,16 @@ static void drawIdle() {
                      (s.ams.trays[i].remain != prevIdleAmsRemain[i]);
       }
     }
-    if (amsChanged) {
+
+    // Sparse portrait mode also needs redraws when side-gauge data moves
+    bool sparse = useSparsePortraitAms(p.config, s.ams);
+    bool sideLeftChanged = false, sideRightChanged = false;
+    if (sparse) {
+      sideLeftChanged  = sideGaugeDataChanged(p.config.portraitAmsGaugeLeft,  s, prevState, /*animating=*/false);
+      sideRightChanged = sideGaugeDataChanged(p.config.portraitAmsGaugeRight, s, prevState, /*animating=*/false);
+    }
+
+    if (amsChanged || sideLeftChanged || sideRightChanged) {
       prevIdleAmsCount = s.ams.unitCount;
       prevIdleAmsActive = s.ams.activeTray;
       for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
@@ -1165,7 +1182,14 @@ static void drawIdle() {
         prevIdleAmsColors[i]  = s.ams.trays[i].colorRgb565;
         prevIdleAmsRemain[i]  = s.ams.trays[i].remain;
       }
-      drawAmsStrip(s.ams, LY_IDLE_AMS_Y, LY_IDLE_AMS_H, LY_IDLE_AMS_BAR_H);
+      if (sparse) {
+        drawSparsePortraitAms(s, p.config, LY_IDLE_AMS_Y, LY_IDLE_AMS_H, LY_IDLE_AMS_BAR_H,
+                              forceRedraw, amsChanged,
+                              sideLeftChanged, sideRightChanged,
+                              /*compactProfile=*/false);
+      } else {
+        drawAmsStrip(s.ams, LY_IDLE_AMS_Y, LY_IDLE_AMS_H, LY_IDLE_AMS_BAR_H);
+      }
     }
   }
 #endif
@@ -1250,9 +1274,104 @@ static uint16_t prevAmsTrayColors[AMS_MAX_TRAYS] = {0};
 static bool     prevAmsTrayPresent[AMS_MAX_TRAYS] = {false};
 static int8_t   prevAmsTrayRemain[AMS_MAX_TRAYS];  // init in drawAmsZone
 
-// Helper: draw a single AMS tray bar with optional partial fill for remain%.
+// Blend two RGB565 colors. alpha=0 -> a, alpha=255 -> b. Used to derive a
+// subtle "white-shifted" highlight color from the tray filament color.
+static inline uint16_t blendRgb565(uint16_t a, uint16_t b, uint8_t alpha) {
+  uint16_t rA = (a >> 11) & 0x1F, rB = (b >> 11) & 0x1F;
+  uint16_t gA = (a >>  5) & 0x3F, gB = (b >>  5) & 0x3F;
+  uint16_t bA =  a        & 0x1F, bB =  b        & 0x1F;
+  uint16_t r = (rA * (255 - alpha) + rB * alpha) / 255;
+  uint16_t g = (gA * (255 - alpha) + gB * alpha) / 255;
+  uint16_t bl= (bA * (255 - alpha) + bB * alpha) / 255;
+  return (r << 11) | (g << 5) | bl;
+}
+
+// Rounded-tech portrait AMS tray. Differs from the legacy sharp-rect bar:
+//   - outer rounded shell
+//   - bottom-up remain% fill, empty portion uses track color
+//   - subtle highlight at the top of the filled area (filament color blended
+//     toward white) for a crisp, industrial - not glossy - feel
+//   - active tray: 2px white border + small centered red rounded notch on top
+//   - inactive tray: 1px dim border
+//   - empty tray: rounded outline + diagonal cross
+// Portrait path only; the landscape strip still uses the legacy flat bar.
+static void drawAmsTrayBarRounded(int16_t x, int16_t y, int16_t w, int16_t h,
+                                  const AmsTray& tray, bool isActive) {
+  int16_t radius = (w >= 14 && h >= 14) ? 4 : (w >= 8 && h >= 8 ? 3 : 2);
+
+  if (!tray.present) {
+    tft.drawRoundRect(x, y, w, h, radius, CLR_TEXT_DARK);
+    // Diagonal cross, inset so it does not clip the corner radius
+    int16_t inset = radius;
+    tft.drawLine(x + inset, y + inset, x + w - 1 - inset, y + h - 1 - inset, CLR_TEXT_DARK);
+    tft.drawLine(x + w - 1 - inset, y + inset, x + inset, y + h - 1 - inset, CLR_TEXT_DARK);
+    return;
+  }
+
+  // Fill empty portion with track color (outer shell), then overlay the
+  // filled portion in the filament color.
+  tft.fillRoundRect(x, y, w, h, radius, CLR_TRACK);
+
+  bool partial = (tray.remain >= 0 && tray.remain < 100);
+  int16_t innerH = h - 2;               // 1px insets for border + fill area
+  if (innerH < 0) innerH = 0;
+  int16_t fillH = partial ? ((int32_t)innerH * tray.remain / 100) : innerH;
+  if (fillH < 0) fillH = 0;
+  int16_t fillW = w - 2;
+  if (fillW < 0) fillW = 0;
+
+  if (fillH > 0 && fillW > 0) {
+    int16_t fx = x + 1;
+    int16_t fy = y + 1 + (innerH - fillH);
+    // Full-width color bar; lets border strokes sit over it cleanly
+    tft.fillRect(fx, fy, fillW, fillH, tray.colorRgb565);
+    // Re-round the bottom corners (overpaint with track where the rounded
+    // outer shell already gave us the right curve).
+    if (radius >= 2) {
+      int16_t bottomY = y + h - radius;
+      // Only re-round if the fill reaches the bottom (it always does since
+      // we paint the whole bottom-up slab)
+      if (fy + fillH >= y + h - 1) {
+        // Redraw the rounded-rect border later; for now ensure corner pixels
+        // match the shell by re-applying fillRoundRect is expensive, so we
+        // just rely on the outer border stroke to mask corner artifacts.
+      }
+    }
+    // Subtle highlight at the top of the filled area, derived from the tray
+    // color blended ~30% toward white. Crisp, not glossy.
+    if (fillH >= 2 && fillW >= 3) {
+      uint16_t hi = blendRgb565(tray.colorRgb565, TFT_WHITE, 80);
+      tft.drawFastHLine(fx + 1, fy, fillW - 2, hi);
+    }
+  }
+
+  // Border on top (last) so fill cannot overpaint it
+  if (isActive) {
+    tft.drawRoundRect(x,     y,     w,     h,     radius,                         TFT_WHITE);
+    tft.drawRoundRect(x + 1, y + 1, w - 2, h - 2, radius > 1 ? radius - 1 : 1,    TFT_WHITE);
+  } else {
+    tft.drawRoundRect(x, y, w, h, radius, CLR_TEXT_DARK);
+  }
+
+  // Active notch: small centered rounded-red indicator on top edge
+  if (isActive) {
+    int16_t nw = w / 3;
+    if (nw < 6) nw = (w >= 6 ? 6 : w - 2);
+    if (nw > w - 6) nw = w - 6;
+    if (nw < 3) nw = 3;
+    int16_t nh = 3;
+    int16_t nx = x + (w - nw) / 2;
+    int16_t ny = y - 1;
+    // Clear the two pixels above the tray so the notch reads cleanly, then
+    // draw the notch sitting half inside the border.
+    tft.fillRect(nx, ny, nw, nh, CLR_BG);
+    tft.fillRoundRect(nx, ny, nw, nh, 1, CLR_RED);
+  }
+}
+
+// Legacy sharp-rect AMS tray bar (landscape strip only).
 // remain 0-99: color fills bottom portion, CLR_TRACK fills the rest.
-// remain 100 or -1 (unknown): full color as before.
+// remain 100 or -1 (unknown): full color.
 static void drawAmsTrayBar(int16_t x, int16_t y, int16_t w, int16_t h,
                            const AmsTray& tray, bool isActive) {
   if (tray.present) {
@@ -1332,8 +1451,8 @@ static void drawAmsStrip(const AmsState& ams,
     for (uint8_t t = 0; t < tc; t++) {
       uint8_t trayIdx = u * AMS_TRAYS_PER_UNIT + t;
       int16_t bx = barsX + t * (barW + LY_AMS_BAR_GAP);
-      drawAmsTrayBar(bx, barY, barW, barH,
-                     ams.trays[trayIdx], trayIdx == ams.activeTray);
+      drawAmsTrayBarRounded(bx, barY, barW, barH,
+                            ams.trays[trayIdx], trayIdx == ams.activeTray);
     }
 
     char label[6];
@@ -1346,23 +1465,197 @@ static void drawAmsStrip(const AmsState& ams,
   }
 }
 
-static void drawAmsZone(const BambuState& s, bool force) {
+// ---------------------------------------------------------------------------
+//  Portrait sparse AMS layout
+//    - engaged only when exactly 1 AMS unit is detected AND the per-printer
+//      "portrait extras" flag is on AND at least one of the two side-gauge
+//      selections is non-empty
+//    - keeps AMS centered, fills the otherwise-empty left/right gutters with
+//      compact round gauges reusing existing gauge renderers
+// ---------------------------------------------------------------------------
+static bool useSparsePortraitAms(const PrinterConfig& cfg, const AmsState& ams) {
+  if (!cfg.portraitAmsExtrasEnabled) return false;
+  if (ams.unitCount != 1) return false;
+  bool leftOk  = (cfg.portraitAmsGaugeLeft  != GAUGE_EMPTY);
+  bool rightOk = (cfg.portraitAmsGaugeRight != GAUGE_EMPTY);
+  return leftOk || rightOk;
+}
+
+// Dispatch a single compact side gauge by GaugeType. Reuses the existing
+// drawXxxGauge helpers so the visual style matches the main 2x3 grid.
+static void drawCompactSideGauge(const BambuState& s, uint8_t gt,
+                                 int16_t cx, int16_t cy, int16_t r, bool force) {
+  const int16_t thickness = 4;
+  switch (gt) {
+    case GAUGE_NOZZLE:
+      drawTempGauge(tft, cx, cy, r, s.nozzleTemp, s.nozzleTarget, 300.0f,
+                    dispSettings.nozzle.arc, nozzleLabel(s), nullptr, force,
+                    &dispSettings.nozzle, smoothNozzleTemp);
+      break;
+    case GAUGE_BED:
+      drawTempGauge(tft, cx, cy, r, s.bedTemp, s.bedTarget, 120.0f,
+                    dispSettings.bed.arc, "Bed", nullptr, force,
+                    &dispSettings.bed, smoothBedTemp);
+      break;
+    case GAUGE_PART_FAN:
+      drawFanGauge(tft, cx, cy, r, s.coolingFanPct, dispSettings.partFan.arc,
+                   "Part", force, &dispSettings.partFan, smoothPartFan);
+      break;
+    case GAUGE_AUX_FAN:
+      drawFanGauge(tft, cx, cy, r, s.auxFanPct, dispSettings.auxFan.arc,
+                   "Aux", force, &dispSettings.auxFan, smoothAuxFan);
+      break;
+    case GAUGE_CHAMBER_FAN:
+      drawFanGauge(tft, cx, cy, r, s.chamberFanPct, dispSettings.chamberFan.arc,
+                   "Chamber", force, &dispSettings.chamberFan, smoothChamberFan);
+      break;
+    case GAUGE_CHAMBER_TEMP:
+      drawTempGauge(tft, cx, cy, r, s.chamberTemp, 0.0f, 60.0f,
+                    dispSettings.chamberTemp.arc, "Chamber", nullptr, force,
+                    &dispSettings.chamberTemp, smoothChamberTemp);
+      break;
+    case GAUGE_HEATBREAK:
+      drawFanGauge(tft, cx, cy, r, s.heatbreakFanPct, dispSettings.heatbreak.arc,
+                   "HBreak", force, &dispSettings.heatbreak, smoothHeatbreakFan);
+      break;
+    case GAUGE_LAYER:
+      drawLayerGauge(tft, cx, cy, r, thickness, s.layerNum, s.totalLayers, force);
+      break;
+    default: {
+      if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
+        uint8_t ui = gt - GAUGE_AMS_HUM_1;
+        const AmsUnit& u = s.ams.units[ui];
+        char lbl[8]; snprintf(lbl, sizeof(lbl), "AMS %d", ui + 1);
+        drawHumidityGauge(tft, cx, cy, r, u.humidityRaw, u.humidity, u.present,
+                          lbl, force);
+      } else if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
+        uint8_t ui = gt - GAUGE_AMS_TEMP_1;
+        const AmsUnit& u = s.ams.units[ui];
+        char lbl[8]; snprintf(lbl, sizeof(lbl), "AMS %d", ui + 1);
+        drawTempGauge(tft, cx, cy, r, u.present ? u.temp : 0, 0, 60.0f,
+                      dispSettings.chamberTemp.arc, lbl, nullptr, force,
+                      &dispSettings.chamberTemp);
+      }
+      // GAUGE_EMPTY / unknown: nothing to draw
+      break;
+    }
+  }
+}
+
+// Returns true if the data backing a given GaugeType changed between prev/cur.
+// Used to decide whether a compact side gauge needs redrawing this frame.
+static bool sideGaugeDataChanged(uint8_t gt, const BambuState& s,
+                                 const BambuState& prev, bool animating) {
+  switch (gt) {
+    case GAUGE_NOZZLE:
+      return animating || s.nozzleTemp != prev.nozzleTemp || s.nozzleTarget != prev.nozzleTarget;
+    case GAUGE_BED:
+      return animating || s.bedTemp != prev.bedTemp || s.bedTarget != prev.bedTarget;
+    case GAUGE_PART_FAN:    return animating || s.coolingFanPct   != prev.coolingFanPct;
+    case GAUGE_AUX_FAN:     return animating || s.auxFanPct       != prev.auxFanPct;
+    case GAUGE_CHAMBER_FAN: return animating || s.chamberFanPct   != prev.chamberFanPct;
+    case GAUGE_CHAMBER_TEMP:return animating || s.chamberTemp     != prev.chamberTemp;
+    case GAUGE_HEATBREAK:   return animating || s.heatbreakFanPct != prev.heatbreakFanPct;
+    case GAUGE_LAYER:
+      return s.layerNum != prev.layerNum || s.totalLayers != prev.totalLayers;
+    default:
+      if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
+        uint8_t ui = gt - GAUGE_AMS_HUM_1;
+        const AmsUnit& cu = s.ams.units[ui];
+        const AmsUnit& pu = prev.ams.units[ui];
+        return cu.humidityRaw != pu.humidityRaw ||
+               cu.humidity    != pu.humidity    ||
+               cu.present     != pu.present;
+      }
+      if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
+        uint8_t ui = gt - GAUGE_AMS_TEMP_1;
+        const AmsUnit& cu = s.ams.units[ui];
+        const AmsUnit& pu = prev.ams.units[ui];
+        return cu.temp    != pu.temp ||
+               cu.present != pu.present;
+      }
+      return false;
+  }
+}
+
+// Draw the sparse portrait AMS layout: a single centered AMS unit flanked by
+// up to two compact side gauges. Callers compute amsChanged + sideChanged
+// themselves so per-screen smart-redraw state remains authoritative.
+//
+// `compactProfile` picks the size profile:
+//   false: printing/idle (zoneH ~56) -> side gauge r ≈ 22
+//   true : finished (zoneH ~45)      -> side gauge r ≈ 17
+static void drawSparsePortraitAms(const BambuState& s, const PrinterConfig& cfg,
+                                  int16_t zoneY, int16_t zoneH, int16_t barH,
+                                  bool forceFull, bool amsChanged,
+                                  bool sideLeftChanged, bool sideRightChanged,
+                                  bool compactProfile) {
+  // Shared SPI write guard — keeps intermediate draws from rendering between
+  // SPI transactions and producing visible flicker during the richer redraw.
+  tft.startWrite();
+
+  bool redrawAll = forceFull || amsChanged;
+
+  if (redrawAll) {
+    // Clear zone and redraw the single AMS unit centered (same strip logic)
+    drawAmsStrip(s.ams, zoneY, zoneH, barH);
+  }
+
+  // Side gauge geometry
+  const int16_t sideR = compactProfile ? 17 : 22;
+  const int16_t labelH = 12;
+  // Position gauges in the gutters left/right of the centered AMS block.
+  // AMS single-unit block width is ~126px (4 trays * 30 + 3 * 2) so each
+  // gutter is roughly 57px wide; centering the gauge at x≈28 / x≈212 keeps
+  // it visually balanced and clear of the tray group.
+  const int16_t leftCx  = 28;
+  const int16_t rightCx = LY_W - 28;
+  // Center the gauge vertically in the zone, leaving label space below
+  const int16_t cy = zoneY + (zoneH - labelH) / 2;
+
+  uint8_t gl = cfg.portraitAmsGaugeLeft;
+  uint8_t gr = cfg.portraitAmsGaugeRight;
+
+  if (gl != GAUGE_EMPTY && (redrawAll || sideLeftChanged)) {
+    drawCompactSideGauge(s, gl, leftCx, cy, sideR, redrawAll);
+  }
+  if (gr != GAUGE_EMPTY && (redrawAll || sideRightChanged)) {
+    drawCompactSideGauge(s, gr, rightCx, cy, sideR, redrawAll);
+  }
+
+  tft.endWrite();
+}
+
+static void drawAmsZone(const BambuState& s, const PrinterConfig& cfg,
+                        bool force, bool animating) {
   // --- Change detection ---
-  bool changed = force;
-  if (!changed) {
-    changed = (s.ams.unitCount != prevAmsUnitCount) ||
-              (s.ams.activeTray != prevAmsActive);
-    if (!changed) {
-      for (uint8_t i = 0; i < s.ams.unitCount * AMS_TRAYS_PER_UNIT && !changed; i++) {
-        changed = (s.ams.trays[i].present != prevAmsTrayPresent[i]) ||
-                  (s.ams.trays[i].colorRgb565 != prevAmsTrayColors[i]) ||
-                  (s.ams.trays[i].remain != prevAmsTrayRemain[i]);
+  bool amsChanged = force;
+  if (!amsChanged) {
+    amsChanged = (s.ams.unitCount != prevAmsUnitCount) ||
+                 (s.ams.activeTray != prevAmsActive);
+    if (!amsChanged) {
+      for (uint8_t i = 0; i < s.ams.unitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
+        amsChanged = (s.ams.trays[i].present != prevAmsTrayPresent[i]) ||
+                     (s.ams.trays[i].colorRgb565 != prevAmsTrayColors[i]) ||
+                     (s.ams.trays[i].remain != prevAmsTrayRemain[i]);
       }
     }
   }
+
+  // Sparse portrait layout also needs redraws when its side-gauge data moves,
+  // even if the AMS state itself is unchanged.
+  bool landscape = isLandscape();
+  bool sparse = !landscape && useSparsePortraitAms(cfg, s.ams);
+  bool sideLeftChanged = false, sideRightChanged = false;
+  if (sparse) {
+    sideLeftChanged  = sideGaugeDataChanged(cfg.portraitAmsGaugeLeft,  s, prevState, animating);
+    sideRightChanged = sideGaugeDataChanged(cfg.portraitAmsGaugeRight, s, prevState, animating);
+  }
+
+  bool changed = amsChanged || sideLeftChanged || sideRightChanged;
   if (!changed) return;
 
-  // Save state for next comparison
+  // Save state for next comparison (AMS trays)
   prevAmsUnitCount = s.ams.unitCount;
   prevAmsActive    = s.ams.activeTray;
   for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
@@ -1372,7 +1665,6 @@ static void drawAmsZone(const BambuState& s, bool force) {
   }
 
   uint8_t units = s.ams.unitCount;
-  bool landscape = isLandscape();
 
   if (landscape) {
     // =====================================================================
@@ -1438,6 +1730,12 @@ static void drawAmsZone(const BambuState& s, bool force) {
       tft.drawString(label, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 2);
     }
 
+  } else if (sparse) {
+    // Portrait sparse layout: single centered AMS + compact side gauges
+    drawSparsePortraitAms(s, cfg, LY_AMS_Y, LY_AMS_H, LY_AMS_BAR_H,
+                          force, amsChanged,
+                          sideLeftChanged, sideRightChanged,
+                          /*compactProfile=*/false);
   } else {
     drawAmsStrip(s.ams, LY_AMS_Y, LY_AMS_H, LY_AMS_BAR_H);
   }
@@ -1672,7 +1970,7 @@ static void drawPrinting() {
   // === AMS zone (CYD: portrait + landscape) ===
 #if defined(DISPLAY_240x320)
   if (s.ams.present && s.ams.unitCount > 0) {
-    drawAmsZone(s, forceRedraw);
+    drawAmsZone(s, p.config, forceRedraw, animating);
   }
 #endif
 
@@ -1991,7 +2289,16 @@ static void drawFinished() {
                      (s.ams.trays[i].remain != prevFinAmsRemain[i]);
       }
     }
-    if (amsChanged) {
+
+    // Sparse portrait mode also needs redraws when side-gauge data moves
+    bool finSparse = useSparsePortraitAms(p.config, s.ams);
+    bool finSideLeftChanged = false, finSideRightChanged = false;
+    if (finSparse) {
+      finSideLeftChanged  = sideGaugeDataChanged(p.config.portraitAmsGaugeLeft,  s, prevState, animating);
+      finSideRightChanged = sideGaugeDataChanged(p.config.portraitAmsGaugeRight, s, prevState, animating);
+    }
+
+    if (amsChanged || finSideLeftChanged || finSideRightChanged) {
       prevFinAmsCount = s.ams.unitCount;
       prevFinAmsActive = s.ams.activeTray;
       for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
@@ -1999,7 +2306,14 @@ static void drawFinished() {
         prevFinAmsColors[i]  = s.ams.trays[i].colorRgb565;
         prevFinAmsRemain[i]  = s.ams.trays[i].remain;
       }
-      drawAmsStrip(s.ams, LY_FIN_AMS_Y, LY_FIN_AMS_H, LY_FIN_AMS_BAR_H);
+      if (finSparse) {
+        drawSparsePortraitAms(s, p.config, LY_FIN_AMS_Y, LY_FIN_AMS_H, LY_FIN_AMS_BAR_H,
+                              forceRedraw, amsChanged,
+                              finSideLeftChanged, finSideRightChanged,
+                              /*compactProfile=*/true);
+      } else {
+        drawAmsStrip(s.ams, LY_FIN_AMS_Y, LY_FIN_AMS_H, LY_FIN_AMS_BAR_H);
+      }
     }
   }
 #endif

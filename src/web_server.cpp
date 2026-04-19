@@ -291,6 +291,20 @@ R"rawliteral(
           <div><label style="font-size:11px;color:#8B949E">Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
         </div>
         <button type="button" style="margin-top:8px;padding:4px 10px;font-size:11px;background:transparent;color:#8B949E;border:1px solid #30363D;border-radius:4px;cursor:pointer" onclick="resetGaugeLayout()">Reset to default</button>
+
+        <div style="margin-top:14px;padding-top:10px;border-top:1px dashed #30363D">
+          <h3 style="color:#58A6FF;font-size:13px;margin-bottom:4px">Portrait AMS Side Gauges</h3>
+          <p style="font-size:11px;color:#8B949E;margin-bottom:8px">240x320 portrait only. When enabled and exactly one AMS unit is detected, the selected widgets appear beside the AMS tray strip on the Printing, Idle, and Finished screens.</p>
+          <div class="check-row" style="margin-bottom:8px">
+            <input type="checkbox" id="pxen" value="1">
+            <label for="pxen">Enable portrait AMS side gauges</label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div><label style="font-size:11px;color:#8B949E">Left extra</label><select id="pxgl" class="portrait-ams-sel"></select></div>
+            <div><label style="font-size:11px;color:#8B949E">Right extra</label><select id="pxgr" class="portrait-ams-sel"></select></div>
+          </div>
+        </div>
+
         <div style="margin-top:12px">
           <button type="button" class="btn btn-blue" onclick="saveGaugeLayout()">Save Gauge Layout</button>
         </div>
@@ -817,6 +831,27 @@ var gaugeTypes=[
   });
 })();
 
+// Curated list for portrait AMS side gauges (excludes Progress and Clock)
+var portraitAmsGaugeOptions=[
+  [0,'-- Empty --'],
+  [2,'Nozzle Temp'],[3,'Bed Temp'],
+  [4,'Part Fan'],[5,'Aux Fan'],[6,'Chamber Fan'],
+  [7,'Chamber Temp'],[8,'Heatbreak Fan'],
+  [14,'Layer Progress'],
+  [10,'AMS 1 Humidity'],[11,'AMS 2 Humidity'],[12,'AMS 3 Humidity'],[13,'AMS 4 Humidity'],
+  [15,'AMS 1 Temp'],[16,'AMS 2 Temp'],[17,'AMS 3 Temp'],[18,'AMS 4 Temp']
+];
+(function(){
+  var sels=document.querySelectorAll('.portrait-ams-sel');
+  sels.forEach(function(sel){
+    portraitAmsGaugeOptions.forEach(function(pair){
+      var o=document.createElement('option');
+      o.value=pair[0];o.textContent=pair[1];
+      sel.appendChild(o);
+    });
+  });
+})();
+
 function resetGaugeLayout(){
   var d=[1,2,3,4,5,6];
   for(var i=0;i<6;i++){var s=document.getElementById('gs'+i);if(s)s.value=d[i];}
@@ -825,6 +860,12 @@ function saveGaugeLayout(){
   var p=new URLSearchParams();
   p.append('slot',currentSlot);
   for(var g=0;g<6;g++){var s=document.getElementById('gs'+g);if(s)p.append('gs'+g,s.value);}
+  var pxen=document.getElementById('pxen');
+  var pxgl=document.getElementById('pxgl');
+  var pxgr=document.getElementById('pxgr');
+  if(pxen)p.append('pxen',pxen.checked?'1':'0');
+  if(pxgl)p.append('pxgl',pxgl.value);
+  if(pxgr)p.append('pxgr',pxgr.value);
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok')showToast('Gauge layout saved!');else showToast('Error');})
@@ -853,6 +894,12 @@ function selectPrinterTab(slot){
     document.getElementById('region').value=d.region||'us';
     document.getElementById('cl_token').value='';
     if(d.gaugeSlots){for(var g=0;g<6;g++){var sel=document.getElementById('gs'+g);if(sel)sel.value=d.gaugeSlots[g]||0;}}
+    var pxen=document.getElementById('pxen');
+    if(pxen)pxen.checked=!!d.portraitAmsExtrasEnabled;
+    var pxgl=document.getElementById('pxgl');
+    if(pxgl)pxgl.value=(d.portraitAmsGaugeLeft!=null)?d.portraitAmsGaugeLeft:7;
+    var pxgr=document.getElementById('pxgr');
+    if(pxgr)pxgr.value=(d.portraitAmsGaugeRight!=null)?d.portraitAmsGaugeRight:8;
     toggleConnMode();
     var ps=document.getElementById('printerStatus');
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
@@ -2026,6 +2073,41 @@ static void handleSaveGaugeLayout() {
     }
   }
 
+  if (server.hasArg("pxen")) {
+    cfg.portraitAmsExtrasEnabled = (server.arg("pxen").toInt() != 0);
+  }
+  auto validatePortraitGauge = [](uint8_t v) -> uint8_t {
+    // Curated list (excludes Progress=1 and Clock=9)
+    switch (v) {
+      case GAUGE_EMPTY:
+      case GAUGE_NOZZLE:
+      case GAUGE_BED:
+      case GAUGE_PART_FAN:
+      case GAUGE_AUX_FAN:
+      case GAUGE_CHAMBER_FAN:
+      case GAUGE_CHAMBER_TEMP:
+      case GAUGE_HEATBREAK:
+      case GAUGE_LAYER:
+      case GAUGE_AMS_HUM_1:
+      case GAUGE_AMS_HUM_2:
+      case GAUGE_AMS_HUM_3:
+      case GAUGE_AMS_HUM_4:
+      case GAUGE_AMS_TEMP_1:
+      case GAUGE_AMS_TEMP_2:
+      case GAUGE_AMS_TEMP_3:
+      case GAUGE_AMS_TEMP_4:
+        return v;
+      default:
+        return GAUGE_EMPTY;
+    }
+  };
+  if (server.hasArg("pxgl")) {
+    cfg.portraitAmsGaugeLeft = validatePortraitGauge(server.arg("pxgl").toInt());
+  }
+  if (server.hasArg("pxgr")) {
+    cfg.portraitAmsGaugeRight = validatePortraitGauge(server.arg("pxgr").toInt());
+  }
+
   savePrinterConfig(slot);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -2251,6 +2333,9 @@ static void handlePrinterConfig() {
   doc["configured"] = isPrinterConfigured(slot);
   JsonArray slots = doc["gaugeSlots"].to<JsonArray>();
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
+  doc["portraitAmsExtrasEnabled"] = cfg.portraitAmsExtrasEnabled;
+  doc["portraitAmsGaugeLeft"]     = cfg.portraitAmsGaugeLeft;
+  doc["portraitAmsGaugeRight"]    = cfg.portraitAmsGaugeRight;
 
   String json;
   serializeJson(doc, json);
@@ -2373,6 +2458,9 @@ static void handleSettingsExport() {
     p["region"] = (uint8_t)cfg.region;
     JsonArray slots = p["gaugeSlots"].to<JsonArray>();
     for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
+    p["portraitAmsExtrasEnabled"] = cfg.portraitAmsExtrasEnabled;
+    p["portraitAmsGaugeLeft"]     = cfg.portraitAmsGaugeLeft;
+    p["portraitAmsGaugeRight"]    = cfg.portraitAmsGaugeRight;
   }
 
   // Display
@@ -2543,6 +2631,23 @@ static void handleSettingsImportFinish() {
           cfg.gaugeSlots[g] = (v < GAUGE_TYPE_COUNT) ? v : defSlots[g];
         }
       }
+      if (p["portraitAmsExtrasEnabled"].is<bool>())
+        cfg.portraitAmsExtrasEnabled = p["portraitAmsExtrasEnabled"].as<bool>();
+      auto validatePortraitGaugeImport = [](uint8_t v, uint8_t fallback) -> uint8_t {
+        switch (v) {
+          case GAUGE_EMPTY: case GAUGE_NOZZLE: case GAUGE_BED:
+          case GAUGE_PART_FAN: case GAUGE_AUX_FAN: case GAUGE_CHAMBER_FAN:
+          case GAUGE_CHAMBER_TEMP: case GAUGE_HEATBREAK: case GAUGE_LAYER:
+          case GAUGE_AMS_HUM_1: case GAUGE_AMS_HUM_2: case GAUGE_AMS_HUM_3: case GAUGE_AMS_HUM_4:
+          case GAUGE_AMS_TEMP_1: case GAUGE_AMS_TEMP_2: case GAUGE_AMS_TEMP_3: case GAUGE_AMS_TEMP_4:
+            return v;
+          default: return fallback;
+        }
+      };
+      if (p["portraitAmsGaugeLeft"].is<uint8_t>())
+        cfg.portraitAmsGaugeLeft = validatePortraitGaugeImport(p["portraitAmsGaugeLeft"].as<uint8_t>(), GAUGE_CHAMBER_TEMP);
+      if (p["portraitAmsGaugeRight"].is<uint8_t>())
+        cfg.portraitAmsGaugeRight = validatePortraitGaugeImport(p["portraitAmsGaugeRight"].as<uint8_t>(), GAUGE_HEATBREAK);
     }
   }
 

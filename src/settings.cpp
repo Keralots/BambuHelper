@@ -225,6 +225,17 @@ void loadSettings() {
       }
     }
 
+    // Portrait sparse-AMS side gauges (per-printer). Disabled by default so
+    // existing installs render the classic centered AMS strip unchanged.
+    snprintf(key, sizeof(key), "p%d_pxen", i);
+    cfg.portraitAmsExtrasEnabled = prefs.getBool(key, false);
+    snprintf(key, sizeof(key), "p%d_pxgl", i);
+    cfg.portraitAmsGaugeLeft = prefs.getUChar(key, GAUGE_CHAMBER_TEMP);
+    snprintf(key, sizeof(key), "p%d_pxgr", i);
+    cfg.portraitAmsGaugeRight = prefs.getUChar(key, GAUGE_HEATBREAK);
+    if (cfg.portraitAmsGaugeLeft >= GAUGE_TYPE_COUNT) cfg.portraitAmsGaugeLeft = GAUGE_EMPTY;
+    if (cfg.portraitAmsGaugeRight >= GAUGE_TYPE_COUNT) cfg.portraitAmsGaugeRight = GAUGE_EMPTY;
+
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     setPrinterGcodeStateCanonical(printers[i].state, GCODE_UNKNOWN);
@@ -459,6 +470,13 @@ void savePrinterConfig(uint8_t index) {
 
   snprintf(key, sizeof(key), "p%d_slots", index);
   prefs.putBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
+
+  snprintf(key, sizeof(key), "p%d_pxen", index);
+  prefs.putBool(key, cfg.portraitAmsExtrasEnabled);
+  snprintf(key, sizeof(key), "p%d_pxgl", index);
+  prefs.putUChar(key, cfg.portraitAmsGaugeLeft);
+  snprintf(key, sizeof(key), "p%d_pxgr", index);
+  prefs.putUChar(key, cfg.portraitAmsGaugeRight);
 
   if (needOpen) prefs.end();
 }
