@@ -40,6 +40,14 @@ bool mqttDebugLog = false;
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
 
+// Detect X1 series printers by serial prefix (per Bambu Lab wiki).
+// X1C: "00M", X1E: "03W". These use home_flag bit 23 for the door sensor.
+static bool isX1SeriesSerial(const char* serial) {
+  if (!serial) return false;
+  return strncmp(serial, "00M", 3) == 0 ||
+         strncmp(serial, "03W", 3) == 0;
+}
+
 
 // Conditional debug print
 #define MQTT_LOG(fmt, ...) do { if (mqttDebugLog) Serial.printf("MQTT: " fmt "\n", ##__VA_ARGS__); } while(0)
@@ -240,7 +248,7 @@ static uint8_t normalizeTrayIndex(const AmsState& ams,
 // ---------------------------------------------------------------------------
 //  Parse MQTT payload into a BambuState (extracted for routing)
 // ---------------------------------------------------------------------------
-static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) {
+static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, const char* serial) {
   const char* payloadEnd = (const char*)payload + length;
 
   // Filter document to reduce parse memory
@@ -265,7 +273,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) 
   pf["heatbreak_fan_speed"] = true;
   pf["wifi_signal"] = true;
   pf["spd_lvl"] = true;
-  pf["stat"] = true;  // H2 door sensor (hex string, bit 0x00800000 = door open)
+  pf["stat"] = true;       // H2 door sensor (hex string, bit 0x00800000 = door open)
+  pf["home_flag"] = true;  // X1 series door sensor (int, bit 23 = door open)
   // Note: H2D/H2C extruder data is parsed separately from raw payload (see below)
 
   JsonDocument doc;
@@ -720,17 +729,33 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s) 
   if (print["spd_lvl"].is<int>())
     s.speedLevel = print["spd_lvl"].as<int>();
 
-  // Door sensor: stat is hex string, bit 0x00800000 = door open
-  // H2C sends 9+ hex digits (>32 bit), must use strtoull
-  if (print["stat"].is<const char*>()) {
+  // Door sensor: model-specific field and bit layout.
+  //   - H2D/H2C (dualNozzle): "stat" hex string, bit 0x00800000 = door open.
+  //     H2C sends 9+ hex digits (>32 bit), must use strtoull.
+  //     Note: X1C also sends "stat" but with different semantics (bit 23 is
+  //     always set there), so gate this path to dual-nozzle H2 printers.
+  //   - X1 series (serial prefix 00M = X1C, 00W = X1E): "home_flag" int,
+  //     bit 23 = door open. Matches ha-bambulab convention.
+  //   - P1/A1: no door sensor - nothing to parse.
+  if (s.dualNozzle && print["stat"].is<const char*>()) {
     uint64_t statVal = strtoull(print["stat"].as<const char*>(), nullptr, 16);
     bool wasOpen = s.doorOpen;
     s.doorOpen = (statVal & 0x00800000) != 0;
     if (!s.doorSensorPresent) {
       s.doorSensorPresent = true;
-      MQTT_LOG("door sensor detected (stat=0x%llX, door=%s)", statVal, s.doorOpen ? "OPEN" : "CLOSED");
+      MQTT_LOG("door sensor detected (H2 stat=0x%llX, door=%s)", statVal, s.doorOpen ? "OPEN" : "CLOSED");
     } else if (s.doorOpen != wasOpen) {
-      MQTT_LOG("door %s (stat=0x%llX)", s.doorOpen ? "OPENED" : "CLOSED", statVal);
+      MQTT_LOG("door %s (H2 stat=0x%llX)", s.doorOpen ? "OPENED" : "CLOSED", statVal);
+    }
+  } else if (isX1SeriesSerial(serial) && print["home_flag"].is<int32_t>()) {
+    uint32_t homeFlag = (uint32_t)print["home_flag"].as<int32_t>();
+    bool wasOpen = s.doorOpen;
+    s.doorOpen = (homeFlag & (1UL << 23)) != 0;
+    if (!s.doorSensorPresent) {
+      s.doorSensorPresent = true;
+      MQTT_LOG("door sensor detected (X1 home_flag=0x%08X, door=%s)", homeFlag, s.doorOpen ? "OPEN" : "CLOSED");
+    } else if (s.doorOpen != wasOpen) {
+      MQTT_LOG("door %s (X1 home_flag=0x%08X)", s.doorOpen ? "OPENED" : "CLOSED", homeFlag);
     }
   }
 
@@ -761,7 +786,8 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   c->gotDataSinceConnect = true;
   BambuState& s = printers[c->slotIndex].state;
-  parseMqttPayload(payload, length, s);
+  const char* cfgSerial = printers[c->slotIndex].config.serial;
+  parseMqttPayload(payload, length, s, cfgSerial);
 }
 
 // ---------------------------------------------------------------------------
