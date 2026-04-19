@@ -203,6 +203,15 @@ public:
 };
 static LGFX_WS154 _tft_instance;
 
+#elif defined(BOARD_IS_JC3248W535)
+// --- Guition JC3248W535 + AXS15231B 320x480 (QSPI) --------------------------
+// Panel driver is not in mainline LovyanGFX (issue #699). A local
+// Panel_AXS15231B + custom QSPI bus will be added in a follow-up commit
+// (init sequence ported from moononournation/Arduino_GFX). For now the env
+// is declared in platformio.ini and the layout / touch scaffolding is in
+// place, but attempting to build this env will fail here with this message.
+  #error "JC3248W535 Panel_AXS15231B driver is not yet implemented — scaffolding only. Remove BOARD_IS_JC3248W535 to build other boards."
+
 #elif defined(BOARD_IS_C3)
 // --- ESP32-C3 Super Mini + ST7789 240x280 ------------------------------------
 class LGFX_C3 : public lgfx::LGFX_Device {
@@ -244,7 +253,7 @@ public:
 static LGFX_C3 _tft_instance;
 
 #else
-  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
+  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200, BOARD_IS_WS154 or BOARD_IS_JC3248W535 to build_flags."
 #endif
 
 // Global pointer + reference — accessed via `tft` throughout the codebase.
