@@ -204,13 +204,56 @@ public:
 static LGFX_WS154 _tft_instance;
 
 #elif defined(BOARD_IS_JC3248W535)
-// --- Guition JC3248W535 + AXS15231B 320x480 (QSPI) --------------------------
-// Panel driver is not in mainline LovyanGFX (issue #699). A local
-// Panel_AXS15231B + custom QSPI bus will be added in a follow-up commit
-// (init sequence ported from moononournation/Arduino_GFX). For now the env
-// is declared in platformio.ini and the layout / touch scaffolding is in
-// place, but attempting to build this env will fail here with this message.
-  #error "JC3248W535 Panel_AXS15231B driver is not yet implemented — scaffolding only. Remove BOARD_IS_JC3248W535 to build other boards."
+// --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
+// Panel_AXS15231B is implemented locally (see lgfx_panel_axs15231b.hpp) since
+// mainline LovyanGFX does not ship it. The controller uses QSPI framing on
+// top of a regular single-wire SPI bus: every command is wrapped in a 4-byte
+// header, and pixel data starts with {0x32, 0x00, 0x2C, 0x00}. Physical
+// wiring only needs MOSI (on D0), SCK, CS — the other three data lines are
+// left idle in this configuration.
+#include "lgfx_panel_axs15231b.hpp"
+class LGFX_JC3248W535 : public lgfx::LGFX_Device {
+  lgfx::Panel_AXS15231B _panel;
+  lgfx::Bus_SPI         _bus;
+public:
+  LGFX_JC3248W535() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = AXS_QSPI_FREQ;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = AXS_QSPI_SCK;
+      cfg.pin_mosi   = AXS_QSPI_D0;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = -1;   // no D/C line; command vs data is in the payload
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs    = AXS_QSPI_CS;
+      cfg.pin_rst   = -1;    // no hardware reset pin — software reset used
+      cfg.pin_busy  = -1;
+      cfg.memory_width  = 320;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 320;
+      cfg.panel_height  = 480;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = 0;
+      cfg.readable      = false;
+      cfg.invert        = false;
+      cfg.rgb_order     = true;
+      cfg.dlen_16bit    = false;
+      cfg.bus_shared    = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_JC3248W535 _tft_instance;
 
 #elif defined(BOARD_IS_C3)
 // --- ESP32-C3 Super Mini + ST7789 240x280 ------------------------------------
