@@ -436,6 +436,19 @@ void initDisplay() {
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
 
+#if defined(BOARD_IS_JC3248W535)
+  // TEMP diagnostic: cycle R/G/B so we can tell if pixel writes are landing.
+  // If the screen stays on one color through all three phases, the QSPI
+  // framing or color format is wrong. If it shows three distinct colors,
+  // pixels work and we're only chasing color-order / inversion.
+  Serial.println("Display: R");  tft.fillScreen(0xF800); delay(1500);
+  Serial.println("Display: G");  tft.fillScreen(0x07E0); delay(1500);
+  Serial.println("Display: B");  tft.fillScreen(0x001F); delay(1500);
+  Serial.println("Display: W");  tft.fillScreen(0xFFFF); delay(1500);
+  Serial.println("Display: K");  tft.fillScreen(0x0000); delay(1500);
+  Serial.println("Display: color cycle done");
+#endif
+
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
   // LovyanGFX touch calibration
   uint16_t calData[8] = {0, 0, 0, 65535, 0, 65535, 65535, 65535};
