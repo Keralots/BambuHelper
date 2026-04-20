@@ -205,51 +205,38 @@ static LGFX_WS154 _tft_instance;
 
 #elif defined(BOARD_IS_JC3248W535)
 // --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
-// Panel_AXS15231B is implemented locally (see lgfx_panel_axs15231b.hpp) since
-// mainline LovyanGFX does not ship it. The controller uses QSPI framing on
-// top of a regular single-wire SPI bus: every command is wrapped in a 4-byte
-// header, and pixel data starts with {0x32, 0x00, 0x2C, 0x00}. Physical
-// wiring only needs MOSI (on D0), SCK, CS — the other three data lines are
-// left idle in this configuration.
+// Panel_AXS15231B is implemented locally (see lgfx_panel_axs15231b.hpp) and
+// owns its own ESP-IDF spi_master bus in QSPI (4-line data) mode — mainline
+// LovyanGFX has neither the driver nor a QSPI bus class. LGFX_Device's _bus
+// pointer stays null: all pixel and command traffic goes through the panel's
+// own transaction calls. CS is still driven by Panel_Device::cs_control()
+// via cfg.pin_cs.
 #include "lgfx_panel_axs15231b.hpp"
 class LGFX_JC3248W535 : public lgfx::LGFX_Device {
   lgfx::Panel_AXS15231B _panel;
-  lgfx::Bus_SPI         _bus;
 public:
   LGFX_JC3248W535() {
-    {
-      auto cfg = _bus.config();
-      cfg.spi_host   = SPI2_HOST;
-      cfg.spi_mode   = 0;
-      cfg.freq_write = AXS_QSPI_FREQ;
-      cfg.freq_read  = 16000000;
-      cfg.pin_sclk   = AXS_QSPI_SCK;
-      cfg.pin_mosi   = AXS_QSPI_D0;
-      cfg.pin_miso   = -1;
-      cfg.pin_dc     = -1;   // no D/C line; command vs data is in the payload
-      cfg.use_lock   = true;
-      _bus.config(cfg);
-      _panel.setBus(&_bus);
-    }
-    {
-      auto cfg = _panel.config();
-      cfg.pin_cs    = AXS_QSPI_CS;
-      cfg.pin_rst   = -1;    // no hardware reset pin — software reset used
-      cfg.pin_busy  = -1;
-      cfg.memory_width  = 320;
-      cfg.memory_height = 480;
-      cfg.panel_width   = 320;
-      cfg.panel_height  = 480;
-      cfg.offset_x      = 0;
-      cfg.offset_y      = 0;
-      cfg.offset_rotation = 0;
-      cfg.readable      = false;
-      cfg.invert        = false;
-      cfg.rgb_order     = true;
-      cfg.dlen_16bit    = false;
-      cfg.bus_shared    = false;
-      _panel.config(cfg);
-    }
+    _panel.setBusPins((spi_host_device_t)AXS_QSPI_HOST,
+                      AXS_QSPI_SCK,
+                      AXS_QSPI_D0, AXS_QSPI_D1, AXS_QSPI_D2, AXS_QSPI_D3,
+                      AXS_QSPI_FREQ);
+    auto cfg = _panel.config();
+    cfg.pin_cs    = AXS_QSPI_CS;
+    cfg.pin_rst   = -1;   // no hardware reset wired; software reset in init
+    cfg.pin_busy  = -1;
+    cfg.memory_width  = 320;
+    cfg.memory_height = 480;
+    cfg.panel_width   = 320;
+    cfg.panel_height  = 480;
+    cfg.offset_x      = 0;
+    cfg.offset_y      = 0;
+    cfg.offset_rotation = 0;
+    cfg.readable      = false;
+    cfg.invert        = false;
+    cfg.rgb_order     = false;  // AXS15231B wants MADCTL bit3=1 for RGB
+    cfg.dlen_16bit    = false;
+    cfg.bus_shared    = false;
+    _panel.config(cfg);
     setPanel(&_panel);
   }
 };
@@ -436,18 +423,6 @@ void initDisplay() {
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
 
-#if defined(BOARD_IS_JC3248W535)
-  // TEMP diagnostic: cycle R/G/B so we can tell if pixel writes are landing.
-  // If the screen stays on one color through all three phases, the QSPI
-  // framing or color format is wrong. If it shows three distinct colors,
-  // pixels work and we're only chasing color-order / inversion.
-  Serial.println("Display: R");  tft.fillScreen(0xF800); delay(1500);
-  Serial.println("Display: G");  tft.fillScreen(0x07E0); delay(1500);
-  Serial.println("Display: B");  tft.fillScreen(0x001F); delay(1500);
-  Serial.println("Display: W");  tft.fillScreen(0xFFFF); delay(1500);
-  Serial.println("Display: K");  tft.fillScreen(0x0000); delay(1500);
-  Serial.println("Display: color cycle done");
-#endif
 
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
   // LovyanGFX touch calibration
@@ -464,6 +439,16 @@ void initDisplay() {
   memset(&prevState, 0, sizeof(prevState));
 
   // Splash screen
+#if defined(BOARD_IS_JC3248W535)
+  // Minimal-minimal test pattern. ONE 8-aligned red square away from the
+  // origin. If setWindow works, we see RED at (96, 200) size 32x24. If
+  // broken, we see red at (0,0) with extent 32x24 (or some variant).
+  Serial.println("Display: minimal test — RED 32x24 at (96, 200)");
+  tft.fillRect(96, 200, 32, 24, 0xF800);
+# if defined(AXS_MINIMAL_TEST)
+  return;   // no splash, no drawString — main.cpp halts after we return
+# endif
+#endif
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(CLR_GREEN, CLR_BG);
   tft.setTextFont(4);
@@ -473,6 +458,10 @@ void initDisplay() {
   tft.drawString("Printer Monitor", SCREEN_W / 2, SCREEN_H / 2 + 10);
   tft.setTextFont(1);
   tft.drawString(FW_VERSION, SCREEN_W / 2, SCREEN_H / 2 + 30);
+#if defined(BOARD_IS_JC3248W535)
+  Serial.println("Display: splash hold");
+  delay(8000);
+#endif
 }
 
 void applyDisplaySettings() {

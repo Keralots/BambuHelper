@@ -29,13 +29,14 @@
   }
 #elif defined(USE_AXS_TOUCH)
   // AXS15231B integrated touch controller. I2C slave at 0x3B.
-  // Reading a touch point requires writing an 11-byte command packet then
-  // reading 14 bytes back; status byte [1] & 0x0F holds touch count.
-  // Protocol documented in me-processware/JC3248W535-Driver.
+  // Protocol (per axs15231b-lovyangfx skill): write 8-byte command, read 8
+  // bytes back. Touch is active when rx[0] == 0 (no gesture) AND rx[1] != 0
+  // (finger count > 0). Coordinates arrive pre-scaled to panel resolution,
+  // NOT raw 0-4095. Single-touch only.
   #include <Wire.h>
   #define AXS_TOUCH_ADDR 0x3B
-  static const uint8_t AXS_READ_TOUCHPAD_CMD[11] = {
-    0xb5, 0xab, 0xa5, 0x5a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00
+  static const uint8_t AXS_READ_TOUCHPAD_CMD[8] = {
+    0xB5, 0xAB, 0xA5, 0x5A, 0x00, 0x00, 0x00, 0x08
   };
   static bool axsTouchBusReady = false;
   static bool axsTouchSeen = false;
@@ -45,20 +46,21 @@
     return Wire.endTransmission(true) == 0;
   }
 
-  // Reads current touch state. Returns true if a touch is active and fills x/y
-  // with raw panel coordinates (native 320x480, caller applies any rotation).
+  // Returns true if a touch is active and fills x/y with panel-scaled
+  // coordinates (native portrait 320x480 — caller applies rotation).
   static bool axsTouchRead(uint16_t& x, uint16_t& y) {
     Wire.beginTransmission(AXS_TOUCH_ADDR);
     Wire.write(AXS_READ_TOUCHPAD_CMD, sizeof(AXS_READ_TOUCHPAD_CMD));
     if (Wire.endTransmission() != 0) return false;
-    uint8_t buf[14] = {0};
-    size_t got = Wire.requestFrom((uint8_t)AXS_TOUCH_ADDR, (uint8_t)14);
+    uint8_t rx[8] = {0};
+    size_t got = Wire.requestFrom((uint8_t)AXS_TOUCH_ADDR, (uint8_t)8);
     if (got < 6) return false;
-    for (size_t i = 0; i < got && i < sizeof(buf); ++i) buf[i] = Wire.read();
-    uint8_t touches = buf[1] & 0x0F;
-    if (touches == 0) return false;
-    x = ((uint16_t)(buf[2] & 0x0F) << 8) | buf[3];
-    y = ((uint16_t)(buf[4] & 0x0F) << 8) | buf[5];
+    for (size_t i = 0; i < got && i < sizeof(rx); ++i) rx[i] = Wire.read();
+    // Valid plain-touch: gesture=0 and at least one finger down.
+    if (rx[0] != 0) return false;
+    if ((rx[1] & 0x0F) == 0) return false;
+    x = ((uint16_t)(rx[2] & 0x0F) << 8) | rx[3];
+    y = ((uint16_t)(rx[4] & 0x0F) << 8) | rx[5];
     return true;
   }
 #elif defined(TOUCH_CS)

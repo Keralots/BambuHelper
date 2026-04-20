@@ -11,3 +11,7 @@ firmware/
 *.map
 tools/pushall_dump.json
 tools/ams_dump.json
+
+# Vendor esp32s3 libs folder — 212 MB, copied locally during JC3248W535
+# driver work. Not needed for the build; kept outside the repo.
+lib/arduino_esp32s3_libs_vendor/
