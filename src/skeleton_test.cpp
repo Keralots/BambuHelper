@@ -31,10 +31,8 @@ void setup() {
   pinMode(1, OUTPUT);
   digitalWrite(1, HIGH);
 
-  // Start at 20 MHz to rule out a SPI timing / DMA-boundary issue producing
-  // the corrupted band at rows ~120-240. Bump up to 32/40 MHz once we've
-  // confirmed a clean full-screen fill.
-  if (!gfx->begin(20000000UL)) {
+  // 32 MHz pclk per skill's recommended starting point (skill line 42).
+  if (!gfx->begin(32000000UL)) {
     Serial.println("gfx->begin() FAILED");
     return;
   }
