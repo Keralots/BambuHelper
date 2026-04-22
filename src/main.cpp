@@ -449,14 +449,6 @@ void setup() {
 
   loadSettings();
   initDisplay();
-#if defined(BOARD_IS_JC3248W535) && defined(AXS_MINIMAL_TEST)
-  // MINIMAL-MINIMAL test: nothing after display init. No WiFi, no MQTT,
-  // no web server, no splash overlay. setBacklight() so we can actually
-  // see the panel, then halt. Flash over USB (COM12) to iterate.
-  Serial.println("AXS_MINIMAL_TEST: halting");
-  setBacklight(128);
-  while (true) { delay(1000); }
-#endif
   splashEnd = millis() + 2000;
   startWiFiDuringSplash();
   setBacklight(brightness);

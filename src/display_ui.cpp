@@ -205,38 +205,22 @@ static LGFX_WS154 _tft_instance;
 
 #elif defined(BOARD_IS_JC3248W535)
 // --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
-// Panel_AXS15231B is implemented locally (see lgfx_panel_axs15231b.hpp) and
-// owns its own ESP-IDF spi_master bus in QSPI (4-line data) mode — mainline
-// LovyanGFX has neither the driver nor a QSPI bus class. LGFX_Device's _bus
-// pointer stays null: all pixel and command traffic goes through the panel's
-// own transaction calls. CS is still driven by Panel_Device::cs_control()
-// via cfg.pin_cs.
-#include "lgfx_panel_axs15231b.hpp"
+// Panel_AXS15231B_AGFX wraps moononournation/Arduino_GFX's Arduino_AXS15231B
+// driver inside a LovyanGFX Panel_Device subclass. Mainline LovyanGFX has
+// neither an AXS15231B panel class nor a QSPI bus, and a hand-rolled custom
+// driver didn't produce correct pixels on this hardware. Arduino_GFX does —
+// this wrapper lets the whole codebase keep calling the LovyanGFX API on
+// `tft` while the physical QSPI traffic is handled by Arduino_GFX.
+// Backlight is a simple GPIO-high (LEDC PWM not required for on/off).
+#include "lgfx_panel_axs15231b_agfx.hpp"
 class LGFX_JC3248W535 : public lgfx::LGFX_Device {
-  lgfx::Panel_AXS15231B _panel;
+  lgfx::Panel_AXS15231B_AGFX _panel;
 public:
   LGFX_JC3248W535() {
-    _panel.setBusPins((spi_host_device_t)AXS_QSPI_HOST,
-                      AXS_QSPI_SCK,
-                      AXS_QSPI_D0, AXS_QSPI_D1, AXS_QSPI_D2, AXS_QSPI_D3,
-                      AXS_QSPI_FREQ);
-    auto cfg = _panel.config();
-    cfg.pin_cs    = AXS_QSPI_CS;
-    cfg.pin_rst   = -1;   // no hardware reset wired; software reset in init
-    cfg.pin_busy  = -1;
-    cfg.memory_width  = 320;
-    cfg.memory_height = 480;
-    cfg.panel_width   = 320;
-    cfg.panel_height  = 480;
-    cfg.offset_x      = 0;
-    cfg.offset_y      = 0;
-    cfg.offset_rotation = 0;
-    cfg.readable      = false;
-    cfg.invert        = false;
-    cfg.rgb_order     = false;  // AXS15231B wants MADCTL bit3=1 for RGB
-    cfg.dlen_16bit    = false;
-    cfg.bus_shared    = false;
-    _panel.config(cfg);
+    // Panel_AXS15231B_AGFX owns the Arduino_GFX bus+panel internally. Pins
+    // are hard-coded in its constructor to the verified JC3248W535 map
+    // (CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39) since Arduino_GFX's
+    // databus class hard-codes them at construction anyway.
     setPanel(&_panel);
   }
 };
@@ -439,16 +423,6 @@ void initDisplay() {
   memset(&prevState, 0, sizeof(prevState));
 
   // Splash screen
-#if defined(BOARD_IS_JC3248W535)
-  // Minimal-minimal test pattern. ONE 8-aligned red square away from the
-  // origin. If setWindow works, we see RED at (96, 200) size 32x24. If
-  // broken, we see red at (0,0) with extent 32x24 (or some variant).
-  Serial.println("Display: minimal test — RED 32x24 at (96, 200)");
-  tft.fillRect(96, 200, 32, 24, 0xF800);
-# if defined(AXS_MINIMAL_TEST)
-  return;   // no splash, no drawString — main.cpp halts after we return
-# endif
-#endif
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(CLR_GREEN, CLR_BG);
   tft.setTextFont(4);
@@ -458,10 +432,6 @@ void initDisplay() {
   tft.drawString("Printer Monitor", SCREEN_W / 2, SCREEN_H / 2 + 10);
   tft.setTextFont(1);
   tft.drawString(FW_VERSION, SCREEN_W / 2, SCREEN_H / 2 + 30);
-#if defined(BOARD_IS_JC3248W535)
-  Serial.println("Display: splash hold");
-  delay(8000);
-#endif
 }
 
 void applyDisplaySettings() {
