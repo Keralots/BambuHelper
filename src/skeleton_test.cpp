@@ -9,6 +9,9 @@
 //
 // Pin map from skill (verified against vendor pincfg.h):
 //   CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39, BL=1
+//
+// Guarded so only the jc3248w535_skel env compiles this translation unit.
+#ifdef BOARD_IS_JC3248W535_SKEL
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
@@ -50,3 +53,5 @@ void setup() {
 void loop() {
   delay(1000);
 }
+
+#endif  // BOARD_IS_JC3248W535_SKEL
