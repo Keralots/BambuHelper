@@ -22,8 +22,11 @@ enum ScreenState {
 };
 
 extern lgfx::LovyanGFX* tft_ptr;
-// Convenience reference — all callers use `tft.method()` unchanged.
-extern lgfx::LovyanGFX& tft;
+// Macro (NOT a reference) so callers' `tft.method()` always dereferences the
+// current value of `tft_ptr`. On JC3248W535 we retarget this pointer to a
+// PSRAM sprite at runtime; a C++ reference would have been permanently
+// bound to the panel at static-init time, defeating the redirection.
+#define tft (*tft_ptr)
 
 // Direct pointer to the AXS15231B panel wrapper; only non-null on
 // BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
@@ -31,6 +34,14 @@ extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
 
 void initDisplay();
 void updateDisplay();
+
+// Flush the off-screen framebuffer sprite to the panel in one contiguous
+// raster write. No-op on boards that draw directly (all except
+// BOARD_IS_JC3248W535, which uses a full-screen PSRAM sprite to work around
+// the AXS15231B QSPI-mode addressing limits). Call once per loop tick after
+// UI draws to commit the frame.
+void flushFrame();
+
 void setScreenState(ScreenState state);
 ScreenState getScreenState();
 void setBacklight(uint8_t level);

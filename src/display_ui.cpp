@@ -275,15 +275,34 @@ static LGFX_C3 _tft_instance;
 // populated with either the V2 or Classic panel in initDisplay(), so method
 // calls via this reference/pointer dispatch to whichever variant was chosen.
 lgfx::LovyanGFX* tft_ptr = &_tft_instance;
-lgfx::LovyanGFX& tft     = *tft_ptr;
+// `tft` is now a macro in display_ui.h — `#define tft (*tft_ptr)` — so
+// every call site re-dereferences the pointer and picks up runtime
+// retargeting to the JC3248W535 PSRAM sprite.
 
 // Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
 // other boards so the extern declaration in display_ui.h is always satisfied.
 #if defined(BOARD_IS_JC3248W535)
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+
+// Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
+// initDisplay() (via tft_ptr), then flushed to the panel once per loop()
+// tick via flushFrame(). The AXS15231B in QSPI mode cannot address
+// arbitrary Y per draw (see lgfx_panel_axs15231b_agfx.hpp), so a
+// framebuffer-and-single-raster-flush is the only reliable render path.
+static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
 #else
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
+
+void flushFrame() {
+#if defined(BOARD_IS_JC3248W535)
+  if (g_axs_panel && _frame_sprite.getBuffer()) {
+    g_axs_panel->pushRawPixels(
+      static_cast<uint16_t*>(_frame_sprite.getBuffer()),
+      320u * 480u);
+  }
+#endif
+}
 
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
@@ -405,7 +424,14 @@ void initDisplay() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
+#if defined(BOARD_IS_JC3248W535)
+  // Force native portrait on this panel — sprite-push doesn't handle rotated
+  // framebuffers (the wrapper's pushRawPixels assumes 320x480 raster order).
+  // dispSettings.rotation is ignored on this board for now.
+  tft.setRotation(0);
+#else
   tft.setRotation(dispSettings.rotation);
+#endif
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
 #elif defined(DISPLAY_240x320)
@@ -414,6 +440,25 @@ void initDisplay() {
   Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
+
+#if defined(BOARD_IS_JC3248W535)
+  // Allocate 320x480x16bpp PSRAM sprite (300 KB) and redirect tft_ptr so all
+  // subsequent draws (splash, UI, refreshes) render into the sprite buffer.
+  // Panel cannot address arbitrary Y in QSPI mode — instead we flush the
+  // whole sprite to the panel once per loop tick via flushFrame().
+  _frame_sprite.setPsram(true);
+  _frame_sprite.setColorDepth(16);
+  if (_frame_sprite.createSprite(320, 480)) {
+    _frame_sprite.setTextDatum(MC_DATUM);  // match the tft defaults used below
+    _frame_sprite.fillScreen(CLR_BG);
+    tft_ptr = &_frame_sprite;
+    Serial.printf("Display: frame sprite 320x480 allocated in PSRAM, free=%u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    flushFrame();  // push cleared sprite so panel shows CLR_BG during splash
+  } else {
+    Serial.println("Display: frame sprite alloc FAILED — will draw direct to panel (expect artifacts)");
+  }
+#endif
 
 
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)

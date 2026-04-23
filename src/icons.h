@@ -265,7 +265,7 @@ const uint8_t PROGMEM icon_lightning[] = {
 };
 
 // Helper: draw a 16x16 1-bit icon at (x, y) with given color, transparent bg
-inline void drawIcon16(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
+inline void drawIcon16(lgfx::LovyanGFX& gfx, int16_t x, int16_t y,
                        const uint8_t* icon, uint16_t color) {
   for (int row = 0; row < 16; row++) {
     uint8_t b0 = pgm_read_byte(&icon[row * 2]);
@@ -273,14 +273,14 @@ inline void drawIcon16(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
     uint16_t bits = (b0 << 8) | b1;
     for (int col = 0; col < 16; col++) {
       if (bits & (0x8000 >> col)) {
-        tft.drawPixel(x + col, y + row, color);
+        gfx.drawPixel(x + col, y + row, color);
       }
     }
   }
 }
 
 // Helper: draw a 32x32 1-bit icon at (x, y) with given color, transparent bg
-inline void drawIcon32(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
+inline void drawIcon32(lgfx::LovyanGFX& gfx, int16_t x, int16_t y,
                        const uint8_t* icon, uint16_t color) {
   for (int row = 0; row < 32; row++) {
     uint32_t bits = ((uint32_t)pgm_read_byte(&icon[row * 4]) << 24) |
@@ -289,7 +289,7 @@ inline void drawIcon32(lgfx::LovyanGFX& tft, int16_t x, int16_t y,
                     (uint32_t)pgm_read_byte(&icon[row * 4 + 3]);
     for (int col = 0; col < 32; col++) {
       if (bits & (0x80000000UL >> col)) {
-        tft.drawPixel(x + col, y + row, color);
+        gfx.drawPixel(x + col, y + row, color);
       }
     }
   }

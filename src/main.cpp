@@ -1,9 +1,4 @@
 #include <Arduino.h>
-// Full panel definition needed for pushRawPixels escape-hatch (sprite diag).
-// Must precede display_ui.h so the forward-declaration there is superseded.
-#if defined(BOARD_IS_JC3248W535)
-#include "lgfx_panel_axs15231b_agfx.hpp"
-#endif
 #include "display_ui.h"
 #include "settings.h"
 #include "wifi_manager.h"
@@ -454,57 +449,16 @@ void setup() {
 
   loadSettings();
   initDisplay();
-#if defined(BOARD_IS_JC3248W535) && defined(DIAG_LGFX_POST_INIT)
-  // ---- SPRITE-BASED DIAGNOSTIC ---------------------------------------------
-  // The AXS15231B in QSPI mode cannot address arbitrary Y — every RAMWR
-  // resets the internal y-pointer to 0 within the CASET column window.
-  // Small draws at (x, y != 0) therefore always land at top-of-screen.
-  // Workaround: draw everything into an off-screen sprite in PSRAM, then
-  // push the whole sprite to the panel in ONE contiguous raster write.
-  // pushSprite issues a single setWindow(0,0,319,479) + bulk pixel write,
-  // which the chip handles correctly (all pixels are contiguous y from 0).
-  Serial.println("[diag-post] allocating 320x480 sprite in PSRAM");
-  static lgfx::LGFX_Sprite sprite(&tft);
-  sprite.setPsram(true);
-  sprite.setColorDepth(16);
-  if (!sprite.createSprite(320, 480)) {
-    Serial.println("[diag-post] sprite alloc FAILED — halting");
-    while (true) { delay(1000); }
-  }
-  Serial.printf("[diag-post] sprite alloc OK, free PSRAM=%u\n",
-                (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-  // Draw the same test pattern into the sprite
-  sprite.fillScreen(0x0000);
-  sprite.fillRect(50, 50, 200, 100, 0xF800);   // RED
-  sprite.fillRect(20, 200, 280, 40, 0x07E0);   // GREEN
-  sprite.fillRect(0, 300, 320, 20, 0x001F);    // BLUE
-  sprite.drawFastHLine(10, 400, 300, 0xFFE0);  // YELLOW
-  sprite.drawFastVLine(160, 10, 460, 0xFFFF);  // WHITE
-  sprite.setTextColor(0xFFFF, 0x0000);
-  sprite.setTextSize(3);
-  sprite.drawString("HELLO", 80, 430);
-  // corner + center 40x40 squares on top
-  sprite.fillRect(0, 0, 40, 40, 0xF800);       // TL RED
-  sprite.fillRect(280, 0, 40, 40, 0x07E0);     // TR GREEN
-  sprite.fillRect(0, 440, 40, 40, 0x001F);     // BL BLUE
-  sprite.fillRect(280, 440, 40, 40, 0xFFE0);   // BR YELLOW
-  sprite.fillRect(140, 220, 40, 40, 0xFFFF);   // center WHITE
-  Serial.println("[diag-post] pushing sprite to panel via pushRawPixels (direct Arduino_GFX, one call)");
-  // g_axs_panel is set in display_ui.cpp to &_tft_instance._panel.
-  // Single call to _agfx->writePixels avoids the multi-call RAMWRC
-  // chunking that's been producing stripes/chaos.
-  g_axs_panel->pushRawPixels(static_cast<uint16_t*>(sprite.getBuffer()),
-                              320u * 480u);
-  Serial.println("[diag-post] sprite pushed via direct path — halted");
-  while (true) { delay(1000); }
-#endif
   splashEnd = millis() + 2000;
   startWiFiDuringSplash();
   setBacklight(brightness);
 }
 
 void loop() {
-  if (handleSplashPhase()) return;
+  if (handleSplashPhase()) {
+    flushFrame();  // commit splash draws to panel (no-op on non-JC boards)
+    return;
+  }
 
   handleWiFi();
   handleWebServer();
@@ -529,4 +483,9 @@ void loop() {
     handleBambuMqtt();
     handleRotation();
   }
+
+  // Commit the framebuffer sprite to the panel. On JC3248W535 this is a
+  // ~20ms QSPI push (300 KB @ 32MHz QIO); on all other boards it's a no-op
+  // since draws go directly to the panel.
+  flushFrame();
 }
