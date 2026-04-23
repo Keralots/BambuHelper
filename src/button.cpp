@@ -1,5 +1,6 @@
 #include "button.h"
 #include "settings.h"
+#include "buzzer.h"
 
 #if defined(USE_XPT2046)
   #include <SPI.h>
@@ -72,8 +73,50 @@ static bool stableState = false;
 static unsigned long lastChangeMs = 0;
 static const unsigned long DEBOUNCE_MS = 50;
 
+void sanitizeButtonPin() {
+  // Only the GPIO-backed button types use buttonPin. Touchscreen talks over
+  // a bus defined elsewhere and has no single pin to conflict.
+  if (buttonType != BTN_PUSH && buttonType != BTN_TOUCH) return;
+  if (buttonPin == 0) return;
+
+  auto clash = [&](const char* what) {
+    Serial.printf("Button: pin %u conflicts with %s, disabling\n",
+                  (unsigned)buttonPin, what);
+    buttonPin = 0;
+  };
+
+#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+  if (buttonPin == BACKLIGHT_PIN) { clash("backlight"); return; }
+#endif
+#if defined(USE_AXS_TOUCH)
+  if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
+  if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
+#endif
+#if defined(USE_CST816)
+  if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
+  if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }
+  #if defined(CST816_IRQ)
+  if (buttonPin == CST816_IRQ) { clash("CST816 touch IRQ"); return; }
+  #endif
+  #if defined(CST816_RST)
+  if (buttonPin == CST816_RST) { clash("CST816 touch RST"); return; }
+  #endif
+#endif
+#if defined(USE_XPT2046)
+  if (buttonPin == TOUCH_CS)   { clash("XPT2046 CS");   return; }
+  if (buttonPin == TOUCH_IRQ)  { clash("XPT2046 IRQ");  return; }
+  if (buttonPin == TOUCH_MOSI) { clash("XPT2046 MOSI"); return; }
+  if (buttonPin == TOUCH_MISO) { clash("XPT2046 MISO"); return; }
+  if (buttonPin == TOUCH_CLK)  { clash("XPT2046 CLK");  return; }
+#endif
+  if (buzzerSettings.pin != 0 && buttonPin == buzzerSettings.pin) {
+    clash("buzzer"); return;
+  }
+}
+
 void initButton() {
   if (buttonType == BTN_DISABLED) return;
+  sanitizeButtonPin();
 #if defined(USE_XPT2046)
   if (buttonType == BTN_TOUCHSCREEN) {
     touchSPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);

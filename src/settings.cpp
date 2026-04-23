@@ -1,5 +1,6 @@
 #include "settings.h"
 #include "config.h"
+#include "button.h"
 #include "buzzer.h"
 #include "timezones.h"
 #include <Preferences.h>
@@ -471,6 +472,7 @@ void saveRotationSettings() {
 }
 
 void saveButtonSettings() {
+  sanitizeButtonPin();
   prefs.begin(NVS_NAMESPACE, false);
   prefs.putUChar("btn_type", buttonType);
   prefs.putUChar("btn_pin", buttonPin);
