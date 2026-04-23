@@ -3,6 +3,10 @@
 
 #include <LovyanGFX.hpp>
 
+// Forward-declare the panel type so callers can use the pointer without
+// pulling in the full header (which includes Arduino_GFX headers).
+namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; } }
+
 enum ScreenState {
   SCREEN_SPLASH,
   SCREEN_AP_MODE,
@@ -20,6 +24,10 @@ enum ScreenState {
 extern lgfx::LovyanGFX* tft_ptr;
 // Convenience reference — all callers use `tft.method()` unchanged.
 extern lgfx::LovyanGFX& tft;
+
+// Direct pointer to the AXS15231B panel wrapper; only non-null on
+// BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
+extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
 
 void initDisplay();
 void updateDisplay();

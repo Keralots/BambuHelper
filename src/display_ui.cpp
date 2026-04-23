@@ -223,9 +223,9 @@ public:
     // databus class hard-codes them at construction anyway.
     setPanel(&_panel);
   }
+  lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
 };
 static LGFX_JC3248W535 _tft_instance;
-
 #elif defined(BOARD_IS_C3)
 // --- ESP32-C3 Super Mini + ST7789 240x280 ------------------------------------
 class LGFX_C3 : public lgfx::LGFX_Device {
@@ -276,6 +276,14 @@ static LGFX_C3 _tft_instance;
 // calls via this reference/pointer dispatch to whichever variant was chosen.
 lgfx::LovyanGFX* tft_ptr = &_tft_instance;
 lgfx::LovyanGFX& tft     = *tft_ptr;
+
+// Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
+// other boards so the extern declaration in display_ui.h is always satisfied.
+#if defined(BOARD_IS_JC3248W535)
+lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+#else
+lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+#endif
 
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
