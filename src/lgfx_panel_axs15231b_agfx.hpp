@@ -3,13 +3,13 @@
 // drawing primitives to it. Lets the whole of BambuHelper keep calling
 // `tft.fillRect()`, `tft.drawString()`, etc. on a LovyanGFX reference without
 // changing any call sites, while the actual QSPI traffic is handled by the
-// proven-working Arduino_GFX driver.
+// proven-working moononournation/Arduino_GFX driver.
 //
-// Why this exists: mainline LovyanGFX has no AXS15231B panel class and our
-// hand-rolled Panel_AXS15231B (src/lgfx_panel_axs15231b.hpp) never worked on
-// this hardware. Arduino_GFX does work (see src/skeleton_test.cpp). This
-// wrapper is "Option 3" from the jc3248w535 skill — wrap a proven external
-// driver inside a LovyanGFX Panel subclass.
+// Why this exists: mainline LovyanGFX has no AXS15231B panel class. A
+// hand-rolled one never produced correct pixels on this hardware, and
+// Arduino_GFX's Arduino_AXS15231B drives the chip correctly out of the box.
+// Wrapping it inside a LovyanGFX Panel subclass keeps the rest of the app
+// on a single graphics API.
 
 #pragma once
 
