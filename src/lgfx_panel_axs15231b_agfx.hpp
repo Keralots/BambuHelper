@@ -247,10 +247,24 @@ public:
   // -------------------------------------------------------------------------
   void pushRawPixels(uint16_t* data, uint32_t length) {
     if (!_agfx || length == 0) return;
+    // Arduino_GFX's MSB_32_16_16_SET byte-swaps each pixel from native LE
+    // to big-endian MSB-first before DMA, which is the MIPI DCS convention
+    // for 16bpp pixel data. But this chip in QSPI mode evidently reads
+    // pixels LSB-first (observed: RED→BLUE, GREEN→RED, BLUE→GREEN,
+    // YELLOW→MAGENTA — exactly the pattern of byte-swapped RGB565). Pre-
+    // swap here to cancel Arduino_GFX's swap so the net wire byte order
+    // matches what the chip expects. Restore the sprite buffer afterwards
+    // so repeat pushes work.
+    for (uint32_t i = 0; i < length; ++i) {
+      data[i] = __builtin_bswap16(data[i]);
+    }
     _agfx->startWrite();
     _agfx->writeAddrWindow(0, 0, _cfg.panel_width, _cfg.panel_height);
     _agfx->writePixels(data, length);
     _agfx->endWrite();
+    for (uint32_t i = 0; i < length; ++i) {
+      data[i] = __builtin_bswap16(data[i]);
+    }
   }
 
   // -------------------------------------------------------------------------
