@@ -304,6 +304,21 @@ void flushFrame() {
 #endif
 }
 
+// JC3248W535 currently only supports portrait rotations (0 and 2) in the
+// sprite-push architecture — layout_320x480.h is hard-coded portrait and no
+// landscape layout exists. Snap odd rotations to 0 with a Serial warning.
+static uint8_t sanitizeRotation(uint8_t r) {
+#if defined(BOARD_IS_JC3248W535)
+  if (r == 1 || r == 3) {
+    Serial.printf("Display: rotation %u unsupported on JC3248W535 "
+                  "(landscape layout not yet available); snapping to 0\n",
+                  (unsigned)r);
+    return 0;
+  }
+#endif
+  return r;
+}
+
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
 #define CLR_BG  (dispSettings.bgColor)
@@ -425,9 +440,9 @@ void initDisplay() {
   tft.fillScreen(TFT_BLACK);
 #endif
 #if defined(BOARD_IS_JC3248W535)
-  // Force native portrait on this panel — sprite-push doesn't handle rotated
-  // framebuffers (the wrapper's pushRawPixels assumes 320x480 raster order).
-  // dispSettings.rotation is ignored on this board for now.
+  // Panel MADCTL stays at 0 forever — RASET-skip + LSB-first byte-order
+  // invariants in pushRawPixels depend on native orientation. User-facing
+  // rotation is applied to the PSRAM sprite after tft_ptr is redirected.
   tft.setRotation(0);
 #else
   tft.setRotation(dispSettings.rotation);
@@ -450,10 +465,11 @@ void initDisplay() {
   _frame_sprite.setColorDepth(16);
   if (_frame_sprite.createSprite(320, 480)) {
     _frame_sprite.setTextDatum(MC_DATUM);  // match the tft defaults used below
-    _frame_sprite.fillScreen(CLR_BG);
     tft_ptr = &_frame_sprite;
     Serial.printf("Display: frame sprite 320x480 allocated in PSRAM, free=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    tft.setRotation(sanitizeRotation(dispSettings.rotation));
+    tft.fillScreen(CLR_BG);
     flushFrame();  // push cleared sprite so panel shows CLR_BG during splash
   } else {
     Serial.println("Display: frame sprite alloc FAILED — will draw direct to panel (expect artifacts)");
@@ -493,7 +509,7 @@ void applyDisplaySettings() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
-  tft.setRotation(dispSettings.rotation);
+  tft.setRotation(sanitizeRotation(dispSettings.rotation));
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
 #elif defined(DISPLAY_240x320)
