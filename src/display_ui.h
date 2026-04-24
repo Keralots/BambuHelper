@@ -42,6 +42,13 @@ void updateDisplay();
 // UI draws to commit the frame.
 void flushFrame();
 
+// Mark the off-screen framebuffer sprite as dirty so the next flushFrame()
+// actually pushes to the panel. No-op on boards that draw directly (all
+// except BOARD_IS_JC3248W535). Call from any code path that writes pixels
+// into the sprite; a keepalive tick in flushFrame() guarantees the panel
+// still gets a refresh even if a dirty mark is missed.
+void markFrameDirty();
+
 void setScreenState(ScreenState state);
 ScreenState getScreenState();
 void setBacklight(uint8_t level);

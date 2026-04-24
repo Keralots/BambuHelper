@@ -49,6 +49,7 @@ void drawClock() {
   // --- Colon blink (every call, ~250ms) ---
   bool colonOn = (millis() % 1000) < 500;
   if (colonOn != prevColon) {
+    markFrameDirty();
     int cx = clkDigitX(2);
     int cy = LY_CLK_TIME_Y - CLK_DIGIT_H / 2;
     tft.fillRect(cx, cy, CLK_COLON_W, CLK_DIGIT_H, bg);
@@ -64,6 +65,7 @@ void drawClock() {
   // --- Only update digits/date when minute changes ---
   if (now.tm_min == prevMinute) return;
   prevMinute = now.tm_min;
+  markFrameDirty();
 
   // Build digit array
   char digits[5];

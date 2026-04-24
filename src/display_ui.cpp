@@ -290,17 +290,35 @@ lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
 // arbitrary Y per draw (see lgfx_panel_axs15231b_agfx.hpp), so a
 // framebuffer-and-single-raster-flush is the only reliable render path.
 static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
+
+// Dirty flag: start true so the very first flushFrame() pushes the cleared
+// sprite + splash. Redraw sites call markFrameDirty() to request another
+// push. A keepalive in flushFrame() also forces one push every
+// FRAME_KEEPALIVE_MS as a safety net against missed dirty marks.
+static bool g_frame_dirty = true;
+static unsigned long g_last_flush_ms = 0;
+static const unsigned long FRAME_KEEPALIVE_MS = 500;
 #else
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
 
+void markFrameDirty() {
+#if defined(BOARD_IS_JC3248W535)
+  g_frame_dirty = true;
+#endif
+}
+
 void flushFrame() {
 #if defined(BOARD_IS_JC3248W535)
-  if (g_axs_panel && _frame_sprite.getBuffer()) {
-    g_axs_panel->pushRawPixels(
-      static_cast<uint16_t*>(_frame_sprite.getBuffer()),
-      320u * 480u);
-  }
+  if (!g_axs_panel || !_frame_sprite.getBuffer()) return;
+  unsigned long now = millis();
+  bool keepalive_due = (now - g_last_flush_ms) >= FRAME_KEEPALIVE_MS;
+  if (!g_frame_dirty && !keepalive_due) return;
+  g_axs_panel->pushRawPixels(
+    static_cast<uint16_t*>(_frame_sprite.getBuffer()),
+    320u * 480u);
+  g_frame_dirty = false;
+  g_last_flush_ms = now;
 #endif
 }
 
@@ -516,6 +534,7 @@ void applyDisplaySettings() {
   _tft_instance.invertDisplay(dispSettings.invertColors ? false : true);
 #endif
   tft.fillScreen(dispSettings.bgColor);
+  markFrameDirty();
   forceRedraw = true;
   lastDisplayUpdate = 0;  // bypass throttle so redraw is immediate after fillScreen
   // Reset clock/pong so they redraw fully after fillScreen cleared everything
@@ -531,6 +550,7 @@ void triggerDisplayTransition() {
   smoothInited = false;  // snap gauges to new printer's values
   resetGaugeTextCache();
   tft.fillScreen(dispSettings.bgColor);
+  markFrameDirty();
   forceRedraw = true;
 }
 
@@ -577,6 +597,9 @@ static uint16_t speedLevelColor(uint8_t level) {
 //  Screen: AP Mode
 // ---------------------------------------------------------------------------
 static void drawAPMode() {
+  // Called only when forceRedraw is set by the switch gate; any paint below
+  // is a real change.
+  markFrameDirty();
   tft.setTextDatum(MC_DATUM);
 
   // Title
@@ -616,6 +639,8 @@ static void drawAPMode() {
 //  Screen: Connecting WiFi
 // ---------------------------------------------------------------------------
 static void drawConnectingWiFi() {
+  // Always animates (dots + slide bar) — mark dirty every frame.
+  markFrameDirty();
   tft.setTextDatum(MC_DATUM);
 
   // Title
@@ -638,6 +663,7 @@ static void drawConnectingWiFi() {
 // ---------------------------------------------------------------------------
 static void drawWiFiConnected() {
   if (!forceRedraw) return;
+  markFrameDirty();
 
   tft.setTextDatum(MC_DATUM);
 
@@ -665,6 +691,8 @@ static void drawWiFiConnected() {
 // ---------------------------------------------------------------------------
 #include "web_server.h"
 static void drawOtaUpdate() {
+  // Progress updates every frame during OTA — mark dirty every frame.
+  markFrameDirty();
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(CLR_TEXT, CLR_BG);
 
@@ -706,6 +734,8 @@ static void drawOtaUpdate() {
 //  Screen: Connecting MQTT
 // ---------------------------------------------------------------------------
 static void drawConnectingMQTT() {
+  // Always animates (dots + slide bar + elapsed counter) — mark dirty every frame.
+  markFrameDirty();
   tft.setTextDatum(MC_DATUM);
 
   // Title
@@ -775,6 +805,7 @@ static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY);
 // ---------------------------------------------------------------------------
 static void drawIdleNoPrinter() {
   if (!forceRedraw) return;
+  markFrameDirty();
 
   tft.setTextDatum(MC_DATUM);
 
@@ -849,6 +880,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     dryRotateMs = millis();
     forceRedraw = true;
     tft.fillScreen(CLR_BG);
+    markFrameDirty();
     resetGaugeTextCache();
   }
   if (dryCount <= 1) dryDisplayIdx = 0;
@@ -878,11 +910,13 @@ static void drawIdleDrying(PrinterSlot& p) {
   if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
     dryProgress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
   if (dataChanged) {
+    markFrameDirty();
     drawLedProgressBar(tft, 0, dryProgress);
   }
 
   // === Header bar ===
   if (forceRedraw) {
+    markFrameDirty();
     tft.fillRect(0, LY_HDR_Y, SCREEN_W, LY_HDR_H, CLR_BG);
 
     // Printer name (left)
@@ -910,6 +944,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   }
 
   if (!dataChanged) return;
+  markFrameDirty();
 
   // === AMS unit name (below header) ===
   {
@@ -1102,6 +1137,7 @@ static void drawIdle() {
   if (wasNoPrinter) {
     wasNoPrinter = false;
     tft.fillScreen(dispSettings.bgColor);
+    markFrameDirty();
     memset(&prevState, 0, sizeof(prevState));
     forceRedraw = true;
   }
@@ -1118,6 +1154,7 @@ static void drawIdle() {
     if (!wasDrying) {
       wasDrying = true;
       tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
       forceRedraw = true;
     }
     drawIdleDrying(p);
@@ -1132,6 +1169,7 @@ static void drawIdle() {
     wasDrying = false;
     dryingDropMs = 0;
     tft.fillScreen(dispSettings.bgColor);
+    markFrameDirty();
     memset(&prevState, 0, sizeof(prevState));
     forceRedraw = true;
   }
@@ -1167,10 +1205,12 @@ static void drawIdle() {
     tft.setTextFont(4);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, cx, LY_IDLE_NAME_Y);
+    markFrameDirty();
   }
 
   // Status badge — only redraw when state changes
   if (stateChanged) {
+    markFrameDirty();
     tft.setTextFont(2);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
@@ -1191,6 +1231,7 @@ static void drawIdle() {
   // Connected indicator
   if (connChanged) {
     tft.fillCircle(cx, LY_IDLE_DOT_Y, 5, s.connected ? CLR_GREEN : CLR_RED);
+    markFrameDirty();
   }
 
   // "Press to refresh" hint for cloud printers stuck in UNKNOWN state
@@ -1205,6 +1246,7 @@ static void drawIdle() {
                     buttonType != BTN_DISABLED &&
                     isCloudMode(p.config.mode) && s.connected;
     if (stateChanged || showHint != hintShown) {
+      markFrameDirty();
       const int16_t hintY = LY_IDLE_DOT_Y + 15;
       tft.fillRect(0, hintY - 6, scrW, 14, CLR_BG);
       if (showHint) {
@@ -1219,6 +1261,7 @@ static void drawIdle() {
 
   // Nozzle temp gauge
   if (tempChanged) {
+    markFrameDirty();
     drawTempGauge(tft, cx - LY_IDLE_G_OFFSET, LY_IDLE_GAUGE_Y, LY_IDLE_GAUGE_R,
                   s.nozzleTemp, s.nozzleTarget, 300.0f,
                   dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
@@ -1259,6 +1302,7 @@ static void drawIdle() {
         prevIdleAmsRemain[i]  = s.ams.trays[i].remain;
       }
       drawAmsStrip(s.ams, LY_IDLE_AMS_Y, LY_IDLE_AMS_H, LY_IDLE_AMS_BAR_H);
+      markFrameDirty();
     }
   }
 #endif
@@ -1281,6 +1325,7 @@ static void drawIdle() {
   idlePrevWatts          = idleCurWatts;
 
   if (bottomChanged) {
+    markFrameDirty();
     tft.fillRect(0, scrH - 18, scrW, 18, CLR_BG);
     tft.setTextFont(2);
 
@@ -1454,6 +1499,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
     }
   }
   if (!changed) return;
+  markFrameDirty();
 
   // Save state for next comparison
   prevAmsUnitCount = s.ams.unitCount;
@@ -1592,6 +1638,7 @@ static void drawPrinting() {
   // === CYD: clear unused zone on screen transitions ===
 #if defined(DISPLAY_240x320)
   if (forceRedraw) {
+    markFrameDirty();
     int16_t scrW = (int16_t)tft.width();
     int16_t scrH = (int16_t)tft.height();
     // Clear right edge if canvas wider than 240 (rotation 1/3)
@@ -1606,11 +1653,13 @@ static void drawPrinting() {
 
   // === H2-style LED progress bar (y=0-5) ===
   if (progChanged) {
+    markFrameDirty();
     drawLedProgressBar(tft, 0, s.progress);
   }
 
   // === Header bar (y=7-25) ===
   if (forceRedraw || stateChanged) {
+    markFrameDirty();
     uint16_t hdrBg = dispSettings.bgColor;
     tft.fillRect(0, LY_HDR_Y, SCREEN_W, LY_HDR_H, hdrBg);
 
@@ -1694,6 +1743,7 @@ static void drawPrinting() {
         }
       }
       if (!needDraw) continue;
+      markFrameDirty();
 
       int16_t cx = slotX[si], cy = slotY[si];
       bool fr = forceRedraw || typeChanged;
@@ -1771,6 +1821,7 @@ static void drawPrinting() {
 
   // === Info line — ETA finish time or PAUSE/ERROR alert ===
   if (etaChanged || stateChanged) {
+    markFrameDirty();
     tft.fillRect(0, eff_etaY, SCREEN_W, eff_etaH, CLR_BG);
     tft.setTextDatum(MC_DATUM);
 
@@ -1875,6 +1926,7 @@ static void drawPrinting() {
   prevWatts         = curWatts;
 
   if (bottomChanged) {
+    markFrameDirty();
     tft.fillRect(0, eff_botY, SCREEN_W, eff_botH, CLR_BG);
     tft.setTextFont(2);
 
@@ -1974,11 +2026,13 @@ static void drawFinished() {
 
   // === H2-style LED progress bar at 100% (y=0-5) ===
   if (forceRedraw) {
+    markFrameDirty();
     drawLedProgressBar(tft, 0, 100);
   }
 
   // === Header bar (y=7-25) — same as printing screen ===
   if (forceRedraw) {
+    markFrameDirty();
     uint16_t hdrBg = dispSettings.bgColor;
     tft.fillRect(0, LY_HDR_Y, scrW, LY_HDR_H, hdrBg);
 
@@ -2008,6 +2062,7 @@ static void drawFinished() {
 
   // === Row 1: Nozzle | Bed (two gauges centered) ===
   if (tempChanged) {
+    markFrameDirty();
     drawTempGauge(tft, gaugeLeft, gaugeY, gR,
                   s.nozzleTemp, s.nozzleTarget, 300.0f,
                   dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
@@ -2021,6 +2076,7 @@ static void drawFinished() {
 
   // === "Print Complete!" status ===
   if (forceRedraw) {
+    markFrameDirty();
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
     tft.setTextFont(4);
@@ -2029,6 +2085,7 @@ static void drawFinished() {
 
   // === File name ===
   if (forceRedraw) {
+    markFrameDirty();
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
@@ -2047,6 +2104,7 @@ static void drawFinished() {
                     (tasmotaActiveHere != prevFinTasmotaOnline) ||
                     (finishKwh != prevFinKwh);
   if (forceRedraw || kwhChanged) {
+    markFrameDirty();
 #if defined(DISPLAY_240x320)
     int16_t kwhY = land ? (LY_FIN_FILE_Y + eff_finBotY) / 2 : LY_FIN_KWH_Y;
 #else
@@ -2093,6 +2151,7 @@ static void drawFinished() {
         prevFinAmsRemain[i]  = s.ams.trays[i].remain;
       }
       drawAmsStrip(s.ams, LY_FIN_AMS_Y, LY_FIN_AMS_H, LY_FIN_AMS_BAR_H);
+      markFrameDirty();
     }
   }
 #endif
@@ -2106,6 +2165,7 @@ static void drawFinished() {
                           (tasmotaActiveHere != prevFinTasmotaOnline) ||
                           (finCurWatts != prevFinWatts);
   if (finBottomChanged) {
+    markFrameDirty();
     prevWaitingForDoor = waitingForDoor;
     tft.fillRect(0, eff_finBotY, scrW, eff_finBotH, CLR_BG);
     tft.setTextFont(1);
@@ -2204,6 +2264,7 @@ void updateDisplay() {
   if (currentScreen == SCREEN_PRINTING) {
     BambuState& sh = displayedPrinter().state;
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
+    markFrameDirty();
   }
   if (currentScreen == SCREEN_IDLE && isPrinterConfigured(rotState.displayIndex)) {
     BambuState& sh = displayedPrinter().state;
@@ -2216,11 +2277,13 @@ void updateDisplay() {
       if (du && du->dryTotalMin > 0 && du->dryRemainMin <= du->dryTotalMin)
         dp = 100 - (uint8_t)((uint32_t)du->dryRemainMin * 100 / du->dryTotalMin);
       tickProgressShimmer(tft, 0, dp, true);
+      markFrameDirty();
     }
   }
   // Pong clock runs at ~50fps, independent of display refresh
   if (currentScreen == SCREEN_CLOCK && dispSettings.pongClock) {
     tickPongClock();
+    markFrameDirty();
   }
 
   unsigned long now = millis();
@@ -2238,6 +2301,7 @@ void updateDisplay() {
     // Reset text size in case Pong clock left it scaled up
     tft.setTextSize(1);
     tft.fillScreen(currentScreen == SCREEN_OFF ? TFT_BLACK : dispSettings.bgColor);
+    markFrameDirty();
     forceRedraw = true;
     if (currentScreen == SCREEN_CONNECTING_WIFI || currentScreen == SCREEN_CONNECTING_MQTT) {
       connectScreenStart = millis();
@@ -2295,6 +2359,7 @@ void updateDisplay() {
     case SCREEN_OFF:
       if (forceRedraw) {
         tft.fillScreen(TFT_BLACK);
+        markFrameDirty();
         setBacklight(0);
         triggerDisplayTransition();  // clear gauge cache so wake shows fresh data
       }
