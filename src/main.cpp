@@ -17,6 +17,7 @@ static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
+static bool finishDismissedByWake = false;  // true once user taps to wake while printer is GCODE_FINISH; cleared on printer state change
 static unsigned long connectingScreenStart = 0;  // for stuck-state timeout
 static PrinterGcodeState prevGcodeStateId[MAX_ACTIVE_PRINTERS] = { GCODE_UNKNOWN };
 static bool prevGcodeStateSeen[MAX_ACTIVE_PRINTERS] = { false };
@@ -133,6 +134,15 @@ static void handleWakeButton() {
     resetMqttBackoff();
     deferMqttReconnect();  // skip blocking reconnect this iteration so screen wakes instantly
     setScreenState(SCREEN_IDLE);  // state machine will correct on next loop
+    // If the displayed printer is in GCODE_FINISH, user has now dismissed
+    // the finished-print banner by waking — don't let the state machine
+    // bounce IDLE → FINISHED → CLOCK in the next iteration. Cleared when
+    // the printer moves away from GCODE_FINISH (new print starts).
+    if (isAnyPrinterConfigured() && isWiFiConnected() && !isAPMode()) {
+      if (displayedPrinter().state.gcodeStateId == GCODE_FINISH) {
+        finishDismissedByWake = true;
+      }
+    }
     return;
   }
 
@@ -182,7 +192,8 @@ static void handleBoardPowerOff() {
 static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s) {
   if (current != SCREEN_FINISHED && !isSleepStickyScreen(current) &&
       !(current == SCREEN_IDLE && s.ams.anyDrying) &&
-      !(current == SCREEN_PRINTING && finishActive)) {
+      !(current == SCREEN_PRINTING && finishActive) &&
+      !(current == SCREEN_IDLE && finishDismissedByWake)) {
     if (tasmotaSettings.enabled && isDisplayedPrinterAssignedToTasmota()) {
       tasmotaMarkPrintEnd();
     }
@@ -232,6 +243,9 @@ static void handleDisplayedPrinterIdleState(ScreenState current, const BambuStat
 }
 
 static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState& s) {
+  if (s.gcodeStateId != GCODE_FINISH) {
+    finishDismissedByWake = false;
+  }
   if (s.printing) {
     if (current != SCREEN_PRINTING) {
       setScreenState(SCREEN_PRINTING);
@@ -265,7 +279,9 @@ static void updateDisplayedPrinterScreenState() {
   }
 
   if (isOtaAutoInProgress()) {
-    if (current != SCREEN_OTA_UPDATE) setScreenState(SCREEN_OTA_UPDATE);
+    if (current != SCREEN_OTA_UPDATE) {
+      setScreenState(SCREEN_OTA_UPDATE);
+    }
     return;
   }
 
