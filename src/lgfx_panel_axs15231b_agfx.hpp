@@ -106,7 +106,7 @@ public:
         0  /*rotation*/,
         false /*IPS — MUST be false to avoid double-inversion*/,
         320, 480);
-    if (!_agfx->begin(32000000UL)) {
+    if (!_agfx->begin(40000000UL)) {
       delete _agfx;     _agfx     = nullptr;
       delete _agfx_bus; _agfx_bus = nullptr;
       return false;
