@@ -15,6 +15,9 @@
 
 #include <LovyanGFX.hpp>
 #include <Arduino_GFX_Library.h>
+#include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // ---------------------------------------------------------------------------
 // Arduino_AXS15231B_QSPI — subclass of Arduino_AXS15231B that fixes two
@@ -43,6 +46,9 @@ public:
     // overrides any POR default and any drift during init.
     _bus->beginWrite();
     _bus->writeC8D8(0x3A /*COLMOD*/, 0x05 /*RGB565 16bpp, AXS15231B encoding*/);
+    // Enable TE output — V-blank only (TEM=0). Pulse appears on GPIO 38.
+    // Panel_AXS15231B_AGFX::init installs the ISR that gates pushRawPixels.
+    _bus->writeC8D8(0x35 /*TEON*/, 0x00 /*TEM=0, V-blank only*/);
     _bus->endWrite();
     return true;
   }
@@ -124,6 +130,21 @@ public:
     _init_done = true;
     _width  = _cfg.panel_width;
     _height = _cfg.panel_height;
+    // Install TE GPIO ISR. Safe to call gpio_install_isr_service repeatedly —
+    // first caller installs, subsequent callers return ESP_ERR_INVALID_STATE
+    // which we ignore. No other code in this project installs the service.
+    if (_te_sem == nullptr) {
+      _te_sem = xSemaphoreCreateBinary();
+      gpio_config_t cfg = {};
+      cfg.pin_bit_mask = 1ULL << TE_GPIO;
+      cfg.mode         = GPIO_MODE_INPUT;
+      cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
+      cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+      cfg.intr_type    = GPIO_INTR_NEGEDGE;
+      gpio_config(&cfg);
+      (void)gpio_install_isr_service(0);           // ignore ESP_ERR_INVALID_STATE
+      gpio_isr_handler_add(TE_GPIO, _te_isr, nullptr);
+    }
     return true;
   }
 
@@ -247,6 +268,13 @@ public:
   // -------------------------------------------------------------------------
   void pushRawPixels(uint16_t* data, uint32_t length) {
     if (!_agfx || length == 0) return;
+    // Gate on the next TE falling edge. Drain any stale pulse first, then
+    // wait up to 50 ms for a fresh one. Timeout fallthrough keeps the UI
+    // responsive if a TE is dropped — we simply push without sync that frame.
+    if (_te_sem) {
+      xSemaphoreTake(_te_sem, 0);
+      xSemaphoreTake(_te_sem, pdMS_TO_TICKS(50));
+    }
     // Arduino_GFX's MSB_32_16_16_SET byte-swaps each pixel from native LE
     // to big-endian MSB-first before DMA, which is the MIPI DCS convention
     // for 16bpp pixel data. But this chip in QSPI mode evidently reads
@@ -297,7 +325,25 @@ private:
   // Renamed from `_bus` to avoid shadowing Panel_Device's protected IBus*_bus.
   Arduino_DataBus* _agfx_bus = nullptr;
   Arduino_TFT*     _agfx     = nullptr;  // exposes writeAddrWindow/writeRepeat/writePixels
+
+  // TE (tear-effect) sync — panel emits a negedge pulse once per frame in
+  // V-blank. Gating pushRawPixels on this edge eliminates tearing on fast
+  // animations. 50 ms timeout guards against a dropped pulse (at 60 fps a
+  // frame is ~16.7 ms; 50 ms tolerates two dropped TEs before falling back).
+  static constexpr gpio_num_t TE_GPIO = GPIO_NUM_38;
+  static SemaphoreHandle_t _te_sem;
+  // No IRAM_ATTR — we install the ISR service with flag 0, so the ISR runs
+  // from flash. Keeping it out of IRAM also avoids an l32r literal-placement
+  // error when the static _te_sem lives in normal data, not IRAM.
+  static void _te_isr(void*) {
+    BaseType_t hp_woken = pdFALSE;
+    xSemaphoreGiveFromISR(_te_sem, &hp_woken);
+    if (hp_woken) portYIELD_FROM_ISR();
+  }
 };
+
+// Definition lives in lgfx_panel_axs15231b_agfx.cpp — project is compiled
+// in C++14 mode, so an `inline` static member here is not supported.
 
 } // namespace v1
 } // namespace lgfx
