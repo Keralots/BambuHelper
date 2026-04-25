@@ -376,11 +376,14 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
         if (!deserializeJson(amsDoc, amsObj, (size_t)(end - amsObj))) {
           s.ams.present = true;
           JsonArray units = amsDoc["ams"];
+          bool hasUnitsArray = amsDoc["ams"].is<JsonArray>();
           bool hasTraySnapshot = false;
-          for (JsonObject unit : units) {
-            if (unit["tray"].is<JsonArray>()) {
-              hasTraySnapshot = true;
-              break;
+          if (hasUnitsArray) {
+            for (JsonObject unit : units) {
+              if (unit["tray"].is<JsonArray>()) {
+                hasTraySnapshot = true;
+                break;
+              }
             }
           }
 
@@ -388,55 +391,56 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
           uint8_t rawTrayNow = 255;
           if (hasExplicitTrayNow) rawTrayNow = atoi(amsDoc["tray_now"].as<const char*>());
 
-          // --- Pass 1: unit-level data (always, even partial updates) ---
-          // Clear unit-level visibility for ALL units before rebuilding.
-          // Prevents ghost units staying .present with stale data when a
-          // previously-visible unit disappears from a partial update.
-          // Preserves trayCount (cached until next tray snapshot) and drying totals.
-          s.ams.unitCount = 0;
-          s.ams.anyDrying = false;
-          for (uint8_t i = 0; i < AMS_MAX_UNITS; i++) {
-            AmsUnit& u = s.ams.units[i];
-            uint8_t savedTrayCount = u.trayCount;
-            uint16_t savedDryTotal = u.dryTotalMin;
-            uint16_t savedDryRemain = u.dryRemainMin;
-            u.present = false;
-            u.id = 0;
-            u.humidity = 0;
-            u.humidityRaw = 0;
-            u.temp = 0;
-            u.trayCount = savedTrayCount;
-            u.dryTotalMin = savedDryTotal;
-            u.dryRemainMin = savedDryRemain;
-          }
-
           uint8_t unitIdx = 0;
-          for (JsonObject unit : units) {
-            if (!unit["id"].is<const char*>()) continue;
-            uint8_t uid = atoi(unit["id"].as<const char*>());
-            if (unitIdx >= AMS_MAX_UNITS) continue;
-            s.ams.unitCount++;
-
-            AmsUnit& u = s.ams.units[unitIdx];
-            u.present = true;
-            u.id = uid;
-            if (!unit["dry_time"].isNull()) {
-              uint16_t dt = unit["dry_time"].as<uint16_t>();
-              if (dt > 0 && (u.dryRemainMin == 0 || dt > u.dryTotalMin))
-                u.dryTotalMin = dt;
-              if (dt == 0) u.dryTotalMin = 0;
-              u.dryRemainMin = dt;
+          if (hasUnitsArray) {
+            // --- Pass 1: unit-level data (only when the unit list is present) ---
+            // Some AMS messages carry tray_now/vt_tray without the nested unit
+            // list. Treat those as partial updates; clearing unitCount there
+            // makes the landscape AMS column briefly collapse to the 0-AMS layout.
+            s.ams.unitCount = 0;
+            s.ams.anyDrying = false;
+            for (uint8_t i = 0; i < AMS_MAX_UNITS; i++) {
+              AmsUnit& u = s.ams.units[i];
+              uint8_t savedTrayCount = u.trayCount;
+              uint16_t savedDryTotal = u.dryTotalMin;
+              uint16_t savedDryRemain = u.dryRemainMin;
+              u.present = false;
+              u.id = 0;
+              u.humidity = 0;
+              u.humidityRaw = 0;
+              u.temp = 0;
+              u.trayCount = savedTrayCount;
+              u.dryTotalMin = savedDryTotal;
+              u.dryRemainMin = savedDryRemain;
             }
-            if (unit["humidity"].is<const char*>())
-              u.humidity = atoi(unit["humidity"].as<const char*>());
-            if (unit["humidity_raw"].is<const char*>())
-              u.humidityRaw = atoi(unit["humidity_raw"].as<const char*>());
-            if (unit["temp"].is<const char*>())
-              u.temp = atof(unit["temp"].as<const char*>());
-            if (u.dryRemainMin > 0) s.ams.anyDrying = true;
-            unitIdx++;
+
+            for (JsonObject unit : units) {
+              if (!unit["id"].is<const char*>()) continue;
+              uint8_t uid = atoi(unit["id"].as<const char*>());
+              if (unitIdx >= AMS_MAX_UNITS) continue;
+              s.ams.unitCount++;
+
+              AmsUnit& u = s.ams.units[unitIdx];
+              u.present = true;
+              u.id = uid;
+              if (!unit["dry_time"].isNull()) {
+                uint16_t dt = unit["dry_time"].as<uint16_t>();
+                if (dt > 0 && (u.dryRemainMin == 0 || dt > u.dryTotalMin))
+                  u.dryTotalMin = dt;
+                if (dt == 0) u.dryTotalMin = 0;
+                u.dryRemainMin = dt;
+              }
+              if (unit["humidity"].is<const char*>())
+                u.humidity = atoi(unit["humidity"].as<const char*>());
+              if (unit["humidity_raw"].is<const char*>())
+                u.humidityRaw = atoi(unit["humidity_raw"].as<const char*>());
+              if (unit["temp"].is<const char*>())
+                u.temp = atof(unit["temp"].as<const char*>());
+              if (u.dryRemainMin > 0) s.ams.anyDrying = true;
+              unitIdx++;
+            }
+            if (unitIdx > 0) s.lastUpdate = millis();  // AMS data = connection alive
           }
-          if (unitIdx > 0) s.lastUpdate = millis();  // AMS data = connection alive
 
           // --- Pass 2: tray-level data (only full snapshots) ---
           if (hasTraySnapshot) {
@@ -488,7 +492,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
               }
               s.ams.units[seqIdx].trayCount = parsedTrays;
             }
-          } else if (!units.isNull()) {
+          } else if (hasUnitsArray) {
             MQTT_LOG("AMS partial update - unit data refreshed, keeping cached trays");
           }
 
