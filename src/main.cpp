@@ -279,6 +279,14 @@ static void updateDisplayedPrinterScreenState() {
     return;
   }
 
+  if (isSleepStickyScreen(current) && s.ams.anyDrying) {
+    setScreenState(SCREEN_IDLE);
+    setBacklight(getEffectiveBrightness());
+    finishActive = false;
+    idleClockActive = false;
+    return;
+  }
+
   handleDisplayedPrinterConnectedState(current, s);
 }
 

@@ -204,7 +204,7 @@ public:
 static LGFX_WS154 _tft_instance;
 
 #elif defined(BOARD_IS_C3)
-// --- ESP32-C3 Super Mini + ST7789 240x280 ------------------------------------
+// --- ESP32-C3 Super Mini + ST7789 240x240 ------------------------------------
 class LGFX_C3 : public lgfx::LGFX_Device {
   lgfx::Panel_ST7789  _panel;
   lgfx::Bus_SPI       _bus;
@@ -230,9 +230,9 @@ public:
       cfg.pin_rst  = 10;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 280;
+      cfg.memory_height = 240;
       cfg.panel_width   = 240;
-      cfg.panel_height  = 280;
+      cfg.panel_height  = 240;
       cfg.offset_x      = 0;
       cfg.offset_y      = 0;
       cfg.readable      = false;
@@ -764,6 +764,15 @@ static uint16_t humidityColor(uint8_t level) {
   return CLR_RED;
 }
 
+static void drawCelsiusUnit(int16_t x, int16_t y, uint16_t color) {
+  tft.setTextFont(4);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(color, CLR_BG);
+  tft.drawString("C", x + 12, y);
+  tft.drawCircle(x + 4, y - 8, 3, color);
+  tft.drawCircle(x + 4, y - 8, 2, color);
+}
+
 // Find the N-th actively drying unit (or first if idx out of range)
 static int8_t findDryingUnit(AmsState& ams, uint8_t idx) {
   uint8_t found = 0;
@@ -789,7 +798,9 @@ static uint8_t countDryingUnits(AmsState& ams) {
 
 static void drawIdleDrying(PrinterSlot& p) {
   BambuState& s = p.state;
-  const int16_t cx = SCREEN_W / 2;
+  const bool land = isLandscape();
+  const int16_t scrW = uiW();
+  const int16_t cx = scrW / 2;
 
   // Count drying units and handle rotation
   uint8_t dryCount = countDryingUnits(s.ams);
@@ -806,33 +817,38 @@ static void drawIdleDrying(PrinterSlot& p) {
   if (ui < 0) return;  // no drying unit found (shouldn't happen)
   AmsUnit& u = s.ams.units[ui];
 
-  // Change detection
-  static uint16_t prevDryMin = 0;
+  // Change detection: keep fields independent so temperature/humidity updates
+  // do not erase the whole drying screen.
+  static int8_t   prevDryUnitIndex = -1;
+  static uint8_t  prevDryCount = 0xFF;
+  static uint16_t prevDryMin = 0xFFFF;
   static uint8_t  prevHumidity = 0xFF;
-  static float    prevTemp = -999;
   static uint8_t  prevHumRaw = 0xFF;
+  static int16_t  prevTempShown = -32768;
+  static uint8_t  prevDryProgress = 0xFF;
 
-  bool dataChanged = forceRedraw ||
-                     u.dryRemainMin != prevDryMin ||
-                     u.humidity != prevHumidity ||
-                     u.humidityRaw != prevHumRaw ||
-                     (int)(u.temp * 10) != (int)(prevTemp * 10);
-  prevDryMin = u.dryRemainMin;
-  prevHumidity = u.humidity;
-  prevHumRaw = u.humidityRaw;
-  prevTemp = u.temp;
+  int16_t tempShown = (int16_t)((u.temp >= 0.0f) ? (u.temp + 0.5f) : (u.temp - 0.5f));
+  bool unitChanged = forceRedraw ||
+                     ui != prevDryUnitIndex ||
+                     dryCount != prevDryCount;
+  bool tempChanged = unitChanged || tempShown != prevTempShown;
+  bool remainChanged = unitChanged || u.dryRemainMin != prevDryMin;
+  bool humidityChanged = unitChanged ||
+                         u.humidity != prevHumidity ||
+                         u.humidityRaw != prevHumRaw;
 
   // === Progress bar (top, y=0-5) ===
   uint8_t dryProgress = 0;
   if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
     dryProgress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
-  if (dataChanged) {
+  bool progressChanged = unitChanged || dryProgress != prevDryProgress;
+  if (progressChanged) {
     drawLedProgressBar(tft, 0, dryProgress);
   }
 
   // === Header bar ===
   if (forceRedraw) {
-    tft.fillRect(0, LY_HDR_Y, SCREEN_W, LY_HDR_H, CLR_BG);
+    tft.fillRect(0, LY_HDR_Y, scrW, LY_HDR_H, CLR_BG);
 
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
@@ -845,8 +861,8 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     const char* badge = "DRYING";
-    tft.fillCircle(SCREEN_W - LY_HDR_BADGE_RX - tft.textWidth(badge) - 10, LY_HDR_CY, 4, CLR_ORANGE);
-    tft.drawString(badge, SCREEN_W - LY_HDR_BADGE_RX, LY_HDR_CY);
+    tft.fillCircle(scrW - LY_HDR_BADGE_RX - tft.textWidth(badge) - 10, LY_HDR_CY, 4, CLR_ORANGE);
+    tft.drawString(badge, scrW - LY_HDR_BADGE_RX, LY_HDR_CY);
 
     // Multi-printer dots
     if (getActiveConnCount() > 1) {
@@ -858,10 +874,8 @@ static void drawIdleDrying(PrinterSlot& p) {
     }
   }
 
-  if (!dataChanged) return;
-
   // === AMS unit name (below header) ===
-  {
+  if (unitChanged) {
     bool isHT = (u.id >= 128);
     uint8_t displayNum = isHT ? (u.id - 128 + 1) : (u.id + 1);
     const char* prefix = isHT ? "AMS HT" : "AMS";
@@ -871,7 +885,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     else
       snprintf(unitName, sizeof(unitName), "%s %d", prefix, displayNum);
 
-    tft.fillRect(0, 30, SCREEN_W, 20, CLR_BG);
+    tft.fillRect(0, 30, scrW, 20, CLR_BG);
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
@@ -879,74 +893,125 @@ static void drawIdleDrying(PrinterSlot& p) {
   }
 
 #if defined(DISPLAY_240x320)
-  // === 240x320: Centered large temp + remaining + humidity ===
-  // Vertically centered between unit name (y~50) and ETA (y=260)
-  {
-    tft.fillRect(0, 55, SCREEN_W, 75, CLR_BG);
+  if (land) {
+    // === 320x240 landscape: temp left, drying facts right, ETA above bottom ===
+    if (unitChanged) {
+      tft.fillRect(0, 55, scrW, LY_LAND_ETA_Y - 55, CLR_BG);
+    }
 
-    char tempBuf[14];
-    snprintf(tempBuf, sizeof(tempBuf), "%.0f", u.temp);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(7);
-    tft.setTextColor(CLR_ORANGE, CLR_BG);
-    int16_t tempW = tft.textWidth(tempBuf);
-    tft.drawString(tempBuf, cx - 10, 100);
+    if (tempChanged) {
+      if (!unitChanged) tft.fillRect(0, 70, 160, 72, CLR_BG);
+      char tempBuf[14];
+      snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
+      const int16_t tempCx = 88;
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(7);
+      tft.setTextColor(CLR_ORANGE, CLR_BG);
+      int16_t tempW = tft.textWidth(tempBuf);
+      tft.drawString(tempBuf, tempCx - 10, 112);
 
-    tft.setTextFont(4);
-    tft.setTextDatum(ML_DATUM);
-    tft.drawString("\xB0""C", cx - 10 + tempW / 2 + 2, 86);
-  }
+      drawCelsiusUnit(tempCx - 10 + tempW / 2 + 2, 98, CLR_ORANGE);
+    }
 
-  // === Remaining time ===
-  {
-    const int16_t timeY = 160;
-    tft.fillRect(0, timeY - 14, SCREEN_W, 30, CLR_BG);
-    char timeBuf[20];
-    uint16_t h = u.dryRemainMin / 60;
-    uint16_t m = u.dryRemainMin % 60;
-    if (h > 0)
-      snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm remaining", h, m);
-    else
-      snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
+    const int16_t infoCx = 238;
+    if (remainChanged) {
+      if (!unitChanged) tft.fillRect(160, 58, scrW - 160, 54, CLR_BG);
+      char timeBuf[16];
+      uint16_t h = u.dryRemainMin / 60;
+      uint16_t m = u.dryRemainMin % 60;
+      if (h > 0)
+        snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm", h, m);
+      else
+        snprintf(timeBuf, sizeof(timeBuf), "%dm", m);
 
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
-    tft.setTextColor(CLR_YELLOW, CLR_BG);
-    tft.drawString(timeBuf, cx, timeY);
-  }
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(2);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString("Remaining", infoCx, 72);
+      tft.setTextFont(4);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString(timeBuf, infoCx, 96);
+    }
 
-  // === Humidity ===
-  {
-    const int16_t humY = 200;
-    tft.fillRect(0, humY - 14, SCREEN_W, 30, CLR_BG);
-    char humBuf[24];
-    snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+    if (humidityChanged) {
+      if (!unitChanged) tft.fillRect(160, 114, scrW - 160, 54, CLR_BG);
+      char humBuf[8];
+      snprintf(humBuf, sizeof(humBuf), "%d%%", u.humidityRaw);
 
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(4);
-    tft.setTextColor(humidityColor(u.humidity), CLR_BG);
-    tft.drawString(humBuf, cx, humY);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(2);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString("Humidity", infoCx, 128);
+      tft.setTextFont(4);
+      tft.setTextColor(humidityColor(u.humidity), CLR_BG);
+      tft.drawString(humBuf, infoCx, 152);
+    }
+  } else {
+    // === 240x320 portrait: Centered large temp + remaining + humidity ===
+    // Vertically centered between unit name (y~50) and ETA (y=260)
+    if (tempChanged) {
+      tft.fillRect(0, 55, SCREEN_W, 75, CLR_BG);
+
+      char tempBuf[14];
+      snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(7);
+      tft.setTextColor(CLR_ORANGE, CLR_BG);
+      int16_t tempW = tft.textWidth(tempBuf);
+      tft.drawString(tempBuf, cx - 10, 100);
+
+      drawCelsiusUnit(cx - 10 + tempW / 2 + 2, 86, CLR_ORANGE);
+    }
+
+    // === Remaining time ===
+    if (remainChanged) {
+      const int16_t timeY = 160;
+      tft.fillRect(0, timeY - 14, SCREEN_W, 30, CLR_BG);
+      char timeBuf[20];
+      uint16_t h = u.dryRemainMin / 60;
+      uint16_t m = u.dryRemainMin % 60;
+      if (h > 0)
+        snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm remaining", h, m);
+      else
+        snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
+
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(4);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString(timeBuf, cx, timeY);
+    }
+
+    // === Humidity ===
+    if (humidityChanged) {
+      const int16_t humY = 200;
+      tft.fillRect(0, humY - 14, SCREEN_W, 30, CLR_BG);
+      char humBuf[24];
+      snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(4);
+      tft.setTextColor(humidityColor(u.humidity), CLR_BG);
+      tft.drawString(humBuf, cx, humY);
+    }
   }
 #else
   // === 240x240: Large temperature display (center) ===
-  {
+  if (tempChanged) {
     tft.fillRect(0, 55, SCREEN_W, 65, CLR_BG);
 
     char tempBuf[14];
-    snprintf(tempBuf, sizeof(tempBuf), "%.0f", u.temp);
+    snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(7);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     int16_t tempW = tft.textWidth(tempBuf);
     tft.drawString(tempBuf, cx - 10, 82);
 
-    tft.setTextFont(4);
-    tft.setTextDatum(ML_DATUM);
-    tft.drawString("\xB0""C", cx - 10 + tempW / 2 + 2, 68);
+    drawCelsiusUnit(cx - 10 + tempW / 2 + 2, 68, CLR_ORANGE);
   }
 
   // === Remaining time ===
-  {
+  if (remainChanged) {
     tft.fillRect(0, 125, SCREEN_W, 30, CLR_BG);
     char timeBuf[20];
     uint16_t h = u.dryRemainMin / 60;
@@ -963,7 +1028,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   }
 
   // === Humidity ===
-  {
+  if (humidityChanged) {
     tft.fillRect(0, 158, SCREEN_W, 25, CLR_BG);
     char humBuf[24];
     snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
@@ -976,8 +1041,17 @@ static void drawIdleDrying(PrinterSlot& p) {
 #endif
 
   // === ETA ===
-  {
-    tft.fillRect(0, LY_ETA_Y, SCREEN_W, LY_ETA_H, CLR_BG);
+  if (remainChanged) {
+#if defined(DISPLAY_240x320)
+    const int16_t etaY = land ? LY_LAND_ETA_Y : LY_ETA_Y;
+    const int16_t etaH = land ? LY_LAND_ETA_H : LY_ETA_H;
+    const int16_t etaTextY = land ? LY_LAND_ETA_TEXT_Y : LY_ETA_TEXT_Y;
+#else
+    const int16_t etaY = LY_ETA_Y;
+    const int16_t etaH = LY_ETA_H;
+    const int16_t etaTextY = LY_ETA_TEXT_Y;
+#endif
+    tft.fillRect(0, etaY, scrW, etaH, CLR_BG);
     tft.setTextDatum(MC_DATUM);
 
     time_t nowEpoch = time(nullptr);
@@ -1019,17 +1093,34 @@ static void drawIdleDrying(PrinterSlot& p) {
     }
     tft.setTextFont(4);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.drawString(etaBuf, cx, LY_ETA_TEXT_Y);
+    tft.drawString(etaBuf, cx, etaTextY);
   }
 
   // === Bottom bar — connected indicator ===
   {
+#if defined(DISPLAY_240x320)
+    const int16_t botY = land ? LY_LAND_BOT_Y : LY_BOT_Y;
+    const int16_t botH = land ? LY_LAND_BOT_H : LY_BOT_H;
+    const int16_t botCY = land ? LY_LAND_BOT_CY : LY_BOT_CY;
+#else
+    const int16_t botY = LY_BOT_Y;
+    const int16_t botH = LY_BOT_H;
+    const int16_t botCY = LY_BOT_CY;
+#endif
     bool connChanged = forceRedraw || (s.connected != prevState.connected);
     if (connChanged) {
-      tft.fillRect(0, LY_BOT_Y, SCREEN_W, LY_BOT_H, CLR_BG);
-      tft.fillCircle(cx, LY_BOT_CY, 4, s.connected ? CLR_GREEN : CLR_RED);
+      tft.fillRect(0, botY, scrW, botH, CLR_BG);
+      tft.fillCircle(cx, botCY, 4, s.connected ? CLR_GREEN : CLR_RED);
     }
   }
+
+  prevDryUnitIndex = ui;
+  prevDryCount = dryCount;
+  prevDryMin = u.dryRemainMin;
+  prevHumidity = u.humidity;
+  prevHumRaw = u.humidityRaw;
+  prevTempShown = tempShown;
+  prevDryProgress = dryProgress;
 }
 
 static bool wasNoPrinter = false;
