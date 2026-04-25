@@ -463,7 +463,10 @@ void setup() {
 }
 
 void loop() {
-  if (handleSplashPhase()) return;
+  if (handleSplashPhase()) {
+    flushFrame();  // commit splash draws to panel (no-op on non-JC boards)
+    return;
+  }
 
   handleWiFi();
   handleWebServer();
@@ -488,4 +491,9 @@ void loop() {
     handleBambuMqtt();
     handleRotation();
   }
+
+  // Commit the framebuffer sprite to the panel. On JC3248W535 this is a
+  // ~20ms QSPI push (300 KB @ 32MHz QIO); on all other boards it's a no-op
+  // since draws go directly to the panel.
+  flushFrame();
 }

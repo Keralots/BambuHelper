@@ -1,5 +1,6 @@
 #include "button.h"
 #include "settings.h"
+#include "buzzer.h"
 
 #if defined(USE_XPT2046)
   #include <SPI.h>
@@ -27,6 +28,42 @@
     value = Wire.read();
     return true;
   }
+#elif defined(USE_AXS_TOUCH)
+  // AXS15231B integrated touch controller. I2C slave at 0x3B.
+  // Protocol (per axs15231b-lovyangfx skill): write 8-byte command, read 8
+  // bytes back. Touch is active when rx[0] == 0 (no gesture) AND rx[1] != 0
+  // (finger count > 0). Coordinates arrive pre-scaled to panel resolution,
+  // NOT raw 0-4095. Single-touch only.
+  #include <Wire.h>
+  #define AXS_TOUCH_ADDR 0x3B
+  static const uint8_t AXS_READ_TOUCHPAD_CMD[8] = {
+    0xB5, 0xAB, 0xA5, 0x5A, 0x00, 0x00, 0x00, 0x08
+  };
+  static bool axsTouchBusReady = false;
+  static bool axsTouchSeen = false;
+
+  static bool axsTouchProbe() {
+    Wire.beginTransmission(AXS_TOUCH_ADDR);
+    return Wire.endTransmission(true) == 0;
+  }
+
+  // Returns true if a touch is active and fills x/y with panel-scaled
+  // coordinates (native portrait 320x480 — caller applies rotation).
+  static bool axsTouchRead(uint16_t& x, uint16_t& y) {
+    Wire.beginTransmission(AXS_TOUCH_ADDR);
+    Wire.write(AXS_READ_TOUCHPAD_CMD, sizeof(AXS_READ_TOUCHPAD_CMD));
+    if (Wire.endTransmission() != 0) return false;
+    uint8_t rx[8] = {0};
+    size_t got = Wire.requestFrom((uint8_t)AXS_TOUCH_ADDR, (uint8_t)8);
+    if (got < 6) return false;
+    for (size_t i = 0; i < got && i < sizeof(rx); ++i) rx[i] = Wire.read();
+    // Valid plain-touch: gesture=0 and at least one finger down.
+    if (rx[0] != 0) return false;
+    if ((rx[1] & 0x0F) == 0) return false;
+    x = ((uint16_t)(rx[2] & 0x0F) << 8) | rx[3];
+    y = ((uint16_t)(rx[4] & 0x0F) << 8) | rx[5];
+    return true;
+  }
 #elif defined(TOUCH_CS)
   #include "display_ui.h"  // extern tft for getTouch()
 #endif
@@ -36,8 +73,50 @@ static bool stableState = false;
 static unsigned long lastChangeMs = 0;
 static const unsigned long DEBOUNCE_MS = 50;
 
+void sanitizeButtonPin() {
+  // Only the GPIO-backed button types use buttonPin. Touchscreen talks over
+  // a bus defined elsewhere and has no single pin to conflict.
+  if (buttonType != BTN_PUSH && buttonType != BTN_TOUCH) return;
+  if (buttonPin == 0) return;
+
+  auto clash = [&](const char* what) {
+    Serial.printf("Button: pin %u conflicts with %s, disabling\n",
+                  (unsigned)buttonPin, what);
+    buttonPin = 0;
+  };
+
+#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+  if (buttonPin == BACKLIGHT_PIN) { clash("backlight"); return; }
+#endif
+#if defined(USE_AXS_TOUCH)
+  if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
+  if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
+#endif
+#if defined(USE_CST816)
+  if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
+  if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }
+  #if defined(CST816_IRQ)
+  if (buttonPin == CST816_IRQ) { clash("CST816 touch IRQ"); return; }
+  #endif
+  #if defined(CST816_RST)
+  if (buttonPin == CST816_RST) { clash("CST816 touch RST"); return; }
+  #endif
+#endif
+#if defined(USE_XPT2046)
+  if (buttonPin == TOUCH_CS)   { clash("XPT2046 CS");   return; }
+  if (buttonPin == TOUCH_IRQ)  { clash("XPT2046 IRQ");  return; }
+  if (buttonPin == TOUCH_MOSI) { clash("XPT2046 MOSI"); return; }
+  if (buttonPin == TOUCH_MISO) { clash("XPT2046 MISO"); return; }
+  if (buttonPin == TOUCH_CLK)  { clash("XPT2046 CLK");  return; }
+#endif
+  if (buzzerSettings.pin != 0 && buttonPin == buzzerSettings.pin) {
+    clash("buzzer"); return;
+  }
+}
+
 void initButton() {
   if (buttonType == BTN_DISABLED) return;
+  sanitizeButtonPin();
 #if defined(USE_XPT2046)
   if (buttonType == BTN_TOUCHSCREEN) {
     touchSPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
@@ -75,6 +154,21 @@ void initButton() {
     }
     return;
   }
+#elif defined(USE_AXS_TOUCH)
+  if (buttonType == BTN_TOUCHSCREEN) {
+    Wire.begin(AXS_TOUCH_SDA, AXS_TOUCH_SCL);
+    Wire.setClock(400000);
+    axsTouchBusReady = true;
+    if (axsTouchProbe()) {
+      Serial.printf("AXS15231B touch initialized (I2C SDA=%d SCL=%d, addr 0x%02X)\n",
+                    AXS_TOUCH_SDA, AXS_TOUCH_SCL, AXS_TOUCH_ADDR);
+      axsTouchSeen = true;
+    } else {
+      Serial.printf("AXS15231B touch did not answer at init (addr 0x%02X, SDA=%d SCL=%d); will keep retrying at runtime\n",
+                    AXS_TOUCH_ADDR, AXS_TOUCH_SDA, AXS_TOUCH_SCL);
+    }
+    return;
+  }
 #endif
   if (buttonType == BTN_TOUCHSCREEN) return;
   if (buttonPin == 0) return;
@@ -105,6 +199,14 @@ bool wasButtonPressed() {
       cst816Seen = true;
     }
     raw = (touchNum > 0);
+#elif defined(USE_AXS_TOUCH)
+    if (!axsTouchBusReady) return false;
+    uint16_t tx = 0, ty = 0;
+    raw = axsTouchRead(tx, ty);
+    if (raw && !axsTouchSeen) {
+      Serial.printf("AXS15231B touch became responsive at runtime (addr 0x%02X)\n", AXS_TOUCH_ADDR);
+      axsTouchSeen = true;
+    }
 #elif defined(TOUCH_CS)
     uint16_t tx, ty;
     raw = tft.getTouch(&tx, &ty);

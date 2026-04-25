@@ -203,6 +203,29 @@ public:
 };
 static LGFX_WS154 _tft_instance;
 
+#elif defined(BOARD_IS_JC3248W535)
+// --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
+// Panel_AXS15231B_AGFX wraps moononournation/Arduino_GFX's Arduino_AXS15231B
+// driver inside a LovyanGFX Panel_Device subclass. Mainline LovyanGFX has
+// neither an AXS15231B panel class nor a QSPI bus, and a hand-rolled custom
+// driver didn't produce correct pixels on this hardware. Arduino_GFX does —
+// this wrapper lets the whole codebase keep calling the LovyanGFX API on
+// `tft` while the physical QSPI traffic is handled by Arduino_GFX.
+// Backlight is a simple GPIO-high (LEDC PWM not required for on/off).
+#include "lgfx_panel_axs15231b_agfx.hpp"
+class LGFX_JC3248W535 : public lgfx::LGFX_Device {
+  lgfx::Panel_AXS15231B_AGFX _panel;
+public:
+  LGFX_JC3248W535() {
+    // Panel_AXS15231B_AGFX owns the Arduino_GFX bus+panel internally. Pins
+    // are hard-coded in its constructor to the verified JC3248W535 map
+    // (CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39) since Arduino_GFX's
+    // databus class hard-codes them at construction anyway.
+    setPanel(&_panel);
+  }
+  lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
+};
+static LGFX_JC3248W535 _tft_instance;
 #elif defined(BOARD_IS_C3)
 // --- ESP32-C3 Super Mini + ST7789 240x240 ------------------------------------
 class LGFX_C3 : public lgfx::LGFX_Device {
@@ -244,7 +267,7 @@ public:
 static LGFX_C3 _tft_instance;
 
 #else
-  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
+  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200, BOARD_IS_WS154 or BOARD_IS_JC3248W535 to build_flags."
 #endif
 
 // Global pointer + reference — accessed via `tft` throughout the codebase.
@@ -252,7 +275,49 @@ static LGFX_C3 _tft_instance;
 // populated with either the V2 or Classic panel in initDisplay(), so method
 // calls via this reference/pointer dispatch to whichever variant was chosen.
 lgfx::LovyanGFX* tft_ptr = &_tft_instance;
-lgfx::LovyanGFX& tft     = *tft_ptr;
+// `tft` is now a macro in display_ui.h — `#define tft (*tft_ptr)` — so
+// every call site re-dereferences the pointer and picks up runtime
+// retargeting to the JC3248W535 PSRAM sprite.
+
+// Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
+// other boards so the extern declaration in display_ui.h is always satisfied.
+#if defined(BOARD_IS_JC3248W535)
+lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+
+// Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
+// initDisplay() (via tft_ptr), then flushed to the panel once per loop()
+// tick via flushFrame(). The AXS15231B in QSPI mode cannot address
+// arbitrary Y per draw (see lgfx_panel_axs15231b_agfx.hpp), so a
+// framebuffer-and-single-raster-flush is the only reliable render path.
+static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
+#else
+lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+#endif
+
+void flushFrame() {
+#if defined(BOARD_IS_JC3248W535)
+  if (g_axs_panel && _frame_sprite.getBuffer()) {
+    g_axs_panel->pushRawPixels(
+      static_cast<uint16_t*>(_frame_sprite.getBuffer()),
+      320u * 480u);
+  }
+#endif
+}
+
+// JC3248W535 currently only supports portrait rotations (0 and 2) in the
+// sprite-push architecture — layout_320x480.h is hard-coded portrait and no
+// landscape layout exists. Snap odd rotations to 0 with a Serial warning.
+static uint8_t sanitizeRotation(uint8_t r) {
+#if defined(BOARD_IS_JC3248W535)
+  if (r == 1 || r == 3) {
+    Serial.printf("Display: rotation %u unsupported on JC3248W535 "
+                  "(landscape layout not yet available); snapping to 0\n",
+                  (unsigned)r);
+    return 0;
+  }
+#endif
+  return r;
+}
 
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
@@ -397,7 +462,14 @@ void initDisplay() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
+#if defined(BOARD_IS_JC3248W535)
+  // Panel MADCTL stays at 0 forever — RASET-skip + LSB-first byte-order
+  // invariants in pushRawPixels depend on native orientation. User-facing
+  // rotation is applied to the PSRAM sprite after tft_ptr is redirected.
+  tft.setRotation(0);
+#else
   tft.setRotation(dispSettings.rotation);
+#endif
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
 #elif defined(DISPLAY_240x320)
@@ -406,6 +478,27 @@ void initDisplay() {
   Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
+
+#if defined(BOARD_IS_JC3248W535)
+  // Allocate 320x480x16bpp PSRAM sprite (300 KB) and redirect tft_ptr so all
+  // subsequent draws (splash, UI, refreshes) render into the sprite buffer.
+  // Panel cannot address arbitrary Y in QSPI mode — instead we flush the
+  // whole sprite to the panel once per loop tick via flushFrame().
+  _frame_sprite.setPsram(true);
+  _frame_sprite.setColorDepth(16);
+  if (_frame_sprite.createSprite(320, 480)) {
+    _frame_sprite.setTextDatum(MC_DATUM);  // match the tft defaults used below
+    tft_ptr = &_frame_sprite;
+    Serial.printf("Display: frame sprite 320x480 allocated in PSRAM, free=%u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    tft.setRotation(sanitizeRotation(dispSettings.rotation));
+    tft.fillScreen(CLR_BG);
+    flushFrame();  // push cleared sprite so panel shows CLR_BG during splash
+  } else {
+    Serial.println("Display: frame sprite alloc FAILED — will draw direct to panel (expect artifacts)");
+  }
+#endif
+
 
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
   // LovyanGFX touch calibration
@@ -443,7 +536,7 @@ void applyDisplaySettings() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
-  tft.setRotation(dispSettings.rotation);
+  tft.setRotation(sanitizeRotation(dispSettings.rotation));
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
 #elif defined(DISPLAY_240x320)
