@@ -9,6 +9,7 @@
 #include "button.h"
 #include "buzzer.h"
 #include "tasmota.h"
+#include "battery.h"
 #include <esp_sleep.h>
 #include <driver/gpio.h>
 
@@ -457,6 +458,7 @@ void setup() {
 
   loadSettings();
   initDisplay();
+  Battery::begin();
   splashEnd = millis() + 2000;
   startWiFiDuringSplash();
   setBacklight(brightness);
@@ -479,6 +481,7 @@ void loop() {
   handleErrorBuzzers();
 
   buzzerTick();
+  Battery::tick();
   checkNightMode();
   updateDisplay();
 

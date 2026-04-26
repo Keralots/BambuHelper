@@ -10,6 +10,7 @@
 #include "bambu_mqtt.h"
 #include "settings.h"
 #include "tasmota.h"
+#include "battery.h"
 #include <WiFi.h>
 #include <time.h>
 #include <new>   // placement new for CYD panel variant selection
@@ -717,6 +718,7 @@ static void drawConnectingMQTT() {
 
 // Forward declaration (defined after CYD section)
 static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY);
+static int16_t drawBatteryPrefix(int16_t y);
 
 // ---------------------------------------------------------------------------
 //  Screen: Idle (connected, not printing)
@@ -1342,17 +1344,19 @@ static void drawIdle() {
     // Left: filament circle (if AMS active) or WiFi signal
     if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS && s.ams.trays[s.ams.activeTray].present) {
       AmsTray& t = s.ams.trays[s.ams.activeTray];
-      tft.drawCircle(10, botCY, 5, CLR_TEXT_DARK);
-      tft.fillCircle(10, botCY, 4, t.colorRgb565);
+      int16_t bx = drawBatteryPrefix(botCY);
+      tft.drawCircle(10 + bx, botCY, 5, CLR_TEXT_DARK);
+      tft.fillCircle(10 + bx, botCY, 4, t.colorRgb565);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(t.type, 19, botCY);
+      tft.drawString(t.type, 19 + bx, botCY);
     } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
-      tft.drawCircle(10, botCY, 5, CLR_TEXT_DARK);
-      tft.fillCircle(10, botCY, 4, s.ams.vtColorRgb565);
+      int16_t bx = drawBatteryPrefix(botCY);
+      tft.drawCircle(10 + bx, botCY, 5, CLR_TEXT_DARK);
+      tft.fillCircle(10 + bx, botCY, 4, s.ams.vtColorRgb565);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(s.ams.vtType, 19, botCY);
+      tft.drawString(s.ams.vtType, 19 + bx, botCY);
     } else {
       drawWifiSignalIndicator(s, botCY);
     }
@@ -1847,15 +1851,62 @@ static void drawAmsZone(const BambuState& s, bool force) {
 #endif // DISPLAY_240x320
 
 // ---------------------------------------------------------------------------
-//  Helper: draw WiFi signal indicator in bottom-left corner
+//  Helper: draw battery icon (horizontal, 15x8) at (x, y) with fill level
+// ---------------------------------------------------------------------------
+static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
+  uint16_t fg;
+  if (pct < 20) fg = CLR_RED;
+  else if (pct < 50) fg = CLR_YELLOW;
+  else fg = CLR_GREEN;
+
+  bool blank = false;
+  if (Battery::isCritical()) {
+    blank = ((millis() / 500) & 1) != 0;
+  }
+
+  // Body outline 13x8, interior 11x6 starting at (x+1, y+1)
+  tft.fillRect(x, y, 15, 8, CLR_BG);                     // clear footprint
+  tft.drawRect(x, y, 13, 8, blank ? CLR_BG : CLR_TEXT_DIM);
+  tft.fillRect(x + 13, y + 2, 2, 4, blank ? CLR_BG : CLR_TEXT_DIM);  // nub
+
+  if (!blank) {
+    int16_t levelW = (int16_t)((11 * (uint16_t)pct + 50) / 100);
+    if (levelW > 0) tft.fillRect(x + 1, y + 1, levelW, 6, fg);
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Helper: draw WiFi signal indicator OR battery indicator (replaces WiFi
+//  on Waveshare boards when a battery is detected at boot).
 // ---------------------------------------------------------------------------
 static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY = LY_WIFI_Y) {
+  if (Battery::isPresent()) {
+    int16_t iconY = wifiY - LY_BAT_H / 2 - 1;
+    drawBatteryIconOnly(LY_WIFI_X, iconY, Battery::percent());
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", (unsigned)Battery::percent());
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+    tft.drawString(buf, LY_WIFI_X + LY_BAT_TEXT_X, wifiY);
+    return;
+  }
   drawIcon16(tft, LY_WIFI_X, wifiY - 8, icon_wifi, CLR_TEXT_DIM);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   char wifiBuf[12];
   snprintf(wifiBuf, sizeof(wifiBuf), "%ddBm", s.wifiSignal);
   tft.drawString(wifiBuf, LY_WIFI_X + 18, wifiY);
+}
+
+// ---------------------------------------------------------------------------
+//  Helper: draw battery icon as a prefix BEFORE swatch+filament name (on
+//  Waveshare boards). Returns x-offset to apply to swatch and text positions.
+// ---------------------------------------------------------------------------
+static int16_t drawBatteryPrefix(int16_t y) {
+  if (!Battery::isPresent()) return 0;
+  int16_t iconY = y - LY_BAT_H / 2 - 1;
+  drawBatteryIconOnly(LY_WIFI_X, iconY, Battery::percent());
+  return LY_BAT_SHIFT_X;
 }
 
 // ---------------------------------------------------------------------------
@@ -2274,20 +2325,22 @@ static void drawPrinting() {
     if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS) {
       AmsTray& t = s.ams.trays[s.ams.activeTray];
       if (t.present) {
-        tft.drawCircle(10, eff_botCY, 5, CLR_TEXT_DARK);
-        tft.fillCircle(10, eff_botCY, 4, t.colorRgb565);
+        int16_t bx = drawBatteryPrefix(eff_botCY);
+        tft.drawCircle(10 + bx, eff_botCY, 5, CLR_TEXT_DARK);
+        tft.fillCircle(10 + bx, eff_botCY, 4, t.colorRgb565);
         tft.setTextDatum(ML_DATUM);
         tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-        tft.drawString(t.type, 19, eff_botCY);
+        tft.drawString(t.type, 19 + bx, eff_botCY);
       } else {
         drawWifiSignalIndicator(s, eff_botCY);
       }
     } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
-      tft.drawCircle(10, eff_botCY, 5, CLR_TEXT_DARK);
-      tft.fillCircle(10, eff_botCY, 4, s.ams.vtColorRgb565);
+      int16_t bx = drawBatteryPrefix(eff_botCY);
+      tft.drawCircle(10 + bx, eff_botCY, 5, CLR_TEXT_DARK);
+      tft.fillCircle(10 + bx, eff_botCY, 4, s.ams.vtColorRgb565);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(s.ams.vtType, 19, eff_botCY);
+      tft.drawString(s.ams.vtType, 19 + bx, eff_botCY);
     } else {
       drawWifiSignalIndicator(s, eff_botCY);
     }
