@@ -45,7 +45,7 @@ public:
       cfg.pin_rst  = 8;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -190,7 +190,7 @@ public:
       cfg.pin_rst  = 40;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -230,7 +230,7 @@ public:
       cfg.pin_rst  = 10;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
