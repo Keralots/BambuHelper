@@ -304,6 +304,7 @@ public:
       cfg.panel_height  = 480;
       cfg.offset_x    = 0;
       cfg.offset_y  = 0;
+      cfg.offset_rotation = 2;  // Panel is mounted 180° rotated — apply 180° offset so rotation 0 = upright
       cfg.invert     = false;  // Default Panel_ST7701 list0 already sends 0x21 (IPS inversion on). Setting this true would send 0x21 AGAIN toggling inversion OFF.
       cfg.pin_rst    = -1;      // RST is via PCA9535PW — managed in initDisplay()
       _panel.config(cfg);
