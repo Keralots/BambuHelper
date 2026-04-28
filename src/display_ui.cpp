@@ -46,7 +46,7 @@ public:
       cfg.pin_rst  = 8;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -62,9 +62,9 @@ static LGFX_S3 _tft_instance;
 #elif defined(DISPLAY_CYD)
 // --- ESP32-2432S028 (CYD) + ILI9341 240x320 ---------------------------------
 // Two hardware variants exist:
-//   - V2 (default): Panel_ILI9341_2 + color inversion â€” matches the TFT_eSPI
+//   - V2 (default): Panel_ILI9341_2 + color inversion — matches the TFT_eSPI
 //     ILI9341_2_DRIVER + TFT_INVERSION_ON used on `main`.
-//   - Classic: plain Panel_ILI9341, no color inversion â€” for units that show
+//   - Classic: plain Panel_ILI9341, no color inversion — for units that show
 //     mirrored/rotated image on V2.
 // Selected at runtime from DisplaySettings.cydPanelClassic (persisted in
 // Preferences).
@@ -191,7 +191,7 @@ public:
       cfg.pin_rst  = 40;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -231,7 +231,7 @@ public:
       cfg.pin_rst  = 10;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -248,7 +248,7 @@ static LGFX_C3 _tft_instance;
   #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
 #endif
 
-// Global pointer + reference â€” accessed via `tft` throughout the codebase.
+// Global pointer + reference — accessed via `tft` throughout the codebase.
 // For CYD, _tft_instance is backed by a union (see _tft_storage) that is
 // populated with either the V2 or Classic panel in initDisplay(), so method
 // calls via this reference/pointer dispatch to whichever variant was chosen.
@@ -284,7 +284,7 @@ static bool  smoothInited      = false;
 static bool gaugesAnimating = false;       // true while arcs are interpolating
 static const unsigned long GAUGE_ANIM_MS = 80; // ~12 Hz during animation
 
-static const float SMOOTH_ALPHA = 0.09f;  // per frame at 12Hz â€” ~1s to settle
+static const float SMOOTH_ALPHA = 0.09f;  // per frame at 12Hz — ~1s to settle
 static const float SNAP_THRESH  = 0.5f;   // snap when within 0.5 of target
 
 static void smoothLerp(float& cur, float target) {
@@ -422,7 +422,7 @@ void initDisplay() {
 
   memset(&prevState, 0, sizeof(prevState));
 
-  // Splash screen â€” center on actual canvas (rotation-aware for 240x320)
+  // Splash screen — center on actual canvas (rotation-aware for 240x320)
   {
     const int16_t sw = uiW();
     const int16_t sh = uiH();
@@ -1097,7 +1097,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.drawString(etaBuf, cx, etaTextY);
   }
 
-  // === Bottom bar â€” connected indicator ===
+  // === Bottom bar — connected indicator ===
   {
 #if defined(DISPLAY_240x320)
     const int16_t botY = land ? LY_LAND_BOT_Y : LY_BOT_Y;
@@ -1141,7 +1141,7 @@ static void drawIdle() {
     return;
   }
 
-  // Transition from "no printer" to configured â€” clear stale screen
+  // Transition from "no printer" to configured — clear stale screen
   if (wasNoPrinter) {
     wasNoPrinter = false;
     tft.fillScreen(dispSettings.bgColor);
@@ -1152,7 +1152,7 @@ static void drawIdle() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
 
-  // AMS drying active â€” switch to dedicated drying layout
+  // AMS drying active — switch to dedicated drying layout
   // Grace period: stay on drying screen for 5s after anyDrying drops,
   // to avoid flashing back to idle during brief state transitions (PREPARE etc.)
   static unsigned long dryingDropMs = 0;
@@ -1179,7 +1179,7 @@ static void drawIdle() {
     forceRedraw = true;
   }
 
-  // Effective screen dimensions â€” idle uses full screen (no AMS sidebar)
+  // Effective screen dimensions — idle uses full screen (no AMS sidebar)
 #if defined(DISPLAY_240x320)
   const int16_t scrW = (int16_t)tft.width();
   const int16_t scrH = (int16_t)tft.height();
@@ -1204,7 +1204,7 @@ static void drawIdle() {
 
   tft.setTextDatum(MC_DATUM);
 
-  // Printer name (only on forceRedraw â€” name doesn't change)
+  // Printer name (only on forceRedraw — name doesn't change)
   if (forceRedraw) {
     tft.setTextColor(CLR_GREEN, CLR_BG);
     setFont(tft, FONT_LARGE);
@@ -1212,7 +1212,7 @@ static void drawIdle() {
     tft.drawString(name, cx, LY_IDLE_NAME_Y);
   }
 
-  // Status badge â€” only redraw when state changes
+  // Status badge — only redraw when state changes
   if (stateChanged) {
     setFont(tft, FONT_BODY);
     uint16_t stateColor = CLR_TEXT_DIM;
@@ -1391,6 +1391,9 @@ static void drawIdle() {
 
 static uint8_t  prevAmsUnitCount = 0;
 static uint8_t  prevAmsActive    = 255;
+static uint8_t  prevAmsUnitIds[AMS_MAX_UNITS] = {0};
+static uint8_t  prevAmsUnitTrayCounts[AMS_MAX_UNITS] = {0};
+static bool     prevAmsUnitPresent[AMS_MAX_UNITS] = {false};
 static uint16_t prevAmsTrayColors[AMS_MAX_TRAYS] = {0};
 static bool     prevAmsTrayPresent[AMS_MAX_TRAYS] = {false};
 static int8_t   prevAmsTrayRemain[AMS_MAX_TRAYS];  // init in drawAmsZone
@@ -1441,7 +1444,14 @@ static void drawAmsTrayBarRounded(int16_t x, int16_t y, int16_t w, int16_t h,
                                   const AmsTray& tray, bool isActive) {
   int16_t radius = (w >= 14 && h >= 14) ? 4 : (w >= 8 && h >= 8 ? 3 : 2);
 
+  // Self-contained repaint: clear the 2px strip above the bar (where a stale
+  // notch from a previously-active tray may live) so callers don't have to
+  // wipe the surrounding area to switch the active marker without flicker.
+  if (y >= 2) tft.fillRect(x, y - 2, w, 2, CLR_BG);
+
   if (!tray.present) {
+    // Wipe the bar's interior so a previous color from this slot is gone.
+    tft.fillRect(x, y, w, h, CLR_BG);
     tft.drawRoundRect(x, y, w, h, radius, CLR_TEXT_DARK);
     // Diagonal cross, inset so it does not clip the corner radius
     int16_t inset = radius;
@@ -1667,7 +1677,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
   bool landscape = isLandscape();
   bool enhanced = !landscape && useEnhancedPortraitAms(s.ams);
 
-  // In landscape the right column also hosts the gcode-state badge â€” track
+  // In landscape the right column also hosts the gcode-state badge — track
   // it so the badge refreshes on state transition even without a global
   // forceRedraw.
   static uint8_t prevAmsGcodeStateId = 0xFF;
@@ -1675,7 +1685,14 @@ static void drawAmsZone(const BambuState& s, bool force) {
   bool badgeChanged = landscape && (prevAmsGcodeStateId != s.gcodeStateId ||
                                     strncmp(prevAmsGcodeStateText, s.gcodeState, 15) != 0);
 
-  bool amsChanged = force || badgeChanged;
+  bool unitLayoutChanged = (s.ams.unitCount != prevAmsUnitCount);
+  for (uint8_t i = 0; i < AMS_MAX_UNITS && !unitLayoutChanged; i++) {
+    unitLayoutChanged = (s.ams.units[i].present != prevAmsUnitPresent[i]) ||
+                        (s.ams.units[i].id != prevAmsUnitIds[i]) ||
+                        (s.ams.units[i].trayCount != prevAmsUnitTrayCounts[i]);
+  }
+
+  bool amsChanged = force || badgeChanged || unitLayoutChanged;
   if (!amsChanged) {
     amsChanged = (s.ams.unitCount != prevAmsUnitCount) ||
                  (s.ams.activeTray != prevAmsActive);
@@ -1700,6 +1717,11 @@ static void drawAmsZone(const BambuState& s, bool force) {
   // Save state for next comparison (AMS trays)
   prevAmsUnitCount = s.ams.unitCount;
   prevAmsActive    = s.ams.activeTray;
+  for (uint8_t i = 0; i < AMS_MAX_UNITS; i++) {
+    prevAmsUnitPresent[i] = s.ams.units[i].present;
+    prevAmsUnitIds[i] = s.ams.units[i].id;
+    prevAmsUnitTrayCounts[i] = s.ams.units[i].trayCount;
+  }
   for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
     prevAmsTrayPresent[i] = s.ams.trays[i].present;
     prevAmsTrayColors[i]  = s.ams.trays[i].colorRgb565;
@@ -1723,10 +1745,10 @@ static void drawAmsZone(const BambuState& s, bool force) {
                            ? LY_LAND_AMS_BOT_SHORT
                            : LY_LAND_AMS_BOT_FULL;
 
-    // --- Status badge (always present in landscape) ---
-    // Drawn before clearing AMS area so its 4px outline-clear doesn't bleed
-    // into the badge row.
-    {
+    // --- Status badge (only when right column is active = units >= 1) ---
+    // When units == 0 the header takes over the badge (right-aligned), so
+    // skip drawing it here to avoid two badges colliding.
+    if (units >= 1) {
       uint16_t badgeColor = CLR_TEXT_DIM;
       if (s.gcodeStateId == GCODE_RUNNING)      badgeColor = CLR_GREEN;
       else if (s.gcodeStateId == GCODE_PAUSE)   badgeColor = CLR_YELLOW;
@@ -1748,14 +1770,20 @@ static void drawAmsZone(const BambuState& s, bool force) {
     }
 
     // --- AMS bars area ---
-    tft.fillRect(LY_LAND_AMS_X - 4, LY_LAND_AMS_TOP, LY_LAND_AMS_W + 8,
-                 amsBot - LY_LAND_AMS_TOP, CLR_BG);
+    // Only wipe the whole strip when the bar layout itself can have moved
+    // (forced redraw or unit count changed). For same-layout updates each
+    // tray repaints itself in-place without flicker.
+    const bool layoutChanged = force || unitLayoutChanged;
+    if (layoutChanged) {
+      tft.fillRect(LY_LAND_AMS_X - 4, LY_LAND_AMS_TOP, LY_LAND_AMS_W + 8,
+                   amsBot - LY_LAND_AMS_TOP, CLR_BG);
+    }
 
     if (units == 0 || units > AMS_MAX_UNITS) return;
 
     const int16_t totalH = amsBot - LY_LAND_AMS_TOP;
     const int16_t groupGap = 6;
-    const int16_t labelH = 12;  // space for AMS letter label below bars
+    const int16_t labelH = 16;  // font 2 label height below bars
     const int16_t barGap = 2;   // gap between bars
 
     // Find max tray count across units for bar width sizing
@@ -1792,7 +1820,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
       for (uint8_t t = 0; t < tc; t++) {
         uint8_t trayIdx = u * AMS_TRAYS_PER_UNIT + t;
         int16_t bx = barsX + t * (barW + barGap);
-        // Use the same rounded helper as the portrait refresh â€” rounded
+        // Use the same rounded helper as the portrait refresh — rounded
         // shell, remain-fill, white outline + red notch on the active tray.
         drawAmsTrayBarRounded(bx, gy, barW, barH,
                               s.ams.trays[trayIdx], trayIdx == s.ams.activeTray);
@@ -1805,7 +1833,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
       bool sm = dispSettings.smallLabels;
       setFont(tft, sm ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(label, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 2);
+      tft.drawString(label, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 1);
     }
 
   } else if (enhanced) {
@@ -1849,8 +1877,8 @@ static void drawPrinting() {
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0);
 
   // Track AMS unit-count transitions that change layout zones (badge moves
-  // between header and right column at units 0â†”1; bottom bar width flips at
-  // units 2â†”3 in landscape).
+  // between header and right column at units 0↔1; bottom bar width flips at
+  // units 2↔3 in landscape).
 #if defined(DISPLAY_240x320)
   static uint8_t prevPrintingUnits = 0xFF;
   bool unitsZoneChanged = (prevPrintingUnits == 0xFF) ||
@@ -1869,7 +1897,7 @@ static void drawPrinting() {
   const int16_t gR = LY_GAUGE_R;
   const int16_t gT = LY_GAUGE_T;
 
-  // Effective Y positions â€” landscape on CYD uses 240x240-style positions
+  // Effective Y positions — landscape on CYD uses 240x240-style positions
 #if defined(DISPLAY_240x320)
   const bool land = isLandscape();
   const uint8_t units = s.ams.unitCount;
@@ -1885,10 +1913,13 @@ static void drawPrinting() {
   const int16_t eff_botH     = land ? LY_LAND_BOT_H     : LY_BOT_H;
   const int16_t eff_botCY    = land ? LY_LAND_BOT_CY    : LY_BOT_CY;
   // Width of the horizontal strip used for header / ETA / bottom bar.
-  // Header is always full canvas; ETA/bottom shrink to 240 when AMS column
-  // needs the full vertical extent (3-4 AMS).
+  // Header is always full canvas. ETA must shrink to 240 whenever the AMS
+  // column exists, otherwise its y=190..220 fillRect would carve into the
+  // bottom of the AMS bars (AMS_BOT_SHORT=210 with 0-2 AMS). The bottom bar
+  // stays full-width when the AMS column ends high (0-2 AMS) and shrinks to
+  // 240 only when AMS extends to AMS_BOT_FULL (3-4 AMS).
   const int16_t hdrW   = land ? uiW() : SCREEN_W;
-  const int16_t etaW   = (land && !botFull) ? LY_LAND_GAUGE_W : (land ? uiW() : SCREEN_W);
+  const int16_t etaW   = landAmsCol ? LY_LAND_GAUGE_W : (land ? uiW() : SCREEN_W);
   const int16_t botW   = (land && !botFull) ? LY_LAND_GAUGE_W : (land ? uiW() : SCREEN_W);
 #else
   const bool landAmsCol = false;
@@ -1919,14 +1950,10 @@ static void drawPrinting() {
       int16_t usedBottom = eff_botY + eff_botH;
       if (usedBottom < scrH)
         tft.fillRect(0, usedBottom, scrW, scrH - usedBottom, CLR_BG);
-    } else if (land && unitsZoneChanged && s.ams.unitCount == 0) {
-      // 1+ AMS â†’ 0 AMS in landscape: drawAmsZone will not be called this
-      // frame (gated on unitCount > 0), so wipe the right column ourselves
-      // so the old badge + AMS bars don't linger.
-      tft.fillRect(LY_LAND_GAUGE_W, LY_HDR_Y + LY_HDR_H,
-                   scrW - LY_LAND_GAUGE_W,
-                   eff_botY - (LY_HDR_Y + LY_HDR_H), CLR_BG);
     }
+    // No special wipe for units→0: drawAmsZone is now called unconditionally
+    // in landscape and clears the AMS bars area itself while still drawing
+    // the badge.
   }
 #endif
 
@@ -1941,7 +1968,15 @@ static void drawPrinting() {
   // name + multi-printer dots.
   if (forceRedraw || stateChanged) {
     uint16_t hdrBg = dispSettings.bgColor;
-    tft.fillRect(0, LY_HDR_Y, hdrW, LY_HDR_H, hdrBg);
+    // Cap the header clear at the gauge column when the right-side AMS panel
+    // is active; otherwise the badge that drawAmsZone parks at y=7..27 in the
+    // right column (x=240..320) would be wiped on every header repaint.
+#if defined(DISPLAY_240x320)
+    const int16_t hdrClearW = landAmsCol ? LY_LAND_GAUGE_W : hdrW;
+#else
+    const int16_t hdrClearW = hdrW;
+#endif
+    tft.fillRect(0, LY_HDR_Y, hdrClearW, LY_HDR_H, hdrBg);
 
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
@@ -1950,7 +1985,7 @@ static void drawPrinting() {
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, LY_HDR_NAME_X, LY_HDR_CY);
 
-    // State badge (right) â€” only when right column not used for it
+    // State badge (right) — only when right column not used for it
     if (!landAmsCol) {
       uint16_t badgeColor = CLR_TEXT_DIM;
       if (s.gcodeStateId == GCODE_RUNNING) badgeColor = CLR_GREEN;
@@ -1965,12 +2000,13 @@ static void drawPrinting() {
       tft.drawString(s.gcodeState, hdrW - LY_HDR_BADGE_RX, LY_HDR_CY);
     }
 
-    // Printer indicator dots (multi-printer) â€” centered on header strip
+    // Printer indicator dots (multi-printer) — centered on the visible
+    // header strip (excludes the right column when the AMS panel is active).
     if (getActiveConnCount() > 1) {
       for (uint8_t di = 0; di < MAX_ACTIVE_PRINTERS; di++) {
         if (!isPrinterConfigured(di)) continue;
         uint16_t dotClr = (di == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
-        tft.fillCircle(hdrW / 2 - 5 + di * 10, LY_HDR_DOT_CY, 3, dotClr);
+        tft.fillCircle(hdrClearW / 2 - 5 + di * 10, LY_HDR_DOT_CY, 3, dotClr);
       }
     }
   }
@@ -2011,7 +2047,7 @@ static void drawPrinting() {
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
           default:
-            // AMS humidity / temperature gauges â€” index derived from enum value
+            // AMS humidity / temperature gauges — index derived from enum value
             if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
               uint8_t ui = gt - GAUGE_AMS_HUM_1;
               const AmsUnit &cu = s.ams.units[ui], &pu = prevState.ams.units[ui];
@@ -2074,7 +2110,7 @@ static void drawPrinting() {
           if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);
           break;
         default: {
-          // AMS humidity / temperature gauges â€” index derived from enum value
+          // AMS humidity / temperature gauges — index derived from enum value
           static const char* amsLabel[AMS_MAX_UNITS] = { "AMS 1", "AMS 2", "AMS 3", "AMS 4" };
           if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
             uint8_t ui = gt - GAUGE_AMS_HUM_1;
@@ -2094,13 +2130,19 @@ static void drawPrinting() {
   }
 
   // === AMS zone (CYD: portrait + landscape) ===
+  // Landscape always calls drawAmsZone — the right column also hosts the
+  // status badge, so it must refresh even when AMS data is empty. Force a
+  // redraw when the AMS unit-count zone changed so static change-detection
+  // inside drawAmsZone cannot skip a frame after the right column was wiped
+  // (e.g. transient unitCount=0 from MQTT reconnect).
 #if defined(DISPLAY_240x320)
-  if (s.ams.present && s.ams.unitCount > 0) {
-    drawAmsZone(s, forceRedraw);
+  const bool amsForce = forceRedraw || unitsZoneChanged;
+  if (isLandscape() || (s.ams.present && s.ams.unitCount > 0)) {
+    drawAmsZone(s, amsForce);
   }
 #endif
 
-  // === Info line â€” ETA finish time or PAUSE/ERROR alert ===
+  // === Info line — ETA finish time or PAUSE/ERROR alert ===
   if (etaChanged || stateChanged) {
     const int16_t etaCx = etaW / 2;
     tft.fillRect(0, eff_etaY, etaW, eff_etaH, CLR_BG);
@@ -2170,7 +2212,7 @@ static void drawPrinting() {
     }
   }
 
-  // === Bottom status bar â€” Filament/WiFi | Layer (or Power) | Speed ===
+  // === Bottom status bar — Filament/WiFi | Layer (or Power) | Speed ===
   // Tasmota alternation state (persists across redraws)
   static bool     altShowPower    = false;
   static uint32_t altFlipMs       = 0;
@@ -2208,14 +2250,21 @@ static void drawPrinting() {
 
   if (bottomChanged) {
     const int16_t botCx = botW / 2;
-    // When AMS column doesn't extend down to the bar, wipe the right edge
-    // too so a previous wider bar (e.g. after AMS unit count dropped) doesn't
-    // leak pixels under the AMS zone.
+    // Right-edge cleanup only on actual bottom-bar width transitions —
+    // wiping x=240..320 in the bottom-bar y-range every bottomChanged event
+    // would also erase the bottom of the AMS column (AMS_BOT_FULL=236
+    // overlaps eff_botY=222..240) and drawAmsZone wouldn't repaint it.
 #if defined(DISPLAY_240x320)
-    if (botW < uiW()) {
-      // The AMS zone clears x=240..324 from y=AMS_TOP..AMS_BOT_FULL â€” but the
-      // 4px gap below AMS_BOT_FULL inside the bottom-bar Y range is ours.
-      tft.fillRect(botW, eff_botY, uiW() - botW, eff_botH, CLR_BG);
+    if (botW < uiW() && unitsZoneChanged) {
+      int16_t cleanY = eff_botY;
+      int16_t cleanH = eff_botH;
+      if (landAmsCol) {
+        cleanY = LY_LAND_AMS_BOT_FULL;
+        cleanH = eff_botY + eff_botH - cleanY;
+      }
+      if (cleanH > 0) {
+        tft.fillRect(botW, cleanY, uiW() - botW, cleanH, CLR_BG);
+      }
     }
 #endif
     tft.fillRect(0, eff_botY, botW, eff_botH, CLR_BG);
@@ -2288,7 +2337,7 @@ static void drawFinished() {
   static float prevFinWatts = -2.0f;
   static float prevFinKwh = -2.0f;
 
-  // Effective screen dimensions â€” finished uses full screen (no AMS sidebar)
+  // Effective screen dimensions — finished uses full screen (no AMS sidebar)
 #if defined(DISPLAY_240x320)
   const bool land = isLandscape();
   const int16_t scrW = (int16_t)tft.width();
@@ -2314,7 +2363,7 @@ static void drawFinished() {
   const int16_t gaugeY     = LY_FIN_GY;
   const int16_t finTextY   = LY_FIN_TEXT_Y;
   const int16_t finFileY   = LY_FIN_FILE_Y;
-  // 240x240 layout has no dedicated KWH Y â€” derive it midway between file
+  // 240x240 layout has no dedicated KWH Y — derive it midway between file
   // and bottom bar so the clear band sits between them.
   const int16_t finKwhY    = (LY_FIN_FILE_Y + eff_finBotY) / 2;
 #endif
@@ -2332,7 +2381,7 @@ static void drawFinished() {
     drawLedProgressBar(tft, 0, 100);
   }
 
-  // === Header bar (y=7-25) â€” same as printing screen ===
+  // === Header bar (y=7-25) — same as printing screen ===
   if (forceRedraw) {
     uint16_t hdrBg = dispSettings.bgColor;
     tft.fillRect(0, LY_HDR_Y, scrW, LY_HDR_H, hdrBg);
@@ -2389,7 +2438,7 @@ static void drawFinished() {
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     if (s.subtaskName[0] != '\0') {
       // Trim to canvas width (font 2 ~9px/char nominal). 25 chars suited 240
-      // portrait but landscape (320) can fit more â€” adapt to actual width by
+      // portrait but landscape (320) can fit more — adapt to actual width by
       // shrinking until the rendered string fits in `scrW - 16`.
       char truncName[64];
       strncpy(truncName, s.subtaskName, sizeof(truncName) - 1);
@@ -2498,7 +2547,7 @@ static void drawFinished() {
         tft.drawString(wBuf, cx - 2, eff_finWifiY);
       }
     }
-    // Door status (right) â€” always show when sensor present
+    // Door status (right) — always show when sensor present
     if (s.doorSensorPresent) {
       uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
       tft.setTextDatum(MR_DATUM);
@@ -2514,7 +2563,7 @@ static void drawFinished() {
 }
 
 // ---------------------------------------------------------------------------
-//  Night mode â€” scheduled brightness dimming
+//  Night mode — scheduled brightness dimming
 // ---------------------------------------------------------------------------
 static unsigned long lastNightCheck = 0;
 // lastAppliedBrightness declared near setBacklight() above

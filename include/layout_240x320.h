@@ -56,13 +56,15 @@
 // AMS vertical strip (right side)
 #define LY_LAND_AMS_X       244   // left edge of AMS column (4px gap from gauges)
 #define LY_LAND_AMS_W       72    // usable width
-#define LY_LAND_AMS_TOP     60    // below header + status badge (badge spans y=30..54)
+#define LY_LAND_AMS_TOP     40    // below header-row badge (badge spans y=7..27)
 #define LY_LAND_AMS_BOT_FULL  236 // AMS bottom when bottom-bar limited to 240 (3-4 AMS)
 #define LY_LAND_AMS_BOT_SHORT 210 // AMS bottom when bottom-bar spans 320 (0-2 AMS)
-// Status badge (above AMS, replaces header badge in landscape when AMS present)
-#define LY_LAND_BADGE_Y     30
-#define LY_LAND_BADGE_H     24
-#define LY_LAND_BADGE_CY    42
+// Status badge — sits on the same row as the printer name (header line) but
+// in the right column (x=240..320). Header fillRect is capped to 240 when the
+// AMS column is active, so the badge survives header repaints.
+#define LY_LAND_BADGE_Y     7
+#define LY_LAND_BADGE_H     20
+#define LY_LAND_BADGE_CY    17
 
 // --- Printing: ETA / info zone (moved down for 320px) ---
 #define LY_ETA_Y        260

@@ -11,4 +11,6 @@ firmware/
 *.map
 tools/pushall_dump.json
 tools/ams_dump.json
+CLAUDE.md
+VLW_FONTS_PARKED.md
 VLW_FONTS_PARKED.md
