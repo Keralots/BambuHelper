@@ -102,6 +102,8 @@
 // =============================================================================
 #ifdef DISPLAY_240x320
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
+#elif defined(BOARD_IS_SENSECAP)
+#define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
 #define BUTTON_DEFAULT_PIN    4       // default GPIO for physical button
 #endif
@@ -119,6 +121,8 @@
 #define BUZZER_DEFAULT_PIN    3       // C3: GPIO 3 (GPIO 5 is backlight)
 #elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
+#elif defined(BOARD_IS_SENSECAP)
+#define BUZZER_DEFAULT_PIN    255     // SenseCAP Indicator: no built-in buzzer (255 = disabled)
 #else
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif

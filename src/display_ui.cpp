@@ -12,6 +12,9 @@
 #include "tasmota.h"
 #include <WiFi.h>
 #include <time.h>
+#if defined(BOARD_IS_SENSECAP)
+#include <Wire.h>     // PCA9535PW I2C IO expander
+#endif
 #include <new>   // placement new for CYD panel variant selection
 
 // =============================================================================
@@ -243,8 +246,140 @@ public:
 };
 static LGFX_C3 _tft_instance;
 
+#elif defined(BOARD_IS_SENSECAP)
+// --- SenseCAP Indicator (ESP32-S3 + ST7701S 480x480 RGB) ---------------------
+//
+// Hardware:
+//   ST7701S 480x480 RGB TFT with SPI init commands
+//   PCA9535PW I2C IO expander (addr 0x20) for display CS/RST and touch INT/RST
+//   FT5X06 capacitive touch (I2C addr 0x38)
+//   Backlight PWM on GPIO45
+//
+// The display init sequence:
+//   1. Initialize I2C bus and PCA9535PW IO expander
+//   2. Toggle display reset via IO expander pin 5
+//   3. Pull display CS low via IO expander pin 4
+//   4. Send ST7701S init commands via SPI (3-wire: CLK=41, MOSI=48)
+//   5. Release display CS (high) via IO expander pin 4
+//   6. Switch to LCD_CAM RGB parallel mode for pixel data
+
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+
+// PCA9535PW I2C IO expander definitions
+#define PCA9535_I2C_SDA   39
+#define PCA9535_I2C_SCL   40
+#define PCA9535_ADDR       0x20
+#define PCA9535_PIN_DISP_CS  4   // Display chip select (active LOW)
+#define PCA9535_PIN_DISP_RST  5   // Display reset (active LOW)
+#define PCA9535_PIN_TOUCH_RST 7 // Touch reset (active LOW)
+// IO_EXPANDER flag for LovyanGFX: upper bits of I2C expander GPIO pin
+// (pin | 0x40) tells LovyanGFX to use I2C expander for that GPIO
+#define IO_EXPANDER 0x40
+
+// Custom panel class for SenseCAP Indicator ST7701S.
+// Uses default Panel_ST7701 init commands (0x3A=0x60 RGB666, 0x21 IPS inversion).
+// The default LovyanGFX Panel_ST7701 init matches Meshtastic's working config.
+// RGB666 (0x60) is correct even with 16-bit bus — the ST7701S maps the 16 data
+// lines to its internal 18-bit RGB channels correctly when set to RGB666 mode.
+// Using RGB565 (0x50) caused R↔G channel swap because the bit packing differs.
+class Panel_ST7701_SenseCAP : public lgfx::Panel_ST7701 {
+  // No getInitCommands override — use default Panel_ST7701 init sequence:
+  // - 0x3A=0x60 (RGB666 pixel format)
+  // - 0x21 (IPS inversion on)
+  // - All voltage/gamma registers from default list0
+};
+
+class LGFX_SenseCAP : public lgfx::LGFX_Device {
+  Panel_ST7701_SenseCAP _panel;
+  lgfx::Bus_RGB          _bus;
+public:
+  LGFX_SenseCAP() {
+    // --- Panel config (480x480 ST7701S) ---
+    {
+      auto cfg = _panel.config();
+      cfg.memory_width  = 480;   // Match Meshtastic working config (ST7701S internal column count for 480px panel)
+      cfg.memory_height = 480;
+      cfg.panel_width   = 480;
+      cfg.panel_height  = 480;
+      cfg.offset_x    = 0;
+      cfg.offset_y  = 0;
+      cfg.invert     = false;  // Default Panel_ST7701 list0 already sends 0x21 (IPS inversion on). Setting this true would send 0x21 AGAIN toggling inversion OFF.
+      cfg.pin_rst    = -1;      // RST is via PCA9535PW — managed in initDisplay()
+      _panel.config(cfg);
+    }
+    // --- SPI init pins for ST7701S command interface ---
+    // Commands are sent via 3-wire SPI (9-bit) before the RGB data bus starts.
+    // CS is routed through the PCA9535PW IO expander (pin 4), so we tell
+    // LovyanGFX to use GPIO 4 | IO_EXPANDER (0x44) as the CS pin — this is
+    // how Meshtastic configures it too. LovyanGFX will handle CS toggling.
+    {
+      auto detail = _panel.config_detail();
+      detail.pin_cs    = (4 | IO_EXPANDER);  // CS via PCA9535 pin 4 — mverch67 fork handles IO expander GPIO
+      detail.pin_sclk  = 41;                 // SPI clock for init commands
+      detail.pin_mosi  = 48;                 // SPI data for init commands
+      detail.use_psram = 1;                   // Use PSRAM for framebuffer (per Meshtastic working config)
+      _panel.config_detail(detail);
+    }
+    // --- RGB data bus (via LCD_CAM peripheral) ---
+    // Pin mapping from Seeed's official SenseCAP Indicator Arduino tutorial
+    // and ESPHome ST7701S component. RGB565 = 16-bit, D0-D15.
+    {
+      auto bus_cfg = _bus.config();
+      bus_cfg.panel = &_panel;  // CRITICAL: Bus_RGB needs panel reference for getWriteDepth()
+
+      // Control signals
+      bus_cfg.pin_pclk    = 21;
+      bus_cfg.pin_vsync   = 17;
+      bus_cfg.pin_hsync   = 16;
+      bus_cfg.pin_henable = 18;  // DE (Data Enable)
+
+      // RGB565 data pins — matched to Meshtastic 2.7.15 working config
+      // R0-R4 = GPIOs 4,3,2,1,0 (d11-d15), G0-G5 = GPIOs 10,9,8,7,6,5 (d5-d10)
+      // B0-B4 = GPIOs 15,14,13,12,11 (d0-d4)
+      bus_cfg.pin_d0  = 15;  // B0
+      bus_cfg.pin_d1  = 14;  // B1
+      bus_cfg.pin_d2  = 13;  // B2
+      bus_cfg.pin_d3  = 12;  // B3
+      bus_cfg.pin_d4  = 11;  // B4
+      bus_cfg.pin_d5  = 10;  // G0
+      bus_cfg.pin_d6  =  9;  // G1
+      bus_cfg.pin_d7  =  8;  // G2
+      bus_cfg.pin_d8  =  7;  // G3
+      bus_cfg.pin_d9  =  6;  // G4
+      bus_cfg.pin_d10 =  5;  // G5
+      bus_cfg.pin_d11 =  4;  // R0
+      bus_cfg.pin_d12 =  3;  // R1
+      bus_cfg.pin_d13 =  2;  // R2
+      bus_cfg.pin_d14 =  1;  // R3
+      bus_cfg.pin_d15 =  0;  // R4
+
+      // Pixel clock frequency — 6 MHz per Meshtastic working config
+      bus_cfg.freq_write = 6000000;
+
+      // Timing — matched to Meshtastic 2.7.15 working config
+      bus_cfg.hsync_polarity    = 0;   // Active high (per Meshtastic)
+      bus_cfg.hsync_front_porch = 10;
+      bus_cfg.hsync_pulse_width = 8;
+      bus_cfg.hsync_back_porch  = 50;
+      bus_cfg.vsync_polarity    = 0;   // Active high (per Meshtastic)
+      bus_cfg.vsync_front_porch = 10;
+      bus_cfg.vsync_pulse_width = 8;
+      bus_cfg.vsync_back_porch  = 20;
+      bus_cfg.pclk_active_neg   = 0;   // PCLK active high (per Meshtastic)
+      bus_cfg.de_idle_high      = 1;   // DE idle high (per Meshtastic)
+      bus_cfg.pclk_idle_high    = 0;   // PCLK idle low (per Meshtastic)
+
+      _bus.config(bus_cfg);
+      _panel.setBus(&_bus);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_SenseCAP _tft_instance;
+
 #else
-  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
+  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200, BOARD_IS_WS154 or BOARD_IS_SENSECAP to build_flags."
 #endif
 
 // Global pointer + reference — accessed via `tft` throughout the codebase.
@@ -368,8 +503,49 @@ static inline bool landBottomBarFullWidth(uint8_t) { return true; }
 //  Init
 // ---------------------------------------------------------------------------
 void initDisplay() {
-  Serial.println("Display: pre-init delay...");
   delay(500);
+
+#if defined(BOARD_IS_SENSECAP)
+  // Initialize PCA9535PW I2C IO expander before display init.
+  // The SenseCAP Indicator routes display CS and RESET through this expander
+  // since they can't be connected directly to ESP32-S3 GPIOs.
+  Wire.begin(PCA9535_I2C_SDA, PCA9535_I2C_SCL, 400000);
+
+  // Configure expander pins: P04 (DISP_CS), P05 (DISP_RST), P07 (TOUCH_RST) as outputs
+  // P06 (TOUCH_INT) stays as input. Write 0xBF to config register (bit 6 = 1 = input)
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x03);  // Configuration register
+  Wire.write(0x40);  // P06=input, rest=output
+  Wire.endTransmission();
+
+  // Start with CS HIGH (deselected), RST HIGH (not in reset), TOUCH_RST HIGH
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x01);  // Output register
+  Wire.write((1 << PCA9535_PIN_DISP_CS) | (1 << PCA9535_PIN_DISP_RST) | (1 << PCA9535_PIN_TOUCH_RST));
+  Wire.endTransmission();
+  delay(10);
+
+  // Hardware reset: pull RST LOW for 10ms then HIGH
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x01);
+  Wire.write((1 << PCA9535_PIN_DISP_CS) | (1 << PCA9535_PIN_TOUCH_RST));  // RST LOW
+  Wire.endTransmission();
+  delay(10);
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x01);
+  Wire.write((1 << PCA9535_PIN_DISP_CS) | (1 << PCA9535_PIN_DISP_RST) | (1 << PCA9535_PIN_TOUCH_RST));  // RST HIGH
+  Wire.endTransmission();
+  delay(120);  // ST7701S needs time after reset
+
+  // Pull CS LOW for SPI init commands. LovyanGFX uses IO_EXPANDER-aware GPIO
+  // for pin_cs=(4|IO_EXPANDER) when USE_ARDUINO_HAL_GPIO is defined.
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x01);
+  Wire.write((0 << PCA9535_PIN_DISP_CS) | (1 << PCA9535_PIN_DISP_RST) | (1 << PCA9535_PIN_TOUCH_RST));  // CS LOW
+  Wire.endTransmission();
+  delay(1);
+#endif
+
 #if defined(DISPLAY_CYD)
   // Pick CYD panel variant based on loaded settings. Default static-init
   // already constructed V2; swap to Classic if user selected it.
@@ -382,14 +558,19 @@ void initDisplay() {
   }
   // _tft_instance reference + tft_ptr already point at the same storage.
 #endif
-  Serial.println("Display: calling _tft_instance.init()...");
   _tft_instance.init();  // LovyanGFX configures SPI from the board class above
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
 #elif defined(BOARD_IS_S3) || defined(BOARD_IS_C3) || defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154)
   _tft_instance.invertDisplay(true);  // ST7789 requires color inversion
+#elif defined(BOARD_IS_SENSECAP)
+  // ST7701S IPS inversion already handled by default Panel_ST7701 init (0x21 command).
+  // Release SPI CS HIGH now that init commands are done
+  Wire.beginTransmission(PCA9535_ADDR);
+  Wire.write(0x01);
+  Wire.write((1 << PCA9535_PIN_DISP_CS) | (1 << PCA9535_PIN_DISP_RST) | (1 << PCA9535_PIN_TOUCH_RST));  // CS HIGH
+  Wire.endTransmission();
 #endif
-  Serial.println("Display: tft.init() done");
 #if defined(DISPLAY_240x320)
   // Clear entire GRAM at rotation 0 first (guarantees all 240x320 pixels
   // are addressed). Without this, rotations 1/3 leave 80px of uninitialized
@@ -403,15 +584,12 @@ void initDisplay() {
 #elif defined(DISPLAY_240x320)
   if (dispSettings.invertColors) _tft_instance.invertDisplay(false);
 #endif
-  Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
-  Serial.println("Display: fillScreen done");
 
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
   // LovyanGFX touch calibration
   uint16_t calData[8] = {0, 0, 0, 65535, 0, 65535, 65535, 65535};
   tft.setTouchCalibrate(calData);
-  Serial.println("Display: touch calibration set");
 #endif
 
 #if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0

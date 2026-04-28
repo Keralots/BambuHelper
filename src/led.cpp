@@ -56,6 +56,28 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin == 18 || pin == 19) return false;                                        // USB CDC D-/D+
   if (pin >= 11 && pin <= 17) return false;                                        // flash/PSRAM
   if (pin > 21) return false;
+
+#elif defined(BOARD_IS_SENSECAP)
+  // SenseCAP Indicator (ESP32-S3 + ST7701S 480x480 RGB)
+  // RGB data pins (16 pins for RGB565)
+  if (pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7 || pin == 8) return false;  // G4,G5,G3,G0,G2,G1
+  if (pin == 10 || pin == 11 || pin == 12 || pin == 13) return false;                     // R3,R0,B5,B4
+  if (pin == 14 || pin == 15 || pin == 16) return false;                                   // B3,B2,B1
+  // RGB control pins
+  if (pin == 9 || pin == 17 || pin == 46) return false;         // R1, DE/R2, HSYNC/R0
+  // SPI for display init
+  if (pin == 41 || pin == 48) return false;                      // SPI CLK, MOSI
+  // I2C (shared by touch FT5X06 and PCA9535PW)
+  if (pin == 39 || pin == 40) return false;                      // I2C SDA, SCL
+  // Peripherals
+  if (pin == 45) return false;                                   // backlight PWM
+  if (pin == 38) return false;                                   // user button
+  if (pin == 19 || pin == 20) return false;                       // USB CDC D-/D+ (UART to RP2040)
+  // SPI flash + PSRAM (opi_qspi)
+  if (pin >= 26 && pin <= 37) return false;
+  // MISO not used but on SPI bus
+  if (pin == 47) return false;
+  if (pin > 48) return false;
 #endif
 
   return true;
