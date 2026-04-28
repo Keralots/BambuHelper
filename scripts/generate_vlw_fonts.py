@@ -26,15 +26,15 @@ except ImportError:
 # Character set: printable ASCII + degree symbol
 CHARSET = list(range(0x20, 0x7F)) + [0xB0]
 
-# Font sizes to generate: (name, pixel_size)
-# Tuned to match TFT_eSPI bitmap font metrics while fitting flash budget
+# Font sizes to generate: (name, ttf_filename, pixel_size)
+# Mixed weights match TFT_eSPI bitmap fonts: Font 1/2 were medium, Font 4 was bold.
 FONTS = [
-    ("inter_10", 10),
-    ("inter_14", 14),
-    ("inter_19", 19),
+    ("inter_10", "Inter-Regular.ttf", 12),
+    ("inter_14", "Inter-Regular.ttf", 16),
+    ("inter_19", "Inter-Bold.ttf",    22),
 ]
 
-TTF_PATH = Path(__file__).parent.parent / "fonts" / "Inter-Regular.ttf"
+FONTS_DIR = Path(__file__).parent.parent / "fonts"
 OUT_DIR = Path(__file__).parent.parent / "include" / "fonts"
 
 
@@ -134,15 +134,16 @@ def vlw_to_header(name: str, vlw_data: bytes) -> str:
 
 
 def main():
-    if not TTF_PATH.exists():
-        print(f"TTF not found: {TTF_PATH}")
-        sys.exit(1)
-
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    for name, size in FONTS:
-        print(f"Generating {name} ({size}px)...", end=" ")
-        vlw_data = generate_vlw(str(TTF_PATH), size)
+    for name, ttf_filename, size in FONTS:
+        ttf_path = FONTS_DIR / ttf_filename
+        if not ttf_path.exists():
+            print(f"TTF not found: {ttf_path}")
+            sys.exit(1)
+
+        print(f"Generating {name} ({ttf_filename} @ {size}px)...", end=" ")
+        vlw_data = generate_vlw(str(ttf_path), size)
         header = vlw_to_header(name, vlw_data)
 
         out_path = OUT_DIR / f"{name}.h"
