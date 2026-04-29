@@ -1133,7 +1133,7 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
   int16_t diagOff = (int16_t)(radius * 0.71f) + 4;  // just outside the circle edge
   tft.setTextDatum(MC_DATUM);
-  tft.setTextFont(3);  // Font 3 for slot numbers (large, easy to read)
+  tft.setTextFont(4);  // Font 4 for slot numbers (large, bold, easy to read)
   for (int i = 0; i < 4; i++) {
     int16_t nx = cx + sNumX[i] * diagOff;
     int16_t ny = cy + sNumY[i] * diagOff;
