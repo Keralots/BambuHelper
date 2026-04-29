@@ -703,12 +703,15 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   if (fillEnd > 300) fillEnd = 300;
 
   // Color based on humidity level (0-5): green = dry, red = humid
+  // Bambu AMS humidity field: 5 = bone dry (good), 1 = very wet (bad).
+  // Invert for color mapping: wetLevel = (6 - humidity) so 5→1(good/green) and 1→5(bad/red).
+  uint8_t wetLevel = (humidityLevel > 0) ? (6 - humidityLevel) : 0;
   uint16_t arcColor;
-  if (!present || humidityLevel == 0) {
+  if (!present || wetLevel == 0) {
     arcColor = CLR_TEXT_DIM;
-  } else if (humidityLevel <= 2) {
+  } else if (wetLevel <= 2) {
     arcColor = CLR_GREEN;
-  } else if (humidityLevel <= 3) {
+  } else if (wetLevel <= 3) {
     arcColor = CLR_YELLOW;
   } else {
     arcColor = CLR_RED;
@@ -966,19 +969,22 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   // Fill circle background
   tft.fillCircle(cx, cy, innerR, bg);
 
-  // Humidity color scale: 0=dry (green) to 5=wet (red)
+  // Humidity color scale: Bambu humidity field is INVERTED (5=dry/good, 1=wet/bad).
+  // Invert for display: idx=0→dim, idx 1,2→green-ish (dry), idx 3→yellow, idx 4,5→red-ish (wet)
   static const uint16_t humidColors[6] = {
-    0x07E0,  // 0 - green
-    0xAFE5,  // 1 - light green
-    0xFFE0,  // 2 - yellow
-    0xFC80,  // 3 - orange
-    0xF800,  // 4 - red
-    0x7800   // 5 - dark red
+    0x18E3,  // 0 - dim (no data)
+    0x07E0,  // 1 - green  (Bambu 5 = bone dry)
+    0xAFE5,  // 2 - light green (Bambu 4 = dry)
+    0xFFE0,  // 3 - yellow (Bambu 3 = moderate)
+    0xFC80,  // 4 - orange (Bambu 2 = humid)
+    0xF800   // 5 - red   (Bambu 1 = very wet)
   };
 
   uint8_t humidLevel = 0;
   if (ams.present && ams.unitCount > 0) {
-    humidLevel = ams.units[0].humidity;
+    // Invert: Bambu 5→1(dry), Bambu 1→5(wet), Bambu 0→0(no data)
+    uint8_t rawHumid = ams.units[0].humidity;
+    humidLevel = (rawHumid > 0 && rawHumid <= 5) ? (6 - rawHumid) : 0;
     if (humidLevel > 5) humidLevel = 5;
   }
   uint16_t hColor = humidColors[humidLevel];
@@ -1127,7 +1133,7 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
   int16_t diagOff = (int16_t)(radius * 0.71f) + 4;  // just outside the circle edge
   tft.setTextDatum(MC_DATUM);
-  tft.setTextFont(1);
+  tft.setTextFont(2);  // Font 2 for slot numbers (larger, more readable)
   for (int i = 0; i < 4; i++) {
     int16_t nx = cx + sNumX[i] * diagOff;
     int16_t ny = cy + sNumY[i] * diagOff;
@@ -1136,15 +1142,18 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   }
 
   // Humidity indicator: tiny circle at the center of the gauge
-  // Draw a small filled circle with bg color to clear the center, then outline + text
-  const int16_t humCircleR = 10;
+  // Bambu humidity: 5=dry(good), 1=wet(bad) — inverted display: 1=dry, 5=wet
+  const int16_t humCircleR = 12;
   tft.fillCircle(cx, cy, humCircleR, bg);
   tft.drawCircle(cx, cy, humCircleR, dim);
   if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
     char humBuf[4];
-    snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[0].humidity);
+    // Invert displayed value: Bambu 5→1(dry), 1→5(wet) so higher=wetter (human intuition)
+    uint8_t displayHumid = (ams.units[0].humidity > 0 && ams.units[0].humidity <= 5)
+                           ? (6 - ams.units[0].humidity) : 0;
+    snprintf(humBuf, sizeof(humBuf), "H%d", displayHumid);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(1);
+    tft.setTextFont(2);
     tft.setTextColor(hColor, bg);
     tft.drawString(humBuf, cx, cy);
   }
