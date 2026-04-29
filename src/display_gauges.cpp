@@ -1131,7 +1131,8 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   static const char* sNumLabel[4] = {"1", "2", "3", "4"};
   // 45-degree offset: place labels along diagonal outside the circle
   // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
-  int16_t diagOff = (int16_t)(radius * 0.71f) + 4;  // just outside the circle edge
+  // Font 4 glyphs are ~26px tall; need extra offset to clear the circle edge
+  int16_t diagOff = (int16_t)(radius * 0.71f) + 14;
   tft.setTextDatum(MC_DATUM);
   tft.setTextFont(4);  // Font 4 for slot numbers (large, bold, easy to read)
   for (int i = 0; i < 4; i++) {
