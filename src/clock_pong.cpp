@@ -33,8 +33,11 @@
 #define ARK_LAND_BRICK_COLS 13
 
 // ========== Gameplay constants (not layout-dependent) ==========
-#define ARK_BALL_SIZE     4
-#define ARK_PADDLE_H      4
+// Logical ball size scales with display — bigger screen needs bigger ball for visibility
+#define ARK_BALL_SIZE_BASE 4
+#define ARK_BALL_SIZE      (SCREEN_W >= 480 ? ARK_BALL_SIZE_BASE * 2 : ARK_BALL_SIZE_BASE)
+#define ARK_PADDLE_H_BASE  4
+#define ARK_PADDLE_H      (SCREEN_W >= 480 ? ARK_PADDLE_H_BASE * 2 : ARK_PADDLE_H_BASE)
 #define ARK_BALL_SPEED    3.0f
 #define ARK_PADDLE_SPEED  4
 #define ARK_UPDATE_MS     20    // ~50fps
@@ -183,6 +186,9 @@ static void refreshPongLayout() {
   pongLayout = next;
 }
 
+// Text size: scale up on high-res displays (480x480 uses 2x layout constants)
+static const int pongTextSize = (SCREEN_W >= 480) ? 2 : 1;
+
 // ========== Digit bounce (inlined) ==========
 static void triggerBounce(int i) {
   if (i >= 0 && i < 5) digitVelocity[i] = -6.0f;
@@ -329,8 +335,9 @@ static bool overlapsText(int bx, int by) {
     int tRight = digitX(4) + DIGIT_W + 4;
     if (bx2 > tLeft && bx < tRight) return true;
   }
-  // Date zone (centered text clear width, scaled to the active screen width)
-  if (by2 > layout.dateY && by < layout.dateY + 16) {
+  // Date zone (centered text clear width, scaled with textSize)
+  int dateFontH = pongTextSize * 16;
+  if (by2 > layout.dateY && by < layout.dateY + dateFontH) {
     int dateLeft = (layout.screenW - LY_ARK_DATE_CLR_W) / 2;
     int dateRight = dateLeft + LY_ARK_DATE_CLR_W;
     if (bx2 > dateLeft && bx < dateRight) return true;
@@ -339,18 +346,14 @@ static bool overlapsText(int bx, int by) {
 }
 
 static void drawBall() {
+  // Erase old position, then draw new — both in the same function to prevent
+  // visible black holes between erase and redraw.  Text uses setTextColor(fg,bg)
+  // so it redraws atomically each frame, covering any ball erase overlap from
+  // the previous frame.
   if (prevBallX >= 0) {
-    // Ball passes behind text — no erase needed, no damage to repair
-    if (overlapsText(prevBallX, prevBallY)) {
-      // skip — ball was never drawn here
-    } else {
-      tft.fillRect(prevBallX, prevBallY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_BLACK);
-    }
+    tft.fillRect(prevBallX, prevBallY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_BLACK);
   }
-  // Don't draw ball over time digits — it passes behind
-  if (!overlapsText((int)ballX, (int)ballY)) {
-    tft.fillRect((int)ballX, (int)ballY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_WHITE);
-  }
+  tft.fillRect((int)ballX, (int)ballY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_WHITE);
   prevBallX = (int)ballX;
   prevBallY = (int)ballY;
 }
@@ -551,7 +554,7 @@ static int digitX(int i) {
 
 static void drawTime() {
   const PongLayout& layout = pongLayout;
-  tft.setTextSize(1);  // no scaling, Font 7 is already 48px
+  tft.setTextSize(pongTextSize);  // no scaling on 240px, 2x on 480px
   char digits[5];
   if (netSettings.use24h) {
     digits[0] = '0' + (dispHour / 10);
@@ -568,50 +571,52 @@ static void drawTime() {
 
   bool colon = showColon();
 
-  // Draw digits - only redraw changed ones
   tft.setTextFont(7);
-  tft.setTextSize(1);
+  tft.setTextSize(pongTextSize);
+  // Background fill mode: drawChar fills a black rect behind each glyph atomically,
+  // eliminating the flicker caused by separate fillRect + drawChar sequence.
   tft.setTextColor(dispSettings.clockTimeColor, TFT_BLACK);
 
+  // Always redraw every frame — text covers ball erase area each frame.
   for (int i = 0; i < 5; i++) {
     if (i == 2) continue;  // skip colon slot, handled separately
 
     int x = digitX(i);
     int y = layout.timeY + (int)digitOffsetY[i];
-    bool bouncing = (digitOffsetY[i] != 0 || digitVelocity[i] != 0);
-    bool changed = (digits[i] != prevDigits[i]) || bouncing || (prevDigitY[i] != y);
 
-    if (changed) {
-      // Clear previous and current position
-      int clearW = DIGIT_W + 2;  // +2 margin for font rendering
-      if (prevDigitY[i] != 0)
-        tft.fillRect(x, prevDigitY[i], clearW, DIGIT_H, TFT_BLACK);
-      if (prevDigitY[i] != y)
-        tft.fillRect(x, y, clearW, DIGIT_H, TFT_BLACK);
-
-      tft.drawChar(digits[i], x, y, 7);
-      prevDigits[i] = digits[i];
-      prevDigitY[i] = y;
+    // Clear previous position if digit moved (bounce animation)
+    if (prevDigitY[i] != 0 && prevDigitY[i] != y) {
+      tft.fillRect(x, prevDigitY[i], DIGIT_W + 2, DIGIT_H, TFT_BLACK);
     }
+
+    // Redraw with background — no separate fillRect needed, drawChar fills atomically
+    tft.drawChar(digits[i], x, y, 7);
+    prevDigits[i] = digits[i];
+    prevDigitY[i] = y;
   }
 
-  // Colon - blinks, draw only when state changes
-  if (colon != prevColon) {
+  // Colon — always redraw (ball may erase it)
+  {
     int cx = digitX(2);
-    tft.fillRect(cx, layout.timeY, COLON_W, DIGIT_H, TFT_BLACK);
+    // Background fill included in drawChar via setTextColor(fg, TFT_BLACK)
     if (colon) {
       tft.drawChar(':', cx, layout.timeY, 7);
+    } else {
+      tft.fillRect(cx, layout.timeY, COLON_W, DIGIT_H, TFT_BLACK);
     }
     prevColon = colon;
   }
 
-  // AM/PM for 12h mode
+  // AM/PM for 12h mode — always redraw (ball may erase it)
   if (!netSettings.use24h) {
+    bool am = (dispHour < 12);
     tft.setTextFont(2);
+    tft.setTextSize(pongTextSize);
     tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
     int ampmX = digitX(4) + DIGIT_W + 2;
-    tft.setCursor(ampmX, layout.timeY + DIGIT_H - 16);
-    tft.print(dispHour < 12 ? "AM" : "PM");
+    int ampmY = layout.timeY + DIGIT_H - pongTextSize * 16;
+    tft.setCursor(ampmX, ampmY);
+    tft.print(am ? "AM" : "PM");
   }
 }
 
@@ -656,6 +661,7 @@ void tickPongClock() {
     memset(prevDigits, 0, sizeof(prevDigits));
     prevColon = false;
     prevBallX = -1;
+    prevBallY = -1;
     ballStuckToPaddle = false;
     ballStickyUntilMs = 0;
     ballStickyHit = 0.5f;
@@ -707,11 +713,14 @@ void tickPongClock() {
   updatePaddle();
   updateBounce();
 
-  // Draw ball and paddle first (they erase and may damage text)
-  drawBall();
-  drawPaddle();
+  // Hold the SPI bus for the entire frame draw — prevents other tasks from
+  // interleaving display operations that cause flicker.
+  tft.startWrite();
 
-  // Draw text on top (repairs any ball/paddle damage via cache invalidation)
+  // Draw text — always redraw every frame since the ball may erase digits.
+  // setTextWcolor(fg, bg) draws per-glyph backgrounds atomically, so no
+  // separate fillRect(black) clear is needed — eliminates the visible black
+  // flash between clear and redraw that caused flicker.
   // Date (Font 2, smooth)
   {
     const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
@@ -726,18 +735,25 @@ void tickPongClock() {
       case 5:  snprintf(dateStr, sizeof(dateStr), "%s %s %d, %04d", days[now.tm_wday], months[now.tm_mon], day, year); break;
       default: snprintf(dateStr, sizeof(dateStr), "%s %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
     }
-    if (strcmp(dateStr, prevDateStr) != 0) {
-      tft.setTextFont(2);
-      tft.setTextSize(1);
-      tft.setTextDatum(TC_DATUM);
-      tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
-      tft.fillRect(pongLayout.dateClearX, pongLayout.dateY, pongLayout.dateClearW, 16, TFT_BLACK);
-      tft.drawString(dateStr, pongLayout.screenW / 2, pongLayout.dateY);
-      tft.setTextDatum(TL_DATUM);
-      strlcpy(prevDateStr, dateStr, sizeof(prevDateStr));
-    }
+    tft.setTextFont(2);
+    tft.setTextSize(pongTextSize);
+    tft.setTextDatum(TC_DATUM);
+    // setTextColor(fg, bg) draws a black background behind each glyph atomically —
+    // no visible intermediate state, no flicker from a separate fillRect+drawString sequence.
+    tft.setTextColor(dispSettings.clockDateColor, TFT_BLACK);
+    tft.drawString(dateStr, pongLayout.screenW / 2, pongLayout.dateY);
+    tft.setTextDatum(TL_DATUM);
   }
 
-  // Time (Font 7, on top of everything)
+  // Time (Font 7, on top of date but below ball)
   drawTime();
+
+  // 3) Draw paddle (may erase ball if overlapping, but ball is redrawn next)
+  drawPaddle();
+
+  // 4) Draw ball on top of everything (so it's always visible, including on top of paddle)
+  drawBall();
+
+  // Release SPI bus — frame draw complete
+  tft.endWrite();
 }

@@ -252,7 +252,7 @@ static LGFX_C3 _tft_instance;
 // Hardware:
 //   ST7701S 480x480 RGB TFT with SPI init commands
 //   PCA9535PW I2C IO expander (addr 0x20) for display CS/RST and touch INT/RST
-//   FT5X06 capacitive touch (I2C addr 0x38)
+//   FT5X06 capacitive touch (I2C addr 0x48)
 //   Backlight PWM on GPIO45
 //
 // The display init sequence:
@@ -2224,6 +2224,29 @@ static void drawPrinting() {
           case GAUGE_HEATBREAK:   needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
+          case GAUGE_AMS_FILAMENT: {
+            uint8_t at = s.ams.activeTray;
+            uint8_t pat = prevState.ams.activeTray;
+            const AmsTray& ct = s.ams.trays[at];
+            const AmsTray& pt = prevState.ams.trays[pat];
+            needDraw = ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565 ||
+                       ct.remain != pt.remain || strcmp(ct.type, pt.type) != 0;
+            break;
+          }
+          case GAUGE_AMS_FILAMENT_ALL: {
+            bool anyDiff = false;
+            for (int i = 0; i < AMS_MAX_TRAYS && !anyDiff; i++) {
+              const AmsTray& ct = s.ams.trays[i];
+              const AmsTray& pt = prevState.ams.trays[i];
+              anyDiff = ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565 ||
+                        ct.remain != pt.remain || strcmp(ct.type, pt.type) != 0;
+            }
+            // Also trigger on AMS presence or unit count change
+            anyDiff = anyDiff || s.ams.present != prevState.ams.present ||
+                      s.ams.unitCount != prevState.ams.unitCount;
+            needDraw = anyDiff;
+            break;
+          }
           default:
             // AMS humidity / temperature gauges — index derived from enum value
             if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
@@ -2286,6 +2309,13 @@ static void drawPrinting() {
           break;
         case GAUGE_EMPTY:
           if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);
+          break;
+        case GAUGE_AMS_FILAMENT:
+          // Disabled — AMS Filament All gauge replaces this
+          if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);
+          break;
+        case GAUGE_AMS_FILAMENT_ALL:
+          drawAmsFilamentAllGauge(tft, cx, cy, gR, gT, s.ams, fr);
           break;
         default: {
           // AMS humidity / temperature gauges — index derived from enum value

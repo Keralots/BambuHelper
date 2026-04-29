@@ -822,7 +822,8 @@ var gaugeTypes=[
   'Heatbreak Fan','Clock',
   'AMS 1 Humidity','AMS 2 Humidity','AMS 3 Humidity','AMS 4 Humidity',
   'Layer Progress',
-  'AMS 1 Temp','AMS 2 Temp','AMS 3 Temp','AMS 4 Temp'
+  'AMS 1 Temp','AMS 2 Temp','AMS 3 Temp','AMS 4 Temp',
+  '~~ Disabled ~~','AMS Filament All'
 ];
 (function(){
   var sels=document.querySelectorAll('.gauge-slot-sel');

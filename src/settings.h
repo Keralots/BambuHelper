@@ -4,30 +4,6 @@
 #include <Arduino.h>
 #include "bambu_state.h"
 
-// Gauge type identifiers for configurable slot layout
-enum GaugeType : uint8_t {
-  GAUGE_EMPTY       = 0,
-  GAUGE_PROGRESS    = 1,
-  GAUGE_NOZZLE      = 2,
-  GAUGE_BED         = 3,
-  GAUGE_PART_FAN    = 4,
-  GAUGE_AUX_FAN     = 5,
-  GAUGE_CHAMBER_FAN = 6,
-  GAUGE_CHAMBER_TEMP= 7,
-  GAUGE_HEATBREAK   = 8,
-  GAUGE_CLOCK       = 9,
-  GAUGE_AMS_HUM_1   = 10,  // AMS unit 1 humidity
-  GAUGE_AMS_HUM_2   = 11,  // AMS unit 2 humidity
-  GAUGE_AMS_HUM_3   = 12,  // AMS unit 3 humidity
-  GAUGE_AMS_HUM_4   = 13,  // AMS unit 4 humidity
-  GAUGE_LAYER       = 14,  // layer progress (current/total)
-  GAUGE_AMS_TEMP_1  = 15,  // AMS unit 1 temperature
-  GAUGE_AMS_TEMP_2  = 16,  // AMS unit 2 temperature
-  GAUGE_AMS_TEMP_3  = 17,  // AMS unit 3 temperature
-  GAUGE_AMS_TEMP_4  = 18,  // AMS unit 4 temperature
-  GAUGE_TYPE_COUNT  // sentinel - always last
-};
-
 static const uint8_t GAUGE_SLOT_COUNT = 6;
 
 // Per-gauge color config
@@ -35,6 +11,32 @@ struct GaugeColors {
   uint16_t arc;       // arc fill color (RGB565)
   uint16_t label;     // label text color
   uint16_t value;     // value text color
+};
+
+// Gauge type identifiers for configurable gauge slots
+enum GaugeType : uint8_t {
+  GAUGE_EMPTY        = 0,
+  GAUGE_PROGRESS     = 1,
+  GAUGE_NOZZLE       = 2,
+  GAUGE_BED          = 3,
+  GAUGE_PART_FAN     = 4,
+  GAUGE_AUX_FAN      = 5,
+  GAUGE_CHAMBER_FAN  = 6,
+  GAUGE_CHAMBER_TEMP = 7,
+  GAUGE_HEATBREAK    = 8,
+  GAUGE_CLOCK        = 9,
+  GAUGE_AMS_HUM_1    = 10,  // AMS unit 1 humidity
+  GAUGE_AMS_HUM_2    = 11,
+  GAUGE_AMS_HUM_3    = 12,
+  GAUGE_AMS_HUM_4    = 13,
+  GAUGE_LAYER        = 14,  // layer progress (current/total)
+  GAUGE_AMS_TEMP_1   = 15,  // AMS unit 1 temperature
+  GAUGE_AMS_TEMP_2   = 16,
+  GAUGE_AMS_TEMP_3   = 17,
+  GAUGE_AMS_TEMP_4   = 18,
+  GAUGE_AMS_FILAMENT = 19,  // AMS filament info: color swatch + type label (active tray)
+  GAUGE_AMS_FILAMENT_ALL = 20,  // All 4 trays: color + type + % + humidity
+  GAUGE_TYPE_COUNT   = 21   // sentinel - total count
 };
 
 // All display customization settings
