@@ -219,6 +219,31 @@ The script will prompt for your email, password, and 2FA code, then print the to
 
 > **Note:** The token is valid for approximately 3 months. When it expires, the ESP32 will fail to connect - simply repeat the process above to get a fresh token and paste it in the web interface. Make sure to select the correct **Server Region** (US/EU/CN) to match your Bambu account's region.
 
+### Custom Smooth Fonts
+
+BambuHelper embeds smooth fonts directly in the firmware as VLW tables in `PROGMEM`. The default font is **Inter** (Regular for small/body, Bold for large headings), shipped as TTF in `fonts/` and pre-converted to C headers in `include/fonts/`. Swapping the font means regenerating those headers and reflashing - there is no runtime upload, because the font lives in flash next to the code.
+
+Steps:
+
+1. Drop your `.ttf` files into `fonts/` (e.g. `MyFont-Regular.ttf`, `MyFont-Bold.ttf`).
+2. Edit the `FONTS` list in [`scripts/generate_vlw_fonts.py`](scripts/generate_vlw_fonts.py) - each entry is `(output_name, ttf_filename, pixel_size)`. Keep the three names `inter_10`, `inter_14`, `inter_19` unless you also rename the includes in `src/fonts.cpp`.
+3. Install the converter dependency once: `pip install freetype-py`.
+4. Regenerate the headers:
+   ```bash
+   python scripts/generate_vlw_fonts.py
+   ```
+5. Rebuild the firmware for your target:
+   ```bash
+   pio.exe run -e cyd
+   ```
+6. Flash the new `.pio/build/<env>/firmware.bin` over USB or push it OTA via the web UI's firmware update page.
+
+Tips:
+
+- Pick a font that renders well at small pixel sizes - thin or highly stylised faces will look smudged at 10-14 px. Sans-serif faces designed for UI work best.
+- Each VLW table grows roughly linearly with pixel size; the default Inter set is ~37 KiB total. Watch the flash usage line at the end of the build if you push to bigger sizes.
+- Only printable ASCII (0x20-0x7E) and the degree symbol (0xB0) are baked in. Add codepoints by editing `CHARSET` in the generator.
+
 ## Web Interface
 
 The built-in web interface (accessible at the device's IP address) provides the following settings:

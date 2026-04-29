@@ -4,9 +4,9 @@
 VLW format (Bodmer/TFT_eSPI smooth font):
   Header:  glyph_count(u32) | version(u32=6) | font_size(u32) | padding(u32)
            ascent(u32) | descent(u32)
-  Per glyph metrics (24 bytes each):
+  Per glyph metrics (28 bytes each, 7 x uint32 big-endian):
            unicode(u32) | height(u32) | width(u32) | advance(u32)
-           top_offset(u32) | left_offset(u32)
+           top_offset(i32) | left_offset(i32) | padding(u32, ignored by reader)
   Glyph bitmaps: 8-bit alpha, row-major, width*height bytes each.
 
 Usage:
@@ -147,7 +147,9 @@ def main():
         header = vlw_to_header(name, vlw_data)
 
         out_path = OUT_DIR / f"{name}.h"
-        out_path.write_text(header, encoding="utf-8")
+        # Force LF line endings so generated headers are consistent across
+        # platforms and don't trigger `git diff --check` whitespace warnings.
+        out_path.write_bytes(header.encode("utf-8"))
         print(f"{len(vlw_data)} bytes -> {out_path}")
 
     print("Done.")
