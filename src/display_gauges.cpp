@@ -1133,7 +1133,7 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
   int16_t diagOff = (int16_t)(radius * 0.71f) + 4;  // just outside the circle edge
   tft.setTextDatum(MC_DATUM);
-  tft.setTextFont(2);  // Font 2 for slot numbers (larger, more readable)
+  tft.setTextFont(3);  // Font 3 for slot numbers (large, easy to read)
   for (int i = 0; i < 4; i++) {
     int16_t nx = cx + sNumX[i] * diagOff;
     int16_t ny = cy + sNumY[i] * diagOff;
@@ -1143,14 +1143,17 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
 
   // Humidity indicator: tiny circle at the center of the gauge
   // Bambu humidity: 5=dry(good), 1=wet(bad) — inverted display: 1=dry, 5=wet
-  const int16_t humCircleR = 12;
+  const int16_t humCircleR = 13;
   tft.fillCircle(cx, cy, humCircleR, bg);
   tft.drawCircle(cx, cy, humCircleR, dim);
   if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
     char humBuf[4];
-    // Invert displayed value: Bambu 5→1(dry), 1→5(wet) so higher=wetter (human intuition)
-    uint8_t displayHumid = (ams.units[0].humidity > 0 && ams.units[0].humidity <= 5)
-                           ? (6 - ams.units[0].humidity) : 0;
+    // Display humidity: show raw Bambu value. Bambu scale: 1=wet, 5=dry.
+    // Invert for display: higher=wetter (1→5 very wet, 5→1 dry)
+    uint8_t displayHumid = ams.units[0].humidity;
+    if (displayHumid >= 1 && displayHumid <= 5) {
+      displayHumid = 6 - displayHumid;
+    }
     snprintf(humBuf, sizeof(humBuf), "H%d", displayHumid);
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(2);
