@@ -2,6 +2,7 @@
 #include "config.h"
 #include "settings.h"
 #include "icons.h"
+#include "fonts.h"
 
 // Use user-configured bg color instead of hardcoded CLR_BG
 #undef  CLR_BG
@@ -51,7 +52,7 @@ void drawAnimDots(lgfx::LovyanGFX& tft, int16_t x, int16_t y, uint16_t color) {
   unsigned long ms = millis();
   int phase = (ms / 400) % 4;
 
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextDatum(TL_DATUM);
 
   for (int i = 0; i < 3; i++) {
