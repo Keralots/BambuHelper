@@ -860,9 +860,6 @@ function toggleSection(id){
 })();
 
 // --- Gauge slot type labels ---
-// Index must match GaugeType enum in settings.h (entries 0..18).
-// GAUGE_AMS_FILAMENT (19) and GAUGE_AMS_FILAMENT_ALL (20) will be
-// added in a follow-up PR along with their implementation.
 var gaugeTypes=[
   '-- Empty --','Progress','Nozzle Temp','Bed Temp',
   'Part Fan','Aux Fan','Chamber Fan','Chamber Temp',

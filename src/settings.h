@@ -25,9 +25,7 @@ enum GaugeType : uint8_t {
   GAUGE_AMS_TEMP_2  = 16,  // AMS unit 2 temperature
   GAUGE_AMS_TEMP_3  = 17,  // AMS unit 3 temperature
   GAUGE_AMS_TEMP_4  = 18,  // AMS unit 4 temperature
-  // GAUGE_AMS_FILAMENT and GAUGE_AMS_FILAMENT_ALL will be added in a follow-up PR
-  // along with their drawing implementation.
-  GAUGE_TYPE_COUNT   = 19   // sentinel - total count
+  GAUGE_TYPE_COUNT  // sentinel - always last
 };
 
 static const uint8_t GAUGE_SLOT_COUNT = 6;
