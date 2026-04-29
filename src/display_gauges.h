@@ -49,4 +49,17 @@ void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius
 // Reset cached text (call on screen/printer transitions)
 void resetGaugeTextCache();
 
+// Get short filament type label (e.g., "PLA", "PETG", "TPU", "ABS")
+const char* getFilamentTypeLabel(const char* fullType);
+
+// Draw AMS Filament gauge - shows active tray color swatch + type label
+void drawAmsFilamentGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+                         int16_t thickness, const struct AmsState& ams,
+                         bool forceRedraw);
+
+// Draw AMS Filament All gauge - shows all 4 trays: color + type + % + humidity
+void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+                             int16_t thickness, const struct AmsState& ams,
+                             bool forceRedraw);
+
 #endif // DISPLAY_GAUGES_H

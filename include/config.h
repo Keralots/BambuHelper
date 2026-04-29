@@ -111,7 +111,11 @@
 // =============================================================================
 //  Display refresh
 // =============================================================================
+#if defined(BOARD_IS_SENSECAP)
+#define DISPLAY_UPDATE_MS          100    // ~10 Hz refresh (PSRAM framebuffer can handle it)
+#else
 #define DISPLAY_UPDATE_MS          250    // ~4 Hz refresh rate
+#endif
 #define DISPLAY_STATE_TIMEOUT_MS   60000  // 60s timeout for intermediate display states
 
 // =============================================================================
