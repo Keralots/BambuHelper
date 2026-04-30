@@ -52,6 +52,7 @@ struct DisplaySettings {
                             // hardware revision that shows mirrored image.
   uint16_t clockTimeColor; // clock digits color (RGB565)
   uint16_t clockDateColor; // clock date/AM-PM color (RGB565)
+  bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;
@@ -155,6 +156,7 @@ void saveRotationSettings();
 void saveButtonSettings();
 void saveBuzzerSettings();
 void saveLedSettings();
+void saveBatteryIndicatorSetting();
 void resetSettings();
 
 // Cloud token persistence (shared across printer slots)

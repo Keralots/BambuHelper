@@ -270,6 +270,30 @@ static BambuState prevState;
 static bool prevWaitingForDoor = false;
 static unsigned long connectScreenStart = 0;
 
+// Battery indicator cache: forces a bottom-bar redraw when the icon's visible
+// state, percentage, or critical-blink phase changes. Without this, hot-plug
+// or web-UI toggle wouldn't refresh the bar until the next forced redraw.
+static bool    prevBatShown          = false;
+static uint8_t prevBatPercent        = 0;
+static bool    prevBatCriticalBlink  = false;
+static inline void resetBatteryRedrawCache() {
+  prevBatShown          = false;
+  prevBatPercent        = 0;
+  prevBatCriticalBlink  = false;
+}
+static bool    batteryStateChanged() {
+  bool shown = dispSettings.showBatteryIndicator && Battery::isPresent();
+  uint8_t pct = Battery::percent();
+  bool blink = Battery::isCritical() ? ((millis() / 500) & 1) != 0 : false;
+  bool changed = (shown != prevBatShown) ||
+                 (shown && pct != prevBatPercent) ||
+                 (shown && Battery::isCritical() && blink != prevBatCriticalBlink);
+  prevBatShown          = shown;
+  prevBatPercent        = pct;
+  prevBatCriticalBlink  = blink;
+  return changed;
+}
+
 // ---------------------------------------------------------------------------
 //  Smooth gauge interpolation - values lerp toward MQTT actuals each frame
 // ---------------------------------------------------------------------------
@@ -422,6 +446,7 @@ void initDisplay() {
 #endif
 
   memset(&prevState, 0, sizeof(prevState));
+  resetBatteryRedrawCache();
 
   // Splash screen — center on actual canvas (rotation-aware for 240x320)
   {
@@ -464,6 +489,7 @@ void applyDisplaySettings() {
 void triggerDisplayTransition() {
   // Clear previous state so everything redraws for the new printer
   memset(&prevState, 0, sizeof(prevState));
+  resetBatteryRedrawCache();
   smoothInited = false;  // snap gauges to new printer's values
   resetGaugeTextCache();
   tft.fillScreen(dispSettings.bgColor);
@@ -1148,6 +1174,7 @@ static void drawIdle() {
     wasNoPrinter = false;
     tft.fillScreen(dispSettings.bgColor);
     memset(&prevState, 0, sizeof(prevState));
+    resetBatteryRedrawCache();
     forceRedraw = true;
   }
 
@@ -1178,6 +1205,7 @@ static void drawIdle() {
     dryingDropMs = 0;
     tft.fillScreen(dispSettings.bgColor);
     memset(&prevState, 0, sizeof(prevState));
+    resetBatteryRedrawCache();
     forceRedraw = true;
   }
 
@@ -1329,7 +1357,9 @@ static void drawIdle() {
   float idleCurWatts = tasmotaGetWatts();
 
   int16_t botCY = scrH - 9;
-  bool bottomChanged = wifiChanged ||
+  bool batChanged = batteryStateChanged();
+  bool bottomChanged = batChanged ||
+                       wifiChanged ||
                        (s.ams.activeTray != prevState.ams.activeTray) ||
                        (s.doorOpen != prevState.doorOpen) ||
                        (s.doorSensorPresent != prevState.doorSensorPresent) ||
@@ -1852,7 +1882,8 @@ static void drawAmsZone(const BambuState& s, bool force) {
 #endif // DISPLAY_240x320
 
 // ---------------------------------------------------------------------------
-//  Helper: draw battery icon (horizontal, 15x8) at (x, y) with fill level
+//  Helper: draw battery icon (vertical, 8x16) at (x, y) with fill from bottom.
+//  Footprint is 8 px wide x 16 px tall: 4x2 nub on top, 8x14 body below.
 // ---------------------------------------------------------------------------
 static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
   uint16_t fg;
@@ -1865,15 +1896,26 @@ static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
     blank = ((millis() / 500) & 1) != 0;
   }
 
-  // Body outline 13x8, interior 11x6 starting at (x+1, y+1)
-  tft.fillRect(x, y, 15, 8, CLR_BG);                     // clear footprint
-  tft.drawRect(x, y, 13, 8, blank ? CLR_BG : CLR_TEXT_DIM);
-  tft.fillRect(x + 13, y + 2, 2, 4, blank ? CLR_BG : CLR_TEXT_DIM);  // nub
+  uint16_t outline = blank ? CLR_BG : CLR_TEXT_DIM;
+  // Clear footprint
+  tft.fillRect(x, y, 8, 16, CLR_BG);
+  // Top nub (centered, 4 wide x 2 tall)
+  tft.fillRect(x + 2, y, 4, 2, outline);
+  // Body outline (8 wide x 14 tall, starts at y+2). Interior is 6x12 at (x+1, y+3).
+  tft.drawRect(x, y + 2, 8, 14, outline);
 
   if (!blank) {
-    int16_t levelW = (int16_t)((11 * (uint16_t)pct + 50) / 100);
-    if (levelW > 0) tft.fillRect(x + 1, y + 1, levelW, 6, fg);
+    int16_t levelH = (int16_t)((12 * (uint16_t)pct + 50) / 100);
+    if (levelH > 0) {
+      tft.fillRect(x + 1, y + 3 + (12 - levelH), 6, levelH, fg);
+    }
   }
+}
+
+// True when the battery icon should be rendered: hardware presence AND user
+// has not disabled the indicator in the web UI.
+static inline bool shouldShowBatteryIndicator() {
+  return dispSettings.showBatteryIndicator && Battery::isPresent();
 }
 
 // ---------------------------------------------------------------------------
@@ -1881,8 +1923,8 @@ static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
 //  on Waveshare boards when a battery is detected at boot).
 // ---------------------------------------------------------------------------
 static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY = LY_WIFI_Y) {
-  if (Battery::isPresent()) {
-    int16_t iconY = wifiY - LY_BAT_H / 2 - 1;
+  if (shouldShowBatteryIndicator()) {
+    int16_t iconY = wifiY - LY_BAT_H / 2;
     drawBatteryIconOnly(LY_WIFI_X, iconY, Battery::percent());
     char buf[8];
     snprintf(buf, sizeof(buf), "%u%%", (unsigned)Battery::percent());
@@ -1904,8 +1946,8 @@ static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY = LY_WIFI
 //  Waveshare boards). Returns x-offset to apply to swatch and text positions.
 // ---------------------------------------------------------------------------
 static int16_t drawBatteryPrefix(int16_t y) {
-  if (!Battery::isPresent()) return 0;
-  int16_t iconY = y - LY_BAT_H / 2 - 1;
+  if (!shouldShowBatteryIndicator()) return 0;
+  int16_t iconY = y - LY_BAT_H / 2;
   drawBatteryIconOnly(LY_WIFI_X, iconY, Battery::percent());
   return LY_BAT_SHIFT_X;
 }
@@ -2285,7 +2327,8 @@ static void drawPrinting() {
 
   bool showingWifi = !(s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS && s.ams.trays[s.ams.activeTray].present)
                   && !(s.ams.vtPresent && s.ams.activeTray == 254);
-  bool bottomChanged = forceRedraw || unitsZoneChanged ||
+  bool batChanged320 = batteryStateChanged();
+  bool bottomChanged = batChanged320 || forceRedraw || unitsZoneChanged ||
                        (s.speedLevel != prevState.speedLevel) ||
                        (s.doorOpen != prevState.doorOpen) ||
                        (s.doorSensorPresent != prevState.doorSensorPresent) ||
@@ -2570,7 +2613,8 @@ static void drawFinished() {
   // === Bottom status bar ===
   bool waitingForDoor = dpSettings.doorAckEnabled && s.doorSensorPresent && !s.doorAcknowledged;
   float finCurWatts = tasmotaGetWatts();
-  bool finBottomChanged = forceRedraw ||
+  bool finBatChanged = batteryStateChanged();
+  bool finBottomChanged = finBatChanged || forceRedraw ||
                           (waitingForDoor != prevWaitingForDoor) ||
                           (s.doorSensorPresent && s.doorOpen != prevState.doorOpen) ||
                           (tasmotaActiveHere != prevFinTasmotaOnline) ||
@@ -2584,12 +2628,7 @@ static void drawFinished() {
       tft.setTextColor(CLR_ORANGE, CLR_BG);
       tft.drawString("Open door to dismiss", cx, eff_finWifiY);
     } else {
-      drawIcon16(tft, 4, eff_finWifiY - 8, icon_wifi, CLR_TEXT_DIM);
-      tft.setTextDatum(ML_DATUM);
-      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      char wifiBuf[12];
-      snprintf(wifiBuf, sizeof(wifiBuf), "%ddBm", s.wifiSignal);
-      tft.drawString(wifiBuf, 22, eff_finWifiY);
+      drawWifiSignalIndicator(s, eff_finWifiY);
 
       if (tasmotaActiveHere) {
         drawIcon16(tft, cx - 20, eff_finWifiY - 8, icon_lightning, CLR_YELLOW);

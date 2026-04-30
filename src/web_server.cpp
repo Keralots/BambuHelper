@@ -603,6 +603,8 @@ R"rawliteral(
         </div>
       </div>
 
+      %BAT_TOGGLE_ROW%
+
       <button type="button" class="btn btn-blue" onclick="saveRotation()">Save Hardware Settings</button>
     </div>
   </div>
@@ -1132,6 +1134,8 @@ function saveRotation(){
   p.append('ledauto', document.getElementById('ledauto').checked?'1':'0');
   p.append('ledpause',document.getElementById('ledpause').checked?'1':'0');
   p.append('lederr',  document.getElementById('lederr').checked?'1':'0');
+  var bs=document.getElementById('batshow');
+  if(bs) p.append('batshow', bs.checked?'1':'0');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok') showToast('Settings saved');})
@@ -1797,6 +1801,22 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "LED_AUTO")      == 0) { out = ledSettings.autoOnWhilePrinting ? "checked" : ""; return true; }
   if (strcmp(name, "LED_PAUSE")     == 0) { out = ledSettings.pauseBreathing ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR")       == 0) { out = ledSettings.errorStrobe ? "checked" : ""; return true; }
+
+  // --- Battery indicator (Waveshare boards only) ---
+  if (strcmp(name, "BAT_TOGGLE_ROW") == 0) {
+#if defined(BOARD_HAS_BATTERY)
+    out = "<div style=\"margin-top:16px;padding-top:12px;border-top:1px solid #30363D\">"
+          "<label style=\"display:flex;align-items:center;gap:8px;font-weight:normal;cursor:pointer\">"
+          "<input type=\"checkbox\" id=\"batshow\"";
+    if (dispSettings.showBatteryIndicator) out += " checked";
+    out += "> Show battery indicator</label>"
+           "<p style=\"font-size:11px;color:#8B949E;margin-top:4px\">"
+           "Hide if your board has no battery wired (avoids phantom readings).</p></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
 
   // --- Tasmota ---
   if (strcmp(name, "TSM_EN") == 0)  { out = tasmotaSettings.enabled ? "checked" : ""; return true; }
@@ -2482,6 +2502,14 @@ static void handleSaveRotation() {
   saveBuzzerSettings();
   initBuzzer();
 
+  // Battery indicator visibility (Waveshare boards). Always parse so the
+  // form's unchecked state reaches NVS (browsers omit unchecked checkboxes;
+  // saveRotation() JS sends an explicit 0/1 to work around that).
+  if (server.hasArg("batshow")) {
+    dispSettings.showBatteryIndicator = (server.arg("batshow") == "1");
+    saveBatteryIndicatorSetting();
+  }
+
   // External LED — must be parsed AFTER button + buzzer so sanitizeLedPin()
   // sees the freshly-applied buttonPin and buzzerSettings.pin when checking
   // for conflicts.
@@ -2591,6 +2619,7 @@ static void handleSettingsExport() {
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
   disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
+  disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -2775,6 +2804,7 @@ static void handleSettingsImportFinish() {
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
     if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
+    if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();
 
     JsonObject gauges = disp["gauges"];
     if (gauges) {

@@ -43,11 +43,11 @@
 #define LY_WIFI_X    4
 #define LY_WIFI_Y    232
 
-// --- Battery indicator (Waveshare boards only) ---
-#define LY_BAT_W       14    // body width
-#define LY_BAT_H       8     // body height
-#define LY_BAT_TEXT_X  22    // X for "%" text after icon (relative to LY_WIFI_X)
-#define LY_BAT_SHIFT_X 20    // shift swatch+filament right when battery icon present
+// --- Battery indicator (Waveshare boards only) - vertical icon ---
+#define LY_BAT_W       8     // body width (8 px footprint)
+#define LY_BAT_H       16    // total height incl. 2 px nub on top
+#define LY_BAT_TEXT_X  12    // X for "%" text after icon (relative to LY_WIFI_X)
+#define LY_BAT_SHIFT_X 14    // shift swatch+filament right when battery icon present
 
 // --- Idle screen (with printer) ---
 #define LY_IDLE_NAME_Y      30
