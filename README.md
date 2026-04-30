@@ -27,17 +27,12 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Read-only access** - BambuHelper only reads printer status. It never sends commands or modifies printer settings.
 - **Same approach as other community projects** - this is the same authentication method used by the [Home Assistant Bambu Lab integration](https://github.com/greghesp/ha-bambulab), [OctoPrint-Bambu](https://github.com/jneilliii/OctoPrint-BambuPrinter), and other trusted third-party tools.
 
-## Screenshots
-
-| Dashboard | Web Interface - Settings | Web Interface - Gauge Colors |
-|---|---|---|
-| ![Dashboard](img/interface1.jpg) | ![Settings](img/screen1.png) | ![Gauge Colors](img/screen2.png) |
-
-## Other Supported Boards
+## Supported Boards
 
 | Preview | Board | Notes |
 |---|---|---|
-| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** | `240x320` ILI9341 all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Display**. |
+| ![ESP32-S3 Super Mini dashboard](img/interface1.jpg) | **ESP32-S3 Super Mini + 1.54" ST7789** | Base implementation this project started from. Uses an ESP32-S3 Super Mini with a `1.54"` TFT SPI ST7789 (`240x240`) display. Use the `esp32s3` firmware build. Supports **up to 2 printers**. |
+| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** | `240x320` ILI9341 all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Display**. Case shown in the photo: [MakerWorld model](https://makerworld.com/models/2721746). |
 | ![Waveshare 2 inch](img/waveshare2inch.png) | **Waveshare ESP32-S3-Touch-LCD-2** | `240x320` ST7789 version with ESP32-S3, sold as a more plug-and-play option. Use the `ws_lcd_200` firmware build. Supports **up to 2 printers**, like the main ESP32-S3 DIY version. Product page: [waveshare.com/esp32-s3-touch-lcd-2.htm](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm) |
 | ![Waveshare 1.54 inch](img/waveshare1.54inch.png) | **Waveshare ESP32-S3-Touch-LCD-1.54** | `240x240` ST7789 with ESP32-S3, touchscreen, battery holder, and 3 built-in buttons. Use the `ws_lcd_154` firmware build. Supports **up to 2 printers**. The left button (BOOT) works as a screen switcher alongside the touchscreen. **Battery power:** press and hold the center PWR button to power on. To power off, hold the left (BOOT) and right buttons simultaneously for 1.5 seconds. Product page: [waveshare.com/esp32-s3-touch-lcd-1.54.htm](https://www.waveshare.com/esp32-s3-touch-lcd-1.54.htm) |
 | ![ESP32-C3 board](img/ESP32c3Board.png) | **ESP32-C3 Super Mini** | DIY version, just like the main ESP32-S3 build, using the same `240x240` ST7789 display. Use the `esp32c3` firmware build. Due to RAM limits, this board supports **1 printer only**. |
@@ -223,6 +218,31 @@ python tools/get_token.py
 The script will prompt for your email, password, and 2FA code, then print the token. Copy and paste it into BambuHelper's web interface.
 
 > **Note:** The token is valid for approximately 3 months. When it expires, the ESP32 will fail to connect - simply repeat the process above to get a fresh token and paste it in the web interface. Make sure to select the correct **Server Region** (US/EU/CN) to match your Bambu account's region.
+
+### Custom Smooth Fonts
+
+BambuHelper embeds smooth fonts directly in the firmware as VLW tables in `PROGMEM`. The default font is **Inter** (Regular for small/body, Bold for large headings), shipped as TTF in `fonts/` and pre-converted to C headers in `include/fonts/`. Swapping the font means regenerating those headers and reflashing - there is no runtime upload, because the font lives in flash next to the code.
+
+Steps:
+
+1. Drop your `.ttf` files into `fonts/` (e.g. `MyFont-Regular.ttf`, `MyFont-Bold.ttf`).
+2. Edit the `FONTS` list in [`scripts/generate_vlw_fonts.py`](scripts/generate_vlw_fonts.py) - each entry is `(output_name, ttf_filename, pixel_size)`. Keep the three names `inter_10`, `inter_14`, `inter_19` unless you also rename the includes in `src/fonts.cpp`.
+3. Install the converter dependency once: `pip install freetype-py`.
+4. Regenerate the headers:
+   ```bash
+   python scripts/generate_vlw_fonts.py
+   ```
+5. Rebuild the firmware for your target:
+   ```bash
+   pio.exe run -e cyd
+   ```
+6. Flash the new `.pio/build/<env>/firmware.bin` over USB or push it OTA via the web UI's firmware update page.
+
+Tips:
+
+- Pick a font that renders well at small pixel sizes - thin or highly stylised faces will look smudged at 10-14 px. Sans-serif faces designed for UI work best.
+- Each VLW table grows roughly linearly with pixel size; the default Inter set is ~37 KiB total. Watch the flash usage line at the end of the build if you push to bigger sizes.
+- Only printable ASCII (0x20-0x7E) and the degree symbol (0xB0) are baked in. Add codepoints by editing `CHARSET` in the generator.
 
 ## Web Interface
 

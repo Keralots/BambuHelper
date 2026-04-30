@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v2.8"
+#define FW_VERSION          "v2.9.1"
 
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
@@ -122,5 +122,26 @@
 #else
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif
+
+// =============================================================================
+//  External LED (optional, PWM dimmable via NPN/MOSFET)
+// =============================================================================
+#define LED_PWM_CH      2     // LEDC channel (timer 1, isolated from tone() ch0 and analogWrite backlight)
+#define LED_PWM_FREQ    5000  // PWM frequency (Hz)
+#define LED_PWM_RES     8     // PWM resolution (bits) -> 0..255 duty
+
+#if defined(DISPLAY_CYD)
+#define LED_DEFAULT_PIN 22    // CYD: GPIO 22 on P3 connector
+#else
+#define LED_DEFAULT_PIN 0     // other boards: user must configure
+#endif
+
+// LED effect tuning (ms periods)
+#define LED_BREATH_PERIOD_MS      2000   // breathing pulse 0->peak->0
+#define LED_HEARTBEAT_PERIOD_MS   1500   // pyk-pyk-pause cycle
+#define LED_PAUSE_PERIOD_MS       3500   // slow breath while printer paused
+#define LED_ERROR_STROBE_MS        180   // strobe half-period (180 on / 180 off)
+#define LED_TICK_MIN_INTERVAL_MS    16   // throttle ledTick() to ~60Hz
+#define LED_TEST_DURATION_S          8   // /led/test runs the chosen effect for 8s
 
 #endif // CONFIG_H

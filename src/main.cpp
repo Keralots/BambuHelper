@@ -8,6 +8,7 @@
 #include "bambu_state.h"
 #include "button.h"
 #include "buzzer.h"
+#include "led.h"
 #include "tasmota.h"
 #include "battery.h"
 #include <esp_sleep.h>
@@ -74,6 +75,7 @@ static bool handleSplashPhase() {
     initBambuMqtt();
     initButton();
     initBuzzer();
+    initLed();
     tasmotaInit();
   }
 
@@ -124,6 +126,7 @@ static void handleWakeButton() {
   // Handle physical button press before MQTT so screen wakes instantly
   // without waiting for a potentially blocking TLS reconnect.
   buzzerPlayClick();
+  ledOnUserInteraction();  // any user input cancels finish LED effect
   ScreenState cur = getScreenState();
 
   if (isSleepStickyScreen(cur)) {
@@ -181,6 +184,15 @@ static void handleBoardPowerOff() {
 }
 
 static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s) {
+  // Fire the print-finished notification on the GCODE_FINISH transition itself,
+  // independent of the screen-state gate below. Otherwise sleep-sticky screens
+  // (clock / display off) silently swallow the alert.
+  if (!s.finishBuzzerPlayed) {
+    buzzerPlay(BUZZ_PRINT_FINISHED);
+    ledStartFinishEffect();
+    s.finishBuzzerPlayed = true;
+  }
+
   if (current != SCREEN_FINISHED && !isSleepStickyScreen(current) &&
       !(current == SCREEN_IDLE && s.ams.anyDrying) &&
       !(current == SCREEN_PRINTING && finishActive)) {
@@ -190,11 +202,8 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
     setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
     finishScreenStart = millis();
     finishActive = true;
-    if (!s.finishBuzzerPlayed) {
-      buzzerPlay(BUZZ_PRINT_FINISHED);
-      s.finishBuzzerPlayed = true;
-    }
   }
+  ledSetActivity(LED_ACT_FINISHED);
 
   // Door acknowledge: wait for door open before starting timeout
   bool waitingForDoor = dpSettings.doorAckEnabled && s.doorSensorPresent &&
@@ -203,6 +212,7 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
     s.doorAcknowledged = true;
     finishScreenStart = millis();  // restart timeout from door open moment
     finishActive = true;
+    ledStopFinishEffect();  // user came to grab the print, kill the alert
     Serial.println("Door opened - print removal acknowledged, starting timeout");
   }
 
@@ -243,6 +253,8 @@ static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState
     }
     s.finishBuzzerPlayed = false;  // reset for next finish event
     s.doorAcknowledged = false;    // reset door ack for next finish
+    ledStopFinishEffect();         // new print starts - kill any leftover alert
+    ledSetActivity(s.gcodeStateId == GCODE_PAUSE ? LED_ACT_PAUSED : LED_ACT_PRINTING);
     return;
   }
 
@@ -251,11 +263,21 @@ static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState
     return;
   }
 
+  // Idle / failed / unknown
+  if (s.gcodeStateId == GCODE_FAILED) {
+    ledSetActivity(LED_ACT_FAILED);
+  } else {
+    ledSetActivity(LED_ACT_IDLE);
+  }
   handleDisplayedPrinterIdleState(current, s);
 }
 
 static void updateDisplayedPrinterScreenState() {
   ScreenState current = getScreenState();
+
+  // Default activity for early-return paths (no printer / OTA / disconnected).
+  // handleDisplayedPrinterConnectedState() overrides for live-state branches.
+  ledSetActivity(LED_ACT_IDLE);
 
   if (!isAnyPrinterConfigured()) {
     if (current != SCREEN_IDLE && current != SCREEN_OFF) {
@@ -482,6 +504,7 @@ void loop() {
 
   buzzerTick();
   Battery::tick();
+  ledTick();
   checkNightMode();
   updateDisplay();
 

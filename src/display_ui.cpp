@@ -10,6 +10,7 @@
 #include "bambu_mqtt.h"
 #include "settings.h"
 #include "tasmota.h"
+#include "fonts.h"
 #include "battery.h"
 #include <WiFi.h>
 #include <time.h>
@@ -46,7 +47,7 @@ public:
       cfg.pin_rst  = 8;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -191,7 +192,7 @@ public:
       cfg.pin_rst  = 40;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -231,7 +232,7 @@ public:
       cfg.pin_rst  = 10;
       cfg.pin_busy = -1;
       cfg.memory_width  = 240;
-      cfg.memory_height = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
       cfg.panel_width   = 240;
       cfg.panel_height  = 240;
       cfg.offset_x      = 0;
@@ -428,12 +429,12 @@ void initDisplay() {
     const int16_t sh = uiH();
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.drawString("BambuHelper", sw / 2, sh / 2 - 20);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString("Printer Monitor", sw / 2, sh / 2 + 10);
-    tft.setTextFont(1);
+    setFont(tft, FONT_SMALL);
     tft.drawString(FW_VERSION, sw / 2, sh / 2 + 30);
   }
 }
@@ -517,24 +518,24 @@ static void drawAPMode() {
 
   // Title
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString("WiFi Setup", cx, LY_AP_TITLE_Y);
 
   // Instructions
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString("Connect to WiFi:", cx, LY_AP_SSID_LBL_Y);
 
   // AP SSID
   tft.setTextColor(CLR_CYAN, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   char ssid[32];
   uint32_t mac = (uint32_t)(ESP.getEfuseMac() & 0xFFFF);
   snprintf(ssid, sizeof(ssid), "%s%04X", WIFI_AP_PREFIX, mac);
   tft.drawString(ssid, cx, LY_AP_SSID_Y);
 
   // Password
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString("Password:", cx, LY_AP_PASS_LBL_Y);
   tft.setTextColor(CLR_TEXT, CLR_BG);
@@ -544,7 +545,7 @@ static void drawAPMode() {
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString("Then open:", cx, LY_AP_OPEN_Y);
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString("192.168.4.1", cx, LY_AP_IP_Y);
 }
 
@@ -559,7 +560,7 @@ static void drawConnectingWiFi() {
   tft.setTextDatum(MC_DATUM);
 
   // Title
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString("Connecting to WiFi", cx, cy - 20);
 
@@ -595,11 +596,11 @@ static void drawWiFiConnected() {
   }
 
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString("WiFi Connected", midX, midY + 10);
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.drawString(WiFi.localIP().toString().c_str(), midX, midY + 40);
 }
 
@@ -615,9 +616,9 @@ static void drawOtaUpdate() {
   tft.setTextColor(CLR_TEXT, CLR_BG);
 
   // Title
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString("Updating", cx, cy - 60);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString("BambuHelper firmware", cx, cy - 36);
 
@@ -634,12 +635,12 @@ static void drawOtaUpdate() {
   // Percentage
   char pctBuf[8];
   snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString(pctBuf, cx, cy + 14);
 
   // Status
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString(getOtaAutoStatus(), cx, cy + 34);
 
@@ -658,7 +659,7 @@ static void drawConnectingMQTT() {
   tft.setTextDatum(MC_DATUM);
 
   // Title
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString("Connecting to Printer", cx, cy - 40);
 
@@ -675,7 +676,7 @@ static void drawConnectingMQTT() {
   // Connection mode + printer info
   PrinterSlot& p = displayedPrinter();
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
 
   const char* modeStr = isCloudMode(p.config.mode) ? "Cloud" : "LAN";
   char infoBuf[40];
@@ -700,7 +701,7 @@ static void drawConnectingMQTT() {
   // Diagnostics (only after first attempt)
   const MqttDiag& d = getMqttDiag(rotState.displayIndex);
   if (d.attempts > 0) {
-    tft.setTextFont(1);
+    setFont(tft, FONT_SMALL);
     tft.setTextDatum(MC_DATUM);
 
     char buf[40];
@@ -730,22 +731,22 @@ static void drawIdleNoPrinter() {
   tft.setTextDatum(MC_DATUM);
 
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString("BambuHelper", cx, LY_IDLE_NP_TITLE_Y);
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.drawString("WiFi Connected", cx, LY_IDLE_NP_WIFI_Y);
 
   tft.fillCircle(cx, LY_IDLE_NP_DOT_Y, 5, CLR_GREEN);
 
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.setTextFont(2);
+  setFont(tft, FONT_BODY);
   tft.drawString("No printer configured", cx, LY_IDLE_NP_MSG_Y);
   tft.drawString("Open in browser:", cx, LY_IDLE_NP_OPEN_Y);
 
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.drawString(WiFi.localIP().toString().c_str(), cx, LY_IDLE_NP_IP_Y);
 }
 
@@ -767,7 +768,7 @@ static uint16_t humidityColor(uint8_t level) {
 }
 
 static void drawCelsiusUnit(int16_t x, int16_t y, uint16_t color) {
-  tft.setTextFont(4);
+  setFont(tft, FONT_LARGE);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(color, CLR_BG);
   tft.drawString("C", x + 12, y);
@@ -854,7 +855,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT, CLR_BG);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu";
     tft.drawString(name, LY_HDR_NAME_X, LY_HDR_CY);
@@ -889,7 +890,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 
     tft.fillRect(0, 30, scrW, 20, CLR_BG);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     tft.drawString(unitName, cx, 40);
   }
@@ -907,7 +908,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
       const int16_t tempCx = 88;
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(7);
+      setFont(tft, FONT_7SEG);
       tft.setTextColor(CLR_ORANGE, CLR_BG);
       int16_t tempW = tft.textWidth(tempBuf);
       tft.drawString(tempBuf, tempCx - 10, 112);
@@ -927,10 +928,10 @@ static void drawIdleDrying(PrinterSlot& p) {
         snprintf(timeBuf, sizeof(timeBuf), "%dm", m);
 
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString("Remaining", infoCx, 72);
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(timeBuf, infoCx, 96);
     }
@@ -941,10 +942,10 @@ static void drawIdleDrying(PrinterSlot& p) {
       snprintf(humBuf, sizeof(humBuf), "%d%%", u.humidityRaw);
 
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString("Humidity", infoCx, 128);
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(humidityColor(u.humidity), CLR_BG);
       tft.drawString(humBuf, infoCx, 152);
     }
@@ -957,7 +958,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       char tempBuf[14];
       snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(7);
+      setFont(tft, FONT_7SEG);
       tft.setTextColor(CLR_ORANGE, CLR_BG);
       int16_t tempW = tft.textWidth(tempBuf);
       tft.drawString(tempBuf, cx - 10, 100);
@@ -978,7 +979,7 @@ static void drawIdleDrying(PrinterSlot& p) {
         snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
 
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(timeBuf, cx, timeY);
     }
@@ -991,7 +992,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
 
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(humidityColor(u.humidity), CLR_BG);
       tft.drawString(humBuf, cx, humY);
     }
@@ -1004,7 +1005,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     char tempBuf[14];
     snprintf(tempBuf, sizeof(tempBuf), "%d", tempShown);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(7);
+    setFont(tft, FONT_7SEG);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     int16_t tempW = tft.textWidth(tempBuf);
     tft.drawString(tempBuf, cx - 10, 82);
@@ -1024,7 +1025,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       snprintf(timeBuf, sizeof(timeBuf), "%dm remaining", m);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_YELLOW, CLR_BG);
     tft.drawString(timeBuf, cx, 140);
   }
@@ -1036,7 +1037,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(humidityColor(u.humidity), CLR_BG);
     tft.drawString(humBuf, cx, 170);
   }
@@ -1093,7 +1094,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     } else {
       snprintf(etaBuf, sizeof(etaBuf), "---");
     }
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.setTextColor(CLR_GREEN, CLR_BG);
     tft.drawString(etaBuf, cx, etaTextY);
   }
@@ -1208,14 +1209,14 @@ static void drawIdle() {
   // Printer name (only on forceRedraw — name doesn't change)
   if (forceRedraw) {
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, cx, LY_IDLE_NAME_Y);
   }
 
   // Status badge — only redraw when state changes
   if (stateChanged) {
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
     if (s.gcodeStateId == GCODE_IDLE) {
@@ -1252,7 +1253,7 @@ static void drawIdle() {
       const int16_t hintY = LY_IDLE_DOT_Y + 15;
       tft.fillRect(0, hintY - 6, scrW, 14, CLR_BG);
       if (showHint) {
-        tft.setTextFont(1);
+        setFont(tft, FONT_SMALL);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
         tft.drawString("Press to refresh", cx, hintY);
@@ -1339,7 +1340,7 @@ static void drawIdle() {
 
   if (bottomChanged) {
     tft.fillRect(0, scrH - 18, scrW, 18, CLR_BG);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
 
     // Left: filament circle (if AMS active) or WiFi signal
     if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS && s.ams.trays[s.ams.activeTray].present) {
@@ -1643,7 +1644,7 @@ static void drawAmsStrip(const AmsState& ams,
           typeBuf[0] = '\0';
         }
         tft.setTextDatum(TC_DATUM);
-        tft.setTextFont(1);
+        setFont(tft, FONT_SMALL);
         tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
         if (typeBuf[0]) {
           tft.drawString(typeBuf, bx + barW / 2, typeY);
@@ -1655,7 +1656,7 @@ static void drawAmsStrip(const AmsState& ams,
     snprintf(label, sizeof(label), "AMS %c", 'A' + u);
     tft.setTextDatum(TC_DATUM);
     bool sm = dispSettings.smallLabels;
-    tft.setTextFont(sm ? 1 : 2);
+    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(label, groupX + groupW / 2, labelY + (showFilamentTypes ? 0 : 2));
   }
@@ -1763,7 +1764,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
       tft.fillRect(bx, LY_LAND_BADGE_Y, bw, LY_LAND_BADGE_H, dispSettings.bgColor);
 
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.setTextColor(badgeColor, dispSettings.bgColor);
       const int16_t cx = LY_LAND_AMS_X + LY_LAND_AMS_W / 2;
       // Dot + label centered in the right column.
@@ -1834,7 +1835,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
       snprintf(label, sizeof(label), "AMS %c", 'A' + u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
-      tft.setTextFont(sm ? 1 : 2);
+      setFont(tft, sm ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString(label, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 1);
     }
@@ -2030,7 +2031,7 @@ static void drawPrinting() {
 
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT, hdrBg);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, LY_HDR_NAME_X, LY_HDR_CY);
@@ -2045,7 +2046,7 @@ static void drawPrinting() {
 
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(badgeColor, hdrBg);
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.fillCircle(hdrW - LY_HDR_BADGE_RX - tft.textWidth(s.gcodeState) - 10, LY_HDR_CY, 4, badgeColor);
       tft.drawString(s.gcodeState, hdrW - LY_HDR_BADGE_RX, LY_HDR_CY);
     }
@@ -2199,11 +2200,11 @@ static void drawPrinting() {
     tft.setTextDatum(MC_DATUM);
 
     if (s.gcodeStateId == GCODE_PAUSE) {
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString("PAUSED", etaCx, eff_etaTextY);
     } else if (s.gcodeStateId == GCODE_FAILED) {
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_RED, CLR_BG);
       tft.drawString("ERROR!", etaCx, eff_etaTextY);
     } else if (s.remainingMinutes > 0) {
@@ -2242,7 +2243,7 @@ static void drawPrinting() {
           else
             snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
         }
-        tft.setTextFont(4);
+        setFont(tft, FONT_LARGE);
         tft.setTextColor(CLR_GREEN, CLR_BG);
         tft.drawString(etaBuf, etaCx, eff_etaTextY);
       } else {
@@ -2251,12 +2252,12 @@ static void drawPrinting() {
         uint16_t h = s.remainingMinutes / 60;
         uint16_t m = s.remainingMinutes % 60;
         snprintf(remBuf, sizeof(remBuf), "Remaining: %dh %02dm", h, m);
-        tft.setTextFont(4);
+        setFont(tft, FONT_LARGE);
         tft.setTextColor(CLR_TEXT, CLR_BG);
         tft.drawString(remBuf, etaCx, eff_etaTextY);
       }
     } else {
-      tft.setTextFont(4);
+      setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString("ETA: ---", etaCx, eff_etaTextY);
     }
@@ -2318,7 +2319,7 @@ static void drawPrinting() {
     }
 #endif
     tft.fillRect(0, eff_botY, botW, eff_botH, CLR_BG);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
 
     // Left: filament indicator (if AMS active) or WiFi signal
     // Dual nozzle (H2C/H2D): activeTray set from extruder.info[].snow per-nozzle
@@ -2440,7 +2441,7 @@ static void drawFinished() {
 
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT, hdrBg);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     tft.drawString(name, LY_HDR_NAME_X, LY_HDR_CY);
@@ -2448,7 +2449,7 @@ static void drawFinished() {
     // FINISH badge (right)
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(CLR_GREEN, hdrBg);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.fillCircle(scrW - LY_HDR_BADGE_RX - tft.textWidth("FINISH") - 10, LY_HDR_CY, 4, CLR_GREEN);
     tft.drawString("FINISH", scrW - LY_HDR_BADGE_RX, LY_HDR_CY);
 
@@ -2479,14 +2480,14 @@ static void drawFinished() {
   if (forceRedraw) {
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.setTextFont(4);
+    setFont(tft, FONT_LARGE);
     tft.drawString("Print Complete!", cx, finTextY);
   }
 
   // === File name ===
   if (forceRedraw) {
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     if (s.subtaskName[0] != '\0') {
       // Trim to canvas width (font 2 ~9px/char nominal). 25 chars suited 240
@@ -2522,7 +2523,7 @@ static void drawFinished() {
       char kwhBuf[16];
       snprintf(kwhBuf, sizeof(kwhBuf), "%.3f kWh", finishKwh);
       tft.setTextDatum(ML_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString(kwhBuf, cx - 14, kwhY);
     }
@@ -2577,7 +2578,7 @@ static void drawFinished() {
   if (finBottomChanged) {
     prevWaitingForDoor = waitingForDoor;
     tft.fillRect(0, eff_finBotY, scrW, eff_finBotH, CLR_BG);
-    tft.setTextFont(1);
+    setFont(tft, FONT_SMALL);
     if (waitingForDoor) {
       tft.setTextDatum(MC_DATUM);
       tft.setTextColor(CLR_ORANGE, CLR_BG);
@@ -2603,7 +2604,7 @@ static void drawFinished() {
     if (s.doorSensorPresent) {
       uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
       tft.setTextDatum(MR_DATUM);
-      tft.setTextFont(1);
+      setFont(tft, FONT_SMALL);
       tft.setTextColor(clr, CLR_BG);
       tft.drawString("Door", scrW - 20, eff_finWifiY);
       drawIcon16(tft, scrW - 18, eff_finWifiY - 8,

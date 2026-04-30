@@ -8,6 +8,7 @@
 #include "config.h"
 #include "button.h"
 #include "buzzer.h"
+#include "led.h"
 #include "timezones.h"
 #include "tasmota.h"
 #include "clock_mode.h"
@@ -556,6 +557,52 @@ R"rawliteral(
         </div>
       </div>
 
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
+        <label for="leden">External LED</label>
+        <select id="leden" onchange="toggleLed();ledPreviewSend()">
+          <option value="0" %LED_OFF%>Disabled</option>
+          <option value="1" %LED_ON%>Enabled</option>
+        </select>
+        <div id="ledFields" style="display:none">
+          <label for="ledpin">LED GPIO Pin</label>
+          <input type="number" id="ledpin" min="1" max="48" value="%LED_PIN%" onchange="ledPreviewSend()">
+          <p style="font-size:11px;color:#8B949E;margin-top:4px">PWM-dimmed LED via NPN transistor or MOSFET. CYD: GPIO 22 on P3 connector.</p>
+          <label for="ledbr" style="margin-top:8px">Brightness <span id="ledbrVal">%LED_BR%</span></label>
+          <input type="range" id="ledbr" min="0" max="255" step="5" value="%LED_BR%"
+                 oninput="document.getElementById('ledbrVal').textContent=this.value;ledPreviewSend()">
+
+          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #30363D">
+            <label for="ledfxmd">Print finished effect</label>
+            <select id="ledfxmd" onchange="toggleLedFx()">
+              <option value="0" %LED_FX_OFF%>Off</option>
+              <option value="1" %LED_FX_BREATH%>Breathing pulse</option>
+              <option value="2" %LED_FX_HB%>Heartbeat</option>
+            </select>
+            <div id="ledFxParams" style="display:none">
+              <label for="ledfxsec" style="margin-top:8px">Duration (seconds, 5-600)</label>
+              <input type="number" id="ledfxsec" min="5" max="600" value="%LED_FX_SEC%">
+              <label for="ledfxbr" style="margin-top:8px">Peak brightness <span id="ledfxbrVal">%LED_FX_BR%</span></label>
+              <input type="range" id="ledfxbr" min="0" max="255" step="5" value="%LED_FX_BR%"
+                     oninput="document.getElementById('ledfxbrVal').textContent=this.value">
+              <button type="button" class="btn btn-blue" style="margin-top:10px;width:auto;padding:8px 16px"
+                      onclick="ledTestEffect()">Test effect</button>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #30363D">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal">
+              <input type="checkbox" id="ledauto" %LED_AUTO%> LED on only while printing
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px">
+              <input type="checkbox" id="ledpause" %LED_PAUSE%> Slow pulse during pause
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px">
+              <input type="checkbox" id="lederr" %LED_ERR%> Fast strobe on error
+            </label>
+          </div>
+        </div>
+      </div>
+
       <button type="button" class="btn btn-blue" onclick="saveRotation()">Save Hardware Settings</button>
     </div>
   </div>
@@ -1017,6 +1064,38 @@ function toggleBuzPin(){
 }
 toggleBuzPin();
 
+function toggleLed(){
+  document.getElementById('ledFields').style.display=
+    document.getElementById('leden').value!=='0'?'block':'none';
+  toggleLedFx();
+}
+function toggleLedFx(){
+  var fx=document.getElementById('ledfxmd');
+  if(!fx) return;
+  document.getElementById('ledFxParams').style.display=fx.value!=='0'?'block':'none';
+}
+toggleLed();
+
+function ledPreviewSend(){
+  var p=new URLSearchParams();
+  p.append('en',document.getElementById('leden').value);
+  p.append('pin',document.getElementById('ledpin').value);
+  p.append('br',document.getElementById('ledbr').value);
+  fetch('/led/preview',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).catch(function(){});
+}
+
+function ledTestEffect(){
+  var p=new URLSearchParams();
+  p.append('md', document.getElementById('ledfxmd').value);
+  p.append('sec',document.getElementById('ledfxsec').value);
+  p.append('br', document.getElementById('ledfxbr').value);
+  fetch('/led/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.status==='ok') showToast('LED effect test running');
+                      else if(d.error) showToast('Test failed: '+d.error);})
+    .catch(function(e){showToast('LED test failed');console.warn('ledTestEffect:',e);});
+}
+
 var buzTestSounds=[
   {id:0, name:'Print Finished'},
   {id:1, name:'Error'},
@@ -1044,6 +1123,15 @@ function saveRotation(){
   p.append('buzqs',document.getElementById('buzqs').value);
   p.append('buzqe',document.getElementById('buzqe').value);
   p.append('buzclick',document.getElementById('buzclick').checked?'1':'0');
+  p.append('leden',document.getElementById('leden').value);
+  p.append('ledpin',document.getElementById('ledpin').value);
+  p.append('ledbr',document.getElementById('ledbr').value);
+  p.append('ledfxmd', document.getElementById('ledfxmd').value);
+  p.append('ledfxsec',document.getElementById('ledfxsec').value);
+  p.append('ledfxbr', document.getElementById('ledfxbr').value);
+  p.append('ledauto', document.getElementById('ledauto').checked?'1':'0');
+  p.append('ledpause',document.getElementById('ledpause').checked?'1':'0');
+  p.append('lederr',  document.getElementById('lederr').checked?'1':'0');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok') showToast('Settings saved');})
@@ -1696,6 +1784,20 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BUZ_QE") == 0)  { out = String(buzzerSettings.quietEndHour); return true; }
   if (strcmp(name, "BUZ_CLICK") == 0) { out = buzzerSettings.buttonClick ? "checked" : ""; return true; }
 
+  // --- External LED ---
+  if (strcmp(name, "LED_OFF") == 0) { out = ledSettings.enabled ? "" : "selected"; return true; }
+  if (strcmp(name, "LED_ON") == 0)  { out = ledSettings.enabled ? "selected" : ""; return true; }
+  if (strcmp(name, "LED_PIN") == 0) { out = String(ledSettings.pin); return true; }
+  if (strcmp(name, "LED_BR") == 0)  { out = String(ledSettings.brightness); return true; }
+  if (strcmp(name, "LED_FX_OFF")    == 0) { out = ledSettings.finishMode == LED_FINISH_OFF       ? "selected" : ""; return true; }
+  if (strcmp(name, "LED_FX_BREATH") == 0) { out = ledSettings.finishMode == LED_FINISH_BREATHING ? "selected" : ""; return true; }
+  if (strcmp(name, "LED_FX_HB")     == 0) { out = ledSettings.finishMode == LED_FINISH_HEARTBEAT ? "selected" : ""; return true; }
+  if (strcmp(name, "LED_FX_SEC")    == 0) { out = String(ledSettings.finishSeconds); return true; }
+  if (strcmp(name, "LED_FX_BR")     == 0) { out = String(ledSettings.finishBrightness); return true; }
+  if (strcmp(name, "LED_AUTO")      == 0) { out = ledSettings.autoOnWhilePrinting ? "checked" : ""; return true; }
+  if (strcmp(name, "LED_PAUSE")     == 0) { out = ledSettings.pauseBreathing ? "checked" : ""; return true; }
+  if (strcmp(name, "LED_ERR")       == 0) { out = ledSettings.errorStrobe ? "checked" : ""; return true; }
+
   // --- Tasmota ---
   if (strcmp(name, "TSM_EN") == 0)  { out = tasmotaSettings.enabled ? "checked" : ""; return true; }
   if (strcmp(name, "TSM_IP") == 0)  { out = tasmotaSettings.ip; return true; }
@@ -2266,6 +2368,71 @@ static void handleBuzzerTest() {
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
+// Live LED preview from web UI. Validates pin range as int before casting to
+// uint8_t (avoids 300 -> 44 wraparound). On invalid pin we shut the preview
+// off so the user doesn't see a "ghost" LED still lit on the previous pin.
+static void handleLedPreview() {
+  bool en = server.hasArg("en") ? (server.arg("en") == "1") : ledSettings.enabled;
+
+  int rawPin = server.hasArg("pin") ? server.arg("pin").toInt() : ledSettings.pin;
+  if (rawPin < 1 || rawPin > 48) {
+    previewLed(false, 0, 0);
+    server.send(400, "application/json", "{\"error\":\"pin out of range\"}");
+    return;
+  }
+  uint8_t pin = (uint8_t)rawPin;
+
+  uint8_t br = ledSettings.brightness;
+  if (server.hasArg("br")) {
+    int v = server.arg("br").toInt();
+    if (v < 0) v = 0; if (v > 255) v = 255;
+    br = (uint8_t)v;
+  }
+
+  previewLed(en, pin, br);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+// Trigger the chosen finish effect for a short window without waiting for a
+// real print finish. Reads md/sec/br as overrides; falls back to ledSettings.
+// Doesn't gate on ledSettings.enabled - a previewed-but-unsaved config also
+// has the pin attached and should be testable. ledTriggerTestEffect() reports
+// whether it actually started so we can return a meaningful error.
+static void handleLedTest() {
+  uint8_t md = ledSettings.finishMode;
+  if (server.hasArg("md")) {
+    int v = server.arg("md").toInt();
+    if (v >= 0 && v <= 2) md = (uint8_t)v;
+  }
+  if (md == LED_FINISH_OFF) {
+    server.send(409, "application/json", "{\"status\":\"err\",\"error\":\"mode off\"}");
+    return;
+  }
+
+  uint16_t sec = LED_TEST_DURATION_S;
+  if (server.hasArg("sec")) {
+    int v = server.arg("sec").toInt();
+    if (v < 5) v = 5; if (v > 600) v = 600;
+    // For the test we cap to a sane preview window so the user isn't stuck
+    // waiting 10 minutes if they configured a long real-finish duration.
+    if (v > 30) v = LED_TEST_DURATION_S;
+    sec = (uint16_t)v;
+  }
+
+  uint8_t br = ledSettings.finishBrightness;
+  if (server.hasArg("br")) {
+    int v = server.arg("br").toInt();
+    if (v < 0) v = 0; if (v > 255) v = 255;
+    br = (uint8_t)v;
+  }
+
+  if (!ledTriggerTestEffect(md, sec, br)) {
+    server.send(409, "application/json", "{\"status\":\"err\",\"error\":\"LED not attached - enable it first\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
 // Save rotation settings (multi-printer)
 static void handleSaveRotation() {
   if (server.hasArg("rotmode")) {
@@ -2314,6 +2481,41 @@ static void handleSaveRotation() {
   }
   saveBuzzerSettings();
   initBuzzer();
+
+  // External LED — must be parsed AFTER button + buzzer so sanitizeLedPin()
+  // sees the freshly-applied buttonPin and buzzerSettings.pin when checking
+  // for conflicts.
+  if (server.hasArg("leden"))  ledSettings.enabled = (server.arg("leden") == "1");
+  if (server.hasArg("ledpin")) {
+    int lp = server.arg("ledpin").toInt();
+    if (lp > 0 && lp <= 48) ledSettings.pin = (uint8_t)lp;
+  }
+  if (server.hasArg("ledbr")) {
+    int br = server.arg("ledbr").toInt();
+    if (br < 0) br = 0; if (br > 255) br = 255;
+    ledSettings.brightness = (uint8_t)br;
+  }
+  if (server.hasArg("ledfxmd")) {
+    int v = server.arg("ledfxmd").toInt();
+    if (v >= 0 && v <= 2) ledSettings.finishMode = (uint8_t)v;
+  }
+  if (server.hasArg("ledfxsec")) {
+    int v = server.arg("ledfxsec").toInt();
+    if (v < 5) v = 5; if (v > 600) v = 600;
+    ledSettings.finishSeconds = (uint16_t)v;
+  }
+  if (server.hasArg("ledfxbr")) {
+    int v = server.arg("ledfxbr").toInt();
+    if (v < 0) v = 0; if (v > 255) v = 255;
+    ledSettings.finishBrightness = (uint8_t)v;
+  }
+  // Checkboxes: present + value "1" = enabled. Form posts "0" when unchecked
+  // (saveRotation JS sends both states explicitly).
+  if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
+  if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
+  if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
+  saveLedSettings();
+  initLed();
 
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -2441,6 +2643,19 @@ static void handleSettingsExport() {
   buz["quietStart"] = buzzerSettings.quietStartHour;
   buz["quietEnd"] = buzzerSettings.quietEndHour;
   buz["buttonClick"] = buzzerSettings.buttonClick;
+
+  // External LED
+  JsonObject led = doc["led"].to<JsonObject>();
+  led["enabled"]    = ledSettings.enabled;
+  led["pin"]        = ledSettings.pin;
+  led["brightness"] = ledSettings.brightness;
+  JsonObject ledFx = led["finish"].to<JsonObject>();
+  ledFx["mode"]       = ledSettings.finishMode;
+  ledFx["seconds"]    = ledSettings.finishSeconds;
+  ledFx["brightness"] = ledSettings.finishBrightness;
+  led["autoOnWhilePrinting"] = ledSettings.autoOnWhilePrinting;
+  led["pauseBreathing"]      = ledSettings.pauseBreathing;
+  led["errorStrobe"]         = ledSettings.errorStrobe;
 
   String json;
   serializeJsonPretty(doc, json);
@@ -2639,11 +2854,36 @@ static void handleSettingsImportFinish() {
     if (buz["buttonClick"].is<bool>()) buzzerSettings.buttonClick = buz["buttonClick"].as<bool>();
   }
 
+  // External LED
+  JsonObject led = doc["led"];
+  if (led) {
+    if (led["enabled"].is<bool>())       ledSettings.enabled = led["enabled"].as<bool>();
+    if (led["pin"].is<uint8_t>())        ledSettings.pin = led["pin"].as<uint8_t>();
+    if (led["brightness"].is<uint8_t>()) ledSettings.brightness = led["brightness"].as<uint8_t>();
+    JsonObject ledFx = led["finish"];
+    if (ledFx) {
+      if (ledFx["mode"].is<uint8_t>()) {
+        uint8_t m = ledFx["mode"].as<uint8_t>();
+        if (m <= 2) ledSettings.finishMode = m;
+      }
+      if (ledFx["seconds"].is<uint16_t>()) {
+        uint16_t s = ledFx["seconds"].as<uint16_t>();
+        if (s < 5) s = 5; if (s > 600) s = 600;
+        ledSettings.finishSeconds = s;
+      }
+      if (ledFx["brightness"].is<uint8_t>()) ledSettings.finishBrightness = ledFx["brightness"].as<uint8_t>();
+    }
+    if (led["autoOnWhilePrinting"].is<bool>()) ledSettings.autoOnWhilePrinting = led["autoOnWhilePrinting"].as<bool>();
+    if (led["pauseBreathing"].is<bool>())      ledSettings.pauseBreathing      = led["pauseBreathing"].as<bool>();
+    if (led["errorStrobe"].is<bool>())         ledSettings.errorStrobe         = led["errorStrobe"].as<bool>();
+  }
+
   // Save everything to NVS
   saveSettings();
   saveRotationSettings();
   saveButtonSettings();
   saveBuzzerSettings();
+  saveLedSettings();   // sanitizes pin (incl. conflict with freshly-imported buzzer/button)
 
   server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Settings imported. Restarting...\"}");
   scheduleRestart();
@@ -2869,6 +3109,8 @@ void initWebServer() {
   server.on("/save/rotation", HTTP_POST, handleSaveRotation);
   server.on("/save/power", HTTP_POST, handleSavePower);
   server.on("/buzzer/test", HTTP_POST, handleBuzzerTest);
+  server.on("/led/preview", HTTP_POST, handleLedPreview);
+  server.on("/led/test",    HTTP_POST, handleLedTest);
   server.on("/printer/config", HTTP_GET, handlePrinterConfig);
   server.on("/apply", HTTP_POST, handleApply);
   server.on("/brightness", HTTP_GET, handleBrightnessPreview);
