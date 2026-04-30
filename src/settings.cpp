@@ -53,46 +53,49 @@ uint16_t bambuColorToRgb565(const char* rrggbbaa) {
     b = rgba & 0xFF;
   }
 
-  // --- Saturation & Brightness Boost ---
-  // Bambu Lab's MQTT hex colors are often extremely pastel (washed out),
-  // causing CYD TFT displays to render them with an ugly dithered look.
-  // We boost saturation by pulling the lowest RGB value closer to 0.
+  // --- TFT Color Compensation ---
+  // Bambu Lab MQTT filament colors are already vivid and accurate. We only need
+  // two TFT-specific fixes: purple hue compensation and RGB565 rounding.
+  // Do NOT apply saturation/brightness boosts — they destroy real filament colors
+  // (e.g. light pink → red, tan → orange, brown → gold, grey → white).
+
+  // Find max/min for purple compensation and 565 rounding
   uint8_t max_val = r;
   if (g > max_val) max_val = g;
   if (b > max_val) max_val = b;
-  
+
   uint8_t min_val = r;
   if (g < min_val) min_val = g;
   if (b < min_val) min_val = b;
 
-  if (max_val > 0 && max_val > min_val) {
-    // Avoid blowing out almost-grey colors (like silver/grey filaments)
-    // Only boost if there is a distinct color (saturation > 10%)
-    if ((max_val - min_val) > (max_val / 10)) {
-       float scale = (float)max_val / (max_val - min_val);
-       float full_r = (r - min_val) * scale;
-       float full_g = (g - min_val) * scale;
-       float full_b = (b - min_val) * scale;
+  (void)min_val;  // min_val computed for future use
 
-       // Blend 65% towards fully saturated color to make it pop
-       float blend = 0.65f;
-       r = (uint8_t)(r + (full_r - r) * blend);
-       g = (uint8_t)(g + (full_g - g) * blend);
-       b = (uint8_t)(b + (full_b - b) * blend);
+  // Skip very dark colors (black filament) — no useful correction possible
+  if (max_val >= 32) {
+
+    // --- TFT Purple Compensation ---
+    // RGB565 truncation + TFT blue push makes purple/violet hues look blue.
+    // When blue is the dominant channel and red is secondary (purple range),
+    // blue quantizes to max (31/31) while red stays mid-level, shifting
+    // the perceived hue toward blue. We compensate by boosting red for
+    // purple/violet-ish colors (R secondary, B dominant, low-mid saturation).
+    if (b > r && b > g && r > g) {
+      uint8_t gap = b - r;
+      if (gap > 20 && gap < 200) {
+        // Boost red by ~12% of the gap to compensate for TFT blue push.
+        // This nudges purple back toward true purple on the actual display.
+        r = (uint8_t)min((int)b, (int)r + (gap * 12 / 100));
+      }
     }
   }
 
-  // Boost global brightness so pastel colors pop, but preserve intentionally
-  // dark filaments (black, dark grey). Below this threshold we leave the
-  // color alone - inflating r=g=b=10 to ~220 turned black filaments near-white.
-  if (max_val >= 32 && max_val < 220) {
-    float b_scale = 220.0f / max_val;
-    r = (uint8_t)(r * b_scale);
-    g = (uint8_t)(g * b_scale);
-    b = (uint8_t)(b * b_scale);
-  }
-
-  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+  // Use rounding (not truncation) for RGB565 to avoid quantization hue shift.
+  // Truncation rounds colors down, pushing blue channel to 31/31 (max) while
+  // leaving red at lower levels — this makes purple look blue on TFT.
+  // Rounding to nearest 5-bit/6-bit level reduces this bias significantly.
+  return ((uint16_t)((r * 31 + 127) / 255) << 11) |
+         ((uint16_t)((g * 63 + 127) / 255) << 5) |
+          (uint16_t)((b * 31 + 127) / 255);
 }
 
 void rgb565ToHtml(uint16_t c, char* buf) {
