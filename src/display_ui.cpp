@@ -793,6 +793,27 @@ static uint16_t humidityColor(uint8_t level) {
   return CLR_RED;
 }
 
+// Draw a string left-aligned, hard-truncating at character boundary if it
+// doesn't fit maxW. No ellipsis.
+// Assumes font and text color are already configured by the caller.
+static void drawStringClipped(const char* s, int16_t x, int16_t y, int16_t maxW) {
+  if (!s || !*s) return;
+  if (maxW <= 0) return;
+  if (tft.textWidth(s) <= maxW) {
+    tft.drawString(s, x, y);
+    return;
+  }
+  char buf[40];
+  size_t n = strlen(s);
+  if (n >= sizeof(buf)) n = sizeof(buf) - 1;
+  memcpy(buf, s, n);
+  buf[n] = '\0';
+  while (n > 0 && tft.textWidth(buf) > maxW) {
+    buf[--n] = '\0';
+  }
+  if (n > 0) tft.drawString(buf, x, y);
+}
+
 static void drawCelsiusUnit(int16_t x, int16_t y, uint16_t color) {
   setFont(tft, FONT_LARGE);
   tft.setTextDatum(ML_DATUM);
@@ -2364,6 +2385,21 @@ static void drawPrinting() {
     tft.fillRect(0, eff_botY, botW, eff_botH, CLR_BG);
     setFont(tft, FONT_BODY);
 
+    // Predict center text so we can clamp the filament name's right edge
+    // and avoid overlap with the layer/power readout (smooth fonts in v2.8
+    // are slightly wider than the previous bitmap font).
+    bool showPowerNow = tasmotaSettings.enabled && tasmotaOnline &&
+                        (tasmotaSettings.displayMode == 1 || altShowPower);
+    char centerBuf[20];
+    int16_t centerLeftX;
+    if (showPowerNow) {
+      snprintf(centerBuf, sizeof(centerBuf), "%.0fW", tasmotaGetWatts());
+      centerLeftX = botCx - 20;  // icon starts here (icon_lightning is 16px)
+    } else {
+      snprintf(centerBuf, sizeof(centerBuf), "%d/%d", s.layerNum, s.totalLayers);
+      centerLeftX = botCx - tft.textWidth(centerBuf) / 2;
+    }
+
     // Left: filament indicator (if AMS active) or WiFi signal
     // Dual nozzle (H2C/H2D): activeTray set from extruder.info[].snow per-nozzle
     if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS) {
@@ -2374,7 +2410,7 @@ static void drawPrinting() {
         tft.fillCircle(10 + bx, eff_botCY, 4, t.colorRgb565);
         tft.setTextDatum(ML_DATUM);
         tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-        tft.drawString(t.type, 19 + bx, eff_botCY);
+        drawStringClipped(t.type, 19 + bx, eff_botCY, centerLeftX - 3 - (19 + bx));
       } else {
         drawWifiSignalIndicator(s, eff_botCY);
       }
@@ -2384,27 +2420,21 @@ static void drawPrinting() {
       tft.fillCircle(10 + bx, eff_botCY, 4, s.ams.vtColorRgb565);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(s.ams.vtType, 19 + bx, eff_botCY);
+      drawStringClipped(s.ams.vtType, 19 + bx, eff_botCY, centerLeftX - 3 - (19 + bx));
     } else {
       drawWifiSignalIndicator(s, eff_botCY);
     }
 
-    // Center: power (if Tasmota active) or layer count
-    bool showPowerNow = tasmotaSettings.enabled && tasmotaOnline &&
-                        (tasmotaSettings.displayMode == 1 || altShowPower);
+    // Center: power (if Tasmota active) or layer count (centerBuf preformatted above)
     if (showPowerNow) {
       drawIcon16(tft, botCx - 20, eff_botCY - 8, icon_lightning, CLR_YELLOW);
-      char wBuf[8];
-      snprintf(wBuf, sizeof(wBuf), "%.0fW", tasmotaGetWatts());
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(wBuf, botCx - 2, eff_botCY);
+      tft.drawString(centerBuf, botCx - 2, eff_botCY);
     } else {
       tft.setTextDatum(MC_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      char layerBuf[20];
-      snprintf(layerBuf, sizeof(layerBuf), "L%d/%d", s.layerNum, s.totalLayers);
-      tft.drawString(layerBuf, botCx, eff_botCY);
+      tft.drawString(centerBuf, botCx, eff_botCY);
     }
 
     // Right: door status (if sensor present) or speed mode
