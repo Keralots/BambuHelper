@@ -80,6 +80,12 @@
 #define LY_WIFI_X    4
 #define LY_WIFI_Y    308
 
+// --- Battery indicator (Waveshare boards only) - vertical icon ---
+#define LY_BAT_W       8
+#define LY_BAT_H       16
+#define LY_BAT_TEXT_X  12
+#define LY_BAT_SHIFT_X 14
+
 // --- Idle screen (with printer) - same as default ---
 #define LY_IDLE_NAME_Y      30
 #define LY_IDLE_STATE_Y     50
