@@ -552,6 +552,18 @@ R"rawliteral(
             </label>
             <p style="font-size:11px;color:#8B949E;margin-top:2px">Audible feedback for capacitive touch buttons</p>
           </div>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+              <input type="checkbox" id="buzbeden" %BUZ_BED_ALERT%>
+              Sound alert when bed cools after print
+            </label>
+            <p style="font-size:11px;color:#8B949E;margin-top:2px">Plays a second sound when the bed cools below this temperature after a print.</p>
+            <div id="buzBedTempRow" style="display:flex;gap:8px;align-items:center;margin-top:4px">
+              <span style="font-size:12px;color:#8B949E">Threshold:</span>
+              <input type="number" id="buzbedtemp" min="20" max="80" value="%BUZ_BED_TEMP%" style="width:70px">
+              <span style="font-size:12px;color:#8B949E">&deg;C</span>
+            </div>
+          </div>
           <button type="button" id="buzTestBtn" class="btn btn-blue" style="margin-top:12px;width:auto;padding:8px 16px"
                   onclick="testBuzzer()">Test Finished Sound</button>
         </div>
@@ -1101,7 +1113,8 @@ function ledTestEffect(){
 var buzTestSounds=[
   {id:0, name:'Print Finished'},
   {id:1, name:'Error'},
-  {id:2, name:'Connected'}
+  {id:2, name:'Connected'},
+  {id:4, name:'Bed Cooled'}
 ];
 var buzTestIdx=0;
 function testBuzzer(){
@@ -1125,6 +1138,8 @@ function saveRotation(){
   p.append('buzqs',document.getElementById('buzqs').value);
   p.append('buzqe',document.getElementById('buzqe').value);
   p.append('buzclick',document.getElementById('buzclick').checked?'1':'0');
+  p.append('buzbeden',document.getElementById('buzbeden').checked?'1':'0');
+  p.append('buzbedtemp',document.getElementById('buzbedtemp').value);
   p.append('leden',document.getElementById('leden').value);
   p.append('ledpin',document.getElementById('ledpin').value);
   p.append('ledbr',document.getElementById('ledbr').value);
@@ -1787,6 +1802,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BUZ_QS") == 0)  { out = String(buzzerSettings.quietStartHour); return true; }
   if (strcmp(name, "BUZ_QE") == 0)  { out = String(buzzerSettings.quietEndHour); return true; }
   if (strcmp(name, "BUZ_CLICK") == 0) { out = buzzerSettings.buttonClick ? "checked" : ""; return true; }
+  if (strcmp(name, "BUZ_BED_ALERT") == 0) { out = buzzerSettings.bedCooldownAlert ? "checked" : ""; return true; }
+  if (strcmp(name, "BUZ_BED_TEMP") == 0)  { out = String(buzzerSettings.bedCooldownThresholdC); return true; }
 
   // --- External LED ---
   if (strcmp(name, "LED_OFF") == 0) { out = ledSettings.enabled ? "" : "selected"; return true; }
@@ -2385,6 +2402,7 @@ static void handleBuzzerTest() {
   uint8_t snd = 0;
   if (server.hasArg("sound")) snd = server.arg("sound").toInt();
   if (snd <= 2) buzzerPlay((BuzzerEvent)snd);
+  else if (snd == 4) buzzerPlay(BUZZ_BED_COOLDOWN);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -2498,6 +2516,15 @@ static void handleSaveRotation() {
   }
   if (server.hasArg("buzclick")) {
     buzzerSettings.buttonClick = (server.arg("buzclick") == "1");
+  }
+  if (server.hasArg("buzbeden")) {
+    buzzerSettings.bedCooldownAlert = (server.arg("buzbeden") == "1");
+  }
+  if (server.hasArg("buzbedtemp")) {
+    int t = server.arg("buzbedtemp").toInt();
+    if (t < 20) t = 20;
+    if (t > 80) t = 80;
+    buzzerSettings.bedCooldownThresholdC = (uint8_t)t;
   }
   saveBuzzerSettings();
   initBuzzer();
@@ -2672,6 +2699,8 @@ static void handleSettingsExport() {
   buz["quietStart"] = buzzerSettings.quietStartHour;
   buz["quietEnd"] = buzzerSettings.quietEndHour;
   buz["buttonClick"] = buzzerSettings.buttonClick;
+  buz["bedCooldownAlert"] = buzzerSettings.bedCooldownAlert;
+  buz["bedCooldownThresholdC"] = buzzerSettings.bedCooldownThresholdC;
 
   // External LED
   JsonObject led = doc["led"].to<JsonObject>();
@@ -2882,6 +2911,11 @@ static void handleSettingsImportFinish() {
       if (qe <= 23) buzzerSettings.quietEndHour = qe;
     }
     if (buz["buttonClick"].is<bool>()) buzzerSettings.buttonClick = buz["buttonClick"].as<bool>();
+    if (buz["bedCooldownAlert"].is<bool>()) buzzerSettings.bedCooldownAlert = buz["bedCooldownAlert"].as<bool>();
+    if (buz["bedCooldownThresholdC"].is<uint8_t>()) {
+      uint8_t t = buz["bedCooldownThresholdC"].as<uint8_t>();
+      if (t >= 20 && t <= 80) buzzerSettings.bedCooldownThresholdC = t;
+    }
   }
 
   // External LED

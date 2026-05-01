@@ -41,6 +41,13 @@ static const ToneStep melodyClick[] = {
   {4000, 8},
 };
 
+// Descending tones - bed cooled, second-stage alert (softer than finished)
+static const ToneStep melodyBedCooldown[] = {
+  {784, 150}, {0, 50},   // G5
+  {659, 150}, {0, 50},   // E5
+  {523, 200},            // C5
+};
+
 // ---------------------------------------------------------------------------
 //  Non-blocking playback state
 // ---------------------------------------------------------------------------
@@ -61,6 +68,10 @@ void initBuzzer() {
   }
   buzzerBackendInit();
   buzzerBackendStop();
+}
+
+bool buzzerIsPlaying() {
+  return playing;
 }
 
 bool buzzerIsQuietHour() {
@@ -97,6 +108,10 @@ void buzzerPlay(BuzzerEvent event) {
     case BUZZ_CLICK:
       currentMelody = melodyClick;
       melodyLen = sizeof(melodyClick) / sizeof(ToneStep);
+      break;
+    case BUZZ_BED_COOLDOWN:
+      currentMelody = melodyBedCooldown;
+      melodyLen = sizeof(melodyBedCooldown) / sizeof(ToneStep);
       break;
     default: return;
   }

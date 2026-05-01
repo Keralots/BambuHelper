@@ -375,18 +375,69 @@ static void handleConnectingScreenRecovery() {
   }
 }
 
-static void handleErrorBuzzers() {
-  // Check for error state transition on any printer
+static void handleGcodeStateTransitions() {
+  // Per-slot transition tracking. All transition checks must happen BEFORE
+  // updating prevGcodeStateId[i] at the end - so a single combined helper
+  // is the only safe way to handle multiple transition-driven behaviors.
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
     if (!isPrinterConfigured(i)) continue;
     BambuState& ps = printers[i].state;
-    if (ps.gcodeStateId == GCODE_FAILED &&
-        prevGcodeStateId[i] != GCODE_FAILED &&
-        prevGcodeStateSeen[i]) {
-      buzzerPlay(BUZZ_ERROR);
+
+    if (prevGcodeStateSeen[i]) {
+      if (ps.gcodeStateId == GCODE_FAILED && prevGcodeStateId[i] != GCODE_FAILED) {
+        buzzerPlay(BUZZ_ERROR);
+      }
+      if (ps.gcodeStateId == GCODE_FINISH && prevGcodeStateId[i] != GCODE_FINISH) {
+        if (buzzerSettings.bedCooldownAlert) {
+          ps.bedCooldownAlertArmed = true;
+        }
+      }
+      if (isPrintingGcodeState(ps.gcodeStateId) &&
+          !isPrintingGcodeState(prevGcodeStateId[i])) {
+        ps.bedCooldownAlertArmed = false;
+      }
     }
     prevGcodeStateId[i] = ps.gcodeStateId;
     prevGcodeStateSeen[i] = true;
+  }
+}
+
+static void handleBedCooldownBuzzers() {
+  // Option disabled - clear all armed flags so re-enabling later doesn't
+  // fire a stale alert (e.g. user toggles off, bed cools below threshold,
+  // user toggles back on -> would otherwise trigger immediately).
+  if (!buzzerSettings.bedCooldownAlert) {
+    for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+      printers[i].state.bedCooldownAlertArmed = false;
+    }
+    return;
+  }
+  if (buzzerIsPlaying()) return;  // wait for finish melody to clear
+
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+    if (!isPrinterConfigured(i)) continue;
+    BambuState& ps = printers[i].state;
+    if (!ps.bedCooldownAlertArmed) continue;
+    if (!ps.connected) continue;
+
+    // Door-open ack per slot: user came to grab the print, cancel pending alert.
+    if (dpSettings.doorAckEnabled && ps.doorSensorPresent && ps.doorOpen) {
+      ps.bedCooldownAlertArmed = false;
+      continue;
+    }
+
+    // Defensive: a new print is running, kill the armed state.
+    if (isPrintingGcodeState(ps.gcodeStateId)) {
+      ps.bedCooldownAlertArmed = false;
+      continue;
+    }
+
+    if (ps.bedTemp <= 0.5f) continue;  // MQTT data sanity
+    if (ps.bedTemp > (float)buzzerSettings.bedCooldownThresholdC) continue;
+
+    buzzerPlay(BUZZ_BED_COOLDOWN);
+    ps.bedCooldownAlertArmed = false;  // fire-and-forget (quiet hours = silent skip)
+    break;  // one alert per loop tick
   }
 }
 
@@ -500,7 +551,8 @@ void loop() {
 
   handleDisplaySleepTimeouts();
   handleConnectingScreenRecovery();
-  handleErrorBuzzers();
+  handleGcodeStateTransitions();
+  handleBedCooldownBuzzers();
 
   buzzerTick();
   Battery::tick();

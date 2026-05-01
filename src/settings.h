@@ -103,6 +103,8 @@ struct BuzzerSettings {
   uint8_t quietStartHour;   // quiet hours start (0-23), 0 = disabled
   uint8_t quietEndHour;     // quiet hours end (0-23)
   bool buttonClick;          // play click sound on button press
+  bool bedCooldownAlert;          // play second alert when bed cools after print
+  uint8_t bedCooldownThresholdC;  // bed temperature threshold (20-80 C)
 };
 
 // External LED settings (optional, PWM dimmable)

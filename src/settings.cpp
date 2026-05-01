@@ -18,7 +18,7 @@ DisplayPowerSettings dpSettings;
 char cloudEmail[64] = {0};
 ButtonType buttonType = BTN_DISABLED;
 uint8_t buttonPin = BUTTON_DEFAULT_PIN;
-BuzzerSettings buzzerSettings = { false, BUZZER_DEFAULT_PIN, 0, 0 };
+BuzzerSettings buzzerSettings = { false, BUZZER_DEFAULT_PIN, 0, 0, false, false, 35 };
 LedSettings ledSettings = {
   /*enabled*/             false,
   /*pin*/                 LED_DEFAULT_PIN,
@@ -355,6 +355,10 @@ void loadSettings() {
   buzzerSettings.quietStartHour = prefs.getUChar("buz_qstart", 0);
   buzzerSettings.quietEndHour = prefs.getUChar("buz_qend", 0);
   buzzerSettings.buttonClick = prefs.getBool("buz_click", false);
+  buzzerSettings.bedCooldownAlert = prefs.getBool("buz_bed_on", false);
+  uint8_t bct = prefs.getUChar("buz_bed_c", 35);
+  if (bct < 20 || bct > 80) bct = 35;
+  buzzerSettings.bedCooldownThresholdC = bct;
 
   // External LED settings
   ledSettings.enabled    = prefs.getBool ("led_on",  false);
@@ -513,6 +517,8 @@ void saveBuzzerSettings() {
   prefs.putUChar("buz_qstart", buzzerSettings.quietStartHour);
   prefs.putUChar("buz_qend", buzzerSettings.quietEndHour);
   prefs.putBool("buz_click", buzzerSettings.buttonClick);
+  prefs.putBool("buz_bed_on", buzzerSettings.bedCooldownAlert);
+  prefs.putUChar("buz_bed_c", buzzerSettings.bedCooldownThresholdC);
   prefs.end();
 }
 

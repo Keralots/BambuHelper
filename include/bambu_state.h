@@ -83,6 +83,7 @@ struct BambuState {
   unsigned long lastPrintDataMs;  // millis() of last core print data (temps, fans, progress, state)
   bool finishBuzzerPlayed;    // true after FINISH buzzer played (reset on next print)
   bool doorAcknowledged;      // true after door opened on FINISH screen (print removed)
+  bool bedCooldownAlertArmed; // armed on FINISH transition, fired when bedTemp <= threshold
   AmsState ams;               // AMS tray data
 };
 
