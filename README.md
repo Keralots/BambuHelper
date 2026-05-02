@@ -223,6 +223,8 @@ The script will prompt for your email, password, and 2FA code, then print the to
 
 > **Note:** The token is valid for approximately 3 months. When it expires, the ESP32 will fail to connect - simply repeat the process above to get a fresh token and paste it in the web interface. Make sure to select the correct **Server Region** (US/EU/CN) to match your Bambu account's region.
 
+> **Token expires very quickly (after one session, on next reboot, etc.)?** Use the Python helper script (`tools/get_token.py`) instead of copying the cookie from the browser. Some accounts produce a browser cookie that gets invalidated unexpectedly soon after extraction; a token obtained via the script tends to be more stable.
+
 ### Custom Smooth Fonts
 
 BambuHelper embeds smooth fonts directly in the firmware as VLW tables in `PROGMEM`. The default font is **Inter** (Regular for small/body, Bold for large headings), shipped as TTF in `fonts/` and pre-converted to C headers in `include/fonts/`. Swapping the font means regenerating those headers and reflashing - there is no runtime upload, because the font lives in flash next to the code.

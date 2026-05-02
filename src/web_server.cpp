@@ -243,7 +243,7 @@ R"rawliteral(
       </div>
 
       <div id="cloudFields" style="display:none">
-        <p style="font-size:12px;color:#8B949E;margin:10px 0">Connect any printer via Bambu Cloud (no LAN mode needed).<br>Token valid ~3 months. Your password is NOT stored.</p>
+        <p style="font-size:12px;color:#8B949E;margin:10px 0">Connect any printer via Bambu Cloud (no LAN mode needed).<br>Token expires after ~90 days. It may also be invalidated earlier if you "log out everywhere" or change your password - in that case paste a fresh one. Your password is NOT stored.</p>
         <label for="region">Server Region</label>
         <select id="region">
           <option value="us" %REGION_US%>Americas (US)</option>
@@ -1289,6 +1289,7 @@ function refreshDiag(){
         h+='<div class="stat-row"><span>Pushall recovery:</span><span class="stat-val">'+(rc+rd+rf+ri)+' (P:'+rc+' D:'+rd+' F:'+rf+' I:'+ri+')</span></div>';
         h+='<div class="stat-row"><span>Last pushall:</span><span class="stat-val">'+esc(p.last_pushall_reason||'Never')+' ('+ageText(p.last_pushall_age_s,p.pushall_total>0)+')</span></div>';
         if(p.last_rc!==0) h+='<div class="stat-row"><span>Last error:</span><span class="stat-val" style="color:#F85149">'+esc(p.rc_text)+'</span></div>';
+        if(p.rc_hint) h+='<div style="margin-top:4px;font-size:11px;color:#F0B72F;line-height:1.3">'+esc(p.rc_hint)+'</div>';
         h+='</div>';
       });
     }
@@ -2297,6 +2298,10 @@ static void handleDebug() {
     p["messages"] = d.messagesRx;
     p["last_rc"] = d.lastRc;
     p["rc_text"] = mqttRcToString(d.lastRc);
+    if (isCloudMode(printers[i].config.mode) &&
+        (d.lastRc == 4 || d.lastRc == 5)) {
+      p["rc_hint"] = "Token expired or invalidated (90-day TTL, or 'log out everywhere'/password change). Paste a fresh token in Setup.";
+    }
     p["tcp_ok"] = d.tcpOk;
     p["pushall_total"] = d.pushallTotal;
     p["rec_print"] = d.recoveryPrint;

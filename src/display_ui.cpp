@@ -776,9 +776,20 @@ static void drawConnectingMQTT() {
     tft.drawString(buf, cx, cy + 50);
 
     if (d.lastRc != 0) {
-      snprintf(buf, sizeof(buf), "Err: %s", mqttRcToString(d.lastRc));
+      bool cloudAuthErr = isCloudMode(p.config.mode) &&
+                          (d.lastRc == 4 || d.lastRc == 5);
       tft.setTextColor(CLR_RED, CLR_BG);
-      tft.drawString(buf, cx, cy + 62);
+      if (cloudAuthErr) {
+        // Cloud token rejected - server-side TTL is 90 days. May also be
+        // invalidated earlier if the user does "log out everywhere" or
+        // changes their password. The cookie in the browser may still look
+        // valid; the server is the source of truth.
+        tft.drawString("Token rejected", cx, cy + 62);
+        tft.drawString("Re-paste in web setup", cx, cy + 74);
+      } else {
+        snprintf(buf, sizeof(buf), "Err: %s", mqttRcToString(d.lastRc));
+        tft.drawString(buf, cx, cy + 62);
+      }
     }
   }
 }

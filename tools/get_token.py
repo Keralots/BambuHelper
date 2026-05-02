@@ -77,7 +77,6 @@ def fetch_devices(token: str) -> list:
                         impersonate=IMPERSONATE, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    print(f"  Devices API response: {json.dumps(data, indent=2)[:1000]}")
     devices = data.get("data", [])
     if not devices and isinstance(data.get("devices"), list):
         devices = data["devices"]
@@ -124,7 +123,6 @@ def main():
     if not token:
         login_type = data.get("loginType", "")
         tfa_key = data.get("tfaKey", "")
-        print(f"  2FA type: {login_type}")
 
         if login_type == "tfa":
             # TOTP authenticator app
@@ -163,17 +161,15 @@ def main():
 
     # Fetch profile to get userId
     print("Fetching user profile...")
-    uid = None
     try:
         profile = fetch_profile(token)
-        print(f"  Profile response: {json.dumps(profile, indent=2)[:500]}")
         # Try common uid field locations
         uid = (profile.get("uid")
                or (profile.get("data", {}) or {}).get("uid")
                or profile.get("userId")
                or (profile.get("data", {}) or {}).get("userId"))
         if uid:
-            print(f"\n  Your userId: u_{uid}")
+            print(f"  Your userId: u_{uid}")
     except Exception as e:
         print(f"  Could not fetch profile: {e}")
 
