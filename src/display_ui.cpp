@@ -2177,12 +2177,16 @@ static void drawPrinting() {
 
       bool typeChanged = (gt != prevSlotTypes[si]);
       if (typeChanged) {
-        // Slot type changed (or first draw) - clear area and reset cache
+        // Slot type changed (or first draw) - clear area and reset cache.
+        // Label is drawn MC_DATUM at labelY, so its glyphs straddle that line;
+        // FONT_BODY (~20px) and FONT_SMALL (~14px) need a generous band to fully
+        // erase a longer previous label when shrinking to a shorter one.
         tft.fillCircle(slotX[si], slotY[si], gR + 2, dispSettings.bgColor);
-        // Clear label area below gauge
         bool sm = dispSettings.smallLabels;
-        tft.fillRect(slotX[si] - gR, slotY[si] + gR + (sm ? 1 : -3),
-                     gR * 2, sm ? 12 : 16, dispSettings.bgColor);
+        int16_t labelY = slotY[si] + gR + (sm ? 3 : -1);
+        int16_t lh     = sm ? 18 : 24;
+        tft.fillRect(slotX[si] - gR - 2, labelY - lh / 2,
+                     gR * 2 + 4, lh, dispSettings.bgColor);
         prevSlotTypes[si] = gt;
       }
 
