@@ -84,6 +84,7 @@ const char* pushallReasonToString(uint8_t reason) {
     case PUSHALL_RECOVERY_CONN_DEAD: return "Recovery (Conn Dead)";
     case PUSHALL_RECOVERY_FINISH:    return "Recovery (Finish)";
     case PUSHALL_RECOVERY_IDLE:      return "Recovery (Idle)";
+    case PUSHALL_RECOVERY_FAILED:    return "Recovery (Failed)";
     case PUSHALL_MANUAL:             return "Manual";
     case PUSHALL_NONE:
     default:                         return "Never";
@@ -189,6 +190,7 @@ static bool requestPushall(MqttConn& c, PushallReason reason) {
     case PUSHALL_RECOVERY_CONN_DEAD: c.diag.recoveryConnDead++; break;
     case PUSHALL_RECOVERY_FINISH:    c.diag.recoveryFinish++;   break;
     case PUSHALL_RECOVERY_IDLE:      c.diag.recoveryIdle++;     break;
+    case PUSHALL_RECOVERY_FAILED:    c.diag.recoveryFailed++;   break;
     default: break;
   }
   c.diag.lastPushallMs = c.lastPushallRequest;
@@ -1145,6 +1147,22 @@ static void handleConn(MqttConn& c) {
         c.stalePushallSentMs = millis();
     }
 
+  // --- FAILED on cloud: cloud broker stops pushing state changes ---
+  // After a print fails, Bambu cloud goes silent: starting a new print on
+  // the printer (Studio/Handy) doesn't trigger a state push to subscribers.
+  // Send a rare recovery pushall (~5 min spacing) so the device notices a
+  // new print without the user having to open Bambu Handy to nudge cloud.
+  // Also still gated by the 2-min global throttle as belt-and-braces.
+  } else if (isConnected && cloud && s.gcodeStateId == GCODE_FAILED && connAlive) {
+    bool retryDue = (c.stalePushallSentMs == 0) ||
+                    (millis() - c.stalePushallSentMs > 300000);
+    if (retryDue && !cloudPushallThrottled) {
+      MQTT_LOG("[%d] FAILED on cloud - sending recovery pushall", c.slotIndex);
+      esp_task_wdt_reset();
+      if (requestPushall(c, PUSHALL_RECOVERY_FAILED))
+        c.stalePushallSentMs = millis();
+    }
+
   // --- Any other state ---
   } else if (s.gcodeStateId != GCODE_UNKNOWN) {
     c.stalePushallSentMs = 0;
@@ -1279,7 +1297,12 @@ void requestCloudRefresh(uint8_t slot) {
   BambuState& s = printers[slot].state;
   if (!isCloudMode(cfg.mode)) return;
   if (!c.mqtt || !c.mqtt->connected()) return;
-  if (s.gcodeStateId != GCODE_UNKNOWN) return;
+  // Manual refresh is useful for states where cloud goes silent: UNKNOWN
+  // (printer just came online, no full status yet) and FAILED (after a
+  // failed print, cloud stops pushing state changes until something on the
+  // backend nudges it - e.g. opening Bambu Handy).
+  if (s.gcodeStateId != GCODE_UNKNOWN &&
+      s.gcodeStateId != GCODE_FAILED) return;
   // Debounce: at most once per 5 seconds
   static unsigned long lastRefreshMs = 0;
   if (lastRefreshMs > 0 && millis() - lastRefreshMs < 5000) return;

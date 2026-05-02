@@ -147,8 +147,10 @@ static void handleWakeButton() {
 
   if (cur == SCREEN_IDLE &&
       isCloudMode(displayedPrinter().config.mode) &&
-      displayedPrinter().state.gcodeStateId == GCODE_UNKNOWN) {
-    // Single printer, cloud, UNKNOWN - manual refresh
+      (displayedPrinter().state.gcodeStateId == GCODE_UNKNOWN ||
+       displayedPrinter().state.gcodeStateId == GCODE_FAILED)) {
+    // Single printer, cloud, UNKNOWN/FAILED - manual refresh
+    // (cloud goes silent in both states; button press nudges fresh status)
     requestCloudRefresh(rotState.displayIndex);
   }
 }
