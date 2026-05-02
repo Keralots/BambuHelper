@@ -20,7 +20,47 @@
 //  LovyanGFX board-specific configurations
 // =============================================================================
 
-#if defined(BOARD_IS_S3)
+#if defined(BOARD_IS_S3_ZERO)
+// --- Waveshare ESP32-S3-Zero + external ST7789 240x240 -----------------------
+class LGFX_S3Zero : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7789  _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_S3Zero() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 12;
+      cfg.pin_mosi   = 11;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 9;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 10;
+      cfg.pin_rst  = 8;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 320;   // ST7789 chip GRAM is 240x320; visible rows 0-239
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 240;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_S3Zero _tft_instance;
+
+#elif defined(BOARD_IS_S3)
 // --- ESP32-S3 Super Mini + ST7789 240x240 ------------------------------------
 class LGFX_S3 : public lgfx::LGFX_Device {
   lgfx::Panel_ST7789  _panel;
@@ -246,7 +286,7 @@ public:
 static LGFX_C3 _tft_instance;
 
 #else
-  #error "No board variant defined. Add BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
+  #error "No board variant defined. Add BOARD_IS_S3_ZERO, BOARD_IS_S3, DISPLAY_CYD, BOARD_IS_C3, BOARD_IS_WS200 or BOARD_IS_WS154 to build_flags."
 #endif
 
 // Global pointer + reference — accessed via `tft` throughout the codebase.
@@ -412,7 +452,7 @@ void initDisplay() {
   _tft_instance.init();  // LovyanGFX configures SPI from the board class above
 #if defined(DISPLAY_CYD)
   applyCydPanelInversion();
-#elif defined(BOARD_IS_S3) || defined(BOARD_IS_C3) || defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154)
+#elif defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_S3) || defined(BOARD_IS_C3) || defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154)
   _tft_instance.invertDisplay(true);  // ST7789 requires color inversion
 #endif
   Serial.println("Display: tft.init() done");

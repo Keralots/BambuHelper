@@ -4,7 +4,7 @@ Dedicated Bambu Lab printer monitor built with ESP32-S3 Super Mini and a 1.54" 2
 
 Connects to your printer via MQTT over TLS and displays a real-time dashboard with arc gauges, animations, live stats, and optional buzzer notifications.
 
-Additional supported boards include CYD 240x320, Waveshare 2" 240x320, Waveshare 1.54" 240x240, and ESP32-C3 DIY builds using the same 240x240 display as the ESP32-S3 version.
+Additional supported boards include CYD 240x320, Waveshare ESP32-S3-Zero, Waveshare 2" 240x320, Waveshare 1.54" 240x240, and ESP32-C3 DIY builds using the same 240x240 display as the ESP32-S3 version.
 
 ### Supported Printers
 
@@ -33,6 +33,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 |---|---|---|
 | ![ESP32-S3 Super Mini dashboard](img/interface1.jpg) | **ESP32-S3 Super Mini + 1.54" ST7789** | Base implementation this project started from. Uses an ESP32-S3 Super Mini with a `1.54"` TFT SPI ST7789 (`240x240`) display. Use the `esp32s3` firmware build. Supports **up to 2 printers**. |
 | ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** | `240x320` ILI9341 all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Display**. Case shown in the photo: [MakerWorld model](https://makerworld.com/models/2721746). |
+| - | **Waveshare ESP32-S3-Zero + 1.54" ST7789** | DIY version for the ESP32-S3FH4R2 module with `4MB` flash and `2MB` PSRAM. Use the `esp32s3_zero` firmware build. It uses the same external ST7789 wiring as the ESP32-S3 Super Mini build and supports **up to 2 printers**. GPIO21 is occupied by the onboard WS2812 RGB LED. Product page: [waveshare.com/esp32-s3-zero.htm](https://www.waveshare.com/esp32-s3-zero.htm) |
 | ![Waveshare 2 inch](img/waveshare2inch.png) | **Waveshare ESP32-S3-Touch-LCD-2** | `240x320` ST7789 version with ESP32-S3, sold as a more plug-and-play option. Use the `ws_lcd_200` firmware build. Supports **up to 2 printers**, like the main ESP32-S3 DIY version. Product page: [waveshare.com/esp32-s3-touch-lcd-2.htm](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm) |
 | ![Waveshare 1.54 inch](img/waveshare1.54inch.png) | **Waveshare ESP32-S3-Touch-LCD-1.54** | `240x240` ST7789 with ESP32-S3, touchscreen, battery holder, and 3 built-in buttons. Use the `ws_lcd_154` firmware build. Supports **up to 2 printers**. The left button (BOOT) works as a screen switcher alongside the touchscreen. **Battery power:** press and hold the center PWR button to power on. To power off, hold the left (BOOT) and right buttons simultaneously for 1.5 seconds. Product page: [waveshare.com/esp32-s3-touch-lcd-1.54.htm](https://www.waveshare.com/esp32-s3-touch-lcd-1.54.htm) |
 | ![ESP32-C3 board](img/ESP32c3Board.png) | **ESP32-C3 Super Mini** | DIY version, just like the main ESP32-S3 build, using the same `240x240` ST7789 display. Use the `esp32c3` firmware build. Due to RAM limits, this board supports **1 printer only**. |
@@ -55,7 +56,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Physical button** - optional push button or TTP223 touch sensor to cycle printers and wake display
 - **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events
 - **OTA updates** - firmware can be updated from the web interface
-- **Additional board support** - CYD 240x320, Waveshare 2" 240x320, and ESP32-C3 240x240 builds are supported
+- **Additional board support** - CYD 240x320, ESP32-S3-Zero, Waveshare 2" 240x320, Waveshare 1.54" 240x240, and ESP32-C3 240x240 builds are supported
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
 
 ## Hardware
@@ -64,7 +65,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 |---|---|
 | MCU | ESP32-S3 Super Mini |
 | Display | 1.54" TFT SPI ST7789 (240x240) |
-| Other supported boards | CYD / ESP32-2432S028 (240x320 ILI9341), Waveshare ESP32-S3-Touch-LCD-2 (240x320 ST7789), Waveshare ESP32-S3-Touch-LCD-1.54 (240x240 ST7789), ESP32-C3 Super Mini + 240x240 ST7789 |
+| Other supported boards | CYD / ESP32-2432S028 (240x320 ILI9341), Waveshare ESP32-S3-Zero + 240x240 ST7789, Waveshare ESP32-S3-Touch-LCD-2 (240x320 ST7789), Waveshare ESP32-S3-Touch-LCD-1.54 (240x240 ST7789), ESP32-C3 Super Mini + 240x240 ST7789 |
 | Connection | SPI |
 
 Display: 1.54": https://a.aliexpress.com/_EG9y7wc
@@ -77,22 +78,24 @@ Optional: Passive buzzer for print finish and error notifications: https://aliex
 
 Optional case seen on picture (for ST7789 (240x240) display): https://makerworld.com/en/models/2501721
 
-> **Note:** CYD and Waveshare 2" are all-in-one boards with the display already integrated. The wiring tables below mainly apply to the DIY ESP32-S3 and ESP32-C3 builds that use an external 240x240 ST7789 display.
+> **Note:** CYD and Waveshare 2" are all-in-one boards with the display already integrated. The wiring tables below mainly apply to the DIY ESP32-S3, ESP32-S3-Zero, and ESP32-C3 builds that use an external 240x240 ST7789 display.
 
 ### Default Wiring
 
-| Display Pin ST7789 (240x240) | ESP32-S3 GPIO | ESP32-C3 GPIO |
-|---|---|---|
-| MOSI (SDA) | 11 | 20 |
-| SCLK (SCL) | 12 | 21 |
-| CS | 10 | 6 |
-| DC | 9 | 7 |
-| RST | 8 | 10 |
-| BL | 13 | 5 |
-| GND | GND | GND |
-| VCC | 3.3V | 3.3V |
+| Display Pin ST7789 (240x240) | ESP32-S3 GPIO | ESP32-S3-Zero GPIO | ESP32-C3 GPIO |
+|---|---|---|---|
+| MOSI (SDA) | 11 | 11 | 20 |
+| SCLK (SCL) | 12 | 12 | 21 |
+| CS | 10 | 10 | 6 |
+| DC | 9 | 9 | 7 |
+| RST | 8 | 8 | 10 |
+| BL | 13 | 13 | 5 |
+| GND | GND | GND | GND |
+| VCC | 3.3V | 3.3V | 3.3V |
 
 Adjust pin assignments in `platformio.ini` `build_flags` to match your wiring.
+
+> **ESP32-S3-Zero:** GPIO21 is already connected to the onboard WS2812 RGB LED, so do not use GPIO21 for the optional external LED.
 
 Touch TTP223 button is optional. It is used to switch between printers. You may also use a standard push button and connect it between pin 4 and GND, then pick the correct button type in the web interface under Multi-Printer support.
 
@@ -148,6 +151,7 @@ You can change the buzzer GPIO later in the web interface under **Buzzer**. The 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
 | ESP32-S3 Super Mini | `BambuHelper-esp32s3-v2.7-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v2.7-Full.bin` |
 | CYD / ESP32-2432S028 | `BambuHelper-cyd-v2.7-Full.bin` |
 | Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v2.7-Full.bin` |
 | Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v2.7-Full.bin` |

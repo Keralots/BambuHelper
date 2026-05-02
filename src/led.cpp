@@ -53,6 +53,15 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 34 && pin <= 39) return false;                                        // input-only
   if (pin > 39) return false;
 
+#elif defined(BOARD_IS_S3_ZERO)
+  // Waveshare ESP32-S3-Zero + external ST7789 240x240
+  if (pin == 8 || pin == 9 || pin == 10 || pin == 11 || pin == 12) return false;  // display SPI
+  if (pin == 13) return false;                                                     // display backlight
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin == 21) return false;                                                     // onboard WS2812 RGB LED
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM / not exposed
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_S3)
   // LOLIN S3 mini + ST7789 240x240
   if (pin == 8 || pin == 9 || pin == 10 || pin == 11 || pin == 12) return false;   // display SPI
