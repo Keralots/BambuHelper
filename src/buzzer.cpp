@@ -5,7 +5,12 @@
 #include <time.h>
 
 void sanitizeBuzzerPin() {
-  if (buzzerSettings.pin == 0) return;
+  // Pin 0 = disabled (no buzzer). Pin 255 is invalid on ESP32 — clamp to 0.
+  // This also handles stale NVS values from firmware that used 255 as "disabled".
+  if (buzzerSettings.pin == 0 || buzzerSettings.pin == 255) {
+    buzzerSettings.pin = 0;
+    return;
+  }
 #if defined(BACKLIGHT_PIN)
   if (buzzerSettings.pin == BACKLIGHT_PIN) {
     Serial.printf("Buzzer: pin %d conflicts with backlight, disabling\n", buzzerSettings.pin);

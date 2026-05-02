@@ -2,6 +2,7 @@
 #include "buzzer.h"
 #include "settings.h"
 
+// ES8311 audio buzzer has its own backend
 #if !defined(BOARD_HAS_ES8311_AUDIO)
 
 void buzzerBackendInit() {

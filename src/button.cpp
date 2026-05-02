@@ -27,6 +27,28 @@
     value = Wire.read();
     return true;
   }
+#elif defined(USE_FT5X06)
+  #include <Wire.h>
+  #ifndef TOUCH_SLAVE_ADDRESS
+    #define TOUCH_SLAVE_ADDRESS 0x38
+  #endif
+  #define FT5X06_TOUCH_POINTS_REG 0x02  // TD_STATUS register
+  static bool ft5x06BusReady = false;
+  static bool ft5x06Seen = false;
+
+  static bool ft5x06Probe() {
+    Wire.beginTransmission(TOUCH_SLAVE_ADDRESS);
+    return Wire.endTransmission(true) == 0;
+  }
+
+  static bool ft5x06ReadReg(uint8_t reg, uint8_t& value) {
+    Wire.beginTransmission(TOUCH_SLAVE_ADDRESS);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0) return false;
+    if (Wire.requestFrom((uint8_t)TOUCH_SLAVE_ADDRESS, (uint8_t)1) != 1) return false;
+    value = Wire.read();
+    return true;
+  }
 #elif defined(TOUCH_CS)
   #include "display_ui.h"  // extern tft for getTouch()
 #endif
@@ -75,6 +97,30 @@ void initButton() {
     }
     return;
   }
+#elif defined(USE_FT5X06)
+  if (buttonType == BTN_TOUCHSCREEN) {
+    // FT5X06 uses same I2C bus as PCA9535PW IO expander (SDA=39, SCL=40)
+    // Touch RST is handled via PCA9535 pin 7 during display init
+    Wire.begin(39, 40);
+    Wire.setClock(400000);
+    ft5x06BusReady = true;
+    delay(50);  // Wait for touch controller to be ready after RST release
+    if (ft5x06Probe()) {
+      uint8_t touchPoints = 0;
+      if (ft5x06ReadReg(FT5X06_TOUCH_POINTS_REG, touchPoints)) {
+        Serial.printf("FT5X06 touch initialized (I2C addr 0x%02X, touchPoints=%d)\n",
+                      TOUCH_SLAVE_ADDRESS, touchPoints);
+        ft5x06Seen = true;
+      } else {
+        Serial.printf("FT5X06 detected on I2C addr 0x%02X, but register reads failed\n",
+                      TOUCH_SLAVE_ADDRESS);
+      }
+    } else {
+      Serial.printf("FT5X06 touch did not answer at init (addr 0x%02X); will keep retrying at runtime\n",
+                    TOUCH_SLAVE_ADDRESS);
+    }
+    return;
+  }
 #endif
   if (buttonType == BTN_TOUCHSCREEN) return;
   if (buttonPin == 0) return;
@@ -105,6 +151,15 @@ bool wasButtonPressed() {
       cst816Seen = true;
     }
     raw = (touchNum > 0);
+#elif defined(USE_FT5X06)
+    if (!ft5x06BusReady) return false;
+    uint8_t touchPoints = 0;
+    if (!ft5x06ReadReg(FT5X06_TOUCH_POINTS_REG, touchPoints)) return false;
+    if (!ft5x06Seen) {
+      Serial.printf("FT5X06 touch became responsive at runtime (addr 0x%02X)\n", TOUCH_SLAVE_ADDRESS);
+      ft5x06Seen = true;
+    }
+    raw = (touchPoints > 0);
 #elif defined(TOUCH_CS)
     uint16_t tx, ty;
     raw = tft.getTouch(&tx, &ty);
