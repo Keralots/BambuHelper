@@ -34,8 +34,11 @@
 #define ARK_LAND_BRICK_COLS 13
 
 // ========== Gameplay constants (not layout-dependent) ==========
-#define ARK_BALL_SIZE     4
-#define ARK_PADDLE_H      4
+// Logical ball size scales with display — bigger screen needs bigger ball for visibility
+#define ARK_BALL_SIZE_BASE 4
+#define ARK_BALL_SIZE      (SCREEN_W >= 480 ? ARK_BALL_SIZE_BASE * 2 : ARK_BALL_SIZE_BASE)
+#define ARK_PADDLE_H_BASE  4
+#define ARK_PADDLE_H      (SCREEN_W >= 480 ? ARK_PADDLE_H_BASE * 2 : ARK_PADDLE_H_BASE)
 #define ARK_BALL_SPEED    3.0f
 #define ARK_PADDLE_SPEED  4
 #define ARK_UPDATE_MS     20    // ~50fps
@@ -184,6 +187,9 @@ static void refreshPongLayout() {
   pongLayout = next;
 }
 
+// Text size: scale up on high-res displays (480x480 uses 2x layout constants)
+static const int pongTextSize = (SCREEN_W >= 480) ? 2 : 1;
+
 // ========== Digit bounce (inlined) ==========
 static void triggerBounce(int i) {
   if (i >= 0 && i < 5) digitVelocity[i] = -6.0f;
@@ -298,60 +304,15 @@ static void spawnBall() {
 
 static int digitX(int i);  // forward declaration
 
-// Mark cached text dirty if ball erase overlaps it
-static void markBallDamage(int bx, int by) {
-  const PongLayout& layout = pongLayout;
-  int bx2 = bx + ARK_BALL_SIZE;
-  int by2 = by + ARK_BALL_SIZE;
-  // Check time digits and colon
-  for (int i = 0; i < 5; i++) {
-    int dx = digitX(i);
-    int dw = (i == 2) ? COLON_W : DIGIT_W + 2;
-    int dy = (i == 2) ? layout.timeY : (prevDigitY[i] ? prevDigitY[i] : layout.timeY);
-    if (bx2 > dx && bx < dx + dw && by2 > dy && by < dy + DIGIT_H) {
-      if (i == 2) prevColon = !showColon();  // force colon redraw
-      else prevDigits[i] = 0;
-    }
-  }
-  // Check date area
-  if (by2 > layout.dateY && by < layout.dateY + 16) {
-    prevDateStr[0] = '\0';
-  }
-}
-
-// Check if ball rect overlaps the time digits or date text
-static bool overlapsText(int bx, int by) {
-  const PongLayout& layout = pongLayout;
-  int bx2 = bx + ARK_BALL_SIZE;
-  int by2 = by + ARK_BALL_SIZE;
-  // Time digits zone (exact bounds of HH:MM)
-  if (by2 > layout.timeY && by < layout.timeY + DIGIT_H) {
-    int tLeft = digitX(0) - 2;
-    int tRight = digitX(4) + DIGIT_W + 4;
-    if (bx2 > tLeft && bx < tRight) return true;
-  }
-  // Date zone (centered text clear width, scaled to the active screen width)
-  if (by2 > layout.dateY && by < layout.dateY + 16) {
-    int dateLeft = (layout.screenW - LY_ARK_DATE_CLR_W) / 2;
-    int dateRight = dateLeft + LY_ARK_DATE_CLR_W;
-    if (bx2 > dateLeft && bx < dateRight) return true;
-  }
-  return false;
-}
-
 static void drawBall() {
+  // Erase old position, then draw new — both in the same function to prevent
+  // visible black holes between erase and redraw.  Text uses setTextColor(fg,bg)
+  // so it redraws atomically each frame, covering any ball erase overlap from
+  // the previous frame.
   if (prevBallX >= 0) {
-    // Ball passes behind text — no erase needed, no damage to repair
-    if (overlapsText(prevBallX, prevBallY)) {
-      // skip — ball was never drawn here
-    } else {
-      tft.fillRect(prevBallX, prevBallY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_BLACK);
-    }
+    tft.fillRect(prevBallX, prevBallY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_BLACK);
   }
-  // Don't draw ball over time digits — it passes behind
-  if (!overlapsText((int)ballX, (int)ballY)) {
-    tft.fillRect((int)ballX, (int)ballY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_WHITE);
-  }
+  tft.fillRect((int)ballX, (int)ballY, ARK_BALL_SIZE, ARK_BALL_SIZE, TFT_WHITE);
   prevBallX = (int)ballX;
   prevBallY = (int)ballY;
 }
@@ -552,7 +513,7 @@ static int digitX(int i) {
 
 static void drawTime() {
   const PongLayout& layout = pongLayout;
-  tft.setTextSize(1);  // no scaling, Font 7 is already 48px
+  tft.setTextSize(pongTextSize);
   char digits[5];
   if (netSettings.use24h) {
     digits[0] = '0' + (dispHour / 10);
@@ -569,9 +530,10 @@ static void drawTime() {
 
   bool colon = showColon();
 
-  // Draw digits - only redraw changed ones
+  // Always redraw digits every frame — text uses setTextColor(fg,bg) so it
+  // redraws atomically, covering any ball erase from the previous frame.
   setFont(tft, FONT_7SEG);
-  tft.setTextSize(1);
+  tft.setTextSize(pongTextSize);
   tft.setTextColor(dispSettings.clockTimeColor, TFT_BLACK);
 
   for (int i = 0; i < 5; i++) {
@@ -579,32 +541,25 @@ static void drawTime() {
 
     int x = digitX(i);
     int y = layout.timeY + (int)digitOffsetY[i];
-    bool bouncing = (digitOffsetY[i] != 0 || digitVelocity[i] != 0);
-    bool changed = (digits[i] != prevDigits[i]) || bouncing || (prevDigitY[i] != y);
 
-    if (changed) {
-      // Clear previous and current position
-      int clearW = DIGIT_W + 2;  // +2 margin for font rendering
-      if (prevDigitY[i] != 0)
-        tft.fillRect(x, prevDigitY[i], clearW, DIGIT_H, TFT_BLACK);
-      if (prevDigitY[i] != y)
-        tft.fillRect(x, y, clearW, DIGIT_H, TFT_BLACK);
-
-      tft.drawChar(digits[i], x, y, 7);
-      prevDigits[i] = digits[i];
-      prevDigitY[i] = y;
+    // Clear previous position if digit moved (bounce animation)
+    if (prevDigitY[i] != 0 && prevDigitY[i] != y) {
+      tft.fillRect(x, prevDigitY[i], DIGIT_W + 2, DIGIT_H, TFT_BLACK);
     }
+
+    // Redraw with background — no separate fillRect needed, drawChar fills atomically
+    tft.drawChar(digits[i], x, y, 7);
+    prevDigits[i] = digits[i];
+    prevDigitY[i] = y;
   }
 
-  // Colon - blinks, draw only when state changes
-  if (colon != prevColon) {
-    int cx = digitX(2);
-    tft.fillRect(cx, layout.timeY, COLON_W, DIGIT_H, TFT_BLACK);
-    if (colon) {
-      tft.drawChar(':', cx, layout.timeY, 7);
-    }
-    prevColon = colon;
+  // Colon — always redraw (ball may erase it, text redraws atomically)
+  int cx = digitX(2);
+  tft.fillRect(cx, layout.timeY, COLON_W, DIGIT_H, TFT_BLACK);
+  if (colon) {
+    tft.drawChar(':', cx, layout.timeY, 7);
   }
+  prevColon = colon;
 
   // AM/PM for 12h mode
   if (!netSettings.use24h) {
