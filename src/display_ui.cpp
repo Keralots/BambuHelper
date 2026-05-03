@@ -2401,6 +2401,8 @@ static void drawPrinting() {
           case GAUGE_HEATBREAK:   needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
+          case GAUGE_AMS_FILAMENT_ALL:
+              needDraw = true; break;  // AMS filament gauge always refreshes
           default:
             // AMS humidity / temperature gauges — index derived from enum value
             if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
@@ -2460,6 +2462,9 @@ static void drawPrinting() {
           break;
         case GAUGE_LAYER:
           drawLayerGauge(tft, cx, cy, gR, gT, s.layerNum, s.totalLayers, fr);
+          break;
+        case GAUGE_AMS_FILAMENT_ALL:
+          drawAmsFilamentAllGauge(tft, cx, cy, gR, gT, s.ams, fr);
           break;
         case GAUGE_EMPTY:
           if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);

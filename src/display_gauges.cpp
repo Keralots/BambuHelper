@@ -689,12 +689,15 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   if (fillEnd > 300) fillEnd = 300;
 
   // Color based on humidity level (0-5): green = dry, red = humid
+  // Bambu AMS humidity field: 5 = bone dry (good), 1 = very wet (bad).
+  // Invert for color mapping: wetLevel = (6 - humidity) so 5→1(good/green) and 1→5(bad/red).
+  uint8_t wetLevel = (humidityLevel > 0) ? (6 - humidityLevel) : 0;
   uint16_t arcColor;
-  if (!present || humidityLevel == 0) {
+  if (!present || wetLevel == 0) {
     arcColor = CLR_TEXT_DIM;
-  } else if (humidityLevel <= 2) {
+  } else if (wetLevel <= 2) {
     arcColor = CLR_GREEN;
-  } else if (humidityLevel <= 3) {
+  } else if (wetLevel <= 3) {
     arcColor = CLR_YELLOW;
   } else {
     arcColor = CLR_RED;
@@ -824,5 +827,247 @@ void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
     setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
+  }
+}
+
+// -----------------------------------------------------------------------------
+//  Filament type shorthand mapping
+// -----------------------------------------------------------------------------
+const char* getFilamentTypeLabel(const char* fullType) {
+  if (!fullType || !fullType[0]) return "---";
+  // Match Bambu-specific type codes to shorthand
+  if (strstr(fullType, "GFL99") || strstr(fullType, "PLA")) return "PLA";
+  if (strstr(fullType, "GFG99") || strstr(fullType, "PETG")) return "PETG";
+  if (strstr(fullType, "GFCR") || strstr(fullType, "CF") || strstr(fullType, "Carbon")) return "CF";
+  if (strstr(fullType, "GFT99") || strstr(fullType, "TPU")) return "TPU";
+  if (strstr(fullType, "GFAB") || strstr(fullType, "ABS")) return "ABS";
+  if (strstr(fullType, "GFPA") || strstr(fullType, "PA")) return "PA";
+  if (strstr(fullType, "GFPA-CF") || strstr(fullType, "PA-CF")) return "PA-CF";
+  if (strstr(fullType, "GFSG") || strstr(fullType, "SG")) return "SG";
+  if (strstr(fullType, "GFPEI") || strstr(fullType, "PEI")) return "PEI";
+  if (strstr(fullType, "PVB")) return "PVB";
+  if (strstr(fullType, "HPCS")) return "HPCS";
+  if (strstr(fullType, "PVA")) return "PVA";
+  if (strstr(fullType, "ECO")) return "ECO";
+  // Generic fallback: extract first 4 chars
+  static char buf[5];
+  strlcpy(buf, fullType, sizeof(buf));
+  return buf;
+}
+
+// -----------------------------------------------------------------------------
+//  AMS Filament All gauge - circular gauge divided into 4 quadrants
+//  Top-Left=Slot1, Top-Right=Slot2, Bottom-Right=Slot3, Bottom-Left=Slot4
+//  Separator lines: solid left half of horizontal, dotted elsewhere.
+//  Each quadrant: filament color bg + type label + % remaining.
+//  Humidity "H{n}" shown in a tiny circle at the center of the gauge.
+// -----------------------------------------------------------------------------
+void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+                             int16_t thickness, const struct AmsState& ams,
+                             bool forceRedraw) {
+  ScopedWrite sw(tft);
+  uint16_t bg = dispSettings.bgColor;
+  uint16_t dim = CLR_TEXT_DIM;
+
+  if (forceRedraw) {
+    tft.fillCircle(cx, cy, radius + 2, bg);
+  }
+
+  const int16_t innerR = radius - 2;
+
+  // Fill circle background
+  tft.fillCircle(cx, cy, innerR, bg);
+
+  // Humidity color scale: Bambu humidity field is INVERTED (5=dry/good, 1=wet/bad).
+  // Invert for display: idx=0→dim, idx 1,2→green-ish (dry), idx 3→yellow, idx 4,5→red-ish (wet)
+  static const uint16_t humidColors[6] = {
+    0x18E3,  // 0 - dim (no data)
+    0x07E0,  // 1 - green  (Bambu 5 = bone dry)
+    0xAFE5,  // 2 - light green (Bambu 4 = dry)
+    0xFFE0,  // 3 - yellow (Bambu 3 = moderate)
+    0xFC80,  // 4 - orange (Bambu 2 = humid)
+    0xF800   // 5 - red   (Bambu 1 = very wet)
+  };
+
+  uint8_t humidLevel = 0;
+  if (ams.present && ams.unitCount > 0) {
+    // Invert: Bambu 5→1(dry), Bambu 1→5(wet), Bambu 0→0(no data)
+    uint8_t rawHumid = ams.units[0].humidity;
+    humidLevel = (rawHumid > 0 && rawHumid <= 5) ? (6 - rawHumid) : 0;
+    if (humidLevel > 5) humidLevel = 5;
+  }
+  uint16_t hColor = humidColors[humidLevel];
+
+  // Quadrant slot mapping: TL=Slot1, TR=Slot2, BR=Slot3, BL=Slot4
+  // trays[0]=Slot1, trays[1]=Slot2, trays[2]=Slot3, trays[3]=Slot4
+  static const int8_t qSlotX[4] = {-1, 1, 1, -1};  // TL, TR, BR, BL
+  static const int8_t qSlotY[4] = {-1, -1, 1, 1};
+  const int16_t halfR = innerR;
+  // Inset text toward center so it doesn't touch the circle edge
+  const int16_t textInset = 5;
+  const int16_t qCX = halfR / 2;  // quadrant center X offset
+  const int16_t qCY = halfR / 2;  // quadrant center Y offset
+
+  for (int qi = 0; qi < 4; qi++) {
+    const AmsTray& tray = ams.trays[qi];
+    int16_t qCenterX = cx + qSlotX[qi] * qCX;
+    int16_t qCenterY = cy + qSlotY[qi] * qCY;
+
+    // Quadrant fill rectangle
+    int16_t fx, fy, fw, fh;
+    if (qi == 0) {        // Top-Left
+      fx = cx - halfR;  fy = cy - halfR;  fw = halfR;  fh = halfR;
+    } else if (qi == 1) { // Top-Right
+      fx = cx;           fy = cy - halfR;  fw = halfR;  fh = halfR;
+    } else if (qi == 2) { // Bottom-Right
+      fx = cx;           fy = cy;          fw = halfR;  fh = halfR;
+    } else {              // Bottom-Left
+      fx = cx - halfR;  fy = cy;          fw = halfR;  fh = halfR;
+    }
+
+    if (tray.present) {
+      uint16_t swatchColor = tray.colorRgb565;
+
+      // Fill quadrant with filament color
+      tft.fillRect(fx + 1, fy + 1, fw - 2, fh - 2, swatchColor);
+
+      // Contrast border around quadrant
+      uint16_t borderCol = alphaBlend565(60, 0xFFFF, swatchColor);
+      tft.drawRoundRect(fx + 1, fy + 1, fw - 2, fh - 2, 2, borderCol);
+
+      // Pick text color that contrasts well against the filament color
+      uint16_t txtColor = contrastTextColor565(swatchColor);
+
+      // Inset text toward center of circle to avoid touching the edges
+      int16_t tCX = qCenterX - qSlotX[qi] * textInset;
+      int16_t tCY = qCenterY - qSlotY[qi] * textInset;
+
+      // Type label (Font 2)
+      const char* typeLabel = getFilamentTypeLabel(tray.type);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(2);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(typeLabel, tCX, tCY - 8);
+
+      // Remaining % (Font 2)
+      char remainBuf[8];
+      if (tray.remain >= 0) {
+        snprintf(remainBuf, sizeof(remainBuf), "%d%%", tray.remain);
+      } else {
+        strlcpy(remainBuf, "--%", sizeof(remainBuf));
+      }
+      tft.setTextFont(2);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(remainBuf, tCX, tCY + 10);
+    } else {
+      // Empty slot — inset toward center
+      int16_t tCX = qCenterX - qSlotX[qi] * textInset;
+      int16_t tCY = qCenterY - qSlotY[qi] * textInset;
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextFont(2);
+      tft.setTextColor(dim, bg);
+      tft.drawString("--", tCX, tCY);
+    }
+  }
+
+  // Clip quadrant fill rectangles to the circle:
+  // Erase the 4 corner areas outside the circle by drawing bg-colored
+  // fast horizontal lines from the bounding square edges to the chord.
+  for (int16_t y = cy - innerR; y <= cy + innerR; y++) {
+    int16_t dy = y - cy;
+    int32_t d2 = (int32_t)dy * dy;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 >= r2) continue;
+    int16_t halfChord = (int16_t)sqrtf((float)(r2 - d2));
+    // Erase left side: from bounding square left edge to circle left edge
+    tft.drawFastHLine(cx - innerR, y, innerR - halfChord, bg);
+    // Erase right side: from circle right edge to bounding square right edge
+    tft.drawFastHLine(cx + halfChord, y, innerR - halfChord, bg);
+  }
+  // Erase rows above and below the circle entirely
+  tft.fillRect(cx - innerR, cy - innerR - 1, innerR * 2 + 1, 2, bg);
+  tft.fillRect(cx - innerR, cy + innerR, innerR * 2 + 1, 2, bg);
+
+  // Redraw circle boundary ring
+  uint16_t ringColor = alphaBlend565(80, 0xFFFF, bg);
+  tft.drawCircle(cx, cy, innerR, ringColor);
+
+  // Separator lines: all dotted except the TL↔BL (left vertical) segment.
+  //
+  //   Slot1 (TL)  ·  Slot2 (TR)
+  //       ·  ┃  ·
+  //   Slot4 (BL)  ·  Slot3 (BR)
+  //
+  // Left half of horizontal (between TL & BL) = SOLID
+  // Everything else = dotted
+
+  // Solid left-half of horizontal line (between TL/Slot1 and BL/Slot4)
+  {
+    int16_t startX = cx - innerR + 2;
+    int16_t endX = cx;
+    for (int16_t x = startX; x < endX; x++) {
+      int16_t dx = x - cx;
+      int32_t d2 = (int32_t)dx * dx;
+      int32_t r2 = (int32_t)innerR * innerR;
+      if (d2 < r2) {
+        tft.drawPixel(x, cy, dim);
+      }
+    }
+  }
+
+  // Dotted right-half of horizontal line (between TR/Slot2 and BR/Slot3)
+  for (int16_t dx = 1; dx < innerR - 2; dx += 3) {
+    int32_t d2 = (int32_t)dx * dx;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 < r2) {
+      tft.drawPixel(cx + dx, cy, dim);
+    }
+  }
+
+  // Dotted vertical line — both top half (TL↔TR) and bottom half (BL↔BR)
+  for (int16_t dy = -innerR + 3; dy < innerR - 2; dy += 3) {
+    int32_t d2 = (int32_t)dy * dy;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 < r2) {
+      tft.drawPixel(cx, cy + dy, dim);
+    }
+  }
+
+  // Slot number labels at the corners outside the circle
+  // Placed diagonally outside the circle boundary, near each quadrant
+  static const int8_t sNumX[4] = {-1, 1, 1, -1};  // TL, TR, BR, BL
+  static const int8_t sNumY[4] = {-1, -1, 1, 1};
+  static const char* sNumLabel[4] = {"1", "2", "3", "4"};
+  // 45-degree offset: place labels along diagonal outside the circle
+  // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
+  // Font 4 glyphs are ~26px tall; need extra offset to clear the circle edge
+  int16_t diagOff = (int16_t)(radius * 0.71f) + 14;
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextFont(4);  // Font 4 for slot numbers (large, bold, easy to read)
+  for (int i = 0; i < 4; i++) {
+    int16_t nx = cx + sNumX[i] * diagOff;
+    int16_t ny = cy + sNumY[i] * diagOff;
+    tft.setTextColor(dim, bg);
+    tft.drawString(sNumLabel[i], nx, ny);
+  }
+
+  // Humidity indicator: tiny circle at the center of the gauge
+  // Bambu humidity: 5=dry(good), 1=wet(bad) — inverted display: 1=dry, 5=wet
+  const int16_t humCircleR = 13;
+  tft.fillCircle(cx, cy, humCircleR, bg);
+  tft.drawCircle(cx, cy, humCircleR, dim);
+  if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
+    char humBuf[4];
+    // Display humidity: show raw Bambu value. Bambu scale: 1=wet, 5=dry.
+    // Invert for display: higher=wetter (1→5 very wet, 5→1 dry)
+    uint8_t displayHumid = ams.units[0].humidity;
+    if (displayHumid >= 1 && displayHumid <= 5) {
+      displayHumid = 6 - displayHumid;
+    }
+    snprintf(humBuf, sizeof(humBuf), "H%d", displayHumid);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(hColor, bg);
+    tft.drawString(humBuf, cx, cy);
   }
 }
