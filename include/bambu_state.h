@@ -73,6 +73,7 @@ struct BambuState {
   uint8_t auxFanPct;          // aux fan 0-100%
   uint8_t chamberFanPct;      // chamber fan 0-100%
   uint8_t heatbreakFanPct;    // heatbreak fan 0-100%
+  bool fanGearSeen;           // true once printer has reported fan_gear (gates legacy *_fan_speed fallback)
   int8_t wifiSignal;          // RSSI in dBm
   uint8_t speedLevel;         // 1=silent, 2=standard, 3=sport, 4=ludicrous
   bool dualNozzle;            // H2D/H2C dual extruder detected

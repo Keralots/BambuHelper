@@ -207,6 +207,7 @@ static void clearLiveMetrics(BambuState& s) {
   s.layerNum = 0;      s.totalLayers = 0;
   s.coolingFanPct = 0; s.auxFanPct = 0;
   s.chamberFanPct = 0; s.heatbreakFanPct = 0;
+  s.fanGearSeen = false;
   s.speedLevel = 0;
   s.wifiSignal = 0;
   s.doorOpen = false;  s.doorSensorPresent = false;
@@ -273,6 +274,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   pf["big_fan1_speed"] = true;
   pf["big_fan2_speed"] = true;
   pf["heatbreak_fan_speed"] = true;
+  pf["fan_gear"] = true;   // packed PWM 0-255 per fan (byte0=part, byte1=aux, byte2=chamber)
   pf["wifi_signal"] = true;
   pf["spd_lvl"] = true;
   pf["stat"] = true;       // H2 door sensor (hex string, bit 0x00800000 = door open)
@@ -706,25 +708,59 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     s.totalLayers = print["total_layer_num"].as<int>();
   }
 
-  // Fan speeds (Bambu sends 0-15, may arrive as int or string)
+  // Fan speeds: prefer fan_gear (packed PWM 0-255 per fan, ~0.4% precision) over the
+  // *_fan_speed fields (4-bit 0-15, ~6.67% precision) so the displayed value matches the
+  // printer's own LCD. Fallback to the legacy fields when fan_gear is missing or the byte
+  // is 0 while the legacy field is non-zero (delta-push without fan_gear).
   auto parseFan = [](JsonVariant v) -> int {
     if (v.is<int>()) return v.as<int>();
     if (v.is<const char*>()) return atoi(v.as<const char*>());
     return -1;
   };
+  auto pwmToPct = [](uint8_t b) -> uint8_t {
+    return (uint8_t)(((uint16_t)b * 100 + 127) / 255);
+  };
 
-  int fanVal;
-  fanVal = parseFan(print["cooling_fan_speed"]);
-  if (fanVal >= 0) { corePrintData = true; s.coolingFanPct = (fanVal * 100) / 15; }
+  bool gearPresent = print["fan_gear"].is<unsigned int>() || print["fan_gear"].is<int>();
+  uint32_t gear = gearPresent ? (uint32_t)print["fan_gear"].as<unsigned int>() : 0;
+  if (gearPresent) s.fanGearSeen = true;
 
-  fanVal = parseFan(print["big_fan1_speed"]);
-  if (fanVal >= 0) { corePrintData = true; s.auxFanPct = (fanVal * 100) / 15; }
+  // Per fan: prefer fan_gear when present in this payload. If we've seen fan_gear before
+  // on this connection but it's missing from this delta-push, preserve the previous value
+  // (the *_fan_speed legacy fields are lower-precision noise that would degrade the reading).
+  // Only fall back to the legacy field when we've never seen fan_gear (old firmware/model).
+  int oldVal;
 
-  fanVal = parseFan(print["big_fan2_speed"]);
-  if (fanVal >= 0) { corePrintData = true; s.chamberFanPct = (fanVal * 100) / 15; }
+  oldVal = parseFan(print["cooling_fan_speed"]);
+  if (gearPresent) {
+    corePrintData = true; s.coolingFanPct = pwmToPct((uint8_t)(gear & 0xFF));
+  } else if (!s.fanGearSeen && oldVal >= 0) {
+    corePrintData = true; s.coolingFanPct = (oldVal * 100) / 15;
+  } else if (oldVal >= 0) {
+    corePrintData = true;  // received legacy update on a gear-supporting printer; ignore value
+  }
 
-  fanVal = parseFan(print["heatbreak_fan_speed"]);
-  if (fanVal >= 0) { corePrintData = true; s.heatbreakFanPct = (fanVal * 100) / 15; }
+  oldVal = parseFan(print["big_fan1_speed"]);
+  if (gearPresent) {
+    corePrintData = true; s.auxFanPct = pwmToPct((uint8_t)((gear >> 8) & 0xFF));
+  } else if (!s.fanGearSeen && oldVal >= 0) {
+    corePrintData = true; s.auxFanPct = (oldVal * 100) / 15;
+  } else if (oldVal >= 0) {
+    corePrintData = true;
+  }
+
+  oldVal = parseFan(print["big_fan2_speed"]);
+  if (gearPresent) {
+    corePrintData = true; s.chamberFanPct = pwmToPct((uint8_t)((gear >> 16) & 0xFF));
+  } else if (!s.fanGearSeen && oldVal >= 0) {
+    corePrintData = true; s.chamberFanPct = (oldVal * 100) / 15;
+  } else if (oldVal >= 0) {
+    corePrintData = true;
+  }
+
+  // heatbreak fan is not packed in fan_gear - keep legacy 0-15 conversion
+  oldVal = parseFan(print["heatbreak_fan_speed"]);
+  if (oldVal >= 0) { corePrintData = true; s.heatbreakFanPct = (oldVal * 100) / 15; }
 
   // Non-core fields: wifi_signal, spd_lvl, stat - don't count as core print data
   if (print["wifi_signal"].is<const char*>())
