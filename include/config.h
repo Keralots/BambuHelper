@@ -102,6 +102,8 @@
 // =============================================================================
 #ifdef DISPLAY_240x320
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
+#elif defined(BOARD_IS_SENSECAP)
+#define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
 #define BUTTON_DEFAULT_PIN    4       // default GPIO for physical button
 #endif
@@ -109,7 +111,11 @@
 // =============================================================================
 //  Display refresh
 // =============================================================================
+#if defined(BOARD_IS_SENSECAP)
+#define DISPLAY_UPDATE_MS          100    // ~10 Hz refresh (PSRAM framebuffer can handle it)
+#else
 #define DISPLAY_UPDATE_MS          250    // ~4 Hz refresh rate
+#endif
 #define DISPLAY_STATE_TIMEOUT_MS   60000  // 60s timeout for intermediate display states
 
 // =============================================================================
@@ -117,6 +123,11 @@
 // =============================================================================
 #if defined(BOARD_IS_C3)
 #define BUZZER_DEFAULT_PIN    3       // C3: GPIO 3 (GPIO 5 is backlight)
+#elif defined(BOARD_IS_SENSECAP)
+// SenseCAP Indicator: no buzzer hardware connected to ESP32-S3 GPIO.
+// The onboard MLT-8530 is on the RP2040 co-processor (not directly accessible).
+// Buzzer disabled (pin 0 = disabled in buzzer backend).
+#define BUZZER_DEFAULT_PIN    0
 #elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
 #else
@@ -132,6 +143,8 @@
 
 #if defined(DISPLAY_CYD)
 #define LED_DEFAULT_PIN 22    // CYD: GPIO 22 on P3 connector
+#elif defined(BOARD_IS_SENSECAP)
+#define LED_DEFAULT_PIN 0     // SenseCAP Indicator: no dedicated LED pin (user must configure)
 #else
 #define LED_DEFAULT_PIN 0     // other boards: user must configure
 #endif
