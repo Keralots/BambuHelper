@@ -32,6 +32,11 @@ LedSettings ledSettings = {
 };
 TasmotaSettings tasmotaSettings = { false, "", 0, 30, 255 };
 
+// Experimental: opt-in 2-printer mode on BOARD_LOW_RAM. Local-only -
+// NOT included in /settings/export to avoid propagating an unsafe mode
+// across devices via JSON backup.
+bool dualPrinterUnsafe = false;
+
 static Preferences prefs;
 
 // ---------------------------------------------------------------------------
@@ -383,6 +388,9 @@ void loadSettings() {
   tasmotaSettings.pollInterval = prefs.getUChar("tsm_pi", 10);
   tasmotaSettings.assignedSlot = prefs.getUChar("tsm_slot", 255);
 
+  // Experimental dual-printer override on BOARD_LOW_RAM (local-only, not exported)
+  dualPrinterUnsafe = prefs.getBool("dualp", false);
+
   prefs.end();
 }
 
@@ -454,6 +462,9 @@ void saveSettings() {
   prefs.putUChar("tsm_dm", tasmotaSettings.displayMode);
   prefs.putUChar("tsm_pi", tasmotaSettings.pollInterval);
   prefs.putUChar("tsm_slot", tasmotaSettings.assignedSlot);
+
+  // Experimental dual-printer override on BOARD_LOW_RAM (local-only, not exported)
+  prefs.putBool("dualp", dualPrinterUnsafe);
 
   prefs.end();
 }

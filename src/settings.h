@@ -150,6 +150,7 @@ extern uint8_t buttonPin;
 extern BuzzerSettings buzzerSettings;
 extern LedSettings ledSettings;
 extern TasmotaSettings tasmotaSettings;
+extern bool dualPrinterUnsafe;
 
 void loadSettings();
 void saveSettings();

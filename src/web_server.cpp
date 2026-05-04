@@ -209,8 +209,15 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
 )rawliteral"
 #ifdef BOARD_LOW_RAM
 R"rawliteral(
-      <div style="padding:10px;margin-bottom:12px;background:#0D1117;border:1px solid #30363D;border-radius:6px;font-size:12px;color:#8B949E">
-        &#9432; This board supports one printer. Use ESP32-S3 for two printers.
+      <label style="display:flex;align-items:center;gap:8px;padding:10px;margin-bottom:12px;background:#0D1117;border:1px solid #30363D;border-radius:6px;font-size:12px;color:#8B949E;cursor:pointer">
+        <input type="checkbox" id="dualp" value="1" %DUALP% onchange="toggleDualPrinterMode(this.checked)">
+        <span>Enable 2 printer mode (not supported, you may experience issues)</span>
+      </label>
+      <div id="printerTabs" style="display:%TABS_DISP%;gap:8px;margin-bottom:12px">
+        <button class="tab-btn" id="tab0" onclick="selectPrinterTab(0)"
+                style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#238636;color:#fff;cursor:pointer;font-weight:600">Printer 1</button>
+        <button class="tab-btn" id="tab1" onclick="selectPrinterTab(1)"
+                style="flex:1;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#8B949E;cursor:pointer">Printer 2</button>
       </div>
 )rawliteral"
 #else
@@ -1262,6 +1269,13 @@ function toggleSetting(key,on){
   }).catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
 
+function toggleDualPrinterMode(on){
+  toggleSetting('dualp',on);
+  var t=document.getElementById('printerTabs');
+  if(t) t.style.display=on?'flex':'none';
+  if(!on) selectPrinterTab(0);
+}
+
 // --- Diagnostics ---
 function toggleDebug(on){
   fetch('/debug/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'on='+(on?'1':'0')}).then(r=>{
@@ -1699,6 +1713,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (strcmp(name, "FMINS") == 0)        { out = String(fm); return true; }
   }
 
+  // --- Experimental dual-printer (BOARD_LOW_RAM only; placeholders are
+  //     unreferenced by HTML on other boards, but resolving them is harmless) ---
+#ifdef BOARD_LOW_RAM
+  if (strcmp(name, "DUALP") == 0)     { out = dualPrinterUnsafe ? "checked" : ""; return true; }
+  if (strcmp(name, "TABS_DISP") == 0) { out = dualPrinterUnsafe ? "flex" : "none"; return true; }
+#endif
+
   // --- Display options ---
   if (strcmp(name, "DACK") == 0)  { out = dpSettings.doorAckEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "KPS") == 0)   { out = dpSettings.keepPrintScreen ? "checked" : ""; return true; }
@@ -2073,9 +2094,9 @@ static void handleSavePrinter() {
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
 
 #ifdef BOARD_LOW_RAM
-  if (slot > 0) {
+  if (slot > 0 && !dualPrinterUnsafe) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"This board supports only one printer due to RAM limits. Use ESP32-S3 for two printers.\"}");
+      "{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode in Printer Settings to configure printer 2.\"}");
     return;
   }
 #endif
@@ -2156,6 +2177,14 @@ static void handleSaveGaugeLayout() {
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+
+#ifdef BOARD_LOW_RAM
+  if (slot > 0 && !dualPrinterUnsafe) {
+    server.send(200, "application/json",
+      "{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode to configure printer 2.\"}");
+    return;
+  }
+#endif
 
   PrinterConfig& cfg = printers[slot].config;
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
@@ -2350,6 +2379,9 @@ static void handleToggleSetting() {
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
+#ifdef BOARD_LOW_RAM
+  else if (key == "dualp")   dualPrinterUnsafe = on;
+#endif
   else {
     server.send(400, "text/plain", "Unknown key");
     return;
@@ -2359,6 +2391,16 @@ static void handleToggleSetting() {
   if (key == "invcol") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
+#ifdef BOARD_LOW_RAM
+  if (key == "dualp") {
+    if (!on) {
+      // User just disabled 2-printer mode - drop slot 1 from rotation/display
+      disconnectBambuMqtt(1);
+      if (rotState.displayIndex == 1) rotState.displayIndex = 0;
+    }
+    initBambuMqtt();  // re-evaluate slot 1 active state without reboot
+  }
+#endif
   if (key == "kps") {
     BambuState& st = printers[rotState.displayIndex].state;
     ScreenState cur = getScreenState();

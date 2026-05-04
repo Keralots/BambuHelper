@@ -150,8 +150,16 @@ static bool ensureClients(MqttConn& c) {
     MQTT_LOG("[%d] setServer(%s, %d) [LOCAL]", c.slotIndex, cfg.ip, BAMBU_PORT);
     c.mqtt->setServer(cfg.ip, BAMBU_PORT);
   }
-  if (!c.mqtt->setBufferSize(BAMBU_BUFFER_SIZE)) {
-    MQTT_LOG("[%d] setBufferSize(%d) FAILED — not enough heap!", c.slotIndex, BAMBU_BUFFER_SIZE);
+  // Reduce MQTT buffer when LOW_RAM user opts into experimental 2-printer mode -
+  // 40 KB per slot leaves no headroom for the second TLS handshake on CYD/C3.
+  // 16 KB is enough for typical P1/A1 pushall (~5-15 KB); X1/H2 with full AMS
+  // payload may be truncated, which is part of the "experimental" trade-off.
+  size_t bufSize = BAMBU_BUFFER_SIZE;
+#ifdef BOARD_LOW_RAM
+  if (dualPrinterUnsafe) bufSize = 16384;
+#endif
+  if (!c.mqtt->setBufferSize(bufSize)) {
+    MQTT_LOG("[%d] setBufferSize(%u) FAILED — not enough heap!", c.slotIndex, (unsigned)bufSize);
     delete c.mqtt; c.mqtt = nullptr;
     delete c.tls;  c.tls  = nullptr;
     return false;
@@ -1210,6 +1218,10 @@ static void handleConn(MqttConn& c) {
 // ---------------------------------------------------------------------------
 bool isPrinterConfigured(uint8_t slot) {
   if (slot >= MAX_PRINTERS) return false;
+#ifdef BOARD_LOW_RAM
+  // Slot 1 only available when user opts into experimental 2-printer mode.
+  if (slot > 0 && !dualPrinterUnsafe) return false;
+#endif
   PrinterConfig& cfg = printers[slot].config;
   if (isCloudMode(cfg.mode))
     return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;
