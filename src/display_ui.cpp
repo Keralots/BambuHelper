@@ -2384,15 +2384,6 @@ static void drawPrinting() {
         int16_t lh     = sm ? 18 : 24;
         tft.fillRect(slotX[si] - gR - 2, labelY - lh / 2,
                      gR * 2 + 4, lh, dispSettings.bgColor);
-        // GAUGE_AMS_FILAMENT_ALL draws corner slot labels (1/2/3/4) outside
-        // the circle at diagonal positions. Clear the full square bounding box
-        // plus extra margin to cover those labels when switching away.
-        if (prevSlotTypes[si] == GAUGE_AMS_FILAMENT_ALL) {
-          int16_t clearR = gR + (int16_t)(gR * 0.71f) + 28;  // diagonal offset + Font 4 glyph half-height
-          int16_t side = clearR * 2 + 4;
-          tft.fillRect(slotX[si] - clearR - 2, slotY[si] - clearR - 2,
-                       side, side, dispSettings.bgColor);
-        }
         prevSlotTypes[si] = gt;
       }
 
@@ -2411,7 +2402,22 @@ static void drawPrinting() {
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
           case GAUGE_AMS_FILAMENT_ALL:
-              needDraw = true; break;  // AMS filament gauge always refreshes
+              // Only redraw when AMS tray/unit data actually changes
+              needDraw = s.ams.present != prevState.ams.present
+                      || s.ams.unitCount != prevState.ams.unitCount;
+              if (!needDraw) {
+                for (int t = 0; t < 4; t++) {
+                  const AmsTray &ct = s.ams.trays[t], &pt = prevState.ams.trays[t];
+                  if (ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565
+                      || ct.remain != pt.remain || strcmp(ct.type, pt.type) != 0) {
+                    needDraw = true; break;
+                  }
+                }
+              }
+              if (!needDraw && s.ams.unitCount > 0) {
+                needDraw = s.ams.units[0].humidity != prevState.ams.units[0].humidity;
+              }
+              break;
           default:
             // AMS humidity / temperature gauges — index derived from enum value
             if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {

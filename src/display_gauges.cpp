@@ -874,11 +874,14 @@ const char* getFilamentTypeLabel(const char* fullType) {
 }
 
 // -----------------------------------------------------------------------------
-//  AMS Filament All gauge - circular gauge divided into 4 quadrants
-//  Top-Left=Slot1, Top-Right=Slot2, Bottom-Right=Slot3, Bottom-Left=Slot4
-//  Separator lines: solid left half of horizontal, dotted elsewhere.
-//  Each quadrant: filament color bg + type label + % remaining.
-//  Humidity "H{n}" shown in a tiny circle at the center of the gauge.
+//  AMS Filament All gauge — shows all 4 trays at once.
+//
+//  480×480 (SenseCAP): Full design with 4 colored quadrants, type labels,
+//  remaining percentages, separator lines, and center humidity indicator.
+//  Slot numbers are drawn inside each quadrant to stay within bounds.
+//
+//  240×240: Simplified — 4 colored quadrants + center humidity only.
+//  The 32px radius is too small for readable text inside quadrants.
 // -----------------------------------------------------------------------------
 void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
                              int16_t thickness, const struct AmsState& ams,
@@ -897,7 +900,6 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   tft.fillCircle(cx, cy, innerR, bg);
 
   // Humidity color scale: matches humidityColor() convention (lower = dryer).
-  // u.humidity ranges 0–5, where lower values are better/dryer.
   static const uint16_t humidColors[6] = {
     0x18E3,  // 0 - dim (no data / unknown)
     0x07E0,  // 1 - green (very dry)
@@ -914,170 +916,119 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   }
   uint16_t hColor = humidColors[humidLevel];
 
-  // Quadrant slot mapping: TL=Slot1, TR=Slot2, BR=Slot3, BL=Slot4
-  // trays[0]=Slot1, trays[1]=Slot2, trays[2]=Slot3, trays[3]=Slot4
-  static const int8_t qSlotX[4] = {-1, 1, 1, -1};  // TL, TR, BR, BL
+  // Quadrant geometry: TL=Slot1, TR=Slot2, BR=Slot3, BL=Slot4
+  static const int8_t qSlotX[4] = {-1, 1, 1, -1};
   static const int8_t qSlotY[4] = {-1, -1, 1, 1};
   const int16_t halfR = innerR;
-  // Inset text toward center so it doesn't touch the circle edge
-  const int16_t textInset = 5;
-  const int16_t qCX = halfR / 2;  // quadrant center X offset
-  const int16_t qCY = halfR / 2;  // quadrant center Y offset
 
+  // Draw 4 colored quadrants
   for (int qi = 0; qi < 4; qi++) {
     const AmsTray& tray = ams.trays[qi];
-    int16_t qCenterX = cx + qSlotX[qi] * qCX;
-    int16_t qCenterY = cy + qSlotY[qi] * qCY;
-
-    // Quadrant fill rectangle
     int16_t fx, fy, fw, fh;
-    if (qi == 0) {        // Top-Left
-      fx = cx - halfR;  fy = cy - halfR;  fw = halfR;  fh = halfR;
-    } else if (qi == 1) { // Top-Right
-      fx = cx;           fy = cy - halfR;  fw = halfR;  fh = halfR;
-    } else if (qi == 2) { // Bottom-Right
-      fx = cx;           fy = cy;          fw = halfR;  fh = halfR;
-    } else {              // Bottom-Left
-      fx = cx - halfR;  fy = cy;          fw = halfR;  fh = halfR;
-    }
+    if (qi == 0)        { fx = cx - halfR;  fy = cy - halfR;  fw = halfR;  fh = halfR; }
+    else if (qi == 1)   { fx = cx;           fy = cy - halfR;  fw = halfR;  fh = halfR; }
+    else if (qi == 2)   { fx = cx;           fy = cy;          fw = halfR;  fh = halfR; }
+    else                { fx = cx - halfR;  fy = cy;          fw = halfR;  fh = halfR; }
 
     if (tray.present) {
       uint16_t swatchColor = tray.colorRgb565;
-
-      // Fill quadrant with filament color
       tft.fillRect(fx + 1, fy + 1, fw - 2, fh - 2, swatchColor);
 
-      // Contrast border around quadrant
+#if SCREEN_W >= 480
+      // Full layout: draw type label + % + slot number inside each quadrant
       uint16_t borderCol = alphaBlend565(60, 0xFFFF, swatchColor);
       tft.drawRoundRect(fx + 1, fy + 1, fw - 2, fh - 2, 2, borderCol);
 
-      // Pick text color that contrasts well against the filament color
       uint16_t txtColor = contrastTextColor565(swatchColor);
-
-      // Inset text toward center of circle to avoid touching the edges
+      int16_t qCenterX = cx + qSlotX[qi] * (halfR / 2);
+      int16_t qCenterY = cy + qSlotY[qi] * (halfR / 2);
+      const int16_t textInset = 5;
       int16_t tCX = qCenterX - qSlotX[qi] * textInset;
       int16_t tCY = qCenterY - qSlotY[qi] * textInset;
 
-      // Type label (Font 2)
+      // Slot number at quadrant outer corner (small, inside the quadrant)
+      char slotNumBuf[2] = { (char)('0' + qi + 1), '\0' };
+      int16_t snX = fx + (qSlotX[qi] > 0 ? fw - 8 : 6);
+      int16_t snY = fy + (qSlotY[qi] > 0 ? fh - 8 : 4);
+      tft.setTextDatum(TL_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(slotNumBuf, snX, snY);
+
+      // Type label
       const char* typeLabel = getFilamentTypeLabel(tray.type);
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_SMALL);
       tft.setTextColor(txtColor, swatchColor);
-      tft.drawString(typeLabel, tCX, tCY - 8);
+      tft.drawString(typeLabel, tCX, tCY - 6);
 
-      // Remaining % (Font 2)
+      // Remaining %
       char remainBuf[8];
       if (tray.remain >= 0) {
         snprintf(remainBuf, sizeof(remainBuf), "%d%%", tray.remain);
       } else {
         strlcpy(remainBuf, "--%", sizeof(remainBuf));
       }
-      tft.setTextFont(2);
+      setFont(tft, FONT_SMALL);
       tft.setTextColor(txtColor, swatchColor);
-      tft.drawString(remainBuf, tCX, tCY + 10);
+      tft.drawString(remainBuf, tCX, tCY + 8);
+#endif
     } else {
-      // Empty slot — inset toward center
+#if SCREEN_W >= 480
+      // Empty slot label
+      int16_t qCenterX = cx + qSlotX[qi] * (halfR / 2);
+      int16_t qCenterY = cy + qSlotY[qi] * (halfR / 2);
+      const int16_t textInset = 5;
       int16_t tCX = qCenterX - qSlotX[qi] * textInset;
       int16_t tCY = qCenterY - qSlotY[qi] * textInset;
       tft.setTextDatum(MC_DATUM);
-      tft.setTextFont(2);
+      setFont(tft, FONT_SMALL);
       tft.setTextColor(dim, bg);
       tft.drawString("--", tCX, tCY);
+#endif
     }
   }
 
-  // Clip quadrant fill rectangles to the circle:
-  // Erase the 4 corner areas outside the circle by drawing bg-colored
-  // fast horizontal lines from the bounding square edges to the chord.
+  // Clip quadrant fill rectangles to circle boundary
   for (int16_t y = cy - innerR; y <= cy + innerR; y++) {
     int16_t dy = y - cy;
     int32_t d2 = (int32_t)dy * dy;
     int32_t r2 = (int32_t)innerR * innerR;
     if (d2 >= r2) continue;
     int16_t halfChord = (int16_t)sqrtf((float)(r2 - d2));
-    // Erase left side: from bounding square left edge to circle left edge
     tft.drawFastHLine(cx - innerR, y, innerR - halfChord, bg);
-    // Erase right side: from circle right edge to bounding square right edge
     tft.drawFastHLine(cx + halfChord, y, innerR - halfChord, bg);
   }
-  // Erase rows above and below the circle entirely
   tft.fillRect(cx - innerR, cy - innerR - 1, innerR * 2 + 1, 2, bg);
   tft.fillRect(cx - innerR, cy + innerR, innerR * 2 + 1, 2, bg);
 
-  // Redraw circle boundary ring
+  // Circle boundary ring
   uint16_t ringColor = alphaBlend565(80, 0xFFFF, bg);
   tft.drawCircle(cx, cy, innerR, ringColor);
 
-  // Separator lines: all dotted except the TL↔BL (left vertical) segment.
-  //
-  //   Slot1 (TL)  ·  Slot2 (TR)
-  //       ·  ┃  ·
-  //   Slot4 (BL)  ·  Slot3 (BR)
-  //
-  // Left half of horizontal (between TL & BL) = SOLID
-  // Everything else = dotted
-
-  // Solid left-half of horizontal line (between TL/Slot1 and BL/Slot4)
-  {
-    int16_t startX = cx - innerR + 2;
-    int16_t endX = cx;
-    for (int16_t x = startX; x < endX; x++) {
-      int16_t dx = x - cx;
-      int32_t d2 = (int32_t)dx * dx;
-      int32_t r2 = (int32_t)innerR * innerR;
-      if (d2 < r2) {
-        tft.drawPixel(x, cy, dim);
-      }
-    }
-  }
-
-  // Dotted right-half of horizontal line (between TR/Slot2 and BR/Slot3)
+  // Cross-hair separator lines (all dotted, quadrant colors make it clear)
   for (int16_t dx = 1; dx < innerR - 2; dx += 3) {
     int32_t d2 = (int32_t)dx * dx;
     int32_t r2 = (int32_t)innerR * innerR;
-    if (d2 < r2) {
-      tft.drawPixel(cx + dx, cy, dim);
-    }
+    if (d2 < r2) tft.drawPixel(cx + dx, cy, dim);
+    if (d2 < r2) tft.drawPixel(cx - dx, cy, dim);
   }
-
-  // Dotted vertical line — both top half (TL↔TR) and bottom half (BL↔BR)
-  for (int16_t dy = -innerR + 3; dy < innerR - 2; dy += 3) {
+  for (int16_t dy = 3; dy < innerR - 2; dy += 3) {
     int32_t d2 = (int32_t)dy * dy;
     int32_t r2 = (int32_t)innerR * innerR;
-    if (d2 < r2) {
-      tft.drawPixel(cx, cy + dy, dim);
-    }
+    if (d2 < r2) tft.drawPixel(cx, cy + dy, dim);
+    if (d2 < r2) tft.drawPixel(cx, cy - dy, dim);
   }
 
-  // Slot number labels at the corners outside the circle
-  // Placed diagonally outside the circle boundary, near each quadrant
-  static const int8_t sNumX[4] = {-1, 1, 1, -1};  // TL, TR, BR, BL
-  static const int8_t sNumY[4] = {-1, -1, 1, 1};
-  static const char* sNumLabel[4] = {"1", "2", "3", "4"};
-  // 45-degree offset: place labels along diagonal outside the circle
-  // sqrt(2)/2 ≈ 0.707; use 0.71 * radius for the diagonal distance from center
-  // Font 4 glyphs are ~26px tall; need extra offset to clear the circle edge
-  int16_t diagOff = (int16_t)(radius * 0.71f) + 14;
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextFont(4);  // Font 4 for slot numbers (large, bold, easy to read)
-  for (int i = 0; i < 4; i++) {
-    int16_t nx = cx + sNumX[i] * diagOff;
-    int16_t ny = cy + sNumY[i] * diagOff;
-    tft.setTextColor(dim, bg);
-    tft.drawString(sNumLabel[i], nx, ny);
-  }
-
-  // Humidity indicator: tiny circle at the center of the gauge.
-  // Show the raw Bambu humidity level (0–5, lower = dryer), consistent
-  // with humidityColor() and drawHumidityGauge().
-  const int16_t humCircleR = 13;
+  // Center humidity indicator
+  const int16_t humCircleR = (radius >= 60) ? 16 : 11;
   tft.fillCircle(cx, cy, humCircleR, bg);
   tft.drawCircle(cx, cy, humCircleR, dim);
   if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
     char humBuf[4];
     snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[0].humidity);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextFont(2);
+    setFont(tft, radius >= 60 ? FONT_BODY : FONT_SMALL);
     tft.setTextColor(hColor, bg);
     tft.drawString(humBuf, cx, cy);
   }
