@@ -26,6 +26,23 @@ public:
   ~ScopedWrite() { _t.endWrite(); }
 };
 
+// Pick white or black text for maximum contrast against a 565-color background.
+// Uses relative luminance (sRGB perception weights) to decide.
+static inline uint16_t contrastTextColor565(uint16_t bg) {
+  // Extract RGB components from 565
+  uint8_t r = (bg >> 11) & 0x1F;  // 5 bits (0-31)
+  uint8_t g = (bg >>  5) & 0x3F;  // 6 bits (0-63)
+  uint8_t b =  bg        & 0x1F;  // 5 bits (0-31)
+  // Scale to 0-255 for luminance calc
+  float rf = (float)r / 31.0f;
+  float gf = (float)g / 63.0f;
+  float bf = (float)b / 31.0f;
+  // sRGB relative luminance (perceptual brightness)
+  float lum = 0.2126f * rf + 0.7152f * gf + 0.0722f * bf;
+  return (lum > 0.5f) ? 0x0000   // TFT_BLACK
+                      : 0xFFFF;  // TFT_WHITE
+}
+
 // ---------------------------------------------------------------------------
 //  H2-style LED progress bar
 // ---------------------------------------------------------------------------
@@ -688,16 +705,14 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   uint16_t fillEnd = startAngle + (uint16_t)(pct * 240 / 100);
   if (fillEnd > 300) fillEnd = 300;
 
-  // Color based on humidity level (0-5): green = dry, red = humid
-  // Bambu AMS humidity field: 5 = bone dry (good), 1 = very wet (bad).
-  // Invert for color mapping: wetLevel = (6 - humidity) so 5→1(good/green) and 1→5(bad/red).
-  uint8_t wetLevel = (humidityLevel > 0) ? (6 - humidityLevel) : 0;
+  // Color based on humidity level (0-5): lower = dryer = greener, higher = wetter = redder.
+  // This matches the humidityColor() convention used by the AMS Drying screen.
   uint16_t arcColor;
-  if (!present || wetLevel == 0) {
+  if (!present || humidityLevel == 0) {
     arcColor = CLR_TEXT_DIM;
-  } else if (wetLevel <= 2) {
+  } else if (humidityLevel <= 2) {
     arcColor = CLR_GREEN;
-  } else if (wetLevel <= 3) {
+  } else if (humidityLevel <= 3) {
     arcColor = CLR_YELLOW;
   } else {
     arcColor = CLR_RED;
@@ -835,14 +850,17 @@ void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
 // -----------------------------------------------------------------------------
 const char* getFilamentTypeLabel(const char* fullType) {
   if (!fullType || !fullType[0]) return "---";
-  // Match Bambu-specific type codes to shorthand
+  // Match Bambu-specific type codes to shorthand.
+  // Ordered most-specific first — strstr("PA-CF", "PA") is true, so
+  // PA-CF must be checked before PA to avoid false matches.
+  // Similarly, "PLA" contains "PA" as a substring, so PLA is checked before PA.
+  if (strstr(fullType, "GFPA-CF") || strstr(fullType, "PA-CF")) return "PA-CF";
   if (strstr(fullType, "GFL99") || strstr(fullType, "PLA")) return "PLA";
   if (strstr(fullType, "GFG99") || strstr(fullType, "PETG")) return "PETG";
   if (strstr(fullType, "GFCR") || strstr(fullType, "CF") || strstr(fullType, "Carbon")) return "CF";
   if (strstr(fullType, "GFT99") || strstr(fullType, "TPU")) return "TPU";
   if (strstr(fullType, "GFAB") || strstr(fullType, "ABS")) return "ABS";
   if (strstr(fullType, "GFPA") || strstr(fullType, "PA")) return "PA";
-  if (strstr(fullType, "GFPA-CF") || strstr(fullType, "PA-CF")) return "PA-CF";
   if (strstr(fullType, "GFSG") || strstr(fullType, "SG")) return "SG";
   if (strstr(fullType, "GFPEI") || strstr(fullType, "PEI")) return "PEI";
   if (strstr(fullType, "PVB")) return "PVB";
@@ -878,22 +896,20 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
   // Fill circle background
   tft.fillCircle(cx, cy, innerR, bg);
 
-  // Humidity color scale: Bambu humidity field is INVERTED (5=dry/good, 1=wet/bad).
-  // Invert for display: idx=0→dim, idx 1,2→green-ish (dry), idx 3→yellow, idx 4,5→red-ish (wet)
+  // Humidity color scale: matches humidityColor() convention (lower = dryer).
+  // u.humidity ranges 0–5, where lower values are better/dryer.
   static const uint16_t humidColors[6] = {
-    0x18E3,  // 0 - dim (no data)
-    0x07E0,  // 1 - green  (Bambu 5 = bone dry)
-    0xAFE5,  // 2 - light green (Bambu 4 = dry)
-    0xFFE0,  // 3 - yellow (Bambu 3 = moderate)
-    0xFC80,  // 4 - orange (Bambu 2 = humid)
-    0xF800   // 5 - red   (Bambu 1 = very wet)
+    0x18E3,  // 0 - dim (no data / unknown)
+    0x07E0,  // 1 - green (very dry)
+    0xAFE5,  // 2 - light green (dry)
+    0xFFE0,  // 3 - yellow (moderate)
+    0xFC80,  // 4 - orange (humid)
+    0xF800   // 5 - red (very wet)
   };
 
   uint8_t humidLevel = 0;
   if (ams.present && ams.unitCount > 0) {
-    // Invert: Bambu 5→1(dry), Bambu 1→5(wet), Bambu 0→0(no data)
-    uint8_t rawHumid = ams.units[0].humidity;
-    humidLevel = (rawHumid > 0 && rawHumid <= 5) ? (6 - rawHumid) : 0;
+    humidLevel = ams.units[0].humidity;
     if (humidLevel > 5) humidLevel = 5;
   }
   uint16_t hColor = humidColors[humidLevel];
@@ -1051,20 +1067,15 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
     tft.drawString(sNumLabel[i], nx, ny);
   }
 
-  // Humidity indicator: tiny circle at the center of the gauge
-  // Bambu humidity: 5=dry(good), 1=wet(bad) — inverted display: 1=dry, 5=wet
+  // Humidity indicator: tiny circle at the center of the gauge.
+  // Show the raw Bambu humidity level (0–5, lower = dryer), consistent
+  // with humidityColor() and drawHumidityGauge().
   const int16_t humCircleR = 13;
   tft.fillCircle(cx, cy, humCircleR, bg);
   tft.drawCircle(cx, cy, humCircleR, dim);
   if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
     char humBuf[4];
-    // Display humidity: show raw Bambu value. Bambu scale: 1=wet, 5=dry.
-    // Invert for display: higher=wetter (1→5 very wet, 5→1 dry)
-    uint8_t displayHumid = ams.units[0].humidity;
-    if (displayHumid >= 1 && displayHumid <= 5) {
-      displayHumid = 6 - displayHumid;
-    }
-    snprintf(humBuf, sizeof(humBuf), "H%d", displayHumid);
+    snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[0].humidity);
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(hColor, bg);
