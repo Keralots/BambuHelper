@@ -15,6 +15,7 @@ struct MqttDiag {
   uint16_t recoveryConnDead; // recovery: connection dead during print
   uint16_t recoveryFinish;   // recovery: stale FINISH state
   uint16_t recoveryIdle;     // recovery: stale idle / UNKNOWN bootstrap
+  uint16_t recoveryIdleHot;  // recovery: IDLE state but heater targets non-zero
   uint16_t recoveryFailed;   // recovery: stuck in FAILED on cloud
   bool     tcpOk;           // last TCP reachability result
   unsigned long lastAttemptMs; // millis() of last attempt
@@ -32,6 +33,7 @@ enum PushallReason : uint8_t {
   PUSHALL_RECOVERY_CONN_DEAD,
   PUSHALL_RECOVERY_FINISH,
   PUSHALL_RECOVERY_IDLE,
+  PUSHALL_RECOVERY_IDLE_HOT,
   PUSHALL_RECOVERY_FAILED,
   PUSHALL_MANUAL
 };

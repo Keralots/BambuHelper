@@ -84,6 +84,7 @@ const char* pushallReasonToString(uint8_t reason) {
     case PUSHALL_RECOVERY_CONN_DEAD: return "Recovery (Conn Dead)";
     case PUSHALL_RECOVERY_FINISH:    return "Recovery (Finish)";
     case PUSHALL_RECOVERY_IDLE:      return "Recovery (Idle)";
+    case PUSHALL_RECOVERY_IDLE_HOT:  return "Recovery (Idle/Hot)";
     case PUSHALL_RECOVERY_FAILED:    return "Recovery (Failed)";
     case PUSHALL_MANUAL:             return "Manual";
     case PUSHALL_NONE:
@@ -198,6 +199,7 @@ static bool requestPushall(MqttConn& c, PushallReason reason) {
     case PUSHALL_RECOVERY_CONN_DEAD: c.diag.recoveryConnDead++; break;
     case PUSHALL_RECOVERY_FINISH:    c.diag.recoveryFinish++;   break;
     case PUSHALL_RECOVERY_IDLE:      c.diag.recoveryIdle++;     break;
+    case PUSHALL_RECOVERY_IDLE_HOT:  c.diag.recoveryIdleHot++;  break;
     case PUSHALL_RECOVERY_FAILED:    c.diag.recoveryFailed++;   break;
     default: break;
   }
@@ -1160,9 +1162,14 @@ static void handleConn(MqttConn& c) {
     // finishHoldMs minutes, risking cloud error 49.
     // stalePushallSentMs resets naturally when state leaves FINISH.
 
-  // --- Idle cloud: connection freshness ---
+  // --- Idle cloud: connection freshness + hot-target staleness ---
   } else if (isConnected && cloud && s.gcodeStateId == GCODE_IDLE) {
-    if (s.lastUpdate > 0 && millis() - s.lastUpdate > connStaleMs) {
+    bool connStaleIdle = s.lastUpdate > 0 && millis() - s.lastUpdate > connStaleMs;
+    // Heater targets non-zero while gcode_state==IDLE strongly suggests cloud
+    // dropped the IDLE->RUNNING delta. True idle has both targets at 0.
+    // Real filament-change scenarios pushall back IDLE - safe (rate limited).
+    bool hotIdle = connAlive && (s.nozzleTarget > 50.0f || s.bedTarget > 30.0f);
+    if (connStaleIdle) {
       // Cloud broker connected but idle printer is unresponsive (powered off).
       MQTT_LOG("[%d] stale idle on cloud - clearing cached state", c.slotIndex);
       clearLiveMetrics(s);
@@ -1170,6 +1177,14 @@ static void handleConn(MqttConn& c) {
       esp_task_wdt_reset();
       if (requestPushall(c, PUSHALL_RECOVERY_IDLE))
         c.stalePushallSentMs = millis();
+    } else if (hotIdle) {
+      if (c.stalePushallSentMs == 0 && !cloudPushallThrottled && !recoveryCooldown) {
+        MQTT_LOG("[%d] hot IDLE (nT=%.0f bT=%.0f) - sending recovery pushall",
+                 c.slotIndex, s.nozzleTarget, s.bedTarget);
+        esp_task_wdt_reset();
+        if (requestPushall(c, PUSHALL_RECOVERY_IDLE_HOT))
+          c.stalePushallSentMs = millis();
+      }
     } else {
       if (c.stalePushallSentMs > 0) c.lastRecoveryResolvedMs = millis();
       c.stalePushallSentMs = 0;
