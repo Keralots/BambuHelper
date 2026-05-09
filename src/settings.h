@@ -25,6 +25,7 @@ enum GaugeType : uint8_t {
   GAUGE_AMS_TEMP_2  = 16,  // AMS unit 2 temperature
   GAUGE_AMS_TEMP_3  = 17,  // AMS unit 3 temperature
   GAUGE_AMS_TEMP_4  = 18,  // AMS unit 4 temperature
+  GAUGE_AMS_FILAMENT_ALL = 19,  // All 4 trays: color + type + % + humidity
   GAUGE_TYPE_COUNT  // sentinel - always last
 };
 

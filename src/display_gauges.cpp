@@ -26,6 +26,23 @@ public:
   ~ScopedWrite() { _t.endWrite(); }
 };
 
+// Pick white or black text for maximum contrast against a 565-color background.
+// Uses relative luminance (sRGB perception weights) to decide.
+static inline uint16_t contrastTextColor565(uint16_t bg) {
+  // Extract RGB components from 565
+  uint8_t r = (bg >> 11) & 0x1F;  // 5 bits (0-31)
+  uint8_t g = (bg >>  5) & 0x3F;  // 6 bits (0-63)
+  uint8_t b =  bg        & 0x1F;  // 5 bits (0-31)
+  // Scale to 0-255 for luminance calc
+  float rf = (float)r / 31.0f;
+  float gf = (float)g / 63.0f;
+  float bf = (float)b / 31.0f;
+  // sRGB relative luminance (perceptual brightness)
+  float lum = 0.2126f * rf + 0.7152f * gf + 0.0722f * bf;
+  return (lum > 0.5f) ? 0x0000   // TFT_BLACK
+                      : 0xFFFF;  // TFT_WHITE
+}
+
 // ---------------------------------------------------------------------------
 //  H2-style LED progress bar
 // ---------------------------------------------------------------------------
@@ -688,7 +705,8 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   uint16_t fillEnd = startAngle + (uint16_t)(pct * 240 / 100);
   if (fillEnd > 300) fillEnd = 300;
 
-  // Color based on humidity level (0-5): green = dry, red = humid
+  // Color based on humidity level (0-5): lower = dryer = greener, higher = wetter = redder.
+  // This matches the humidityColor() convention used by the AMS Drying screen.
   uint16_t arcColor;
   if (!present || humidityLevel == 0) {
     arcColor = CLR_TEXT_DIM;
@@ -824,5 +842,194 @@ void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
     setFont(tft, sm ? FONT_SMALL : FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
+  }
+}
+
+// -----------------------------------------------------------------------------
+//  Filament type shorthand mapping
+// -----------------------------------------------------------------------------
+const char* getFilamentTypeLabel(const char* fullType) {
+  if (!fullType || !fullType[0]) return "---";
+  // Match Bambu-specific type codes to shorthand.
+  // Ordered most-specific first — strstr("PA-CF", "PA") is true, so
+  // PA-CF must be checked before PA to avoid false matches.
+  // Similarly, "PLA" contains "PA" as a substring, so PLA is checked before PA.
+  if (strstr(fullType, "GFPA-CF") || strstr(fullType, "PA-CF")) return "PA-CF";
+  if (strstr(fullType, "GFL99") || strstr(fullType, "PLA")) return "PLA";
+  if (strstr(fullType, "GFG99") || strstr(fullType, "PETG")) return "PETG";
+  if (strstr(fullType, "GFCR") || strstr(fullType, "CF") || strstr(fullType, "Carbon")) return "CF";
+  if (strstr(fullType, "GFT99") || strstr(fullType, "TPU")) return "TPU";
+  if (strstr(fullType, "GFAB") || strstr(fullType, "ABS")) return "ABS";
+  if (strstr(fullType, "GFPA") || strstr(fullType, "PA")) return "PA";
+  if (strstr(fullType, "GFSG") || strstr(fullType, "SG")) return "SG";
+  if (strstr(fullType, "GFPEI") || strstr(fullType, "PEI")) return "PEI";
+  if (strstr(fullType, "PVB")) return "PVB";
+  if (strstr(fullType, "HPCS")) return "HPCS";
+  if (strstr(fullType, "PVA")) return "PVA";
+  if (strstr(fullType, "ECO")) return "ECO";
+  // Generic fallback: extract first 4 chars
+  static char buf[5];
+  strlcpy(buf, fullType, sizeof(buf));
+  return buf;
+}
+
+// -----------------------------------------------------------------------------
+//  AMS Filament All gauge — shows all 4 trays at once.
+//
+//  480×480 (SenseCAP): Full design with 4 colored quadrants, type labels,
+//  remaining percentages, separator lines, and center humidity indicator.
+//  Slot numbers are drawn inside each quadrant to stay within bounds.
+//
+//  240×240: Simplified — 4 colored quadrants + center humidity only.
+//  The 32px radius is too small for readable text inside quadrants.
+// -----------------------------------------------------------------------------
+void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+                             int16_t thickness, const struct AmsState& ams,
+                             bool forceRedraw) {
+  ScopedWrite sw(tft);
+  uint16_t bg = dispSettings.bgColor;
+  uint16_t dim = CLR_TEXT_DIM;
+
+  if (forceRedraw) {
+    tft.fillCircle(cx, cy, radius + 2, bg);
+  }
+
+  const int16_t innerR = radius - 2;
+
+  // Fill circle background
+  tft.fillCircle(cx, cy, innerR, bg);
+
+  // Humidity color scale: matches humidityColor() convention (lower = dryer).
+  static const uint16_t humidColors[6] = {
+    0x18E3,  // 0 - dim (no data / unknown)
+    0x07E0,  // 1 - green (very dry)
+    0xAFE5,  // 2 - light green (dry)
+    0xFFE0,  // 3 - yellow (moderate)
+    0xFC80,  // 4 - orange (humid)
+    0xF800   // 5 - red (very wet)
+  };
+
+  uint8_t humidLevel = 0;
+  if (ams.present && ams.unitCount > 0) {
+    humidLevel = ams.units[0].humidity;
+    if (humidLevel > 5) humidLevel = 5;
+  }
+  uint16_t hColor = humidColors[humidLevel];
+
+  // Quadrant geometry: TL=Slot1, TR=Slot2, BR=Slot3, BL=Slot4
+  static const int8_t qSlotX[4] = {-1, 1, 1, -1};
+  static const int8_t qSlotY[4] = {-1, -1, 1, 1};
+  const int16_t halfR = innerR;
+
+  // Draw 4 colored quadrants
+  for (int qi = 0; qi < 4; qi++) {
+    const AmsTray& tray = ams.trays[qi];
+    int16_t fx, fy, fw, fh;
+    if (qi == 0)        { fx = cx - halfR;  fy = cy - halfR;  fw = halfR;  fh = halfR; }
+    else if (qi == 1)   { fx = cx;           fy = cy - halfR;  fw = halfR;  fh = halfR; }
+    else if (qi == 2)   { fx = cx;           fy = cy;          fw = halfR;  fh = halfR; }
+    else                { fx = cx - halfR;  fy = cy;          fw = halfR;  fh = halfR; }
+
+    if (tray.present) {
+      uint16_t swatchColor = tray.colorRgb565;
+      tft.fillRect(fx + 1, fy + 1, fw - 2, fh - 2, swatchColor);
+
+#if SCREEN_W >= 480
+      // Full layout: draw type label + % + slot number inside each quadrant
+      uint16_t borderCol = alphaBlend565(60, 0xFFFF, swatchColor);
+      tft.drawRoundRect(fx + 1, fy + 1, fw - 2, fh - 2, 2, borderCol);
+
+      uint16_t txtColor = contrastTextColor565(swatchColor);
+      int16_t qCenterX = cx + qSlotX[qi] * (halfR / 2);
+      int16_t qCenterY = cy + qSlotY[qi] * (halfR / 2);
+      const int16_t textInset = 5;
+      int16_t tCX = qCenterX - qSlotX[qi] * textInset;
+      int16_t tCY = qCenterY - qSlotY[qi] * textInset;
+
+      // Slot number at quadrant outer corner (small, inside the quadrant)
+      char slotNumBuf[2] = { (char)('0' + qi + 1), '\0' };
+      int16_t snX = fx + (qSlotX[qi] > 0 ? fw - 8 : 6);
+      int16_t snY = fy + (qSlotY[qi] > 0 ? fh - 8 : 4);
+      tft.setTextDatum(TL_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(slotNumBuf, snX, snY);
+
+      // Type label
+      const char* typeLabel = getFilamentTypeLabel(tray.type);
+      tft.setTextDatum(MC_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(typeLabel, tCX, tCY - 6);
+
+      // Remaining %
+      char remainBuf[8];
+      if (tray.remain >= 0) {
+        snprintf(remainBuf, sizeof(remainBuf), "%d%%", tray.remain);
+      } else {
+        strlcpy(remainBuf, "--%", sizeof(remainBuf));
+      }
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(txtColor, swatchColor);
+      tft.drawString(remainBuf, tCX, tCY + 8);
+#endif
+    } else {
+#if SCREEN_W >= 480
+      // Empty slot label
+      int16_t qCenterX = cx + qSlotX[qi] * (halfR / 2);
+      int16_t qCenterY = cy + qSlotY[qi] * (halfR / 2);
+      const int16_t textInset = 5;
+      int16_t tCX = qCenterX - qSlotX[qi] * textInset;
+      int16_t tCY = qCenterY - qSlotY[qi] * textInset;
+      tft.setTextDatum(MC_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(dim, bg);
+      tft.drawString("--", tCX, tCY);
+#endif
+    }
+  }
+
+  // Clip quadrant fill rectangles to circle boundary
+  for (int16_t y = cy - innerR; y <= cy + innerR; y++) {
+    int16_t dy = y - cy;
+    int32_t d2 = (int32_t)dy * dy;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 >= r2) continue;
+    int16_t halfChord = (int16_t)sqrtf((float)(r2 - d2));
+    tft.drawFastHLine(cx - innerR, y, innerR - halfChord, bg);
+    tft.drawFastHLine(cx + halfChord, y, innerR - halfChord, bg);
+  }
+  tft.fillRect(cx - innerR, cy - innerR - 1, innerR * 2 + 1, 2, bg);
+  tft.fillRect(cx - innerR, cy + innerR, innerR * 2 + 1, 2, bg);
+
+  // Circle boundary ring
+  uint16_t ringColor = alphaBlend565(80, 0xFFFF, bg);
+  tft.drawCircle(cx, cy, innerR, ringColor);
+
+  // Cross-hair separator lines (all dotted, quadrant colors make it clear)
+  for (int16_t dx = 1; dx < innerR - 2; dx += 3) {
+    int32_t d2 = (int32_t)dx * dx;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 < r2) tft.drawPixel(cx + dx, cy, dim);
+    if (d2 < r2) tft.drawPixel(cx - dx, cy, dim);
+  }
+  for (int16_t dy = 3; dy < innerR - 2; dy += 3) {
+    int32_t d2 = (int32_t)dy * dy;
+    int32_t r2 = (int32_t)innerR * innerR;
+    if (d2 < r2) tft.drawPixel(cx, cy + dy, dim);
+    if (d2 < r2) tft.drawPixel(cx, cy - dy, dim);
+  }
+
+  // Center humidity indicator
+  const int16_t humCircleR = (radius >= 60) ? 16 : 11;
+  tft.fillCircle(cx, cy, humCircleR, bg);
+  tft.drawCircle(cx, cy, humCircleR, dim);
+  if (ams.present && ams.unitCount > 0 && ams.units[0].present) {
+    char humBuf[4];
+    snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[0].humidity);
+    tft.setTextDatum(MC_DATUM);
+    setFont(tft, radius >= 60 ? FONT_BODY : FONT_SMALL);
+    tft.setTextColor(hColor, bg);
+    tft.drawString(humBuf, cx, cy);
   }
 }
