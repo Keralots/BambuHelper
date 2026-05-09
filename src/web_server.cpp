@@ -292,11 +292,14 @@ R"rawliteral(
           <div><label style="font-size:11px;color:#8B949E">Top-center</label><select id="gs1" class="gauge-slot-sel"></select></div>
           <div><label style="font-size:11px;color:#8B949E">Top-right</label><select id="gs2" class="gauge-slot-sel"></select></div>
         </div>
-        <p style="font-size:11px;color:#58A6FF;margin-bottom:6px">&#9660; Bottom row</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-          <div><label style="font-size:11px;color:#8B949E">Bot-left</label><select id="gs3" class="gauge-slot-sel"></select></div>
-          <div><label style="font-size:11px;color:#8B949E">Bot-center</label><select id="gs4" class="gauge-slot-sel"></select></div>
-          <div><label style="font-size:11px;color:#8B949E">Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
+%AMSV_ROW%
+        <div id="bottomRowGroup">
+          <p style="font-size:11px;color:#58A6FF;margin-bottom:6px">&#9660; Bottom row</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <div><label style="font-size:11px;color:#8B949E">Bot-left</label><select id="gs3" class="gauge-slot-sel"></select></div>
+            <div><label style="font-size:11px;color:#8B949E">Bot-center</label><select id="gs4" class="gauge-slot-sel"></select></div>
+            <div><label style="font-size:11px;color:#8B949E">Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
+          </div>
         </div>
         <button type="button" style="margin-top:8px;padding:4px 10px;font-size:11px;background:transparent;color:#8B949E;border:1px solid #30363D;border-radius:4px;cursor:pointer" onclick="resetGaugeLayout()">Reset to default</button>
 
@@ -903,7 +906,7 @@ function saveGaugeLayout(){
 
 // --- Multi-printer tab selection ---
 var currentSlot=0;
-setTimeout(function(){selectPrinterTab(0);},100);
+setTimeout(function(){selectPrinterTab(0);syncAmsView();},100);
 function selectPrinterTab(slot){
   currentSlot=slot;
   document.querySelectorAll('.tab-btn').forEach(function(btn,i){
@@ -1244,6 +1247,7 @@ function applyDisplay(){
   if(document.getElementById('pong').checked) p.append('pong','1');
   if(document.getElementById('slbl').checked) p.append('slbl','1');
   if(document.getElementById('shtire').checked) p.append('shtire','1');
+  if(document.getElementById('amsv') && document.getElementById('amsv').checked) p.append('amsv','1');
   p.append('tz',document.getElementById('tz').value);
   if(document.getElementById('use24h').checked) p.append('use24h','1');
   p.append('datefmt',document.getElementById('datefmt').value);
@@ -1275,6 +1279,13 @@ function toggleDualPrinterMode(on){
   var t=document.getElementById('printerTabs');
   if(t) t.style.display=on?'flex':'none';
   if(!on) selectPrinterTab(0);
+}
+
+// Hide the bottom-row gauge selectors when AMS view replaces them.
+function syncAmsView(){
+  var cb=document.getElementById('amsv');
+  var bg=document.getElementById('bottomRowGroup');
+  if(bg) bg.style.display=(cb && cb.checked)?'none':'';
 }
 
 // --- Diagnostics ---
@@ -1755,6 +1766,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "AMSV_ROW") == 0) {
+#if !defined(DISPLAY_240x320) && !defined(DISPLAY_480x480)
+    out = "<div class=\"check-row\">"
+      "<input type=\"checkbox\" id=\"amsv\" value=\"1\" ";
+    out += dispSettings.amsView ? "checked" : "";
+    out += " onchange=\"toggleSetting('amsv',this.checked);syncAmsView()\">"
+      "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>"
+      "</div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
 
   // --- Colors (global + per-gauge) ---
   if (strcmp(name, "CLR_BG") == 0)    { rgb565ToHtml(dispSettings.bgColor, buf); out = buf; return true; }
@@ -2058,6 +2082,7 @@ static void readDisplayFromForm() {
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
   dispSettings.showTimeRemaining = server.hasArg("shtire");
+  dispSettings.amsView = server.hasArg("amsv");
 
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {
@@ -2376,6 +2401,7 @@ static void handleToggleSetting() {
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
   else if (key == "shtire")  dispSettings.showTimeRemaining = on;
+  else if (key == "amsv")    dispSettings.amsView = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
@@ -2392,6 +2418,7 @@ static void handleToggleSetting() {
   if (key == "invcol") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
+  if (key == "amsv") triggerDisplayTransition();
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
     if (!on) {
@@ -2696,6 +2723,7 @@ static void handleSettingsExport() {
   disp["smallLabels"] = dispSettings.smallLabels;
   disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
+  disp["amsView"] = dispSettings.amsView;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -2883,6 +2911,7 @@ static void handleSettingsImportFinish() {
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
     if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
     if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();
+    if (disp["amsView"].is<bool>())             dispSettings.amsView = disp["amsView"].as<bool>();
 
     JsonObject gauges = disp["gauges"];
     if (gauges) {

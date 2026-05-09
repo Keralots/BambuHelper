@@ -29,6 +29,19 @@
 #define LY_ROW1      60      // row 1 center Y
 #define LY_ROW2      148     // row 2 center Y
 
+// --- AMS tray visualization (replaces gauge row 2 when amsView enabled) ---
+// Row 1 gauges (R=32 at Y=60) end at y=92 with labels to ~95.
+// ETA starts at Y=190. Available band: ~98 px.
+#define LY_AMS_Y                110
+#define LY_AMS_H                70
+#define LY_AMS_BAR_H            40
+#define LY_AMS_BAR_GAP          2
+#define LY_AMS_GROUP_GAP        8
+#define LY_AMS_LABEL_OFFY       4
+#define LY_AMS_MARGIN           8
+#define LY_AMS_BAR_MAX_W        30
+#define LY_AMS_BAR_MAX_W_EXTRAS 26
+
 // --- Printing: ETA / info zone ---
 #define LY_ETA_Y        190
 #define LY_ETA_H        30

@@ -133,6 +133,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.clockTimeColor = CLR_TEXT;
   ds.clockDateColor = CLR_TEXT_DIM;
   ds.showBatteryIndicator = true;
+  ds.amsView = false;
 
   // Progress: green arc, green label, white value
   ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
@@ -264,6 +265,7 @@ void loadSettings() {
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
   dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
+  dispSettings.amsView = prefs.getBool("dsp_amsv", def.amsView);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -422,6 +424,7 @@ void saveSettings() {
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
   prefs.putUShort("dsp_clkd", dispSettings.clockDateColor);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
+  prefs.putBool("dsp_amsv", dispSettings.amsView);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);

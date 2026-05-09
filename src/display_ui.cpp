@@ -1412,12 +1412,22 @@ static void drawIdleDrying(PrinterSlot& p) {
 
 static bool wasNoPrinter = false;
 
-// Forward declarations for 240x320 functions used before their definition
-#if defined(DISPLAY_240x320)
+// Forward declarations for AMS-strip functions. Available on all builds that
+// have a 240px-wide AMS layout (240x320 + 240x240). Excluded on the 480x480
+// SenseCAP build whose layout has no LY_AMS_* constants.
+#if !defined(DISPLAY_480x480)
 static void drawAmsStrip(const AmsState& ams, int16_t zoneY, int16_t zoneH, int16_t barH,
                          int16_t barMaxW = LY_AMS_BAR_MAX_W,
                          bool showFilamentTypes = false);
 static bool useEnhancedPortraitAms(const AmsState& ams);
+#endif
+
+// Helper macro for the 240x240-only AMS-view feature (replaces gauge row 2
+// with an AMS strip). The HTML row, gauge gating, and dispatch are gated by
+// this macro so 240x320 (which already has a permanent AMS strip) and 480x480
+// (no LY_AMS_*) skip the new code path.
+#if !defined(DISPLAY_240x320) && !defined(DISPLAY_480x480)
+  #define LAYOUT_240x240_AMS_VIEW 1
 #endif
 
 static void drawIdle() {
@@ -1691,6 +1701,13 @@ static bool     prevAmsTrayPresent[AMS_MAX_TRAYS] = {false};
 static int8_t   prevAmsTrayRemain[AMS_MAX_TRAYS];  // init in drawAmsZone
 static char     prevAmsTrayTypes[AMS_MAX_TRAYS][16] = {{0}};
 
+#endif // DISPLAY_240x320 (prevAms* caches consumed only by drawAmsZone)
+
+// The stateless AMS helpers below also compile on 240x240 builds, where the
+// "AMS view" toggle reuses drawAmsStrip(). Excluded only on 480x480 (SenseCAP)
+// because layout_480x480.h does not define LY_AMS_*.
+#if !defined(DISPLAY_480x480)
+
 // Extract a short display label from a filament type string.
 // Takes the first space-delimited token, caps at maxChars, strips trailing
 // separators (-,_). Examples:
@@ -1963,6 +1980,10 @@ static void drawAmsStrip(const AmsState& ams,
 static bool useEnhancedPortraitAms(const AmsState& ams) {
   return ams.unitCount >= 1 && ams.unitCount <= 2;
 }
+
+#endif // !DISPLAY_480x480 (stateless AMS helpers)
+
+#if defined(DISPLAY_240x320)
 
 static void drawAmsZone(const BambuState& s, bool force) {
   // --- Change detection ---
@@ -2362,6 +2383,40 @@ static void drawPrinting() {
     }
   }
 
+  // === AMS-view toggle (240x240 only): swap gauge row 2 for AMS strip ===
+#if defined(LAYOUT_240x240_AMS_VIEW)
+  const bool amsViewActive  = dispSettings.amsView;
+  const bool amsHasContent  = s.ams.present && s.ams.unitCount > 0;
+  const bool amsStripVisible = amsViewActive && amsHasContent;
+  static bool prevAmsViewActive   = false;
+  static bool prevAmsStripVisible = false;
+  static bool amsStripDirty       = false;
+
+  // Toggle: wipe both the row-2 gauge band and the AMS band. Start at the
+  // higher of the two top edges - LY_AMS_Y - 2 covers the active-tray notch
+  // in enhanced AMS, which extends slightly above LY_AMS_Y.
+  if (amsViewActive != prevAmsViewActive) {
+    const int16_t row2Top = LY_ROW2 - LY_GAUGE_R - 2;
+    const int16_t amsTop  = LY_AMS_Y - 2;
+    const int16_t y0      = (row2Top < amsTop) ? row2Top : amsTop;
+    const int16_t y1      = LY_AMS_Y + LY_AMS_H + 8;
+    tft.fillRect(0, y0, LY_W, y1 - y0, dispSettings.bgColor);
+    prevAmsViewActive   = amsViewActive;
+    prevAmsStripVisible = false;
+    amsStripDirty       = true;
+  }
+
+  // AMS disappeared while view is on - drawAmsStrip won't be called this
+  // frame, so explicitly wipe the band.
+  if (amsViewActive && prevAmsStripVisible && !amsStripVisible) {
+    tft.fillRect(0, LY_AMS_Y - 2, LY_W, LY_AMS_H + 10, dispSettings.bgColor);
+  }
+  prevAmsStripVisible = amsStripVisible;
+#else
+  const bool amsViewActive   = false;
+  const bool amsStripVisible = false;
+#endif
+
   // === Configurable 2x3 gauge grid ===
   {
     static const int16_t slotX[GAUGE_SLOT_COUNT] = { LY_COL1, LY_COL2, LY_COL3, LY_COL1, LY_COL2, LY_COL3 };
@@ -2369,6 +2424,9 @@ static void drawPrinting() {
     static uint8_t prevSlotTypes[GAUGE_SLOT_COUNT] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
     for (uint8_t si = 0; si < GAUGE_SLOT_COUNT; si++) {
+      // Skip row-2 slots when AMS view replaces them. Mark prevSlotTypes as
+      // invalid so toggling back later forces a clean redraw.
+      if (amsViewActive && si >= 3) { prevSlotTypes[si] = 0xFF; continue; }
       uint8_t gt = p.config.gaugeSlots[si];
       if (gt >= GAUGE_TYPE_COUNT) gt = GAUGE_EMPTY;
 
@@ -2517,6 +2575,51 @@ static void drawPrinting() {
   const bool amsForce = forceRedraw || unitsZoneChanged;
   if (isLandscape() || (s.ams.present && s.ams.unitCount > 0)) {
     drawAmsZone(s, amsForce);
+  }
+#endif
+
+  // === 240x240 AMS view: replaces gauge row 2 with the same AMS strip ===
+  // drawAmsStrip self-clears its zone every call, so call only when state
+  // actually changed - otherwise every render frame would flicker the bars.
+  // Change set mirrors the existing GAUGE_AMS_FILAMENT detection.
+#if defined(LAYOUT_240x240_AMS_VIEW)
+  if (amsStripVisible) {
+    bool needDraw = forceRedraw || amsStripDirty;
+    if (!needDraw) {
+      needDraw = (s.ams.unitCount != prevState.ams.unitCount)
+              || (s.ams.activeTray != prevState.ams.activeTray);
+    }
+    if (!needDraw) {
+      for (int u = 0; u < AMS_MAX_UNITS && !needDraw; u++) {
+        const AmsUnit& cu = s.ams.units[u];
+        const AmsUnit& pu = prevState.ams.units[u];
+        if (cu.present != pu.present || cu.trayCount != pu.trayCount) needDraw = true;
+      }
+    }
+    if (!needDraw) {
+      for (int t = 0; t < AMS_MAX_TRAYS && !needDraw; t++) {
+        const AmsTray& ct = s.ams.trays[t];
+        const AmsTray& pt = prevState.ams.trays[t];
+        if (ct.present != pt.present
+            || ct.colorRgb565 != pt.colorRgb565
+            || ct.remain != pt.remain) needDraw = true;
+      }
+    }
+    bool enhanced = useEnhancedPortraitAms(s.ams);
+    if (!needDraw && enhanced) {
+      for (int t = 0; t < AMS_MAX_TRAYS && !needDraw; t++) {
+        if (strcmp(s.ams.trays[t].type, prevState.ams.trays[t].type) != 0) needDraw = true;
+      }
+    }
+    if (needDraw) {
+      if (enhanced) {
+        drawAmsStrip(s.ams, LY_AMS_Y, LY_AMS_H, LY_AMS_BAR_H,
+                     LY_AMS_BAR_MAX_W_EXTRAS, /*showFilamentTypes=*/true);
+      } else {
+        drawAmsStrip(s.ams, LY_AMS_Y, LY_AMS_H, LY_AMS_BAR_H);
+      }
+      amsStripDirty = false;
+    }
   }
 #endif
 
