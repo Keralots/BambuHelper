@@ -43,8 +43,8 @@ bool isLedPinAllowed(uint8_t pin) {
   if (buzzerSettings.enabled && pin == buzzerSettings.pin) return false;
   if (buttonType != BTN_DISABLED && pin == buttonPin) return false;
 
-#if defined(DISPLAY_CYD)
-  // CYD (classic ESP32, esp32dev)
+#if defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432)
+  // CYD (ESP32-2432S028) and TZT L1435-2.4 - same ESP32 pinout, both esp32dev
   if (pin == 2 || pin == 12 || pin == 13 || pin == 14 || pin == 15) return false;  // display SPI
   if (pin == 25 || pin == 32 || pin == 33 || pin == 36 || pin == 39) return false; // XPT2046 touch
   if (pin == 4 || pin == 16 || pin == 17) return false;                            // onboard RGB
