@@ -485,8 +485,19 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
 
                 if (tray["tray_type"].is<const char*>()) {
                   t.present = true;
-                  if (tray["tray_color"].is<const char*>()) {
-                    const char* colorStr = tray["tray_color"].as<const char*>();
+                  const char* colorStr = nullptr;
+                  if (tray["tray_color"].is<const char*>())
+                    colorStr = tray["tray_color"].as<const char*>();
+                  // Fallback to cols[0] when tray_color is missing or too short.
+                  // A1 AMS Lite is reported to populate cols even when tray_color
+                  // is absent on some firmware revisions.
+                  if ((!colorStr || strlen(colorStr) < 6) &&
+                      tray["cols"].is<JsonArray>() &&
+                      tray["cols"].size() > 0 &&
+                      tray["cols"][0].is<const char*>()) {
+                    colorStr = tray["cols"][0].as<const char*>();
+                  }
+                  if (colorStr) {
                     t.colorRgb565 = bambuColorToRgb565(colorStr);
                     MQTT_LOG("AMS tray %d color: \"%s\" -> 0x%04X", idx, colorStr, t.colorRgb565);
                   }
@@ -497,7 +508,18 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
                   else
                     name = tray["tray_type"].as<const char*>();
                   if (name) strlcpy(t.type, name, sizeof(t.type));
-                  t.remain = tray["remain"].is<int>() ? (int8_t)tray["remain"].as<int>() : -1;
+                  int8_t rawRemain = tray["remain"].is<int>() ? (int8_t)tray["remain"].as<int>() : -1;
+                  // AMS Lite (A1) reports remain=0 on uncalibrated/third-party
+                  // spools, which blanks the colored fill in the bar renderer.
+                  // Treat 0 as "unknown" when the spool has no calibrated
+                  // weight (tray_weight=="0") - real RFID spools always have a
+                  // non-zero weight.
+                  if (rawRemain == 0 &&
+                      tray["tray_weight"].is<const char*>() &&
+                      strcmp(tray["tray_weight"].as<const char*>(), "0") == 0) {
+                    rawRemain = -1;
+                  }
+                  t.remain = rawRemain;
                 } else {
                   t.present = false;
                   t.type[0] = '\0';
@@ -571,8 +593,17 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
         if (!deserializeJson(vtDoc, v, (size_t)(payloadEnd - v))) {
           if (vtDoc["tray_type"].is<const char*>()) {
             s.ams.vtPresent = true;
+            const char* vtColorStr = nullptr;
             if (vtDoc["tray_color"].is<const char*>())
-              s.ams.vtColorRgb565 = bambuColorToRgb565(vtDoc["tray_color"].as<const char*>());
+              vtColorStr = vtDoc["tray_color"].as<const char*>();
+            if ((!vtColorStr || strlen(vtColorStr) < 6) &&
+                vtDoc["cols"].is<JsonArray>() &&
+                vtDoc["cols"].size() > 0 &&
+                vtDoc["cols"][0].is<const char*>()) {
+              vtColorStr = vtDoc["cols"][0].as<const char*>();
+            }
+            if (vtColorStr)
+              s.ams.vtColorRgb565 = bambuColorToRgb565(vtColorStr);
             const char* name = nullptr;
             if (vtDoc["tray_sub_brands"].is<const char*>() &&
                 strlen(vtDoc["tray_sub_brands"].as<const char*>()) > 0)
