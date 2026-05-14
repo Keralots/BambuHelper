@@ -50,6 +50,7 @@ struct DisplaySettings {
   bool     pongClock;         // Pong/Breakout animated clock
   bool     smallLabels;       // use smaller gauge labels (Font 1 instead of Font 2)
   bool     showTimeRemaining; // always show time remaining instead of ETA
+  bool     fanMatchPrinter;   // round fan % to 10% steps to match printer LCD (else 1% precision from fan_gear)
   bool     invertColors;   // invert display colors (fixes white-bg on some panels)
   bool     cydPanelClassic; // CYD only: use plain Panel_ILI9341 (no inversion)
                             // instead of Panel_ILI9341_2 — for the other

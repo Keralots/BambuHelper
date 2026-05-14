@@ -403,6 +403,10 @@ R"rawliteral(
           <input type="checkbox" id="shtire" value="1" %SHTIRE% onchange="toggleSetting('shtire',this.checked)">
           <label for="shtire">Show remaining time instead of ETA</label>
         </div>
+        <div class="check-row">
+          <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
+          <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
+        </div>
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
       </div>
@@ -1247,6 +1251,7 @@ function applyDisplay(){
   if(document.getElementById('pong').checked) p.append('pong','1');
   if(document.getElementById('slbl').checked) p.append('slbl','1');
   if(document.getElementById('shtire').checked) p.append('shtire','1');
+  if(document.getElementById('fanmp').checked) p.append('fanmp','1');
   if(document.getElementById('amsv') && document.getElementById('amsv').checked) p.append('amsv','1');
   p.append('tz',document.getElementById('tz').value);
   if(document.getElementById('use24h').checked) p.append('use24h','1');
@@ -1739,6 +1744,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "PONG") == 0)   { out = dispSettings.pongClock ? "checked" : ""; return true; }
   if (strcmp(name, "SLBL") == 0)   { out = dispSettings.smallLabels ? "checked" : ""; return true; }
   if (strcmp(name, "SHTIRE") == 0) { out = dispSettings.showTimeRemaining ? "checked" : ""; return true; }
+  if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "INVCOL_ROW") == 0) {
 #if defined(DISPLAY_240x320)
     out = "<div class=\"check-row\">"
@@ -2082,6 +2088,7 @@ static void readDisplayFromForm() {
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
   dispSettings.showTimeRemaining = server.hasArg("shtire");
+  dispSettings.fanMatchPrinter = server.hasArg("fanmp");
   dispSettings.amsView = server.hasArg("amsv");
 
   // Clock settings (timezone, 24h)
@@ -2402,6 +2409,7 @@ static void handleToggleSetting() {
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
   else if (key == "shtire")  dispSettings.showTimeRemaining = on;
+  else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
   else if (key == "amsv")    dispSettings.amsView = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
@@ -2723,6 +2731,7 @@ static void handleSettingsExport() {
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
   disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
+  disp["fanMatchPrinter"] = dispSettings.fanMatchPrinter;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
   disp["amsView"] = dispSettings.amsView;
 
@@ -2911,6 +2920,7 @@ static void handleSettingsImportFinish() {
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
     if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
+    if (disp["fanMatchPrinter"].is<bool>())     dispSettings.fanMatchPrinter = disp["fanMatchPrinter"].as<bool>();
     if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();
     if (disp["amsView"].is<bool>())             dispSettings.amsView = disp["amsView"].as<bool>();
 

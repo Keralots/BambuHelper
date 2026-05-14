@@ -128,6 +128,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.pongClock = false;
   ds.smallLabels = false;
   ds.showTimeRemaining = false;
+  ds.fanMatchPrinter = true;
   ds.invertColors = false;
   ds.cydPanelClassic = false;
   ds.clockTimeColor = CLR_TEXT;
@@ -260,6 +261,7 @@ void loadSettings() {
   dispSettings.pongClock = prefs.getBool("dsp_pong", def.pongClock);
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
   dispSettings.showTimeRemaining = prefs.getBool("dsp_shtire", def.showTimeRemaining);
+  dispSettings.fanMatchPrinter = prefs.getBool("dsp_fanmp", def.fanMatchPrinter);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
@@ -419,6 +421,7 @@ void saveSettings() {
   prefs.putBool("dsp_pong", dispSettings.pongClock);
   prefs.putBool("dsp_slbl", dispSettings.smallLabels);
   prefs.putBool("dsp_shtire", dispSettings.showTimeRemaining);
+  prefs.putBool("dsp_fanmp", dispSettings.fanMatchPrinter);
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);

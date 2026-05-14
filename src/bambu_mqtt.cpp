@@ -749,17 +749,32 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     s.totalLayers = print["total_layer_num"].as<int>();
   }
 
-  // Fan speeds: prefer fan_gear (packed PWM 0-255 per fan, ~0.4% precision) over the
-  // *_fan_speed fields (4-bit 0-15, ~6.67% precision) so the displayed value matches the
-  // printer's own LCD. Fallback to the legacy fields when fan_gear is missing or the byte
-  // is 0 while the legacy field is non-zero (delta-push without fan_gear).
+  // Fan speeds: prefer fan_gear (packed raw PWM 0-255 per fan) over the legacy
+  // *_fan_speed fields (4-bit 0-15). The dispSettings.fanMatchPrinter toggle
+  // controls how the raw value is rendered:
+  //   - true  : round to nearest 10% (BambuStudio FanControl.cpp: round(pwm/25.5))
+  //             which is what the printer's own LCD shows.
+  //   - false : 1% precision from fan_gear, exposing real PWM jitter.
+  // Heatbreak fan is not packed in fan_gear, so it stays on the 0-15 path.
   auto parseFan = [](JsonVariant v) -> int {
     if (v.is<int>()) return v.as<int>();
     if (v.is<const char*>()) return atoi(v.as<const char*>());
     return -1;
   };
   auto pwmToPct = [](uint8_t b) -> uint8_t {
+    if (dispSettings.fanMatchPrinter) {
+      // round(pwm * 10 / 255) * 10  -> 0,10,20,...,100
+      return (uint8_t)((((uint16_t)b * 10 + 127) / 255) * 10);
+    }
     return (uint8_t)(((uint16_t)b * 100 + 127) / 255);
+  };
+  auto legacyToPct = [](int v) -> uint8_t {
+    if (v < 0) v = 0; if (v > 15) v = 15;
+    if (dispSettings.fanMatchPrinter) {
+      // Match BambuStudio legacy chain: floor(v / 1.5) * 10
+      return (uint8_t)(((v * 2) / 3) * 10);
+    }
+    return (uint8_t)((v * 100) / 15);
   };
 
   bool gearPresent = print["fan_gear"].is<unsigned int>() || print["fan_gear"].is<int>();
@@ -776,7 +791,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   if (gearPresent) {
     corePrintData = true; s.coolingFanPct = pwmToPct((uint8_t)(gear & 0xFF));
   } else if (!s.fanGearSeen && oldVal >= 0) {
-    corePrintData = true; s.coolingFanPct = (oldVal * 100) / 15;
+    corePrintData = true; s.coolingFanPct = legacyToPct(oldVal);
   } else if (oldVal >= 0) {
     corePrintData = true;  // received legacy update on a gear-supporting printer; ignore value
   }
@@ -785,7 +800,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   if (gearPresent) {
     corePrintData = true; s.auxFanPct = pwmToPct((uint8_t)((gear >> 8) & 0xFF));
   } else if (!s.fanGearSeen && oldVal >= 0) {
-    corePrintData = true; s.auxFanPct = (oldVal * 100) / 15;
+    corePrintData = true; s.auxFanPct = legacyToPct(oldVal);
   } else if (oldVal >= 0) {
     corePrintData = true;
   }
@@ -794,14 +809,15 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   if (gearPresent) {
     corePrintData = true; s.chamberFanPct = pwmToPct((uint8_t)((gear >> 16) & 0xFF));
   } else if (!s.fanGearSeen && oldVal >= 0) {
-    corePrintData = true; s.chamberFanPct = (oldVal * 100) / 15;
+    corePrintData = true; s.chamberFanPct = legacyToPct(oldVal);
   } else if (oldVal >= 0) {
     corePrintData = true;
   }
 
-  // heatbreak fan is not packed in fan_gear - keep legacy 0-15 conversion
+  // heatbreak fan is not packed in fan_gear - stays on the 0-15 legacy scale either way.
+  // legacyToPct still honours fanMatchPrinter so all four fan gauges round consistently.
   oldVal = parseFan(print["heatbreak_fan_speed"]);
-  if (oldVal >= 0) { corePrintData = true; s.heatbreakFanPct = (oldVal * 100) / 15; }
+  if (oldVal >= 0) { corePrintData = true; s.heatbreakFanPct = legacyToPct(oldVal); }
 
   // Non-core fields: wifi_signal, spd_lvl, stat - don't count as core print data
   if (print["wifi_signal"].is<const char*>())
