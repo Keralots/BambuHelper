@@ -2431,7 +2431,7 @@ static void drawPrinting() {
 
   // === AMS-view toggle (240x240 only): swap gauge row 2 for AMS strip ===
 #if defined(LAYOUT_240x240_AMS_VIEW)
-  const bool amsViewActive  = dispSettings.amsView;
+  const bool amsViewActive  = p.config.amsView;
   const bool amsHasContent  = s.ams.present && s.ams.unitCount > 0;
   const bool amsStripVisible = amsViewActive && amsHasContent;
   static bool prevAmsViewActive   = false;

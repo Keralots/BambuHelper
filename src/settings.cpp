@@ -134,7 +134,6 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.clockTimeColor = CLR_TEXT;
   ds.clockDateColor = CLR_TEXT_DIM;
   ds.showBatteryIndicator = true;
-  ds.amsView = false;
 
   // Progress: green arc, green label, white value
   ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
@@ -245,9 +244,28 @@ void loadSettings() {
       }
     }
 
+    // AMS view (per-printer): 240x240 only, replaces gauge row 2 with AMS strip
+    snprintf(key, sizeof(key), "p%d_amsv", i);
+    cfg.amsView = prefs.getBool(key, false);
+
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     setPrinterGcodeStateCanonical(printers[i].state, GCODE_UNKNOWN);
+  }
+
+  // One-shot migration: copy legacy global dsp_amsv to every printer slot
+  // that doesn't already have its own value, then remove the legacy key.
+  if (prefs.isKey("dsp_amsv")) {
+    bool legacy = prefs.getBool("dsp_amsv", false);
+    for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
+      char key[16];
+      snprintf(key, sizeof(key), "p%d_amsv", i);
+      if (!prefs.isKey(key)) {
+        prefs.putBool(key, legacy);
+        printers[i].config.amsView = legacy;
+      }
+    }
+    prefs.remove("dsp_amsv");
   }
 
   // Display settings
@@ -267,7 +285,6 @@ void loadSettings() {
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
   dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
-  dispSettings.amsView = prefs.getBool("dsp_amsv", def.amsView);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -427,7 +444,6 @@ void saveSettings() {
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
   prefs.putUShort("dsp_clkd", dispSettings.clockDateColor);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
-  prefs.putBool("dsp_amsv", dispSettings.amsView);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);
@@ -508,6 +524,9 @@ void savePrinterConfig(uint8_t index) {
 
   snprintf(key, sizeof(key), "p%d_slots", index);
   prefs.putBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
+
+  snprintf(key, sizeof(key), "p%d_amsv", index);
+  prefs.putBool(key, cfg.amsView);
 
   if (needOpen) prefs.end();
 }

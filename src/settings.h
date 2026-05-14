@@ -58,7 +58,6 @@ struct DisplaySettings {
   uint16_t clockTimeColor; // clock digits color (RGB565)
   uint16_t clockDateColor; // clock date/AM-PM color (RGB565)
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
-  bool     amsView;        // 240x240: replace gauge row 2 with AMS strip
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;

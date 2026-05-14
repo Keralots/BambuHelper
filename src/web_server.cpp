@@ -902,6 +902,8 @@ function saveGaugeLayout(){
   var p=new URLSearchParams();
   p.append('slot',currentSlot);
   for(var g=0;g<6;g++){var s=document.getElementById('gs'+g);if(s)p.append('gs'+g,s.value);}
+  var av=document.getElementById('amsv');
+  if(av&&av.checked) p.append('amsv','1');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok')showToast('Gauge layout saved!');else showToast('Error');})
@@ -930,6 +932,8 @@ function selectPrinterTab(slot){
     document.getElementById('region').value=d.region||'us';
     document.getElementById('cl_token').value='';
     if(d.gaugeSlots){for(var g=0;g<6;g++){var sel=document.getElementById('gs'+g);if(sel)sel.value=d.gaugeSlots[g]||0;}}
+    var av=document.getElementById('amsv');
+    if(av){av.checked=!!d.amsView;syncAmsView();}
     toggleConnMode();
     var ps=document.getElementById('printerStatus');
     if(d.connected){ps.className='status status-ok';ps.textContent='Connected';}
@@ -1252,7 +1256,6 @@ function applyDisplay(){
   if(document.getElementById('slbl').checked) p.append('slbl','1');
   if(document.getElementById('shtire').checked) p.append('shtire','1');
   if(document.getElementById('fanmp').checked) p.append('fanmp','1');
-  if(document.getElementById('amsv') && document.getElementById('amsv').checked) p.append('amsv','1');
   p.append('tz',document.getElementById('tz').value);
   if(document.getElementById('use24h').checked) p.append('use24h','1');
   p.append('datefmt',document.getElementById('datefmt').value);
@@ -1774,10 +1777,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
   }
   if (strcmp(name, "AMSV_ROW") == 0) {
 #if !defined(DISPLAY_240x320) && !defined(DISPLAY_480x480)
+    // Initial state is populated by selectPrinterTab() from the per-slot JSON;
+    // value is saved as part of Save Gauge Layout (per-printer), not toggled globally.
     out = "<div class=\"check-row\">"
-      "<input type=\"checkbox\" id=\"amsv\" value=\"1\" ";
-    out += dispSettings.amsView ? "checked" : "";
-    out += " onchange=\"toggleSetting('amsv',this.checked);syncAmsView()\">"
+      "<input type=\"checkbox\" id=\"amsv\" value=\"1\""
+      " onchange=\"syncAmsView()\">"
       "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>"
       "</div>";
 #else
@@ -2089,7 +2093,6 @@ static void readDisplayFromForm() {
   dispSettings.smallLabels = server.hasArg("slbl");
   dispSettings.showTimeRemaining = server.hasArg("shtire");
   dispSettings.fanMatchPrinter = server.hasArg("fanmp");
-  dispSettings.amsView = server.hasArg("amsv");
 
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {
@@ -2228,6 +2231,7 @@ static void handleSaveGaugeLayout() {
       cfg.gaugeSlots[g] = (val < GAUGE_TYPE_COUNT) ? val : GAUGE_EMPTY;
     }
   }
+  cfg.amsView = server.hasArg("amsv");
 
   savePrinterConfig(slot);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -2410,7 +2414,6 @@ static void handleToggleSetting() {
   else if (key == "slbl")    dispSettings.smallLabels = on;
   else if (key == "shtire")  dispSettings.showTimeRemaining = on;
   else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
-  else if (key == "amsv")    dispSettings.amsView = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
@@ -2427,7 +2430,6 @@ static void handleToggleSetting() {
   if (key == "invcol") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
-  if (key == "amsv") triggerDisplayTransition();
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
     if (!on) {
@@ -2476,6 +2478,7 @@ static void handlePrinterConfig() {
   doc["configured"] = isPrinterConfigured(slot);
   JsonArray slots = doc["gaugeSlots"].to<JsonArray>();
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
+  doc["amsView"] = cfg.amsView;
 
   String json;
   serializeJson(doc, json);
@@ -2716,6 +2719,7 @@ static void handleSettingsExport() {
     p["region"] = (uint8_t)cfg.region;
     JsonArray slots = p["gaugeSlots"].to<JsonArray>();
     for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
+    p["amsView"] = cfg.amsView;
   }
 
   // Display
@@ -2733,7 +2737,6 @@ static void handleSettingsExport() {
   disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
   disp["fanMatchPrinter"] = dispSettings.fanMatchPrinter;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
-  disp["amsView"] = dispSettings.amsView;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -2881,6 +2884,14 @@ static void handleSettingsImportFinish() {
   }
 
   // Printers
+  // Resolve per-printer amsView with backward compat for legacy backups: per-slot
+  // value wins; if absent, fall back to top-level display.amsView (old format);
+  // otherwise leave default. An explicit per-printer value must never be
+  // overridden by the legacy global (matters for mixed/hand-edited backups).
+  JsonObject legacyDisp = doc["display"];
+  bool legacyAmsViewPresent = legacyDisp && legacyDisp["amsView"].is<bool>();
+  bool legacyAmsView = legacyAmsViewPresent ? legacyDisp["amsView"].as<bool>() : false;
+
   JsonArray pArr = doc["printers"];
   if (pArr) {
     for (uint8_t i = 0; i < MAX_PRINTERS && i < pArr.size(); i++) {
@@ -2904,6 +2915,11 @@ static void handleSettingsImportFinish() {
           cfg.gaugeSlots[g] = (v < GAUGE_TYPE_COUNT) ? v : defSlots[g];
         }
       }
+      if (p["amsView"].is<bool>()) {
+        cfg.amsView = p["amsView"].as<bool>();
+      } else if (legacyAmsViewPresent) {
+        cfg.amsView = legacyAmsView;
+      }
     }
   }
 
@@ -2922,7 +2938,8 @@ static void handleSettingsImportFinish() {
     if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
     if (disp["fanMatchPrinter"].is<bool>())     dispSettings.fanMatchPrinter = disp["fanMatchPrinter"].as<bool>();
     if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();
-    if (disp["amsView"].is<bool>())             dispSettings.amsView = disp["amsView"].as<bool>();
+    // Legacy disp["amsView"] is consumed in the printers block above as a fallback
+    // for slots that don't have their own per-printer value.
 
     JsonObject gauges = disp["gauges"];
     if (gauges) {
