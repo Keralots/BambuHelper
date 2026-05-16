@@ -357,17 +357,24 @@ select {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
-  background: var(--bg-elev-1);
+  /* Distinctly lighter than the surrounding panel + specs block so the
+     dropdown reads as an interactive control, not flat page chrome. */
+  background: #1c1c24;
   color: var(--fg-bright);
-  border: 1px solid var(--border-strong);
+  border: 1px solid #353541;
   border-radius: var(--r-md);
   padding: 12px 36px 12px 14px;
   font: inherit;
   font-size: 14px;
   cursor: pointer;
-  transition: border-color 120ms ease;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset,
+              0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: background 120ms ease, border-color 120ms ease;
 }
-select:hover { border-color: #353541; }
+select:hover {
+  background: #20202a;
+  border-color: #44444f;
+}
 select:focus {
   outline: none;
   border-color: var(--accent-line);
