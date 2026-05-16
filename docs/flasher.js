@@ -2,14 +2,21 @@
 // Builds ESP Web Tools manifests on the fly from a single board map, and
 // keeps the install button in sync with the user's board selection.
 
+// Order: DIY builds grouped at the top (the "you wired this yourself" path),
+// then all-in-one boards, then the two CYD-style boards differentiated by
+// their display driver so users don't pick the wrong one.
 const BOARDS = {
   esp32s3: {
     chipFamily: 'ESP32-S3',
-    label: 'ESP32-S3 SuperMini + 1.54" ST7789 (DIY)',
+    label: 'DIY - ESP32-S3 SuperMini + 1.54" ST7789',
   },
   esp32s3_zero: {
     chipFamily: 'ESP32-S3',
-    label: 'Waveshare ESP32-S3-Zero + 1.54" ST7789 (DIY)',
+    label: 'DIY - Waveshare ESP32-S3-Zero + 1.54" ST7789',
+  },
+  esp32c3: {
+    chipFamily: 'ESP32-C3',
+    label: 'DIY - ESP32-C3 SuperMini + 1.54" ST7789',
   },
   ws_lcd_200: {
     chipFamily: 'ESP32-S3',
@@ -21,11 +28,11 @@ const BOARDS = {
   },
   cyd: {
     chipFamily: 'ESP32',
-    label: 'CYD / ESP32-2432S028 (240x320)',
+    label: 'CYD / ESP32-2432S028 (ILI9341, 240x320)',
   },
-  esp32c3: {
-    chipFamily: 'ESP32-C3',
-    label: 'ESP32-C3 SuperMini + 1.54" ST7789 (DIY)',
+  tzt_2432: {
+    chipFamily: 'ESP32',
+    label: 'CYD / TZT L1435-2.4 (ST7789, 240x320)',
   },
 };
 

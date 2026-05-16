@@ -27,14 +27,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Six boards published by the web flasher. Order matches docs/flasher.js.
+# Boards published by the web flasher. Order matches docs/flasher.js
+# (DIY builds first, then all-in-one boards, CYD-style at the end).
 WEB_FLASHER_BOARDS = [
     "esp32s3",
     "esp32s3_zero",
+    "esp32c3",
     "ws_lcd_200",
     "ws_lcd_154",
     "cyd",
-    "esp32c3",
+    "tzt_2432",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
