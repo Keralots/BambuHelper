@@ -54,7 +54,7 @@ const char* getFilamentTypeLabel(const char* fullType);
 
 // Draw all 4 trays of the selected AMS unit (color + type + % + humidity).
 // Absent unit or unparsed tray renders as a diagonal X cross-out.
-void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                              int16_t thickness, const struct AmsState& ams,
                              uint8_t unitIndex, bool forceRedraw);
 

@@ -44,6 +44,17 @@
 #define LY_AMS_LABEL_OFFY 4
 #define LY_AMS_MARGIN     10
 #define LY_AMS_BAR_MAX_W  42
+#define LY_AMS_BAR_MAX_W_EXTRAS 42  // JC3248W535 has plenty of width — no need to shrink in extras mode
+
+// --- Battery indicator placeholders ---
+// JC3248W535 has no battery hardware exposed to BambuHelper — shouldShowBatteryIndicator()
+// returns false at runtime, so these are never actually drawn. Defined only so the
+// unconditionally-compiled drawBatteryPrefix/drawWifiSignalIndicator helpers in
+// display_ui.cpp compile on this build. Values mirror layout_default.h scaled up.
+#define LY_BAT_W       12
+#define LY_BAT_H       24
+#define LY_BAT_TEXT_X  18
+#define LY_BAT_SHIFT_X 20
 
 // --- Printing: ETA / info zone ---
 #define LY_ETA_Y        360
