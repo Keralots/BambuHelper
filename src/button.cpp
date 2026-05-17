@@ -1,5 +1,6 @@
 #include "button.h"
 #include "settings.h"
+#include "buzzer.h"
 
 #if defined(USE_XPT2046)
   #include <SPI.h>
@@ -49,6 +50,45 @@
     value = Wire.read();
     return true;
   }
+#elif defined(USE_AXS_TOUCH)
+  // AXS15231B integrated touch controller. I2C slave at 0x3B.
+  // Protocol (per axs15231b-lovyangfx skill): write 8-byte command, read 8
+  // bytes back. Touch is active when rx[0] == 0 (no gesture) AND rx[1] != 0
+  // (finger count > 0). Coordinates arrive pre-scaled to panel resolution,
+  // NOT raw 0-4095. Single-touch only.
+  //
+  // INT line: per manufacturer demo code, the AXS15231B touch INT is on
+  // GPIO 3, active-low, asserted while a finger is on the panel. Polling
+  // the I2C state every main-loop tick misses sub-loop-rate taps (the
+  // chip only reports a finger for a brief window if you release fast),
+  // so we use the INT pin as the edge trigger and only do the I2C read
+  // when the level is low.
+  #include <Wire.h>
+  #define AXS_TOUCH_ADDR 0x3B
+  #ifndef AXS_TOUCH_INT
+    #define AXS_TOUCH_INT 3
+  #endif
+  static bool axsTouchBusReady = false;
+  static bool axsTouchSeen = false;
+  static volatile uint32_t axsIntFallingCount = 0;  // incremented by the ISR
+  static uint32_t axsIntFallingSeen = 0;            // last value drained by poller
+
+  static void IRAM_ATTR axsTouchIsr() {
+    axsIntFallingCount++;
+  }
+
+  static bool axsTouchProbe() {
+    Wire.beginTransmission(AXS_TOUCH_ADDR);
+    return Wire.endTransmission(true) == 0;
+  }
+
+  // Note: a per-tap I2C read of the touchpad register was removed once
+  // we switched to the INT-pin ISR — the firmware only needs "finger
+  // down NOW", and the INT line carries that. If a future gesture
+  // (multi-touch, drag, coords) is needed, write 8 bytes to 0x3B
+  // {0xB5,0xAB,0xA5,0x5A,0,0,0,8} then read 8: rx[0]=gesture,
+  // rx[1]=finger count, rx[2..5]=x_h,x_l,y_h,y_l, coords are
+  // panel-scaled (NOT raw 0-4095).
 #elif defined(TOUCH_CS)
   #include "display_ui.h"  // extern tft for getTouch()
 #endif
@@ -59,8 +99,50 @@ static unsigned long lastChangeMs = 0;
 static unsigned long pressStartMs = 0;
 static const unsigned long DEBOUNCE_MS = 50;
 
+void sanitizeButtonPin() {
+  // Only the GPIO-backed button types use buttonPin. Touchscreen talks over
+  // a bus defined elsewhere and has no single pin to conflict.
+  if (buttonType != BTN_PUSH && buttonType != BTN_TOUCH) return;
+  if (buttonPin == 0) return;
+
+  auto clash = [&](const char* what) {
+    Serial.printf("Button: pin %u conflicts with %s, disabling\n",
+                  (unsigned)buttonPin, what);
+    buttonPin = 0;
+  };
+
+#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+  if (buttonPin == BACKLIGHT_PIN) { clash("backlight"); return; }
+#endif
+#if defined(USE_AXS_TOUCH)
+  if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
+  if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
+#endif
+#if defined(USE_CST816)
+  if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
+  if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }
+  #if defined(CST816_IRQ)
+  if (buttonPin == CST816_IRQ) { clash("CST816 touch IRQ"); return; }
+  #endif
+  #if defined(CST816_RST)
+  if (buttonPin == CST816_RST) { clash("CST816 touch RST"); return; }
+  #endif
+#endif
+#if defined(USE_XPT2046)
+  if (buttonPin == TOUCH_CS)   { clash("XPT2046 CS");   return; }
+  if (buttonPin == TOUCH_IRQ)  { clash("XPT2046 IRQ");  return; }
+  if (buttonPin == TOUCH_MOSI) { clash("XPT2046 MOSI"); return; }
+  if (buttonPin == TOUCH_MISO) { clash("XPT2046 MISO"); return; }
+  if (buttonPin == TOUCH_CLK)  { clash("XPT2046 CLK");  return; }
+#endif
+  if (buzzerSettings.pin != 0 && buttonPin == buzzerSettings.pin) {
+    clash("buzzer"); return;
+  }
+}
+
 void initButton() {
   if (buttonType == BTN_DISABLED) return;
+  sanitizeButtonPin();
 #if defined(USE_XPT2046)
   if (buttonType == BTN_TOUCHSCREEN) {
     touchSPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
@@ -122,6 +204,27 @@ void initButton() {
     }
     return;
   }
+#elif defined(USE_AXS_TOUCH)
+  if (buttonType == BTN_TOUCHSCREEN) {
+    Wire.begin(AXS_TOUCH_SDA, AXS_TOUCH_SCL);
+    Wire.setClock(400000);
+    axsTouchBusReady = true;
+    pinMode(AXS_TOUCH_INT, INPUT_PULLUP);
+    // Wire INT on FALLING edge — chip pulses low on touch-down for ~us-ms,
+    // shorter than the main loop period, so level-polling misses fast taps.
+    attachInterrupt(digitalPinToInterrupt(AXS_TOUCH_INT), axsTouchIsr, FALLING);
+    if (axsTouchProbe()) {
+      Serial.printf("AXS15231B touch initialized (I2C SDA=%d SCL=%d INT=%d, addr 0x%02X)\n",
+                    AXS_TOUCH_SDA, AXS_TOUCH_SCL, AXS_TOUCH_INT, AXS_TOUCH_ADDR);
+      axsTouchSeen = true;
+    } else {
+      Serial.printf("AXS15231B touch did not answer at init (addr 0x%02X, SDA=%d SCL=%d INT=%d); will keep retrying at runtime\n",
+                    AXS_TOUCH_ADDR, AXS_TOUCH_SDA, AXS_TOUCH_SCL, AXS_TOUCH_INT);
+    }
+    Serial.printf("AXS15231B touch INT(GPIO%d) initial level=%d (ISR attached, FALLING)\n",
+                  AXS_TOUCH_INT, digitalRead(AXS_TOUCH_INT));
+    return;
+  }
 #endif
   if (buttonType == BTN_TOUCHSCREEN) return;
   if (buttonPin == 0) return;
@@ -162,6 +265,51 @@ bool wasButtonPressed() {
       ft5x06Seen = true;
     }
     raw = (touchPoints > 0);
+#elif defined(USE_AXS_TOUCH)
+    if (!axsTouchBusReady) return false;
+    // The AXS15231B pulses INT low→high→low while a finger is held (the
+    // ISR fires 20-30 times per contact, separated by sub-100 ms gaps).
+    // Detecting release via INT level is therefore unreliable — a HIGH
+    // observation in a gap looks identical to a real release. Use ISR
+    // quiescence as the release signal instead: as long as the ISR keeps
+    // firing, treat the finger as still down; only declare release once
+    // no edge has happened for RELEASE_MS.
+    {
+      // Acceptable benign race: the ISR can fire and increment
+      // axsIntFallingCount between our read into `cnt` and our write to
+      // `axsIntFallingSeen`, in which case that one edge is "consumed"
+      // without producing a press. Because the AXS15231B emits 20-30
+      // edges per held finger, missing one boundary edge has no
+      // observable effect — the next one fires the press, and the
+      // 200 ms quiescence detector below still works correctly.
+      uint32_t cnt = axsIntFallingCount;
+      bool newEdge = (cnt != axsIntFallingSeen);
+      axsIntFallingSeen = cnt;
+
+      static unsigned long lastIsrMs = 0;
+      unsigned long nowMs = millis();
+      if (newEdge) lastIsrMs = nowMs;
+
+      const unsigned long RELEASE_MS = 200;
+      bool released = (nowMs - lastIsrMs > RELEASE_MS);
+
+      if (released && stableState) {
+        stableState = false;
+        pressStartMs = 0;
+      }
+
+      if (newEdge && !stableState) {
+        if (!axsTouchSeen) {
+          Serial.printf("AXS15231B touch became responsive at runtime (addr 0x%02X)\n",
+                        AXS_TOUCH_ADDR);
+          axsTouchSeen = true;
+        }
+        stableState = true;
+        pressStartMs = nowMs;
+        return true;
+      }
+      return false;
+    }
 #elif defined(TOUCH_CS)
     uint16_t tx, ty;
     raw = tft.getTouch(&tx, &ty);

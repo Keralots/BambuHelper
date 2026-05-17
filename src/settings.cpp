@@ -1,5 +1,6 @@
 #include "settings.h"
 #include "config.h"
+#include "button.h"
 #include "buzzer.h"
 #include "led.h"
 #include "timezones.h"
@@ -377,7 +378,7 @@ void loadSettings() {
   rotState.lastRotateMs = 0;
 
   // Button settings
-#if defined(USE_CST816) || defined(USE_XPT2046) || defined(USE_FT5X06) || defined(TOUCH_CS)
+#if defined(USE_CST816) || defined(USE_XPT2046) || defined(USE_FT5X06) || defined(USE_AXS_TOUCH) || defined(TOUCH_CS)
   buttonType = (ButtonType)prefs.getUChar("btn_type", BTN_TOUCHSCREEN);
 #else
   buttonType = (ButtonType)prefs.getUChar("btn_type", BTN_DISABLED);
@@ -633,6 +634,7 @@ void saveRotationSettings() {
 }
 
 void saveButtonSettings() {
+  sanitizeButtonPin();
   prefs.begin(NVS_NAMESPACE, false);
   prefs.putUChar("btn_type", buttonType);
   prefs.putUChar("btn_pin", buttonPin);

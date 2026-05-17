@@ -19,6 +19,7 @@ static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
+static bool finishDismissedByWake = false;  // true once user taps to wake while printer is GCODE_FINISH; cleared on printer state change
 static unsigned long connectingScreenStart = 0;  // for stuck-state timeout
 static PrinterGcodeState prevGcodeStateId[MAX_ACTIVE_PRINTERS] = { GCODE_UNKNOWN };
 static bool prevGcodeStateSeen[MAX_ACTIVE_PRINTERS] = { false };
@@ -157,8 +158,17 @@ static void doTapActions() {
     finishActive = false;
     idleClockActive = false;
     resetMqttBackoff();
-    deferMqttReconnect();
-    setScreenState(SCREEN_IDLE);
+    deferMqttReconnect();  // skip blocking reconnect this iteration so screen wakes instantly
+    setScreenState(SCREEN_IDLE);  // state machine will correct on next loop
+    // If the displayed printer is in GCODE_FINISH, user has now dismissed
+    // the finished-print banner by waking — don't let the state machine
+    // bounce IDLE → FINISHED → CLOCK in the next iteration. Cleared when
+    // the printer moves away from GCODE_FINISH (new print starts).
+    if (isAnyPrinterConfigured() && isWiFiConnected() && !isAPMode()) {
+      if (displayedPrinter().state.gcodeStateId == GCODE_FINISH) {
+        finishDismissedByWake = true;
+      }
+    }
     return;
   }
 
@@ -264,7 +274,8 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
 
   if (current != SCREEN_FINISHED && !isSleepStickyScreen(current) &&
       !(current == SCREEN_IDLE && s.ams.anyDrying) &&
-      !(current == SCREEN_PRINTING && finishActive)) {
+      !(current == SCREEN_PRINTING && finishActive) &&
+      !(current == SCREEN_IDLE && finishDismissedByWake)) {
     setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
     finishScreenStart = millis();
     finishActive = true;
@@ -309,6 +320,9 @@ static void handleDisplayedPrinterIdleState(ScreenState current, const BambuStat
 }
 
 static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState& s) {
+  if (s.gcodeStateId != GCODE_FINISH) {
+    finishDismissedByWake = false;
+  }
   if (s.printing) {
     if (current != SCREEN_PRINTING) {
       setScreenState(SCREEN_PRINTING);
@@ -354,12 +368,19 @@ static void updateDisplayedPrinterScreenState() {
   }
 
   if (isOtaAutoInProgress()) {
-    if (current != SCREEN_OTA_UPDATE) setScreenState(SCREEN_OTA_UPDATE);
+    if (current != SCREEN_OTA_UPDATE) {
+      setScreenState(SCREEN_OTA_UPDATE);
+    }
     return;
   }
 
   BambuState& s = displayedPrinter().state;
   if (!s.connected) {
+    // A WiFi/MQTT blip during/after a finish would otherwise leave the
+    // "user dismissed the post-finish banner" flag sticky forever — and
+    // when the printer reconnects on the NEXT print (still GCODE_FINISH
+    // briefly at handover), the finish screen would be silently skipped.
+    finishDismissedByWake = false;
     if (current != SCREEN_CONNECTING_MQTT && !isSleepStickyScreen(current)) {
       setScreenState(SCREEN_CONNECTING_MQTT);
       finishActive = false;
@@ -619,7 +640,10 @@ void setup() {
 }
 
 void loop() {
-  if (handleSplashPhase()) return;
+  if (handleSplashPhase()) {
+    flushFrame();  // commit splash draws to panel (no-op on non-JC boards)
+    return;
+  }
 
   handleWiFi();
   handleWebServer();
@@ -649,4 +673,9 @@ void loop() {
     handleBambuMqtt();
     handleRotation();
   }
+
+  // Commit the framebuffer sprite to the panel. On JC3248W535 this is a
+  // ~20ms QSPI push (300 KB @ 32MHz QIO); on all other boards it's a no-op
+  // since draws go directly to the panel.
+  flushFrame();
 }
