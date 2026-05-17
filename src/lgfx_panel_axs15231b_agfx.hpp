@@ -265,6 +265,13 @@ public:
   // to push a large framebuffer without the chip getting confused by
   // multiple RAMWRC commands from chunked calls. Intended for full-frame
   // sprite flushes (e.g. pushing a PSRAM LGFX_Sprite as one atomic frame).
+  //
+  // NOT REENTRANT and NOT THREAD-SAFE: `data` is byte-swapped in place
+  // before the QSPI write and swapped back afterwards. No other code may
+  // read from or write into the buffer between the two swap loops. There
+  // are intentionally no early returns between them; do not add any.
+  // BambuHelper only calls this from loop() on core 1, and nothing else
+  // touches the framebuffer sprite, so the invariant is upheld.
   // -------------------------------------------------------------------------
   void pushRawPixels(uint16_t* data, uint32_t length) {
     if (!_agfx || length == 0) return;
