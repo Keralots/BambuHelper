@@ -75,26 +75,25 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
 
-## Hardware
+## Hardware Assembly for the DIY Version (ESP32-S3 Super Mini)
 
 > **If you bought an all-in-one board** (CYD, TZT L1435-2.4, Waveshare 2" or 1.54", SenseCAP Indicator), **skip this section** - everything is already wired on the PCB. The tables below apply only to the **DIY** builds (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 SuperMini) that need an external display soldered up.
 
-| Component | Specification |
-|---|---|
-| MCU | ESP32-S3 Super Mini (DIY reference build) |
-| Display | 1.54" TFT SPI ST7789 (240x240) |
-| Other supported boards | CYD / ESP32-2432S028 (240x320 ILI9341), TZT L1435-2.4 (240x320 ST7789V, CYD-shaped), Waveshare ESP32-S3-Zero + 240x240 ST7789, Waveshare ESP32-S3-Touch-LCD-2 (240x320 ST7789, with battery), Waveshare ESP32-S3-Touch-LCD-1.54 (240x240 ST7789, with battery + 3 buttons + ES8311 audio), ESP32-C3 Super Mini + 240x240 ST7789, Seeed SenseCAP Indicator (480x480 ST7701S, community-maintained) |
-| Connection | SPI |
-
-Aliexpress links (DIY parts):
+AliExpress links (DIY parts):
 - Display 1.54" ST7789: https://a.aliexpress.com/_EG9y7wc
-- ESP32-S3 SuperMini: https://a.aliexpress.com/_Eyk9GdA (make sure it is the **S3** variant)
+- ESP32-S3 SuperMini: https://a.aliexpress.com/_Eyk9GdA (the **S3** variant supports 2 printers; the **C3** variant supports 1 printer. If you use C3, the wiring is different; check the default wiring table)
 - Case for the 1.54" DIY build: https://makerworld.com/en/models/2501721
 
 Optional accessories - all configurable from the web interface, none required:
 - **Touch / push button** (TTP223 or standard push button) for cycling printers and waking the display. See the wiring section below.
 - **Passive buzzer / mini speaker** for print-finished, connected, and error notifications. See the wiring section below.
 - **Status LED** (any common LED with a series resistor) for at-a-glance progress / connection state. See the wiring section below.
+
+Links for optional accessories:
+- TTP223 touch button: https://aliexpress.com/item/1005006246380749.html
+- LDO6AJSA LED driver: https://aliexpress.com/item/1005005344841325.html
+- Filament LED 3V 39 mm: https://aliexpress.com/item/1005007883702652.html
+- Passive buzzer: https://aliexpress.com/item/1005010400627387.html
 
 ### Default Wiring
 
