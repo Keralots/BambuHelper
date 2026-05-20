@@ -535,16 +535,14 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
                     name = tray["tray_type"].as<const char*>();
                   if (name) strlcpy(t.type, name, sizeof(t.type));
                   int8_t rawRemain = tray["remain"].is<int>() ? (int8_t)tray["remain"].as<int>() : -1;
-                  // AMS Lite (A1) reports remain=0 on uncalibrated/third-party
-                  // spools, which blanks the colored fill in the bar renderer.
-                  // Treat 0 as "unknown" when the spool has no calibrated
-                  // weight (tray_weight=="0") - real RFID spools always have a
-                  // non-zero weight.
-                  if (rawRemain == 0 &&
-                      tray["tray_weight"].is<const char*>() &&
-                      strcmp(tray["tray_weight"].as<const char*>(), "0") == 0) {
-                    rawRemain = -1;
-                  }
+                  // Treat remain=0 as "unknown" so the bar renders in the
+                  // filament color instead of pure track color. Many models
+                  // report 0 even on loaded RFID spools - X1C has no AMS
+                  // weight sensor so remain stays 0 indefinitely, and A1 AMS
+                  // Lite reports 0 on uncalibrated/third-party spools.
+                  // A truly empty spool would have triggered a filament-out
+                  // halt long before this matters cosmetically.
+                  if (rawRemain == 0) rawRemain = -1;
                   t.remain = rawRemain;
                 } else {
                   t.present = false;
