@@ -42,12 +42,14 @@ bool mqttDebugLog = false;
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
 
-// Detect X1 series printers by serial prefix (per Bambu Lab wiki).
-// X1C: "00M", X1E: "03W". These use home_flag bit 23 for the door sensor.
-static bool isX1SeriesSerial(const char* serial) {
+// Printers that report the door sensor in home_flag bit 23 (per Bambu Lab wiki
+// + ha-bambulab convention): X1C "00M", X1E "03W", P2S "22E".
+// H2 series uses "stat" instead; P1/A1 have no door sensor.
+static bool usesHomeFlagDoorSensor(const char* serial) {
   if (!serial) return false;
-  return strncmp(serial, "00M", 3) == 0 ||
-         strncmp(serial, "03W", 3) == 0;
+  return strncmp(serial, "00M", 3) == 0 ||   // X1C
+         strncmp(serial, "03W", 3) == 0 ||   // X1E
+         strncmp(serial, "22E", 3) == 0;     // P2S
 }
 
 
@@ -861,8 +863,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   //     H2C sends 9+ hex digits (>32 bit), must use strtoull.
   //     Note: X1C also sends "stat" but with different semantics (bit 23 is
   //     always set there), so gate this path to dual-nozzle H2 printers.
-  //   - X1 series (serial prefix 00M = X1C, 00W = X1E): "home_flag" int,
-  //     bit 23 = door open. Matches ha-bambulab convention.
+  //   - X1C ("00M"), X1E ("03W"), P2S ("22E"): "home_flag" int, bit 23 = door
+  //     open. Matches ha-bambulab convention.
   //   - P1/A1: no door sensor - nothing to parse.
   if (s.dualNozzle && print["stat"].is<const char*>()) {
     uint64_t statVal = strtoull(print["stat"].as<const char*>(), nullptr, 16);
@@ -874,15 +876,15 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     } else if (s.doorOpen != wasOpen) {
       MQTT_LOG("door %s (H2 stat=0x%llX)", s.doorOpen ? "OPENED" : "CLOSED", statVal);
     }
-  } else if (isX1SeriesSerial(serial) && print["home_flag"].is<int32_t>()) {
+  } else if (usesHomeFlagDoorSensor(serial) && print["home_flag"].is<int32_t>()) {
     uint32_t homeFlag = (uint32_t)print["home_flag"].as<int32_t>();
     bool wasOpen = s.doorOpen;
     s.doorOpen = (homeFlag & (1UL << 23)) != 0;
     if (!s.doorSensorPresent) {
       s.doorSensorPresent = true;
-      MQTT_LOG("door sensor detected (X1 home_flag=0x%08X, door=%s)", homeFlag, s.doorOpen ? "OPEN" : "CLOSED");
+      MQTT_LOG("door sensor detected (home_flag=0x%08X, door=%s)", homeFlag, s.doorOpen ? "OPEN" : "CLOSED");
     } else if (s.doorOpen != wasOpen) {
-      MQTT_LOG("door %s (X1 home_flag=0x%08X)", s.doorOpen ? "OPENED" : "CLOSED", homeFlag);
+      MQTT_LOG("door %s (home_flag=0x%08X)", s.doorOpen ? "OPENED" : "CLOSED", homeFlag);
     }
   }
 
