@@ -10,36 +10,36 @@
 
 static FontID currentFont = FONT_NONE;
 
-static void applyBitmapFallback(lgfx::LovyanGFX& tft, FontID id) {
-    tft.unloadFont();
+static void applyBitmapFallback(lgfx::LovyanGFX& gfx, FontID id) {
+    gfx.unloadFont();
     switch (id) {
-        case FONT_SMALL: tft.setTextFont(1); break;  // 6x8 GLCD
-        case FONT_BODY:  tft.setTextFont(2); break;  // 16px
-        case FONT_LARGE: tft.setTextFont(4); break;  // 26px
-        default:         tft.setTextFont(2); break;
+        case FONT_SMALL: gfx.setTextFont(1); break;  // 6x8 GLCD
+        case FONT_BODY:  gfx.setTextFont(2); break;  // 16px
+        case FONT_LARGE: gfx.setTextFont(4); break;  // 26px
+        default:         gfx.setTextFont(2); break;
     }
 }
 
-void setFont(lgfx::LovyanGFX& tft, FontID id) {
+void setFont(lgfx::LovyanGFX& gfx, FontID id) {
     if (id == currentFont) return;
 
     switch (id) {
         case FONT_SMALL:
-            if (!tft.loadFont(inter_10)) applyBitmapFallback(tft, FONT_SMALL);
+            if (!gfx.loadFont(inter_10)) applyBitmapFallback(gfx, FONT_SMALL);
             break;
         case FONT_BODY:
-            if (!tft.loadFont(inter_14)) applyBitmapFallback(tft, FONT_BODY);
+            if (!gfx.loadFont(inter_14)) applyBitmapFallback(gfx, FONT_BODY);
             break;
         case FONT_LARGE:
-            if (!tft.loadFont(inter_19)) applyBitmapFallback(tft, FONT_LARGE);
+            if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
             break;
         case FONT_7SEG:
-            tft.unloadFont();
-            tft.setTextFont(7);
+            gfx.unloadFont();
+            gfx.setTextFont(7);
             break;
         case FONT_NONE:
         default:
-            tft.unloadFont();
+            gfx.unloadFont();
             break;
     }
 

@@ -46,20 +46,20 @@ static inline uint16_t contrastTextColor565(uint16_t bg) {
 // ---------------------------------------------------------------------------
 //  H2-style LED progress bar
 // ---------------------------------------------------------------------------
-void drawLedProgressBar(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress) {
-  ScopedWrite sw(tft);
+void drawLedProgressBar(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress) {
+  ScopedWrite sw(gfx);
   uint16_t bg = dispSettings.bgColor;
   uint16_t track = dispSettings.trackColor;
 
   // Use the active canvas width so the bar reaches both edges in landscape
   // (rotation 1/3 on 240x320 → tft.width()=320). 240x240 and portrait keep
   // their existing centered 236px bar via LY_BAR_W when canvas == SCREEN_W.
-  const int16_t scrW = (int16_t)tft.width();
+  const int16_t scrW = (int16_t)gfx.width();
   const int16_t barW = (scrW > SCREEN_W) ? (scrW - 4) : LY_BAR_W;
   const int16_t barH = LY_BAR_H;
   const int16_t barX = (scrW - barW) / 2;
 
-  tft.fillRect(barX, y, barW, barH, bg);
+  gfx.fillRect(barX, y, barW, barH, bg);
 
   if (progress == 0) return;
 
@@ -68,17 +68,17 @@ void drawLedProgressBar(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress) {
 
   uint16_t barColor = dispSettings.progress.arc;
 
-  tft.fillRoundRect(barX, y, fillW, barH, 2, barColor);
+  gfx.fillRoundRect(barX, y, fillW, barH, 2, barColor);
 
   uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
-  tft.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
+  gfx.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
   if (fillW > 4 && progress < 100) {
-    tft.fillRect(barX + fillW - 3, y, 3, barH, glowColor);
+    gfx.fillRect(barX + fillW - 3, y, 3, barH, glowColor);
   }
 
   if (fillW < barW) {
-    tft.fillRoundRect(barX + fillW, y, barW - fillW, barH, 2, track);
+    gfx.fillRoundRect(barX + fillW, y, barW - fillW, barH, 2, track);
   }
 }
 
@@ -95,7 +95,7 @@ static const uint16_t SHIMMER_INTERVAL = 25;  // ms between steps (~40fps)
 static const uint16_t SHIMMER_PAUSE = 1200;   // ms pause between sweeps
 static const int16_t SHIMMER_STEP = 3;       // pixels per step
 
-void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool printing) {
+void tickProgressShimmer(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress, bool printing) {
   if (!dispSettings.animatedBar || !printing || progress == 0) return;
 
   unsigned long now = millis();
@@ -110,7 +110,7 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
   if (now - shimmerLastMs < SHIMMER_INTERVAL) return;
   shimmerLastMs = now;
 
-  const int16_t scrW = (int16_t)tft.width();
+  const int16_t scrW = (int16_t)gfx.width();
   const int16_t barW = (scrW > SCREEN_W) ? (scrW - 4) : LY_BAR_W;
   const int16_t barH = LY_BAR_H;
   const int16_t barX = (scrW - barW) / 2;
@@ -126,7 +126,7 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
 
   uint16_t barColor = dispSettings.progress.arc;
 
-  ScopedWrite sw_(tft);
+  ScopedWrite sw_(gfx);
 
   // Erase previous shimmer position (redraw base bar segment)
   if (shimmerPos > 0) {
@@ -134,7 +134,7 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
     int16_t eraseW = SHIMMER_STEP;
     if (eraseX < barX) { eraseW -= (barX - eraseX); eraseX = barX; }
     if (eraseW > 0) {
-      tft.fillRect(eraseX, y, eraseW, barH, barColor);
+      gfx.fillRect(eraseX, y, eraseW, barH, barColor);
     }
   }
 
@@ -148,11 +148,11 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
     uint16_t mid    = alphaBlend565(100, CLR_TEXT, barColor);
     // Edge pixels
     if (sw >= 3) {
-      tft.fillRect(sx, y, 2, barH, mid);
-      tft.fillRect(sx + 2, y, sw - 4 > 0 ? sw - 4 : 1, barH, bright);
-      if (sw > 4) tft.fillRect(sx + sw - 2, y, 2, barH, mid);
+      gfx.fillRect(sx, y, 2, barH, mid);
+      gfx.fillRect(sx + 2, y, sw - 4 > 0 ? sw - 4 : 1, barH, bright);
+      if (sw > 4) gfx.fillRect(sx + sw - 2, y, 2, barH, mid);
     } else {
-      tft.fillRect(sx, y, sw, barH, bright);
+      gfx.fillRect(sx, y, sw, barH, bright);
     }
   }
 
@@ -163,10 +163,10 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
     // Restore the tail
     int16_t tailX = barX + fillW - SHIMMER_W - SHIMMER_STEP;
     if (tailX < barX) tailX = barX;
-    tft.fillRect(tailX, y, barX + fillW - tailX, barH, barColor);
+    gfx.fillRect(tailX, y, barX + fillW - tailX, barH, barColor);
     // Re-draw center glow line
     uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
-    tft.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
+    gfx.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
     shimmerPos = 0;
     shimmerPaused = true;
@@ -177,7 +177,7 @@ void tickProgressShimmer(lgfx::LovyanGFX& tft, int16_t y, uint8_t progress, bool
 // ---------------------------------------------------------------------------
 //  Helper: draw arc track + fill, handling decrease properly
 // ---------------------------------------------------------------------------
-static void drawArcFillLegacy(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
+static void drawArcFillLegacy(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                               int16_t radius, int16_t thickness,
                               uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
   // Internal angles use TFT_eSPI convention: 0°=bottom (6 o'clock), clockwise.
@@ -196,15 +196,15 @@ static void drawArcFillLegacy(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
     float la1 = (float)((a1 + 90u) % 360u);
     if (la0 > la1) {
       // Arc crosses the 0° boundary — split into two segments
-      tft.drawArc(cx, cy, radius, radius - thickness, la0, 360.0f, color);
-      tft.drawArc(cx, cy, radius, radius - thickness, 0.0f,  la1,  color);
+      gfx.drawArc(cx, cy, radius, radius - thickness, la0, 360.0f, color);
+      gfx.drawArc(cx, cy, radius, radius - thickness, 0.0f,  la1,  color);
     } else {
-      tft.drawArc(cx, cy, radius, radius - thickness, la0, la1, color);
+      gfx.drawArc(cx, cy, radius, radius - thickness, la0, la1, color);
     }
   };
 
   if (forceRedraw) {
-    tft.fillCircle(cx, cy, radius + 2, bg);
+    gfx.fillCircle(cx, cy, radius + 2, bg);
     arcDraw(startAngle, endAngle, track);
   }
 
@@ -248,7 +248,7 @@ static inline float wedgeLineDistanceAA(float xpax, float ypay,
   return sqrtf(dx * dx + dy * dy) + h * dr;
 }
 
-static void drawWedgeLineAA(lgfx::LovyanGFX& tft,
+static void drawWedgeLineAA(lgfx::LovyanGFX& gfx,
                             float ax, float ay, float bx, float by,
                             float ar, float br,
                             uint16_t fg_color, uint16_t bg_color) {
@@ -264,8 +264,8 @@ static void drawWedgeLineAA(lgfx::LovyanGFX& tft,
   int32_t y0 = (int32_t)floorf(fminf(ay - ar, by - br));
   int32_t y1 = (int32_t) ceilf(fmaxf(ay + ar, by + br));
 
-  const int32_t maxX = (int32_t)tft.width() - 1;
-  const int32_t maxY = (int32_t)tft.height() - 1;
+  const int32_t maxX = (int32_t)gfx.width() - 1;
+  const int32_t maxY = (int32_t)gfx.height() - 1;
   if (x1 < 0 || y1 < 0 || x0 > maxX || y0 > maxY) return;
   if (x0 < 0) x0 = 0;
   if (y0 < 0) y0 = 0;
@@ -284,12 +284,12 @@ static void drawWedgeLineAA(lgfx::LovyanGFX& tft,
       const float alpha = aaRadius - wedgeLineDistanceAA(xpax, ypay, bax, bay, rdt);
       if (alpha <= loAlphaTheshold) continue;
       if (alpha > hiAlphaTheshold) {
-        tft.drawPixel(xp, yp, fg_color);
+        gfx.drawPixel(xp, yp, fg_color);
         continue;
       }
       const uint8_t blendAlpha = (uint8_t)(alpha * pixelAlphaGain);
       if (blendAlpha == 0) continue;
-      tft.drawPixel(xp, yp, alphaBlend565(blendAlpha, fg_color, bg_color));
+      gfx.drawPixel(xp, yp, alphaBlend565(blendAlpha, fg_color, bg_color));
     }
   }
 }
@@ -297,7 +297,7 @@ static void drawWedgeLineAA(lgfx::LovyanGFX& tft,
 // Scan-quadrant AA annulus slice. Port of TFT_eSPI::drawArc (smooth=true).
 // Angles: 0°=6 o'clock, clockwise, range 0-360. r=outer, ir=inner (inclusive).
 // Ends are NOT anti-aliased — caller adds radial AA wedges for smooth ends.
-static void drawArcAA(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
+static void drawArcAA(lgfx::LovyanGFX& gfx, int32_t x, int32_t y,
                       int32_t r, int32_t ir,
                       uint32_t startAngle, uint32_t endAngle,
                       uint16_t fg_color, uint16_t bg_color) {
@@ -309,7 +309,7 @@ static void drawArcAA(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
   if (r <= 0 || ir < 0) return;
 
   if (endAngle < startAngle) {
-    if (startAngle < 360) drawArcAA(tft, x, y, r, ir, startAngle, 360, fg_color, bg_color);
+    if (startAngle < 360) drawArcAA(gfx, x, y, r, ir, startAngle, 360, fg_color, bg_color);
     if (endAngle == 0) return;
     startAngle = 0;
   }
@@ -384,48 +384,48 @@ static void drawArcAA(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
       if (alpha < 16) continue;
       uint16_t pcol = alphaBlend565(alpha, fg_color, bg_color);
       slope = ((r - cy) << 16) / (r - cx);
-      if (slope <= startSlope[0] && slope >= endSlope[0]) tft.drawPixel(x + cx - r, y - cy + r, pcol);
-      if (slope >= startSlope[1] && slope <= endSlope[1]) tft.drawPixel(x + cx - r, y + cy - r, pcol);
-      if (slope <= startSlope[2] && slope >= endSlope[2]) tft.drawPixel(x - cx + r, y + cy - r, pcol);
-      if (slope <= endSlope[3] && slope >= startSlope[3]) tft.drawPixel(x - cx + r, y - cy + r, pcol);
+      if (slope <= startSlope[0] && slope >= endSlope[0]) gfx.drawPixel(x + cx - r, y - cy + r, pcol);
+      if (slope >= startSlope[1] && slope <= endSlope[1]) gfx.drawPixel(x + cx - r, y + cy - r, pcol);
+      if (slope <= startSlope[2] && slope >= endSlope[2]) gfx.drawPixel(x - cx + r, y + cy - r, pcol);
+      if (slope <= endSlope[3] && slope >= startSlope[3]) gfx.drawPixel(x - cx + r, y - cy + r, pcol);
     }
-    if (len[0]) tft.drawFastHLine(x + xst[0] - len[0] + 1 - r, y - cy + r, len[0], fg_color);
-    if (len[1]) tft.drawFastHLine(x + xst[1] - len[1] + 1 - r, y + cy - r, len[1], fg_color);
-    if (len[2]) tft.drawFastHLine(x - xst[2] + r, y + cy - r, len[2], fg_color);
-    if (len[3]) tft.drawFastHLine(x - xst[3] + r, y - cy + r, len[3], fg_color);
+    if (len[0]) gfx.drawFastHLine(x + xst[0] - len[0] + 1 - r, y - cy + r, len[0], fg_color);
+    if (len[1]) gfx.drawFastHLine(x + xst[1] - len[1] + 1 - r, y + cy - r, len[1], fg_color);
+    if (len[2]) gfx.drawFastHLine(x - xst[2] + r, y + cy - r, len[2], fg_color);
+    if (len[3]) gfx.drawFastHLine(x - xst[3] + r, y - cy + r, len[3], fg_color);
   }
 
-  if (startAngle ==   0 || endAngle == 360) tft.drawFastVLine(x, y + r - w, w, fg_color);
-  if (startAngle <=  90 && endAngle >=  90) tft.drawFastHLine(x - r + 1, y, w, fg_color);
-  if (startAngle <= 180 && endAngle >= 180) tft.drawFastVLine(x, y - r + 1, w, fg_color);
-  if (startAngle <= 270 && endAngle >= 270) tft.drawFastHLine(x + r - w, y, w, fg_color);
+  if (startAngle ==   0 || endAngle == 360) gfx.drawFastVLine(x, y + r - w, w, fg_color);
+  if (startAngle <=  90 && endAngle >=  90) gfx.drawFastHLine(x - r + 1, y, w, fg_color);
+  if (startAngle <= 180 && endAngle >= 180) gfx.drawFastVLine(x, y - r + 1, w, fg_color);
+  if (startAngle <= 270 && endAngle >= 270) gfx.drawFastHLine(x + r - w, y, w, fg_color);
 }
 
-static void drawArcCapAA(lgfx::LovyanGFX& tft, int32_t x, int32_t y,
+static void drawArcCapAA(lgfx::LovyanGFX& gfx, int32_t x, int32_t y,
                          int32_t r, int32_t ir, uint32_t angle,
                          uint16_t fg_color, uint16_t bg_color) {
   constexpr float deg2rad = 3.14159265358979f / 180.0f;
   const float sx = -sinf(angle * deg2rad);
   const float sy = +cosf(angle * deg2rad);
-  drawWedgeLineAA(tft,
+  drawWedgeLineAA(gfx,
                   sx * ir + x, sy * ir + y,
                   sx *  r + x, sy *  r + y,
                   0.3f, 0.3f, fg_color, bg_color);
 }
 
-static void drawArcSegmentAA(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
+static void drawArcSegmentAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                              int16_t radius, int16_t innerRadius,
                              uint16_t a0, uint16_t a1,
                              uint16_t fg_color, uint16_t bg_color,
                              bool drawStartCap, bool drawEndCap,
                              uint16_t startCapBg, uint16_t endCapBg) {
   if (a1 <= a0) return;
-  if (drawStartCap) drawArcCapAA(tft, cx, cy, radius, innerRadius, a0, fg_color, startCapBg);
-  if (drawEndCap)   drawArcCapAA(tft, cx, cy, radius, innerRadius, a1, fg_color, endCapBg);
-  drawArcAA(tft, cx, cy, radius, innerRadius, a0, a1, fg_color, bg_color);
+  if (drawStartCap) drawArcCapAA(gfx, cx, cy, radius, innerRadius, a0, fg_color, startCapBg);
+  if (drawEndCap)   drawArcCapAA(gfx, cx, cy, radius, innerRadius, a1, fg_color, endCapBg);
+  drawArcAA(gfx, cx, cy, radius, innerRadius, a0, a1, fg_color, bg_color);
 }
 
-static void drawArcFill(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
+static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                         int16_t radius, int16_t thickness,
                         uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
   const uint16_t startAngle = 60;
@@ -437,19 +437,19 @@ static void drawArcFill(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
   const int16_t innerRadius = radius - thickness;
 
   if (forceRedraw) {
-    tft.fillCircle(cx, cy, radius + 2, bg);
-    drawArcSegmentAA(tft, cx, cy, radius, innerRadius,
+    gfx.fillCircle(cx, cy, radius + 2, bg);
+    drawArcSegmentAA(gfx, cx, cy, radius, innerRadius,
                      startAngle, endAngle, track, bg,
                      true, true, bg, bg);
   }
 
   if (clampedFillEnd > startAngle) {
-    drawArcSegmentAA(tft, cx, cy, radius, innerRadius,
+    drawArcSegmentAA(gfx, cx, cy, radius, innerRadius,
                      startAngle, clampedFillEnd, fillColor, bg,
                      true, true, bg, (clampedFillEnd < endAngle) ? track : bg);
   }
   if (clampedFillEnd < endAngle) {
-    drawArcSegmentAA(tft, cx, cy, radius, innerRadius,
+    drawArcSegmentAA(gfx, cx, cy, radius, innerRadius,
                      clampedFillEnd, endAngle, track, bg,
                      false, true, bg, bg);
   }
@@ -458,10 +458,10 @@ static void drawArcFill(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
 // ---------------------------------------------------------------------------
-static void clearGaugeCenter(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy,
+static void clearGaugeCenter(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                              int16_t radius, int16_t thickness) {
   int16_t textR = radius - thickness - 1;
-  tft.fillCircle(cx, cy, textR, dispSettings.bgColor);
+  gfx.fillCircle(cx, cy, textR, dispSettings.bgColor);
 }
 
 // ---------------------------------------------------------------------------
@@ -523,10 +523,10 @@ void resetGaugeTextCache() {
 // ---------------------------------------------------------------------------
 //  Main progress arc
 // ---------------------------------------------------------------------------
-void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,
                      uint16_t remainingMin, bool forceRedraw) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   const GaugeColors& gc = dispSettings.progress;
   uint16_t bg = dispSettings.bgColor;
@@ -534,7 +534,7 @@ void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
   uint16_t fillEnd = startAngle + (progress * 240) / 100;
   if (fillEnd > 300) fillEnd = 300;
 
-  drawArcFill(tft, cx, cy, radius, thickness, fillEnd, gc.arc, forceRedraw);
+  drawArcFill(gfx, cx, cy, radius, thickness, fillEnd, gc.arc, forceRedraw);
 
   bool compact = (radius < 50);
 
@@ -554,22 +554,22 @@ void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
 
   // Only clear center + redraw text when displayed string actually changes
   if (gaugeTextChanged(cx, cy, pctBuf, timeBuf, forceRedraw)) {
-    clearGaugeCenter(tft, cx, cy, radius, thickness);
+    clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(gc.value);
-    setFont(tft, FONT_LARGE);
-    tft.drawString(pctBuf, cx, cy - (compact ? 4 : 8));
+    gfx.setTextDatum(MC_DATUM);
+    gfx.setTextColor(gc.value);
+    setFont(gfx, FONT_LARGE);
+    gfx.drawString(pctBuf, cx, cy - (compact ? 4 : 8));
 
-    setFont(tft, compact ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(CLR_TEXT_DIM);
-    tft.drawString(timeBuf, cx, cy + (compact ? 10 : 18));
+    setFont(gfx, compact ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(CLR_TEXT_DIM);
+    gfx.drawString(timeBuf, cx, cy + (compact ? 10 : 18));
 
     if (compact) {
       bool sm = dispSettings.smallLabels;
-      setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-      tft.setTextColor(gc.label, bg);
-      tft.drawString("Progress", cx, cy + radius + (sm ? 3 : -1));
+      setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+      gfx.setTextColor(gc.label, bg);
+      gfx.drawString("Progress", cx, cy + radius + (sm ? 3 : -1));
     }
   }
 }
@@ -577,12 +577,12 @@ void drawProgressArc(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
 // ---------------------------------------------------------------------------
 //  Temperature arc gauge
 // ---------------------------------------------------------------------------
-void drawTempGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                    float current, float target, float maxTemp,
                    uint16_t accentColor, const char* label,
                    const uint8_t* icon, bool forceRedraw,
                    const GaugeColors* colors, float arcValue) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -606,7 +606,7 @@ void drawTempGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
   uint16_t tempColor = arcColor;
 
   uint16_t drawFill = (ratio > 0.01f) ? fillEnd : startAngle;
-  drawArcFill(tft, cx, cy, radius, thickness, drawFill, tempColor, forceRedraw);
+  drawArcFill(gfx, cx, cy, radius, thickness, drawFill, tempColor, forceRedraw);
 
   // Build display strings
   char tempBuf[12], targetBuf[12];
@@ -617,34 +617,34 @@ void drawTempGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
 
   // Only clear center + redraw text when displayed string actually changes
   if (gaugeTextChanged(cx, cy, tempBuf, targetBuf, forceRedraw)) {
-    clearGaugeCenter(tft, cx, cy, radius, thickness);
+    clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(valColor);
-    tft.drawString(tempBuf, cx, hasTarget ? (cy - 4) : cy);
+    gfx.setTextDatum(MC_DATUM);
+    setFont(gfx, FONT_LARGE);
+    gfx.setTextColor(valColor);
+    gfx.drawString(tempBuf, cx, hasTarget ? (cy - 4) : cy);
 
     if (hasTarget) {
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(CLR_TEXT_DIM);
-      tft.drawString(targetBuf, cx, cy + 10);
+      setFont(gfx, FONT_SMALL);
+      gfx.setTextColor(CLR_TEXT_DIM);
+      gfx.drawString(targetBuf, cx, cy + 10);
     }
 
     bool sm = dispSettings.smallLabels;
-    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(lblColor, bg);
-    tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(lblColor, bg);
+    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
 }
 
 // ---------------------------------------------------------------------------
 //  Fan speed gauge (0-100%)
 // ---------------------------------------------------------------------------
-void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawFanGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                   uint8_t percent, uint16_t accentColor, const char* label,
                   bool forceRedraw, const GaugeColors* colors,
                   float arcPercent) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -666,7 +666,7 @@ void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
   }
 
   uint16_t drawFill = (arcVal > 0.5f) ? fillEnd : startAngle;
-  drawArcFill(tft, cx, cy, radius, thickness, drawFill, fanColor, forceRedraw);
+  drawArcFill(gfx, cx, cy, radius, thickness, drawFill, fanColor, forceRedraw);
 
   // Build display string
   char buf[8];
@@ -674,27 +674,27 @@ void drawFanGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
 
   // Only clear center + redraw text when displayed value actually changes
   if (gaugeTextChanged(cx, cy, buf, "", forceRedraw)) {
-    clearGaugeCenter(tft, cx, cy, radius, thickness);
+    clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(valColor);
-    tft.drawString(buf, cx, cy);
+    gfx.setTextDatum(MC_DATUM);
+    setFont(gfx, FONT_LARGE);
+    gfx.setTextColor(valColor);
+    gfx.drawString(buf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(lblColor, bg);
-    tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(lblColor, bg);
+    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
 }
 
 // ---------------------------------------------------------------------------
 //  AMS humidity gauge (percentage from humidityRaw, color from humidity level)
 // ---------------------------------------------------------------------------
-void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                        uint8_t humidityRaw, uint8_t humidityLevel, bool present,
                        const char* label, bool forceRedraw) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   const int16_t thickness = 6;
   uint16_t bg = dispSettings.bgColor;
@@ -719,7 +719,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   }
 
   uint16_t drawFill = (pct > 0) ? fillEnd : startAngle;
-  drawArcFill(tft, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
+  drawArcFill(gfx, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
 
   // Build display string
   char buf[8];
@@ -730,27 +730,27 @@ void drawHumidityGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t rad
   }
 
   if (gaugeTextChanged(cx, cy, buf, "", forceRedraw)) {
-    clearGaugeCenter(tft, cx, cy, radius, thickness);
+    clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(present ? CLR_TEXT : CLR_TEXT_DIM);
-    tft.drawString(buf, cx, cy);
+    gfx.setTextDatum(MC_DATUM);
+    setFont(gfx, FONT_LARGE);
+    gfx.setTextColor(present ? CLR_TEXT : CLR_TEXT_DIM);
+    gfx.drawString(buf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(arcColor, bg);
-    tft.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(arcColor, bg);
+    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
 }
 
 // ---------------------------------------------------------------------------
 //  Layer progress gauge (current / total)
 // ---------------------------------------------------------------------------
-void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                     int16_t thickness, uint16_t layerNum, uint16_t totalLayers,
                     bool forceRedraw) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   uint16_t bg = dispSettings.bgColor;
   uint16_t arcColor = dispSettings.progress.arc;
@@ -762,7 +762,7 @@ void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius
   if (fillEnd > 300) fillEnd = 300;
 
   uint16_t drawFill = (ratio > 0.01f) ? fillEnd : startAngle;
-  drawArcFill(tft, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
+  drawArcFill(gfx, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
 
   // Build display strings - use smaller font for large numbers
   char layerBuf[12], totalBuf[12];
@@ -774,42 +774,42 @@ void drawLayerGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius
   }
 
   if (gaugeTextChanged(cx, cy, layerBuf, totalBuf, forceRedraw)) {
-    clearGaugeCenter(tft, cx, cy, radius, thickness);
+    clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    tft.setTextDatum(MC_DATUM);
+    gfx.setTextDatum(MC_DATUM);
 
     // Pick font size based on digit count to fit inside gauge
     bool hasTot = (totalLayers > 0);
     int digits = strlen(layerBuf) + strlen(totalBuf);
     bool useSmall = (digits > 7);
 
-    setFont(tft, useSmall ? FONT_BODY : FONT_LARGE);
-    tft.setTextColor(CLR_TEXT);
-    tft.drawString(layerBuf, cx, hasTot ? (cy - 4) : cy);
+    setFont(gfx, useSmall ? FONT_BODY : FONT_LARGE);
+    gfx.setTextColor(CLR_TEXT);
+    gfx.drawString(layerBuf, cx, hasTot ? (cy - 4) : cy);
 
     if (hasTot) {
-      setFont(tft, useSmall ? FONT_SMALL : FONT_BODY);
-      tft.setTextColor(CLR_TEXT_DIM);
-      tft.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
+      setFont(gfx, useSmall ? FONT_SMALL : FONT_BODY);
+      gfx.setTextColor(CLR_TEXT_DIM);
+      gfx.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
     }
 
     bool sm = dispSettings.smallLabels;
-    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(arcColor, bg);
-    tft.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
+    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(arcColor, bg);
+    gfx.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
   }
 }
 
 // ---------------------------------------------------------------------------
 //  Clock widget - shows current time HH:MM inside a track ring
 // ---------------------------------------------------------------------------
-void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawClockWidget(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, bool forceRedraw) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   uint16_t bg = dispSettings.bgColor;
 
   if (forceRedraw) {
-    tft.fillCircle(cx, cy, radius + 2, bg);
+    gfx.fillCircle(cx, cy, radius + 2, bg);
   }
 
   // Get current time
@@ -831,17 +831,17 @@ void drawClockWidget(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radiu
   }
 
   if (gaugeTextChanged(cx, cy, timeBuf, "", forceRedraw)) {
-    tft.fillCircle(cx, cy, radius - 1, bg);
+    gfx.fillCircle(cx, cy, radius - 1, bg);
 
-    tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(CLR_TEXT);
-    tft.drawString(timeBuf, cx, cy);
+    gfx.setTextDatum(MC_DATUM);
+    setFont(gfx, FONT_LARGE);
+    gfx.setTextColor(CLR_TEXT);
+    gfx.drawString(timeBuf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
-    setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-    tft.setTextColor(CLR_TEXT_DIM, bg);
-    tft.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
+    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+    gfx.setTextColor(CLR_TEXT_DIM, bg);
+    gfx.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
   }
 }
 
@@ -886,21 +886,21 @@ const char* getFilamentTypeLabel(const char* fullType) {
 //  Absent unit or unparsed tray renders as a diagonal X cross-out
 //  (matches the 240x320 layout style for empty slots).
 // -----------------------------------------------------------------------------
-void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16_t radius,
+void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                              int16_t thickness, const struct AmsState& ams,
                              uint8_t unitIndex, bool forceRedraw) {
-  ScopedWrite sw(tft);
+  ScopedWrite sw(gfx);
   uint16_t bg = dispSettings.bgColor;
   uint16_t dim = CLR_TEXT_DIM;
 
   if (forceRedraw) {
-    tft.fillCircle(cx, cy, radius + 2, bg);
+    gfx.fillCircle(cx, cy, radius + 2, bg);
   }
 
   const int16_t innerR = radius - 2;
 
   // Fill circle background
-  tft.fillCircle(cx, cy, innerR, bg);
+  gfx.fillCircle(cx, cy, innerR, bg);
 
   // Stale-cache guard: MQTT parser keeps cached trays on partial updates
   // (bambu_mqtt.cpp ~line 508). When the selected unit drops, trays[ui*4..ui*4+3]
@@ -952,12 +952,12 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
     if (slotPresent) {
       const AmsTray& tray = ams.trays[trayIdx];
       uint16_t swatchColor = tray.colorRgb565;
-      tft.fillRect(fx + 1, fy + 1, fw - 2, fh - 2, swatchColor);
+      gfx.fillRect(fx + 1, fy + 1, fw - 2, fh - 2, swatchColor);
 
 #if SCREEN_W >= 480
       // Full layout: draw type label + % + slot number inside each quadrant
       uint16_t borderCol = alphaBlend565(60, 0xFFFF, swatchColor);
-      tft.drawRoundRect(fx + 1, fy + 1, fw - 2, fh - 2, 2, borderCol);
+      gfx.drawRoundRect(fx + 1, fy + 1, fw - 2, fh - 2, 2, borderCol);
 
       uint16_t txtColor = contrastTextColor565(swatchColor);
       int16_t qCenterX = cx + qSlotX[qi] * (halfR / 2);
@@ -970,17 +970,17 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
       char slotNumBuf[2] = { (char)('0' + qi + 1), '\0' };
       int16_t snX = fx + (qSlotX[qi] > 0 ? fw - 8 : 6);
       int16_t snY = fy + (qSlotY[qi] > 0 ? fh - 8 : 4);
-      tft.setTextDatum(TL_DATUM);
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(txtColor, swatchColor);
-      tft.drawString(slotNumBuf, snX, snY);
+      gfx.setTextDatum(TL_DATUM);
+      setFont(gfx, FONT_SMALL);
+      gfx.setTextColor(txtColor, swatchColor);
+      gfx.drawString(slotNumBuf, snX, snY);
 
       // Type label
       const char* typeLabel = getFilamentTypeLabel(tray.type);
-      tft.setTextDatum(MC_DATUM);
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(txtColor, swatchColor);
-      tft.drawString(typeLabel, tCX, tCY - 6);
+      gfx.setTextDatum(MC_DATUM);
+      setFont(gfx, FONT_SMALL);
+      gfx.setTextColor(txtColor, swatchColor);
+      gfx.drawString(typeLabel, tCX, tCY - 6);
 
       // Remaining %
       char remainBuf[8];
@@ -989,16 +989,16 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
       } else {
         strlcpy(remainBuf, "--%", sizeof(remainBuf));
       }
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(txtColor, swatchColor);
-      tft.drawString(remainBuf, tCX, tCY + 8);
+      setFont(gfx, FONT_SMALL);
+      gfx.setTextColor(txtColor, swatchColor);
+      gfx.drawString(remainBuf, tCX, tCY + 8);
 #endif
     } else {
       // Empty slot or absent unit: diagonal X cross-out matches the 240x320
       // AMS slot style (display_ui.cpp ~line 1851). Outer corners get trimmed
       // by the circle-clip pass below.
-      tft.drawLine(fx + 1,      fy + 1,      fx + fw - 2, fy + fh - 2, dim);
-      tft.drawLine(fx + fw - 2, fy + 1,      fx + 1,      fy + fh - 2, dim);
+      gfx.drawLine(fx + 1,      fy + 1,      fx + fw - 2, fy + fh - 2, dim);
+      gfx.drawLine(fx + fw - 2, fy + 1,      fx + 1,      fy + fh - 2, dim);
     }
   }
 
@@ -1009,40 +1009,40 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& tft, int16_t cx, int16_t cy, int16
     int32_t r2 = (int32_t)innerR * innerR;
     if (d2 >= r2) continue;
     int16_t halfChord = (int16_t)sqrtf((float)(r2 - d2));
-    tft.drawFastHLine(cx - innerR, y, innerR - halfChord, bg);
-    tft.drawFastHLine(cx + halfChord, y, innerR - halfChord, bg);
+    gfx.drawFastHLine(cx - innerR, y, innerR - halfChord, bg);
+    gfx.drawFastHLine(cx + halfChord, y, innerR - halfChord, bg);
   }
-  tft.fillRect(cx - innerR, cy - innerR - 1, innerR * 2 + 1, 2, bg);
-  tft.fillRect(cx - innerR, cy + innerR, innerR * 2 + 1, 2, bg);
+  gfx.fillRect(cx - innerR, cy - innerR - 1, innerR * 2 + 1, 2, bg);
+  gfx.fillRect(cx - innerR, cy + innerR, innerR * 2 + 1, 2, bg);
 
   // Circle boundary ring
   uint16_t ringColor = alphaBlend565(80, 0xFFFF, bg);
-  tft.drawCircle(cx, cy, innerR, ringColor);
+  gfx.drawCircle(cx, cy, innerR, ringColor);
 
   // Cross-hair separator lines (all dotted, quadrant colors make it clear)
   for (int16_t dx = 1; dx < innerR - 2; dx += 3) {
     int32_t d2 = (int32_t)dx * dx;
     int32_t r2 = (int32_t)innerR * innerR;
-    if (d2 < r2) tft.drawPixel(cx + dx, cy, dim);
-    if (d2 < r2) tft.drawPixel(cx - dx, cy, dim);
+    if (d2 < r2) gfx.drawPixel(cx + dx, cy, dim);
+    if (d2 < r2) gfx.drawPixel(cx - dx, cy, dim);
   }
   for (int16_t dy = 3; dy < innerR - 2; dy += 3) {
     int32_t d2 = (int32_t)dy * dy;
     int32_t r2 = (int32_t)innerR * innerR;
-    if (d2 < r2) tft.drawPixel(cx, cy + dy, dim);
-    if (d2 < r2) tft.drawPixel(cx, cy - dy, dim);
+    if (d2 < r2) gfx.drawPixel(cx, cy + dy, dim);
+    if (d2 < r2) gfx.drawPixel(cx, cy - dy, dim);
   }
 
   // Center humidity indicator (only when unit actually present)
   const int16_t humCircleR = (radius >= 60) ? 16 : 11;
-  tft.fillCircle(cx, cy, humCircleR, bg);
-  tft.drawCircle(cx, cy, humCircleR, dim);
+  gfx.fillCircle(cx, cy, humCircleR, bg);
+  gfx.drawCircle(cx, cy, humCircleR, dim);
   if (unitPresent) {
     char humBuf[4];
     snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[unitIndex].humidity);
-    tft.setTextDatum(MC_DATUM);
-    setFont(tft, radius >= 60 ? FONT_BODY : FONT_SMALL);
-    tft.setTextColor(hColor, bg);
-    tft.drawString(humBuf, cx, cy);
+    gfx.setTextDatum(MC_DATUM);
+    setFont(gfx, radius >= 60 ? FONT_BODY : FONT_SMALL);
+    gfx.setTextColor(hColor, bg);
+    gfx.drawString(humBuf, cx, cy);
   }
 }

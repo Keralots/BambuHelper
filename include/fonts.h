@@ -17,6 +17,10 @@ enum FontID : uint8_t {
 // with the same id is a no-op. If a VLW font fails to load (e.g. heap exhausted)
 // the helper falls back to a built-in bitmap font of similar height instead of
 // silently leaving the previous font (or Font0) selected.
-void setFont(lgfx::LovyanGFX& tft, FontID id);
+// Note: parameter is named `gfx` (not `tft`) because display_ui.h defines
+// a `#define tft (*tft_ptr)` macro for the JC3248W535 sprite redirection,
+// which would otherwise mangle this declaration when both headers are
+// included in the same translation unit.
+void setFont(lgfx::LovyanGFX& gfx, FontID id);
 
 #endif // FONTS_H
