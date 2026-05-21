@@ -492,10 +492,20 @@ R"rawliteral(
             <label>Label</label><input type="color" id="afn_l" value="%AFN_L%">
             <label>Value</label><input type="color" id="afn_v" value="%AFN_V%">
           </div></div>
+          <div class="gauge-section gauge-x2d"><h3>Aux Fan Right (X2D)</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="afr_a" value="%AFR_A%">
+            <label>Label</label><input type="color" id="afr_l" value="%AFR_L%">
+            <label>Value</label><input type="color" id="afr_v" value="%AFR_V%">
+          </div></div>
           <div class="gauge-section"><h3>Chamber Fan</h3><div class="color-row">
             <label>Arc</label><input type="color" id="cfn_a" value="%CFN_A%">
             <label>Label</label><input type="color" id="cfn_l" value="%CFN_L%">
             <label>Value</label><input type="color" id="cfn_v" value="%CFN_V%">
+          </div></div>
+          <div class="gauge-section"><h3>Exhaust Fan</h3><div class="color-row">
+            <label>Arc</label><input type="color" id="exh_a" value="%EXH_A%">
+            <label>Label</label><input type="color" id="exh_l" value="%EXH_L%">
+            <label>Value</label><input type="color" id="exh_v" value="%EXH_V%">
           </div></div>
           <div class="gauge-section"><h3>Chamber Temp</h3><div class="color-row">
             <label>Arc</label><input type="color" id="cht_a" value="%CHT_A%">
@@ -921,6 +931,7 @@ function toggleSection(id){
 })();
 
 // --- Gauge slot type labels ---
+// Indices MUST match GaugeType enum in settings.h.
 var gaugeTypes=[
   '-- Empty --','Progress','Nozzle Temp','Bed Temp',
   'Part Fan','Aux Fan','Chamber Fan','Chamber Temp',
@@ -928,18 +939,68 @@ var gaugeTypes=[
   'AMS 1 Humidity','AMS 2 Humidity','AMS 3 Humidity','AMS 4 Humidity',
   'Layer Progress',
   'AMS 1 Temp','AMS 2 Temp','AMS 3 Temp','AMS 4 Temp',
-  'AMS 1 Filament','AMS 2 Filament','AMS 3 Filament','AMS 4 Filament'
+  'AMS 1 Filament','AMS 2 Filament','AMS 3 Filament','AMS 4 Filament',
+  'Aux Fan Right (X2D)','Exhaust Fan'
 ];
-(function(){
+// Per-gauge capability requirements. Each entry maps a gauge index to the
+// capability flag name from /printer/config that must be true on at least
+// one printer for the option to appear in the dropdown.
+// (Aggregated across slots so an X2D + P1S setup shows X2D gauges.)
+var GAUGE_REQUIRES = {
+  23: 'hasAuxFanRight',   // GAUGE_AUX_FAN_RIGHT (func=6, X2D only)
+  24: 'hasExhaustFan'     // GAUGE_EXHAUST_FAN   (func=2, X2D + H2C)
+};
+
+// Capability flags + persisted-value tracking. Already-selected slots remain
+// visible — gating is "what can be picked", not "what can be shown".
+var gaugeCaps = {};
+var persistedGauges = {};  // union of gauge indices already saved on any slot
+
+function gaugeAllowed(idx){
+  if (persistedGauges[idx]) return true;
+  var req = GAUGE_REQUIRES[idx];
+  if (req) return !!gaugeCaps[req];
+  return true;
+}
+
+function rebuildGaugeOptions(){
   var sels=document.querySelectorAll('.gauge-slot-sel');
   sels.forEach(function(sel){
+    var cur = sel.value;
+    sel.innerHTML='';
     gaugeTypes.forEach(function(name,i){
+      if (!gaugeAllowed(i)) return;
       var o=document.createElement('option');
       o.value=i;o.textContent=name;
       sel.appendChild(o);
     });
+    if (cur !== '') sel.value = cur;
   });
-})();
+}
+
+rebuildGaugeOptions();  // initial pass with default caps (capability-gated options hidden)
+// Aggregate any capability flag named in GAUGE_REQUIRES via OR across all slots,
+// so X2D + P1S shows the X2D gauges (since at least one printer supports them).
+function refreshGaugeCaps(){
+  Promise.all([0,1].map(function(slot){
+    return fetch('/printer/config?slot='+slot).then(function(r){return r.json();}).catch(function(){return {};});
+  })).then(function(arr){
+    var changed = false;
+    Object.keys(GAUGE_REQUIRES).forEach(function(idx){
+      var capName = GAUGE_REQUIRES[idx];
+      var v = arr.some(function(d){ return d && d[capName]; });
+      if (v !== !!gaugeCaps[capName]){ gaugeCaps[capName] = v; changed = true; }
+    });
+    arr.forEach(function(d){
+      if (!d || !d.gaugeSlots) return;
+      d.gaugeSlots.forEach(function(v){
+        if (!persistedGauges[v]) { persistedGauges[v] = true; changed = true; }
+      });
+    });
+    if (changed) rebuildGaugeOptions();
+  });
+}
+refreshGaugeCaps();
 
 function resetGaugeLayout(){
   var d=[1,2,3,4,5,6];
@@ -978,6 +1039,20 @@ function selectPrinterTab(slot){
     document.getElementById('cl_pname').value=d.name||'';
     document.getElementById('region').value=d.region||'us';
     document.getElementById('cl_token').value='';
+    // Fold this slot's capabilities + persisted gauge values into the global
+    // caps so model-specific options appear as soon as the matching tab opens.
+    // OR-style: once any slot reports a capability, we keep it true.
+    var capsChanged = false;
+    Object.keys(GAUGE_REQUIRES).forEach(function(idx){
+      var capName = GAUGE_REQUIRES[idx];
+      if (d[capName] && !gaugeCaps[capName]){ gaugeCaps[capName] = true; capsChanged = true; }
+    });
+    if (d.gaugeSlots){
+      d.gaugeSlots.forEach(function(v){
+        if (!persistedGauges[v]){ persistedGauges[v] = true; capsChanged = true; }
+      });
+    }
+    if (capsChanged) rebuildGaugeOptions();
     if(d.gaugeSlots){for(var g=0;g<6;g++){var sel=document.getElementById('gs'+g);if(sel)sel.value=d.gaugeSlots[g]||0;}}
     var av=document.getElementById('amsv');
     if(av){av.checked=!!d.amsView;syncAmsView();}
@@ -1914,7 +1989,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
     static const struct { const char* prefix; const GaugeColors* gc; } gauges[] = {
       {"PRG", &dispSettings.progress}, {"NOZ", &dispSettings.nozzle},
       {"BED", &dispSettings.bed},      {"PFN", &dispSettings.partFan},
-      {"AFN", &dispSettings.auxFan},   {"CFN", &dispSettings.chamberFan},
+      {"AFN", &dispSettings.auxFan},   {"AFR", &dispSettings.auxFanRight},
+      {"CFN", &dispSettings.chamberFan}, {"EXH", &dispSettings.exhaustFan},
       {"CHT", &dispSettings.chamberTemp}, {"HBK", &dispSettings.heatbreak},
     };
     for (auto& g : gauges) {
@@ -2202,7 +2278,9 @@ static void readDisplayFromForm() {
   readGaugeColorsFromForm("bed", dispSettings.bed);
   readGaugeColorsFromForm("pfn", dispSettings.partFan);
   readGaugeColorsFromForm("afn", dispSettings.auxFan);
+  readGaugeColorsFromForm("afr", dispSettings.auxFanRight);
   readGaugeColorsFromForm("cfn", dispSettings.chamberFan);
+  readGaugeColorsFromForm("exh", dispSettings.exhaustFan);
   readGaugeColorsFromForm("cht", dispSettings.chamberTemp);
   readGaugeColorsFromForm("hbk", dispSettings.heatbreak);
 
@@ -2604,6 +2682,12 @@ static void handlePrinterConfig() {
   doc["region"] = cfg.region == REGION_EU ? "eu" : (cfg.region == REGION_CN ? "cn" : "us");
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
+  // Per-fan capability flags derived from device.airduct.parts[] (only the
+  // funcs actually reported by this printer). H2C reports func 0/1/2/4, X2D
+  // reports 0/2/5/6 — so the UI gates each gauge on its specific bit instead
+  // of a coarse "has airduct" boolean (which would falsely enable Aux-Right on H2C).
+  doc["hasAuxFanRight"] = (st.airductFuncs & (1u << 6)) != 0;  // X2D only
+  doc["hasExhaustFan"]  = (st.airductFuncs & (1u << 2)) != 0;  // X2D + H2C
   JsonArray slots = doc["gaugeSlots"].to<JsonArray>();
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
   doc["amsView"] = cfg.amsView;
@@ -2941,7 +3025,9 @@ static void handleSettingsExport() {
   JsonObject gBed = gauges["bed"].to<JsonObject>();      gaugeColorsToJson(gBed, dispSettings.bed);
   JsonObject gPfn = gauges["partFan"].to<JsonObject>();  gaugeColorsToJson(gPfn, dispSettings.partFan);
   JsonObject gAfn = gauges["auxFan"].to<JsonObject>();   gaugeColorsToJson(gAfn, dispSettings.auxFan);
+  JsonObject gAfr = gauges["auxFanRight"].to<JsonObject>(); gaugeColorsToJson(gAfr, dispSettings.auxFanRight);
   JsonObject gCfn = gauges["chamberFan"].to<JsonObject>(); gaugeColorsToJson(gCfn, dispSettings.chamberFan);
+  JsonObject gExh = gauges["exhaustFan"].to<JsonObject>(); gaugeColorsToJson(gExh, dispSettings.exhaustFan);
   JsonObject gCht = gauges["chamberTemp"].to<JsonObject>(); gaugeColorsToJson(gCht, dispSettings.chamberTemp);
   JsonObject gHbk = gauges["heatbreak"].to<JsonObject>(); gaugeColorsToJson(gHbk, dispSettings.heatbreak);
 
@@ -3168,7 +3254,9 @@ static void handleSettingsImportFinish() {
       if (gauges["bed"].is<JsonObject>())      { JsonObject g = gauges["bed"];      gaugeColorsFromJson(g, dispSettings.bed); }
       if (gauges["partFan"].is<JsonObject>())  { JsonObject g = gauges["partFan"];  gaugeColorsFromJson(g, dispSettings.partFan); }
       if (gauges["auxFan"].is<JsonObject>())   { JsonObject g = gauges["auxFan"];   gaugeColorsFromJson(g, dispSettings.auxFan); }
+      if (gauges["auxFanRight"].is<JsonObject>()){ JsonObject g = gauges["auxFanRight"]; gaugeColorsFromJson(g, dispSettings.auxFanRight); }
       if (gauges["chamberFan"].is<JsonObject>()){ JsonObject g = gauges["chamberFan"]; gaugeColorsFromJson(g, dispSettings.chamberFan); }
+      if (gauges["exhaustFan"].is<JsonObject>()){ JsonObject g = gauges["exhaustFan"]; gaugeColorsFromJson(g, dispSettings.exhaustFan); }
       if (gauges["chamberTemp"].is<JsonObject>()){ JsonObject g = gauges["chamberTemp"]; gaugeColorsFromJson(g, dispSettings.chamberTemp); }
       if (gauges["heatbreak"].is<JsonObject>()){ JsonObject g = gauges["heatbreak"]; gaugeColorsFromJson(g, dispSettings.heatbreak); }
     }

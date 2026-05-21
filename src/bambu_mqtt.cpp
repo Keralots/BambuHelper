@@ -228,9 +228,10 @@ static void clearLiveMetrics(BambuState& s) {
   s.progress = 0;
   s.remainingMinutes = 0;
   s.layerNum = 0;      s.totalLayers = 0;
-  s.coolingFanPct = 0; s.auxFanPct = 0;
-  s.chamberFanPct = 0; s.heatbreakFanPct = 0;
+  s.coolingFanPct = 0; s.auxFanPct = 0; s.auxFanRightPct = 0;
+  s.chamberFanPct = 0; s.exhaustFanPct = 0; s.heatbreakFanPct = 0;
   s.fanGearSeen = false;
+  s.airductFuncs = 0;
   s.speedLevel = 0;
   s.wifiSignal = 0;
   s.doorOpen = false;  s.doorSensorPresent = false;
@@ -840,6 +841,16 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     corePrintData = true;
   }
 
+  // big_fan2_speed has been mapped to chamberFanPct ("Chamber Fan" gauge) since
+  // the X1C era. On H2C this same legacy field actually carries the EXHAUST
+  // fan value - confirmed via dump (Part 20 / Aux 40 / Exhaust 50): big_fan2=7
+  // ≈ 47% matches the 50% exhaust setting, and airduct func=2 (Exhaust) reports
+  // the same fan at 50% directly. So on airduct printers (H2C + X2D), "Chamber
+  // Fan" and "Exhaust Fan" gauges currently describe the same physical fan.
+  // TODO: revisit - either stop populating chamberFanPct on airduct printers
+  // (forces users to switch to the Exhaust gauge), or auto-rename the gauge
+  // label. Left as-is for now to avoid breaking existing user configs on the
+  // pre-airduct fleet (X1C / P-series / A-series) where Chamber Fan is genuine.
   oldVal = parseFan(print["big_fan2_speed"]);
   if (gearPresent) {
     corePrintData = true; s.chamberFanPct = pwmToPct((uint8_t)((gear >> 16) & 0xFF));
@@ -853,6 +864,60 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   // legacyToPct still honours fanMatchPrinter so all four fan gauges round consistently.
   oldVal = parseFan(print["heatbreak_fan_speed"]);
   if (oldVal >= 0) { corePrintData = true; s.heatbreakFanPct = legacyToPct(oldVal); }
+
+  // device.airduct.parts[] carries clean 0-100 percentages per fan, keyed by
+  // func code. Mapping observed across model dumps:
+  //   func=0 -> Part fan          (both H2C + X2D)
+  //   func=1 -> Aux fan           (H2C single aux)
+  //   func=2 -> Exhaust fan       (both H2C + X2D)
+  //   func=4 -> Chamber/aux (H2C, unconfirmed - rests at 0 idle)
+  //   func=5 -> Left aux fan      (X2D dual-aux)
+  //   func=6 -> Right aux fan     (X2D dual-aux)
+  // func=1 and func=5 both feed auxFanPct - they're the "primary" aux on each
+  // model. When func=6 is also present (X2D), the GAUGE_AUX_FAN label switches
+  // to "L.Aux" to disambiguate from GAUGE_AUX_FAN_RIGHT.
+  // Parsed via memmem scan because the ArduinoJson filter strips device.* by
+  // depth (same pattern as ams/extruder/ctc above).
+  {
+    const char* adPos = (const char*)memmem(payload, length, "\"airduct\":", 10);
+    if (adPos) {
+      const char* objStart = adPos + 10;
+      while (objStart < payloadEnd && (*objStart == ' ' || *objStart == '\t')) objStart++;
+      if (objStart < payloadEnd && *objStart == '{') {
+        int depth = 0;
+        const char* end = objStart;
+        while (end < payloadEnd) {
+          if (*end == '{') depth++;
+          else if (*end == '}') { depth--; if (depth == 0) { end++; break; } }
+          end++;
+        }
+        if (depth == 0) {
+          JsonDocument adDoc;
+          if (!deserializeJson(adDoc, objStart, (size_t)(end - objStart))) {
+            JsonArray parts = adDoc["parts"];
+            if (parts) {
+              for (JsonObject part : parts) {
+                if (!part["func"].is<int>() || !part["state"].is<int>()) continue;
+                int func = part["func"].as<int>();
+                int state = part["state"].as<int>();
+                if (state < 0) state = 0; else if (state > 100) state = 100;
+                uint8_t pct = (uint8_t)state;
+                if (func >= 0 && func < 32) s.airductFuncs |= (1u << func);
+                switch (func) {
+                  case 0: s.coolingFanPct  = pct; corePrintData = true; break;
+                  case 1: s.auxFanPct      = pct; corePrintData = true; break;  // H2C aux
+                  case 2: s.exhaustFanPct  = pct; corePrintData = true; break;
+                  case 5: s.auxFanPct      = pct; corePrintData = true; break;  // X2D left aux
+                  case 6: s.auxFanRightPct = pct; corePrintData = true; break;
+                  default: break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Non-core fields: wifi_signal, spd_lvl, stat - don't count as core print data
   if (print["wifi_signal"].is<const char*>())

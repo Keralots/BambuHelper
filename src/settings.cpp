@@ -150,8 +150,12 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.partFan = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
   // Aux fan: orange arc, orange label, white value
   ds.auxFan = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  // Aux right fan (X2D): orange arc, orange label, white value
+  ds.auxFanRight = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
   // Chamber fan: green arc, green label, white value
   ds.chamberFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  // Exhaust fan (X2D): green arc, green label, white value
+  ds.exhaustFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
   // Chamber temp: cyan arc, cyan label, white value
   ds.chamberTemp = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
   // Heatbreak fan: orange arc, orange label, white value
@@ -301,7 +305,9 @@ void loadSettings() {
   loadGaugeColors("gc_bed", dispSettings.bed, def.bed);
   loadGaugeColors("gc_pfn", dispSettings.partFan, def.partFan);
   loadGaugeColors("gc_afn", dispSettings.auxFan, def.auxFan);
+  loadGaugeColors("gc_afr", dispSettings.auxFanRight, def.auxFanRight);
   loadGaugeColors("gc_cfn", dispSettings.chamberFan, def.chamberFan);
+  loadGaugeColors("gc_exh", dispSettings.exhaustFan, def.exhaustFan);
   loadGaugeColors("gc_cht", dispSettings.chamberTemp, def.chamberTemp);
   loadGaugeColors("gc_hbk", dispSettings.heatbreak, def.heatbreak);
 
@@ -523,7 +529,9 @@ void saveSettings() {
   saveGaugeColors("gc_bed", dispSettings.bed);
   saveGaugeColors("gc_pfn", dispSettings.partFan);
   saveGaugeColors("gc_afn", dispSettings.auxFan);
+  saveGaugeColors("gc_afr", dispSettings.auxFanRight);
   saveGaugeColors("gc_cfn", dispSettings.chamberFan);
+  saveGaugeColors("gc_exh", dispSettings.exhaustFan);
   saveGaugeColors("gc_cht", dispSettings.chamberTemp);
   saveGaugeColors("gc_hbk", dispSettings.heatbreak);
 

@@ -70,10 +70,16 @@ struct BambuState {
   uint16_t layerNum;
   uint16_t totalLayers;
   uint8_t coolingFanPct;      // part cooling fan 0-100%
-  uint8_t auxFanPct;          // aux fan 0-100%
+  uint8_t auxFanPct;          // aux fan 0-100% (X2D: left aux)
+  uint8_t auxFanRightPct;     // X2D right aux fan 0-100% (from device.airduct.parts[].func==6)
   uint8_t chamberFanPct;      // chamber fan 0-100%
+  uint8_t exhaustFanPct;      // X2D exhaust fan 0-100% (from device.airduct.parts[].func==2)
   uint8_t heatbreakFanPct;    // heatbreak fan 0-100%
   bool fanGearSeen;           // true once printer has reported fan_gear (gates legacy *_fan_speed fallback)
+  uint32_t airductFuncs;      // bitmask of func codes seen in device.airduct.parts[]: bit N = func N reported.
+                              // Used to gate per-fan gauges in the web UI. H2C reports 0/1/2/4;
+                              // X2D reports 0/2/5/6 — checking specific bits is more precise than
+                              // a single "has airduct" boolean.
   int8_t wifiSignal;          // RSSI in dBm
   uint8_t speedLevel;         // 1=silent, 2=standard, 3=sport, 4=ludicrous
   bool dualNozzle;            // H2D/H2C dual extruder detected

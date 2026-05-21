@@ -29,6 +29,8 @@ enum GaugeType : uint8_t {
   GAUGE_AMS_FILAMENT_2 = 20,    // AMS unit 2 - all 4 trays + humidity
   GAUGE_AMS_FILAMENT_3 = 21,    // AMS unit 3 - all 4 trays + humidity
   GAUGE_AMS_FILAMENT_4 = 22,    // AMS unit 4 - all 4 trays + humidity
+  GAUGE_AUX_FAN_RIGHT  = 23,    // X2D right aux fan (device.airduct.parts func=6)
+  GAUGE_EXHAUST_FAN    = 24,    // X2D exhaust fan (device.airduct.parts func=2)
   GAUGE_TYPE_COUNT  // sentinel - always last
 };
 
@@ -65,7 +67,9 @@ struct DisplaySettings {
   GaugeColors bed;
   GaugeColors partFan;
   GaugeColors auxFan;
+  GaugeColors auxFanRight;  // X2D right aux fan
   GaugeColors chamberFan;
+  GaugeColors exhaustFan;   // X2D exhaust fan
   GaugeColors chamberTemp;
   GaugeColors heatbreak;
 };

@@ -606,7 +606,9 @@ static float smoothNozzleTemp   = 0;
 static float smoothBedTemp      = 0;
 static float smoothPartFan     = 0;
 static float smoothAuxFan      = 0;
+static float smoothAuxRightFan = 0;
 static float smoothChamberFan  = 0;
+static float smoothExhaustFan  = 0;
 static float smoothChamberTemp = 0;
 static float smoothHeatbreakFan= 0;
 static bool  smoothInited      = false;
@@ -630,7 +632,9 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
     smoothBedTemp      = s.bedTemp;
     smoothPartFan      = s.coolingFanPct;
     smoothAuxFan       = s.auxFanPct;
+    smoothAuxRightFan  = s.auxFanRightPct;
     smoothChamberFan   = s.chamberFanPct;
+    smoothExhaustFan   = s.exhaustFanPct;
     smoothChamberTemp  = s.chamberTemp;
     smoothHeatbreakFan = s.heatbreakFanPct;
     smoothInited = true;
@@ -640,7 +644,9 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
   smoothLerp(smoothBedTemp,      s.bedTemp);
   smoothLerp(smoothPartFan,      (float)s.coolingFanPct);
   smoothLerp(smoothAuxFan,       (float)s.auxFanPct);
+  smoothLerp(smoothAuxRightFan,  (float)s.auxFanRightPct);
   smoothLerp(smoothChamberFan,   (float)s.chamberFanPct);
+  smoothLerp(smoothExhaustFan,   (float)s.exhaustFanPct);
   smoothLerp(smoothChamberTemp,  s.chamberTemp);
   smoothLerp(smoothHeatbreakFan, (float)s.heatbreakFanPct);
 
@@ -649,7 +655,9 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
          (fabsf(smoothBedTemp      - s.bedTemp)                 > ANIM_EPS) ||
          (fabsf(smoothPartFan      - (float)s.coolingFanPct)    > ANIM_EPS) ||
          (fabsf(smoothAuxFan       - (float)s.auxFanPct)        > ANIM_EPS) ||
+         (fabsf(smoothAuxRightFan  - (float)s.auxFanRightPct)   > ANIM_EPS) ||
          (fabsf(smoothChamberFan   - (float)s.chamberFanPct)    > ANIM_EPS) ||
+         (fabsf(smoothExhaustFan   - (float)s.exhaustFanPct)    > ANIM_EPS) ||
          (fabsf(smoothChamberTemp  - s.chamberTemp)             > ANIM_EPS) ||
          (fabsf(smoothHeatbreakFan - (float)s.heatbreakFanPct)  > ANIM_EPS);
 }
@@ -2647,11 +2655,13 @@ static void drawPrinting() {
           case GAUGE_PROGRESS:    needDraw = (s.progress != prevState.progress) || (s.remainingMinutes != prevState.remainingMinutes); break;
           case GAUGE_NOZZLE:      needDraw = animating || s.nozzleTemp != prevState.nozzleTemp || s.nozzleTarget != prevState.nozzleTarget; break;
           case GAUGE_BED:         needDraw = animating || s.bedTemp != prevState.bedTemp || s.bedTarget != prevState.bedTarget; break;
-          case GAUGE_PART_FAN:    needDraw = animating || s.coolingFanPct != prevState.coolingFanPct; break;
-          case GAUGE_AUX_FAN:     needDraw = animating || s.auxFanPct != prevState.auxFanPct; break;
-          case GAUGE_CHAMBER_FAN: needDraw = animating || s.chamberFanPct != prevState.chamberFanPct; break;
-          case GAUGE_CHAMBER_TEMP:needDraw = animating || s.chamberTemp != prevState.chamberTemp; break;
-          case GAUGE_HEATBREAK:   needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
+          case GAUGE_PART_FAN:      needDraw = animating || s.coolingFanPct != prevState.coolingFanPct; break;
+          case GAUGE_AUX_FAN:       needDraw = animating || s.auxFanPct != prevState.auxFanPct; break;
+          case GAUGE_AUX_FAN_RIGHT: needDraw = animating || s.auxFanRightPct != prevState.auxFanRightPct; break;
+          case GAUGE_CHAMBER_FAN:   needDraw = animating || s.chamberFanPct != prevState.chamberFanPct; break;
+          case GAUGE_EXHAUST_FAN:   needDraw = animating || s.exhaustFanPct != prevState.exhaustFanPct; break;
+          case GAUGE_CHAMBER_TEMP:  needDraw = animating || s.chamberTemp != prevState.chamberTemp; break;
+          case GAUGE_HEATBREAK:     needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
           default:
@@ -2713,12 +2723,23 @@ static void drawPrinting() {
                        &dispSettings.partFan, smoothPartFan);
           break;
         case GAUGE_AUX_FAN:
-          drawFanGauge(tft, cx, cy, gR, s.auxFanPct, dispSettings.auxFan.arc, "Aux", fr,
+          // Re-label to "L.Aux" only when the printer actually has a right-aux
+          // counterpart (func=6). Otherwise it's the only aux fan, so keep "Aux".
+          drawFanGauge(tft, cx, cy, gR, s.auxFanPct, dispSettings.auxFan.arc,
+                       (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux", fr,
                        &dispSettings.auxFan, smoothAuxFan);
+          break;
+        case GAUGE_AUX_FAN_RIGHT:
+          drawFanGauge(tft, cx, cy, gR, s.auxFanRightPct, dispSettings.auxFanRight.arc, "R.Aux", fr,
+                       &dispSettings.auxFanRight, smoothAuxRightFan);
           break;
         case GAUGE_CHAMBER_FAN:
           drawFanGauge(tft, cx, cy, gR, s.chamberFanPct, dispSettings.chamberFan.arc, "Chamber", fr,
                        &dispSettings.chamberFan, smoothChamberFan);
+          break;
+        case GAUGE_EXHAUST_FAN:
+          drawFanGauge(tft, cx, cy, gR, s.exhaustFanPct, dispSettings.exhaustFan.arc, "Exhaust", fr,
+                       &dispSettings.exhaustFan, smoothExhaustFan);
           break;
         case GAUGE_CHAMBER_TEMP:
           drawTempGauge(tft, cx, cy, gR, s.chamberTemp, 0.0f, 60.0f,
