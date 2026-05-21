@@ -29,6 +29,7 @@
 // --- Printing: 2x3 gauge grid (same as default) ---
 #define LY_GAUGE_R   32
 #define LY_GAUGE_T   6
+#define LY_TEMP_GAUGE_T 6        // temp/fan/humidity arc thickness
 #define LY_COL1      42
 #define LY_COL2      120
 #define LY_COL3      198

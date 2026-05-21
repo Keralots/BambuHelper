@@ -32,7 +32,9 @@
 // 320px wide split into 3 columns of ~107px — gauges are r=48, spacing tuned
 // so left/right edges sit ~5px from the screen edges.
 #define LY_GAUGE_R   48           // radius for all gauges (was 32 on 240x)
-#define LY_GAUGE_T   9            // progress arc thickness (was 6 on 240x)
+#define LY_GAUGE_T   10           // progress arc thickness (grows inward)
+#define LY_TEMP_GAUGE_T 10        // temp/fan/humidity arc thickness - matches
+                                  // progress arc so the 2x3 grid reads uniform
 #define LY_COL1      56
 #define LY_COL2      160
 #define LY_COL3      264

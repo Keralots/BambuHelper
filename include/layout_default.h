@@ -23,6 +23,7 @@
 // --- Printing: 2x3 gauge grid ---
 #define LY_GAUGE_R   32      // radius for all gauges
 #define LY_GAUGE_T   6       // progress arc thickness
+#define LY_TEMP_GAUGE_T 6    // temp/fan/humidity arc thickness
 #define LY_COL1      42      // left column center X
 #define LY_COL2      120     // middle column center X
 #define LY_COL3      198     // right column center X

@@ -584,7 +584,7 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                    const GaugeColors* colors, float arcValue) {
   ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
-  const int16_t thickness = 6;
+  const int16_t thickness = LY_TEMP_GAUGE_T;
   uint16_t bg = dispSettings.bgColor;
 
   // Use custom colors if provided, otherwise fall back to accentColor
@@ -646,7 +646,7 @@ void drawFanGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                   float arcPercent) {
   ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
-  const int16_t thickness = 6;
+  const int16_t thickness = LY_TEMP_GAUGE_T;
   uint16_t bg = dispSettings.bgColor;
 
   uint16_t arcColor = colors ? colors->arc : accentColor;
@@ -696,7 +696,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t rad
                        const char* label, bool forceRedraw) {
   ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
-  const int16_t thickness = 6;
+  const int16_t thickness = LY_TEMP_GAUGE_T;
   uint16_t bg = dispSettings.bgColor;
 
   uint8_t pct = present ? humidityRaw : 0;
