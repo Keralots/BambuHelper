@@ -1502,6 +1502,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 
   // === ETA ===
   if (remainChanged) {
+    markFrameDirty();
 #if defined(DISPLAY_240x320)
     const int16_t etaY = land ? LY_LAND_ETA_Y : LY_ETA_Y;
     const int16_t etaH = land ? LY_LAND_ETA_H : LY_ETA_H;
@@ -1569,6 +1570,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 #endif
     bool connChanged = forceRedraw || (s.connected != prevState.connected);
     if (connChanged) {
+      markFrameDirty();
       tft.fillRect(0, botY, scrW, botH, CLR_BG);
       tft.fillCircle(cx, botCY, 4, s.connected ? CLR_GREEN : CLR_RED);
     }

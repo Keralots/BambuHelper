@@ -152,6 +152,7 @@ void drawClock() {
     prevDateBuf[0] = '\0';
     prevAmPm[0] = '\0';
     tft.fillRect(0, LY_CLK_CLEAR_Y, sw, LY_CLK_CLEAR_H, bg);
+    markFrameDirty();
     prevScale = scale;
     prevTimeX0 = timeX0;
     prevUse24h = netSettings.use24h;

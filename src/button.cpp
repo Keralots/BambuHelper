@@ -117,6 +117,7 @@ void sanitizeButtonPin() {
 #if defined(USE_AXS_TOUCH)
   if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
   if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
+  if (buttonPin == AXS_TOUCH_INT) { clash("AXS touch INT"); return; }
 #endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
