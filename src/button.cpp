@@ -31,12 +31,16 @@
 #elif defined(USE_CST328)
   // CST328 (Waveshare 2.8" board). Differences vs CST816:
   //   - I2C address 0x1A
-  //   - 16-bit register addresses (high byte then low byte)
-  //   - "Touch info" lives at register 0x00D0; first byte = active finger count
+  //   - 16-bit register addresses (high byte first on the wire)
+  //   - Touch report block starts at register 0xD000:
+  //       byte 0  : finger0 state  (0x06 = finger down)
+  //       byte 5  : reported finger count
+  //     Reading just byte 0 is enough for tap detection.
   #include <Wire.h>
   #define CST328_ADDR              0x1A
-  #define CST328_REG_TOUCH_INFO_H  0x00
-  #define CST328_REG_TOUCH_INFO_L  0xD0
+  #define CST328_REG_TOUCH_INFO_H  0xD0
+  #define CST328_REG_TOUCH_INFO_L  0x00
+  #define CST328_FINGER_DOWN_STATE 0x06
   static bool cst328BusReady = false;
   static bool cst328Seen = false;
 
@@ -45,7 +49,9 @@
     return Wire.endTransmission(true) == 0;
   }
 
-  static bool cst328ReadTouchCount(uint8_t& value) {
+  // Reads the finger0 state byte from 0xD000. Non-zero == finger present;
+  // 0x06 is the canonical "touch active" value per Hynitron CST328 datasheet.
+  static bool cst328ReadFingerState(uint8_t& value) {
     Wire.beginTransmission(CST328_ADDR);
     Wire.write(CST328_REG_TOUCH_INFO_H);
     Wire.write(CST328_REG_TOUCH_INFO_L);
@@ -155,6 +161,16 @@ void sanitizeButtonPin() {
   if (buttonPin == CST816_RST) { clash("CST816 touch RST"); return; }
   #endif
 #endif
+#if defined(USE_CST328)
+  if (buttonPin == CST328_SDA) { clash("CST328 touch SDA"); return; }
+  if (buttonPin == CST328_SCL) { clash("CST328 touch SCL"); return; }
+  #if defined(CST328_IRQ)
+  if (buttonPin == CST328_IRQ) { clash("CST328 touch IRQ"); return; }
+  #endif
+  #if defined(CST328_RST)
+  if (buttonPin == CST328_RST) { clash("CST328 touch RST"); return; }
+  #endif
+#endif
 #if defined(USE_XPT2046)
   if (buttonPin == TOUCH_CS)   { clash("XPT2046 CS");   return; }
   if (buttonPin == TOUCH_IRQ)  { clash("XPT2046 IRQ");  return; }
@@ -220,10 +236,16 @@ void initButton() {
     Wire.setClock(400000);
     cst328BusReady = true;
     if (cst328Probe()) {
-      uint8_t touchNum = 0;
-      if (cst328ReadTouchCount(touchNum)) {
-        Serial.printf("CST328 touch initialized (I2C SDA=%d SCL=%d, touchCount=%u)\n",
-                      CST328_SDA, CST328_SCL, touchNum);
+      uint8_t fingerState = 0;
+      if (cst328ReadFingerState(fingerState)) {
+        Serial.printf("CST328 touch initialized (I2C SDA=%d SCL=%d IRQ=%d, reg0xD000=0x%02X)\n",
+                      CST328_SDA, CST328_SCL,
+#ifdef CST328_IRQ
+                      CST328_IRQ,
+#else
+                      -1,
+#endif
+                      fingerState);
         cst328Seen = true;
       } else {
         Serial.printf("CST328 detected on I2C addr 0x%02X, but register reads failed (SDA=%d SCL=%d)\n",
@@ -313,13 +335,17 @@ bool wasButtonPressed() {
     raw = (touchNum > 0);
 #elif defined(USE_CST328)
     if (!cst328BusReady) return false;
-    uint8_t touchNum = 0;
-    if (!cst328ReadTouchCount(touchNum)) return false;
+    uint8_t fingerState = 0;
+    if (!cst328ReadFingerState(fingerState)) return false;
     if (!cst328Seen) {
       Serial.printf("CST328 touch became responsive at runtime (addr 0x%02X)\n", CST328_ADDR);
       cst328Seen = true;
     }
-    raw = (touchNum > 0);
+    // Byte at 0xD000 packs finger ID (high nibble) + state (low nibble).
+    // Per Hynitron datasheet / CSE_CST328 reference, low nibble == 0x06
+    // is "finger present". Checking the full byte is wrong because a
+    // lifted finger can still report a non-zero ID.
+    raw = ((fingerState & 0x0F) == CST328_FINGER_DOWN_STATE);
 #elif defined(USE_FT5X06)
     if (!ft5x06BusReady) return false;
     uint8_t touchPoints = 0;
