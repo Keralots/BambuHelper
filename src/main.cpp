@@ -11,6 +11,7 @@
 #include "led.h"
 #include "tasmota.h"
 #include "battery.h"
+#include "wireguard_manager.h"
 #include <esp_sleep.h>
 #include <driver/gpio.h>
 
@@ -87,6 +88,8 @@ static bool handleSplashPhase() {
     splashEnd = 0;
     initWiFi();
     initWebServer();
+    // Initialize Wireguard tunnel before MQTT (if enabled, waits for WiFi)
+    initWireguard();
     initBambuMqtt();
     initButton();
     initBuzzer();
@@ -740,6 +743,7 @@ void loop() {
   // Skip during auto-OTA: that path already holds a TLS session to GitHub
   // and a concurrent second TLS session to Bambu Cloud is unsupported.
   if (isWiFiConnected() && !isAPMode() && isAnyPrinterConfigured() && !isOtaAutoInProgress()) {
+    handleWireguardLoop();  // Keep Wireguard tunnel alive
     handleBambuMqtt();
     handleRotation();
   }

@@ -176,6 +176,7 @@ extern TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT];
 extern char  tasmotaCurrency[8];      // e.g. "€", "$", "zł"
 extern float tasmotaTariffPerKwh;     // global tariff (same for all plugs)
 extern bool dualPrinterUnsafe;
+extern WireguardConfig wireguardConfig;
 
 void loadSettings();
 void saveSettings();
@@ -186,6 +187,10 @@ void saveBuzzerSettings();
 void saveLedSettings();
 void saveBatteryIndicatorSetting();
 void resetSettings();
+
+// Wireguard VPN configuration
+void saveWireguardConfig();
+bool loadWireguardConfig();
 
 // Cloud token persistence (shared across printer slots)
 extern char cloudEmail[64];

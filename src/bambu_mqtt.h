@@ -23,6 +23,11 @@ struct MqttDiag {
   unsigned long connectDurMs;  // how long last connect() took
   unsigned long lastPushallMs; // millis() of last pushall request
   uint8_t  lastPushallReason;  // PushallReason code of the last request
+  // Wireguard diagnostics
+  bool     wgActive;        // tunnel currently active
+  uint32_t wgTxBytes;       // bytes transmitted through tunnel
+  uint32_t wgRxBytes;       // bytes received through tunnel
+  unsigned long wgLastHandshakeMs; // last handshake timestamp
 };
 
 enum PushallReason : uint8_t {

@@ -2689,6 +2689,11 @@ static void handleDebug() {
     p["last_pushall_age_s"] = d.lastPushallMs > 0 ? (now - d.lastPushallMs) / 1000UL : 0;
     p["last_update_age_s"] = st.lastUpdate > 0 ? (now - st.lastUpdate) / 1000UL : 0;
     p["last_print_data_age_s"] = st.lastPrintDataMs > 0 ? (now - st.lastPrintDataMs) / 1000UL : 0;
+    // Wireguard tunnel diagnostics
+    p["wgActive"] = d.wgActive;
+    p["wgTxBytes"] = d.wgTxBytes;
+    p["wgRxBytes"] = d.wgRxBytes;
+    p["wgLastHandshakeMs"] = d.wgLastHandshakeMs;
   }
 
   doc["heap"] = ESP.getFreeHeap();
@@ -3768,6 +3773,53 @@ static void handleNotFound() {
 }
 
 // ---------------------------------------------------------------------------
+//  Wireguard VPN tunnel configuration
+// ---------------------------------------------------------------------------
+static void handleSaveWireguard() {
+  String config = "";
+  if (server.hasArg("config")) {
+    config = server.arg("config");
+  }
+  
+  if (config.length() == 0) {
+    server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"No configuration provided\"}");
+    return;
+  }
+
+  // Try to parse and validate the config
+  if (!parseWireguardConfig(config.c_str())) {
+    server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"Invalid Wireguard configuration format\"}");
+    return;
+  }
+
+  // Validate it meets required fields
+  if (!validateWireguardConfig(wireguardConfig)) {
+    server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"Configuration missing required fields (PrivateKey, PublicKey, Endpoint, ListenPort, Address)\"}");
+    return;
+  }
+
+  // Save to NVS
+  saveWireguardConfig();
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Wireguard configuration saved. Tunnel will initialize on next connection.\"}");
+}
+
+static void handleGetWireguardStatus() {
+  JsonDocument doc;
+  doc["enabled"] = wireguardConfig.enabled;
+  doc["active"] = isWireguardActive();
+  doc["endpoint"] = wireguardConfig.endpoint;
+  doc["tunnelAddress"] = wireguardConfig.tunnelAddress;
+  doc["persistentKeepalive"] = wireguardConfig.persistentKeepalive;
+  doc["lastHandshakeMs"] = wireguardConfig.lastHandshakeMs;
+  doc["txBytes"] = wireguardConfig.txBytes;
+  doc["rxBytes"] = wireguardConfig.rxBytes;
+  
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+// ---------------------------------------------------------------------------
 //  Init & handle
 // ---------------------------------------------------------------------------
 static void handleCaptiveDetect() {
@@ -3813,6 +3865,8 @@ void initWebServer() {
   server.on("/ota/auto",   HTTP_POST, handleOtaAuto);
   server.on("/ota/status", HTTP_GET,  handleOtaStatus);
 #endif
+  server.on("/save/wireguard", HTTP_POST, handleSaveWireguard);
+  server.on("/wireguard/status", HTTP_GET, handleGetWireguardStatus);
   server.onNotFound(handleNotFound);
   const char* otaHeaders[] = {"X-MD5"};
   server.collectHeaders(otaHeaders, 1);

@@ -164,6 +164,24 @@ struct PrinterConfig {
   bool    amsView;             // 240x240: replace gauge row 2 with AMS strip (per-printer)
 };
 
+// ── Wireguard VPN Configuration ──────────────────────────────────────────
+// Device-wide tunnel for MQTT routing through Wireguard when LAN mode is used
+// outside the home network. Keys are stored as binary (32 bytes each), parsed
+// from base64 in the config file.
+struct WireguardConfig {
+  bool    enabled;            // true if Wireguard tunnel should be used
+  uint8_t privateKey[32];     // ESP32's private key (binary, from base64 config)
+  uint8_t publicKey[32];      // Peer's public key (binary, from base64 config)
+  char    endpoint[64];       // Peer endpoint: "IP:port" or "hostname:port"
+  uint16_t listenPort;        // ESP32 listen port (typically 51820)
+  char    tunnelAddress[16];  // ESP32's IP in tunnel: "192.168.1.5" (no CIDR)
+  uint8_t allowedIPs[32];     // Simplified: store first allowed IP as binary CIDR route (future)
+  uint16_t persistentKeepalive; // NAT keepalive interval in seconds (0 = disabled)
+  uint32_t txBytes;           // diagnostic: cumulative tunnel TX bytes
+  uint32_t rxBytes;           // diagnostic: cumulative tunnel RX bytes
+  unsigned long lastHandshakeMs; // diagnostic: timestamp of last peer handshake
+};
+
 struct PrinterSlot {
   PrinterConfig config;
   BambuState state;

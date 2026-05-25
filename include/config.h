@@ -64,8 +64,13 @@
 #define BAMBU_CLOUD_KEEPALIVE       30      // cloud: longer than LAN to tolerate internet jitter
 
 // =============================================================================
-//  WiFi
+//  Wireguard VPN
 // =============================================================================
+#define WIREGUARD_INIT_TIMEOUT_MS   10000  // 10s to establish tunnel before MQTT
+#define WIREGUARD_HEAP_MIN          60000  // min free heap for WG init (65KB recommended by library)
+
+// =============================================================================
+//  WiFi
 #define WIFI_AP_PREFIX      "BambuHelper-"
 #define WIFI_AP_PASSWORD    "bambu1234"
 #define WIFI_CONNECT_TIMEOUT 15000  // 15s STA connect timeout

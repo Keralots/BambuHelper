@@ -4,6 +4,7 @@
 #include "buzzer.h"
 #include "led.h"
 #include "timezones.h"
+#include "wireguard_config.h"
 #include <Preferences.h>
 
 // Global state
@@ -39,6 +40,9 @@ char tasmotaCurrency[8] = "\xE2\x82\xAC";  // "€" UTF-8 default
 // NOT included in /settings/export to avoid propagating an unsafe mode
 // across devices via JSON backup.
 bool dualPrinterUnsafe = false;
+
+// Wireguard VPN configuration
+WireguardConfig wireguardConfig = {};
 
 static Preferences prefs;
 
@@ -491,6 +495,9 @@ void loadSettings() {
   dualPrinterUnsafe = prefs.getBool("dualp", false);
 
   prefs.end();
+
+  // Load Wireguard configuration after NVS session closes
+  loadWireguardConfig();
 }
 
 // ---------------------------------------------------------------------------
@@ -737,3 +744,88 @@ void saveCloudEmail(const char* email) {
   prefs.putString("cl_email", email);
   prefs.end();
 }
+
+// ---------------------------------------------------------------------------
+//  Wireguard VPN Configuration
+// ---------------------------------------------------------------------------
+void saveWireguardConfig() {
+  prefs.begin(NVS_NAMESPACE, false);
+
+  prefs.putBool("wg_enabled", wireguardConfig.enabled);
+
+  // Store binary keys as base64 in NVS
+  char b64Key[48];  // 32 bytes encoded = ~44 chars + null
+  if (base64Encode(wireguardConfig.privateKey, 32, b64Key, sizeof(b64Key))) {
+    prefs.putString("wg_privkey", b64Key);
+  }
+
+  if (base64Encode(wireguardConfig.publicKey, 32, b64Key, sizeof(b64Key))) {
+    prefs.putString("wg_pubkey", b64Key);
+  }
+
+  prefs.putString("wg_endpoint", wireguardConfig.endpoint);
+  prefs.putUShort("wg_listenport", wireguardConfig.listenPort);
+  prefs.putString("wg_tunneladdr", wireguardConfig.tunnelAddress);
+  prefs.putUShort("wg_keepalive", wireguardConfig.persistentKeepalive);
+
+  prefs.end();
+
+  Serial.println("[SETTINGS] Wireguard config saved to NVS");
+}
+
+bool loadWireguardConfig() {
+  prefs.begin(NVS_NAMESPACE, true);
+
+  // Check if Wireguard was ever configured (private key present)
+  String privKeyB64 = prefs.getString("wg_privkey", "");
+  if (privKeyB64.length() == 0) {
+    prefs.end();
+    memset(&wireguardConfig, 0, sizeof(WireguardConfig));
+    return false;  // not configured
+  }
+
+  wireguardConfig.enabled = prefs.getBool("wg_enabled", false);
+
+  // Decode keys from base64
+  size_t privDecoded = base64Decode(privKeyB64.c_str(), wireguardConfig.privateKey, 32);
+  if (privDecoded != 32) {
+    prefs.end();
+    Serial.println("[SETTINGS] Wireguard: Invalid private key size");
+    memset(&wireguardConfig, 0, sizeof(WireguardConfig));
+    return false;
+  }
+
+  String pubKeyB64 = prefs.getString("wg_pubkey", "");
+  size_t pubDecoded = base64Decode(pubKeyB64.c_str(), wireguardConfig.publicKey, 32);
+  if (pubDecoded != 32) {
+    prefs.end();
+    Serial.println("[SETTINGS] Wireguard: Invalid public key size");
+    memset(&wireguardConfig, 0, sizeof(WireguardConfig));
+    return false;
+  }
+
+  strlcpy(wireguardConfig.endpoint, prefs.getString("wg_endpoint", "").c_str(), sizeof(wireguardConfig.endpoint));
+  wireguardConfig.listenPort = prefs.getUShort("wg_listenport", 51820);
+  strlcpy(wireguardConfig.tunnelAddress, prefs.getString("wg_tunneladdr", "").c_str(), sizeof(wireguardConfig.tunnelAddress));
+  wireguardConfig.persistentKeepalive = prefs.getUShort("wg_keepalive", 0);
+
+  // Diagnostic fields initialized to zero
+  wireguardConfig.txBytes = 0;
+  wireguardConfig.rxBytes = 0;
+  wireguardConfig.lastHandshakeMs = 0;
+
+  prefs.end();
+
+  bool valid = validateWireguardConfig(wireguardConfig);
+  if (!valid) {
+    Serial.println("[SETTINGS] Wireguard: Config validation failed");
+    memset(&wireguardConfig, 0, sizeof(WireguardConfig));
+    return false;
+  }
+
+  Serial.printf("[SETTINGS] Wireguard config loaded: enabled=%d, endpoint=%s, tunnel=%s\n",
+                wireguardConfig.enabled, wireguardConfig.endpoint, wireguardConfig.tunnelAddress);
+
+  return true;
+}
+
