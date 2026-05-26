@@ -136,9 +136,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // %DUALP_ADVANCED%  - Advanced disclosure card with the experimental toggle.
   if (strcmp(name, "DUALP_TAB") == 0) {
 #ifdef BOARD_LOW_RAM
-    out = dualPrinterUnsafe
-      ? "<button class=\"tab-btn\" id=\"tab1\" type=\"button\" onclick=\"selectPrinterTab(1)\">Printer 2</button>"
-      : "";
+    // Always emit the tab so toggleDualPrinterMode() can show it without a
+    // page reload. Inline display:none when disabled - JS clears the style.
+    out  = "<button class=\"tab-btn\" id=\"tab1\" type=\"button\" onclick=\"selectPrinterTab(1)\"";
+    if (!dualPrinterUnsafe) out += " style=\"display:none\"";
+    out += ">Printer 2</button>";
 #else
     // Full-RAM boards always show both tabs.
     out = "<button class=\"tab-btn\" id=\"tab1\" type=\"button\" onclick=\"selectPrinterTab(1)\">Printer 2</button>";
@@ -146,15 +148,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "DUALP_TOPBAR_DOT") == 0) {
-    bool showSecond =
 #ifdef BOARD_LOW_RAM
-      dualPrinterUnsafe;
+    out  = "<span class=\"status-dot\" id=\"topStatusDot1\" title=\"Printer 2 connection\"";
+    if (!dualPrinterUnsafe) out += " style=\"display:none\"";
+    out += "><span id=\"topStatusText1\">-</span></span>";
 #else
-      true;
+    out = "<span class=\"status-dot\" id=\"topStatusDot1\" title=\"Printer 2 connection\"><span id=\"topStatusText1\">-</span></span>";
 #endif
-    out = showSecond
-      ? "<span class=\"status-dot\" id=\"topStatusDot1\" title=\"Printer 2 connection\"><span id=\"topStatusText1\">-</span></span>"
-      : "";
     return true;
   }
   if (strcmp(name, "DUALP_ADVANCED") == 0) {

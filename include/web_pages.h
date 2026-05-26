@@ -2037,6 +2037,8 @@ function toggleDualPrinterMode(on){
   toggleSetting('dualp', on);
   var t = document.getElementById('tab1');
   if (t) t.style.display = on ? '' : 'none';
+  var d = document.getElementById('topStatusDot1');
+  if (d) d.style.display = on ? '' : 'none';
   if (!on) selectPrinterTab(0);
 }
 
