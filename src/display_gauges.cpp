@@ -71,7 +71,6 @@ void drawLedProgressBar(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress) {
   gfx.fillRoundRect(barX, y, fillW, barH, 2, barColor);
 
   uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
-  gfx.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
   if (fillW > 4 && progress < 100) {
     gfx.fillRect(barX + fillW - 3, y, 3, barH, glowColor);
@@ -164,9 +163,6 @@ void tickProgressShimmer(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress, bool
     int16_t tailX = barX + fillW - SHIMMER_W - SHIMMER_STEP;
     if (tailX < barX) tailX = barX;
     gfx.fillRect(tailX, y, barX + fillW - tailX, barH, barColor);
-    // Re-draw center glow line
-    uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
-    gfx.drawFastHLine(barX + 1, y + barH / 2, fillW - 2, glowColor);
 
     shimmerPos = 0;
     shimmerPaused = true;
