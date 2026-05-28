@@ -188,7 +188,7 @@ struct RotationState {
   uint32_t intervalMs;
   uint8_t displayIndex;           // which printer slot is currently shown
   unsigned long lastRotateMs;
-  unsigned long manualOverrideUntilMs;  // suppresses Smart snap-to-active so user can peek at idle slot
+  unsigned long displayHoldUntilMs;  // suppresses Smart snap/rotation so a manually-peeked or freshly-finished slot stays on screen for one interval
 };
 
 extern RotationState rotState;
