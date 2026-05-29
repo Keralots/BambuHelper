@@ -226,6 +226,31 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "EXTRAS_SECTIONS") == 0) {
+    // Two independent extras blocks - landscape col 4 + portrait row 3.
+    // Each is gauge-type-configured per-printer through landscapeExtras /
+    // portraitExtras. Boards without LAYOUT_HAS_LANDSCAPE / LY_PORT9_GAUGE_R
+    // don't render anything here so the user isn't offered settings the
+    // device can't use.
+#if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
+    out  = "<div id=\"landExtrasGroup\">";
+    out += "<div class=\"row-divider\">&#9656; Landscape extras (column 4, rendered when <em>Landscape 8 slots</em> is on)</div>";
+    out += "<div class=\"gauge-grid\">";
+    out += "<div class=\"cell\"><label>Col 4 top</label><select id=\"lx0\" class=\"gauge-slot-sel\"></select></div>";
+    out += "<div class=\"cell\"><label>Col 4 bot</label><select id=\"lx1\" class=\"gauge-slot-sel\"></select></div>";
+    out += "</div></div>";
+    out += "<div id=\"portExtrasGroup\">";
+    out += "<div class=\"row-divider\">&#9656; Portrait extras (row 3, rendered when <em>Portrait 9 slots</em> is on)</div>";
+    out += "<div class=\"gauge-grid\">";
+    out += "<div class=\"cell\"><label>Row 3 left</label><select id=\"px0\" class=\"gauge-slot-sel\"></select></div>";
+    out += "<div class=\"cell\"><label>Row 3 mid</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>";
+    out += "<div class=\"cell\"><label>Row 3 right</label><select id=\"px2\" class=\"gauge-slot-sel\"></select></div>";
+    out += "</div></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "P9S_ROW") == 0) {
     // 9-slot portrait grid: 240x320 + 320x480 only. Gauge R shrinks to fit
     // a third row above ETA, and the permanent AMS strip is replaced.

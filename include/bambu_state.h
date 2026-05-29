@@ -160,10 +160,9 @@ struct PrinterConfig {
   char name[24];              // friendly name
   char cloudUserId[32];       // cloud mode: "u_{uid}" for MQTT username
   CloudRegion region;          // cloud mode: US, EU, or CN server region
-  uint8_t gaugeSlots[9];       // configurable gauge layout (GaugeType values, see settings.h).
-                               // Slots 0-5 used everywhere; slots 6-7 used in landscape
-                               // 8-slot mode AND portrait 9-slot mode (shared positions
-                               // per orientation); slot 8 used only in portrait 9-slot mode.
+  uint8_t gaugeSlots[6];       // Standard 2x3 grid - used in every mode.
+  uint8_t landscapeExtras[2];  // Col 4 (top, bot) - landscape 8-slot mode only.
+  uint8_t portraitExtras[3];   // Row 3 (left, mid, right) - portrait 9-slot mode only.
   bool    amsView;             // 240x240: replace gauge row 2 with AMS strip (per-printer)
 };
 

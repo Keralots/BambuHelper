@@ -165,9 +165,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
 }
 
-// Default gauge slot layout: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
-// Slots 6-8 only render in landscape-8 / portrait-9 modes — default to EMPTY
-// so enabling either mode does not surprise the user with random gauges.
+// Default standard 2x3 grid: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
 static void defaultGaugeSlots(uint8_t* slots) {
   slots[0] = GAUGE_PROGRESS;
   slots[1] = GAUGE_NOZZLE;
@@ -175,9 +173,6 @@ static void defaultGaugeSlots(uint8_t* slots) {
   slots[3] = GAUGE_PART_FAN;
   slots[4] = GAUGE_AUX_FAN;
   slots[5] = GAUGE_CHAMBER_FAN;
-  slots[6] = GAUGE_EMPTY;
-  slots[7] = GAUGE_EMPTY;
-  slots[8] = GAUGE_EMPTY;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,24 +241,38 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_region", i);
     cfg.region = (CloudRegion)prefs.getUChar(key, REGION_US);
 
-    // Gauge slot layout (per-printer).
-    // Legacy records hold only 6 bytes (pre-landscape-8-slot mode). Treat any
-    // partial read >=6 as valid and default the missing trailing slots to EMPTY
-    // so the user opts in to landscape extras via the web UI.
+    // Gauge slot layout (per-printer). 3 NVS keys:
+    //   p%d_slots - standard 2x3 (6 bytes, always present after first save)
+    //   p%d_lext  - landscape extras (2 bytes, only after enabling 8-slot mode)
+    //   p%d_pext  - portrait  extras (3 bytes, only after enabling 9-slot mode)
+    // Missing keys -> EMPTY. Legacy 8/9-byte records from the in-development
+    // 'shared extras' branch read as 6-byte standard slots (trailing bytes
+    // ignored); their old landscape slots 6/7 will be re-set in the web UI.
     snprintf(key, sizeof(key), "p%d_slots", i);
-    memset(cfg.gaugeSlots, GAUGE_EMPTY, GAUGE_SLOT_COUNT);
-    size_t read = prefs.getBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
-    if (read < 6) {
+    memset(cfg.gaugeSlots, GAUGE_EMPTY, sizeof(cfg.gaugeSlots));
+    size_t read = prefs.getBytes(key, cfg.gaugeSlots, sizeof(cfg.gaugeSlots));
+    if (read < sizeof(cfg.gaugeSlots)) {
       defaultGaugeSlots(cfg.gaugeSlots);
     } else {
-      // Anything past `read` was zeroed by memset (GAUGE_EMPTY == 0).
+      uint8_t def[GAUGE_SLOT_COUNT];
+      defaultGaugeSlots(def);
       for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
-        if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) {
-          uint8_t def[GAUGE_SLOT_COUNT];
-          defaultGaugeSlots(def);
-          cfg.gaugeSlots[g] = def[g];
-        }
+        if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) cfg.gaugeSlots[g] = def[g];
       }
+    }
+
+    snprintf(key, sizeof(key), "p%d_lext", i);
+    memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
+    prefs.getBytes(key, cfg.landscapeExtras, sizeof(cfg.landscapeExtras));
+    for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) {
+      if (cfg.landscapeExtras[g] >= GAUGE_TYPE_COUNT) cfg.landscapeExtras[g] = GAUGE_EMPTY;
+    }
+
+    snprintf(key, sizeof(key), "p%d_pext", i);
+    memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
+    prefs.getBytes(key, cfg.portraitExtras, sizeof(cfg.portraitExtras));
+    for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT; g++) {
+      if (cfg.portraitExtras[g] >= GAUGE_TYPE_COUNT) cfg.portraitExtras[g] = GAUGE_EMPTY;
     }
 
     // AMS view (per-printer): 240x240 only, replaces gauge row 2 with AMS strip
@@ -655,7 +664,11 @@ void savePrinterConfig(uint8_t index) {
   prefs.putUChar(key, cfg.region);
 
   snprintf(key, sizeof(key), "p%d_slots", index);
-  prefs.putBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
+  prefs.putBytes(key, cfg.gaugeSlots, sizeof(cfg.gaugeSlots));
+  snprintf(key, sizeof(key), "p%d_lext", index);
+  prefs.putBytes(key, cfg.landscapeExtras, sizeof(cfg.landscapeExtras));
+  snprintf(key, sizeof(key), "p%d_pext", index);
+  prefs.putBytes(key, cfg.portraitExtras, sizeof(cfg.portraitExtras));
 
   snprintf(key, sizeof(key), "p%d_amsv", index);
   prefs.putBool(key, cfg.amsView);

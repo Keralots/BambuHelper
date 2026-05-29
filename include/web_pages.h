@@ -776,7 +776,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p>Per-printer display slots. The first six are always shown; slots 7-9 only appear when <em>Landscape 8 slots</em> or <em>Portrait 9 slots</em> is enabled in Display. Set any slot to <em>Empty</em> to hide it.</p>
+        <p>Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under Display. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
@@ -795,14 +795,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="cell"><label>Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
       </div>
     </div>
-    <div id="extraColGroup">
-      <div class="row-divider">&#9656; Extra slots (used by <em>Landscape 8 slots</em> and <em>Portrait 9 slots</em>; same gauge type, different physical position per orientation)</div>
-      <div class="gauge-grid">
-        <div class="cell"><label>Slot 7 (land col 4 top / port row 3 left)</label><select id="gs6" class="gauge-slot-sel"></select></div>
-        <div class="cell"><label>Slot 8 (land col 4 bot / port row 3 mid)</label><select id="gs7" class="gauge-slot-sel"></select></div>
-        <div class="cell"><label>Slot 9 (port row 3 right only)</label><select id="gs8" class="gauge-slot-sel"></select></div>
-      </div>
-    </div>
+%EXTRAS_SECTIONS%
     <div class="action-bar">
       <button type="button" class="btn btn-primary" onclick="saveGaugeLayout()">Save Gauge Layout</button>
     </div>
@@ -1545,17 +1538,40 @@ function stopPolling(){
 var _brightTimer = null;
 function sendBrightness(val){ clearTimeout(_brightTimer); _brightTimer = setTimeout(function(){ fetch('/brightness?val=' + val); }, 150); }
 
-/* ============ Gauge slot type labels (must match GaugeType enum in settings.h) ============ */
+/* ============ Gauge slot type labels (must match GaugeType enum in settings.h) ============
+   Array index = numeric gauge ID. Empty `group` renders ungrouped at the top
+   of the dropdown; named groups render as <optgroup> blocks in the order the
+   first member of each group appears below. */
 var gaugeTypes = [
-  '-- Empty --','Progress','Nozzle Temp','Bed Temp',
-  'Part Fan','Aux Fan','Chamber Fan','Chamber Temp',
-  'Heatbreak Fan','Clock',
-  'AMS 1 Humidity','AMS 2 Humidity','AMS 3 Humidity','AMS 4 Humidity',
-  'Layer Progress',
-  'AMS 1 Temp','AMS 2 Temp','AMS 3 Temp','AMS 4 Temp',
-  'AMS 1 Filament','AMS 2 Filament','AMS 3 Filament','AMS 4 Filament',
-  'Aux Fan Right (X2D)','Exhaust Fan',
-  'AMS 1 Bars','AMS 2 Bars','AMS 3 Bars','AMS 4 Bars'
+  {name:'-- Empty --',        group:''},                  /*  0 */
+  {name:'Progress',           group:'Print status'},      /*  1 */
+  {name:'Nozzle Temp',        group:'Temperatures'},      /*  2 */
+  {name:'Bed Temp',           group:'Temperatures'},      /*  3 */
+  {name:'Part Fan',           group:'Fans'},              /*  4 */
+  {name:'Aux Fan',            group:'Fans'},              /*  5 */
+  {name:'Chamber Fan',        group:'Fans'},              /*  6 */
+  {name:'Chamber Temp',       group:'Temperatures'},      /*  7 */
+  {name:'Heatbreak Fan',      group:'Fans'},              /*  8 */
+  {name:'Clock',              group:'Other'},             /*  9 */
+  {name:'AMS 1 Humidity',     group:'AMS humidity'},      /* 10 */
+  {name:'AMS 2 Humidity',     group:'AMS humidity'},      /* 11 */
+  {name:'AMS 3 Humidity',     group:'AMS humidity'},      /* 12 */
+  {name:'AMS 4 Humidity',     group:'AMS humidity'},      /* 13 */
+  {name:'Layer Progress',     group:'Print status'},      /* 14 */
+  {name:'AMS 1 Temp',         group:'AMS temperature'},   /* 15 */
+  {name:'AMS 2 Temp',         group:'AMS temperature'},   /* 16 */
+  {name:'AMS 3 Temp',         group:'AMS temperature'},   /* 17 */
+  {name:'AMS 4 Temp',         group:'AMS temperature'},   /* 18 */
+  {name:'AMS 1 Filament',     group:'AMS filament (quad)'},/* 19 */
+  {name:'AMS 2 Filament',     group:'AMS filament (quad)'},/* 20 */
+  {name:'AMS 3 Filament',     group:'AMS filament (quad)'},/* 21 */
+  {name:'AMS 4 Filament',     group:'AMS filament (quad)'},/* 22 */
+  {name:'Aux Fan Right (X2D)',group:'Fans'},              /* 23 */
+  {name:'Exhaust Fan',        group:'Fans'},              /* 24 */
+  {name:'AMS 1 Bars',         group:'AMS filament (bars)'},/* 25 */
+  {name:'AMS 2 Bars',         group:'AMS filament (bars)'},/* 26 */
+  {name:'AMS 3 Bars',         group:'AMS filament (bars)'},/* 27 */
+  {name:'AMS 4 Bars',         group:'AMS filament (bars)'} /* 28 */
 ];
 var GAUGE_REQUIRES = { 23: 'hasAuxFanRight', 24: 'hasExhaustFan' };
 var gaugeCaps = {}, persistedGauges = {};
@@ -1566,15 +1582,35 @@ function gaugeAllowed(idx){
   return true;
 }
 function rebuildGaugeOptions(){
+  // Build ungrouped + groups once, then clone into each <select>.
+  // groups[] preserves first-seen order; groupMembers[g] is a list of {i, name}.
+  var ungrouped = [];
+  var groups = [];
+  var groupMembers = {};
+  gaugeTypes.forEach(function(gt, i){
+    if (!gaugeAllowed(i)) return;
+    if (!gt.group) { ungrouped.push({i:i, name:gt.name}); return; }
+    if (!groupMembers[gt.group]) { groups.push(gt.group); groupMembers[gt.group] = []; }
+    groupMembers[gt.group].push({i:i, name:gt.name});
+  });
   var sels = document.querySelectorAll('.gauge-slot-sel');
   sels.forEach(function(sel){
     var cur = sel.value;
     sel.innerHTML = '';
-    gaugeTypes.forEach(function(name, i){
-      if (!gaugeAllowed(i)) return;
+    ungrouped.forEach(function(e){
       var o = document.createElement('option');
-      o.value = i; o.textContent = name;
+      o.value = e.i; o.textContent = e.name;
       sel.appendChild(o);
+    });
+    groups.forEach(function(g){
+      var og = document.createElement('optgroup');
+      og.label = g;
+      groupMembers[g].forEach(function(e){
+        var o = document.createElement('option');
+        o.value = e.i; o.textContent = e.name;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
     });
     if (cur !== '') sel.value = cur;
   });
@@ -1591,9 +1627,12 @@ function refreshGaugeCaps(){
       if (v !== !!gaugeCaps[capName]){ gaugeCaps[capName] = v; changed = true; }
     });
     arr.forEach(function(d){
-      if (!d || !d.gaugeSlots) return;
-      d.gaugeSlots.forEach(function(v){
-        if (!persistedGauges[v]) { persistedGauges[v] = true; changed = true; }
+      if (!d) return;
+      ['gaugeSlots','landscapeExtras','portraitExtras'].forEach(function(key){
+        if (!Array.isArray(d[key])) return;
+        d[key].forEach(function(v){
+          if (!persistedGauges[v]) { persistedGauges[v] = true; changed = true; }
+        });
       });
     });
     if (changed) rebuildGaugeOptions();
@@ -1602,15 +1641,21 @@ function refreshGaugeCaps(){
 refreshGaugeCaps();
 
 function resetGaugeLayout(){
-  // Slots 0..5 = standard 2x3; slots 6..8 = extended-mode extras, default Empty.
-  var d = [1,2,3,4,5,6,0,0,0];
-  for (var i = 0; i < 9; i++) { var s = document.getElementById('gs' + i); if (s) s.value = d[i]; }
+  // Standard 2x3 grid -> Progress/Nozzle/Bed/PartFan/AuxFan/ChamberFan.
+  // Both extras arrays default to Empty (user opts in via mode toggles).
+  var d = [1,2,3,4,5,6];
+  for (var i = 0; i < 6; i++) { var s = document.getElementById('gs' + i); if (s) s.value = d[i]; }
+  var lx = ['lx0','lx1'], px = ['px0','px1','px2'];
+  lx.forEach(function(id){ var s = document.getElementById(id); if (s) s.value = 0; });
+  px.forEach(function(id){ var s = document.getElementById(id); if (s) s.value = 0; });
   showToast('Restored layout defaults');
 }
 function saveGaugeLayout(){
   var p = new URLSearchParams();
   p.append('slot', currentSlot);
-  for (var g = 0; g < 9; g++) { var s = document.getElementById('gs' + g); if (s) p.append('gs' + g, s.value); }
+  for (var g = 0; g < 6; g++) { var s = document.getElementById('gs' + g); if (s) p.append('gs' + g, s.value); }
+  for (var g = 0; g < 2; g++) { var s = document.getElementById('lx' + g); if (s) p.append('lx' + g, s.value); }
+  for (var g = 0; g < 3; g++) { var s = document.getElementById('px' + g); if (s) p.append('px' + g, s.value); }
   var av = document.getElementById('amsv');
   if (av && av.checked) p.append('amsv', '1');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
@@ -1648,7 +1693,9 @@ function selectPrinterTab(slot){
       });
     }
     if (capsChanged) rebuildGaugeOptions();
-    if (d.gaugeSlots) { for (var g = 0; g < 9; g++) { var sel = document.getElementById('gs' + g); if (sel) sel.value = d.gaugeSlots[g] || 0; } }
+    if (d.gaugeSlots) { for (var g = 0; g < 6; g++) { var sel = document.getElementById('gs' + g); if (sel) sel.value = d.gaugeSlots[g] || 0; } }
+    if (d.landscapeExtras) { for (var g = 0; g < 2; g++) { var sel = document.getElementById('lx' + g); if (sel) sel.value = d.landscapeExtras[g] || 0; } }
+    if (d.portraitExtras)  { for (var g = 0; g < 3; g++) { var sel = document.getElementById('px' + g); if (sel) sel.value = d.portraitExtras[g] || 0; } }
     var av = document.getElementById('amsv');
     if (av) { av.checked = !!d.amsView; syncAmsView(); }
     toggleConnMode();

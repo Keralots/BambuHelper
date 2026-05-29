@@ -2211,7 +2211,12 @@ static void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
                              bool forceRedraw) {
   uint16_t bg = dispSettings.bgColor;
   if (forceRedraw) {
-    tft.fillCircle(cx, cy, radius + 2, bg);
+    // Rect clear (not circle) - bars are top-anchored and reach into the
+    // corners of the bounding square, where a circle of radius+2 would miss
+    // a few pixels at every corner. Match the slot-type-change clear in
+    // the printing-screen slot loop so behaviour stays consistent.
+    const int16_t side = radius * 2 + 4;
+    tft.fillRect(cx - radius - 2, cy - radius - 2, side, side, bg);
   }
 
   const int16_t bars = AMS_TRAYS_PER_UNIT;
@@ -2643,26 +2648,28 @@ static int16_t drawBatteryPrefix(int16_t y) {
 // ---------------------------------------------------------------------------
 //  Helper: gauge slot grid descriptor.
 //
-//  drawPrinting() supports three slot layouts that all read from the same
-//  per-printer gaugeSlots[GAUGE_SLOT_COUNT] array:
-//    - 2x3  (6 slots, default everywhere)
-//    - 2x4  (8 slots, DisplaySettings.landscape8Slots, landscape only)
-//    - 3x3  (9 slots, DisplaySettings.portrait9Slots, portrait only, only on
-//            layouts that define LY_PORT9_GAUGE_R)
+//  drawPrinting() supports three slot layouts that draw from three INDEPENDENT
+//  per-printer arrays so each physical position has its own gauge type:
+//    - 2x3 standard  (6 slots, cfg.gaugeSlots[0..5])              every mode
+//    - 2x4 landscape (+2 slots, cfg.landscapeExtras[0..1])        landscape8Slots
+//    - 3x3 portrait  (+3 slots, cfg.portraitExtras[0..2])         portrait9Slots
+//                                                       (LY_PORT9_GAUGE_R only)
 //
-//  The struct keeps the per-mode positions + radius/count in one place so the
-//  printing-screen body just reads grid.x/y/r/count. To add a new mode, add a
-//  new branch in computeSlotGrid() — the slot loop stays untouched.
+//  computeSlotGrid resolves which array each visible slot pulls from for the
+//  current mode, so the printing-screen body just reads grid.types[si] and
+//  grid.x/y[si] without caring about the storage layout. To add a new mode:
+//  add a new PrinterConfig extras array, a new branch here, and a web-UI
+//  section - the slot loop stays untouched.
 // ---------------------------------------------------------------------------
 struct SlotGrid {
-  int16_t x[GAUGE_SLOT_COUNT];
-  int16_t y[GAUGE_SLOT_COUNT];
-  int16_t r;        // per-mode gauge radius (LY_GAUGE_R for 6/8-slot,
-                    // LY_PORT9_GAUGE_R for 9-slot portrait)
-  uint8_t count;    // 6, 8, or 9 - upper bound for the slot loop
+  int16_t x[GAUGE_SLOT_MAX];
+  int16_t y[GAUGE_SLOT_MAX];
+  uint8_t types[GAUGE_SLOT_MAX];  // resolved gauge type per visible slot
+  int16_t r;                       // per-mode gauge radius
+  uint8_t count;                   // 6, 8, or 9 - upper bound for the slot loop
 };
 
-static void computeSlotGrid(SlotGrid& g, bool landscape) {
+static void computeSlotGrid(SlotGrid& g, const PrinterConfig& cfg, bool landscape) {
   const bool eight = landscape && dispSettings.landscape8Slots;
 #if defined(LY_PORT9_GAUGE_R)
   const bool nine  = !landscape && dispSettings.portrait9Slots;
@@ -2670,8 +2677,13 @@ static void computeSlotGrid(SlotGrid& g, bool landscape) {
   const bool nine  = false;
 #endif
 
-  // Zero everything first so unused slots resolve to (0, 0) and skip cleanly.
-  for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) { g.x[i] = 0; g.y[i] = 0; }
+  // Zero everything first so unused slots resolve to (0, 0)/EMPTY and skip.
+  for (uint8_t i = 0; i < GAUGE_SLOT_MAX; i++) {
+    g.x[i] = 0; g.y[i] = 0; g.types[i] = GAUGE_EMPTY;
+  }
+
+  // Slots 0-5 always come from the standard array, regardless of mode.
+  for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) g.types[i] = cfg.gaugeSlots[i];
 
   if (eight) {
 #if defined(LAYOUT_HAS_LANDSCAPE)
@@ -2683,6 +2695,8 @@ static void computeSlotGrid(SlotGrid& g, bool landscape) {
         g.x[row * 4 + col] = cs[col];
         g.y[row * 4 + col] = rs[row];
       }
+    g.types[6] = cfg.landscapeExtras[0];
+    g.types[7] = cfg.landscapeExtras[1];
     return;
 #endif
   }
@@ -2696,6 +2710,9 @@ static void computeSlotGrid(SlotGrid& g, bool landscape) {
         g.x[row * 3 + col] = cs[col];
         g.y[row * 3 + col] = rs[row];
       }
+    g.types[6] = cfg.portraitExtras[0];
+    g.types[7] = cfg.portraitExtras[1];
+    g.types[8] = cfg.portraitExtras[2];
     return;
   }
 #endif
@@ -2754,7 +2771,7 @@ static void drawPrinting() {
   // thickness) stays at the layout default because the arc geometry scales
   // with radius internally.
   SlotGrid grid;
-  computeSlotGrid(grid, isLandscape());
+  computeSlotGrid(grid, p.config, isLandscape());
   const int16_t gR = grid.r;
   const int16_t gT = LY_GAUGE_T;
 
@@ -2933,7 +2950,7 @@ static void drawPrinting() {
     const int16_t* slotX = grid.x;
     const int16_t* slotY = grid.y;
     const uint8_t  slotCount = grid.count;
-    static uint8_t prevSlotTypes[GAUGE_SLOT_COUNT] = {
+    static uint8_t prevSlotTypes[GAUGE_SLOT_MAX] = {
       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
     };
     // Invalidate per-slot redraw cache when rotation flips, so the gauges
@@ -2941,14 +2958,14 @@ static void drawPrinting() {
     // at the old positions.
     static uint8_t prevSlotRotation = 0xFF;
     if (prevSlotRotation != dispSettings.rotation) {
-      for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) prevSlotTypes[i] = 0xFF;
+      for (uint8_t i = 0; i < GAUGE_SLOT_MAX; i++) prevSlotTypes[i] = 0xFF;
       prevSlotRotation = dispSettings.rotation;
     }
     // Same cache invalidation when slot count changes (6 <-> 8 <-> 9) — the
     // grid shape itself shifts and any frame-cached positions are stale.
     static uint8_t prevSlotCount = 0;
     if (prevSlotCount != slotCount) {
-      for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) prevSlotTypes[i] = 0xFF;
+      for (uint8_t i = 0; i < GAUGE_SLOT_MAX; i++) prevSlotTypes[i] = 0xFF;
       prevSlotCount = slotCount;
     }
     // Labels for GAUGE_CHAMBER_FAN (Chamber vs Exhaust) and GAUGE_AUX_FAN (Aux vs
@@ -2960,8 +2977,8 @@ static void drawPrinting() {
     // mask changes (typically once per session, on the first pushall).
     static uint32_t prevAirductFuncs = 0;
     if (prevAirductFuncs != s.airductFuncs) {
-      for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) {
-        uint8_t gtPrev = p.config.gaugeSlots[i];
+      for (uint8_t i = 0; i < slotCount; i++) {
+        uint8_t gtPrev = grid.types[i];
         if (gtPrev == GAUGE_CHAMBER_FAN || gtPrev == GAUGE_AUX_FAN) prevSlotTypes[i] = 0xFF;
       }
       prevAirductFuncs = s.airductFuncs;
@@ -2969,22 +2986,30 @@ static void drawPrinting() {
 
     // Mark any slots beyond the current mode's count as needing a clean
     // redraw if they ever become active again — they aren't drawn this frame.
-    for (uint8_t si = slotCount; si < GAUGE_SLOT_COUNT; si++) prevSlotTypes[si] = 0xFF;
+    for (uint8_t si = slotCount; si < GAUGE_SLOT_MAX; si++) prevSlotTypes[si] = 0xFF;
 
     for (uint8_t si = 0; si < slotCount; si++) {
       // Skip row-2 slots when AMS view replaces them. Mark prevSlotTypes as
       // invalid so toggling back later forces a clean redraw.
       if (amsViewActive && si >= 3) { prevSlotTypes[si] = 0xFF; continue; }
-      uint8_t gt = p.config.gaugeSlots[si];
+      uint8_t gt = grid.types[si];
       if (gt >= GAUGE_TYPE_COUNT) gt = GAUGE_EMPTY;
 
       bool typeChanged = (gt != prevSlotTypes[si]);
       if (typeChanged) {
         // Slot type changed (or first draw) - clear area and reset cache.
+        // Use a square fill, not a circle: GAUGE_AMS_BARS draws a rectangular
+        // bar block that extends into the corners of the slot bounding box,
+        // so a circular clear would leave ghost pixels behind when switching
+        // away from it. Spacing math (see computeSlotGrid) leaves >=4px
+        // between this square and the next slot's, even on the densest
+        // 320x480 9-slot grid.
+        const int16_t slotClear = gR * 2 + 4;
+        tft.fillRect(slotX[si] - gR - 2, slotY[si] - gR - 2,
+                     slotClear, slotClear, dispSettings.bgColor);
         // Label is drawn MC_DATUM at labelY, so its glyphs straddle that line;
         // FONT_BODY (~20px) and FONT_SMALL (~14px) need a generous band to fully
         // erase a longer previous label when shrinking to a shorter one.
-        tft.fillCircle(slotX[si], slotY[si], gR + 2, dispSettings.bgColor);
         bool sm = dispSettings.smallLabels;
         int16_t labelY = slotY[si] + gR + (sm ? 3 : -1);
         int16_t lh     = sm ? 18 : 24;

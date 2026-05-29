@@ -38,15 +38,16 @@ enum GaugeType : uint8_t {
   GAUGE_TYPE_COUNT  // sentinel - always last
 };
 
-// Slot count: 6 are always used (portrait + 3-col landscape). Slots 6-7 also
-// render when DisplaySettings.landscape8Slots enables the 4-column landscape
-// grid (replaces the AMS sidebar). Slots 6-8 render when
-// DisplaySettings.portrait9Slots enables the 3x3 portrait grid (replaces the
-// AMS strip). Slots 6 and 7 are SHARED between the two extended modes - the
-// gauge type config is the same, only the physical (x, y) position differs
-// by orientation. Slot 8 is portrait-only.
-static const uint8_t GAUGE_SLOT_COUNT = 9;
-static const uint8_t GAUGE_SLOT_EXTRA_START = 6;
+// Standard 2x3 gauge grid - the 6 slots are used in every mode.
+static const uint8_t GAUGE_SLOT_COUNT = 6;
+// Extended grids add a 4th column (landscape) or 3rd row (portrait).
+// Each extension stores its slots in its own PrinterConfig array so the gauge
+// type for "col 4 row 1" and "row 3 col 1" can be set independently.
+static const uint8_t LANDSCAPE_EXTRA_COUNT = 2;  // col 4 top, col 4 bot
+static const uint8_t PORTRAIT_EXTRA_COUNT  = 3;  // row 3 left, mid, right
+// Max slots displayed by any mode at once. Used to size per-frame slot caches
+// in display_ui.cpp (prevSlotTypes, SlotGrid arrays).
+static const uint8_t GAUGE_SLOT_MAX = GAUGE_SLOT_COUNT + PORTRAIT_EXTRA_COUNT;  // 9
 
 // Per-gauge color config
 struct GaugeColors {
