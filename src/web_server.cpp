@@ -456,6 +456,8 @@ static void handleToggleSetting() {
   else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
+  else if (key == "l8s")     dispSettings.landscape8Slots = on;
+  else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
 #ifdef BOARD_LOW_RAM
@@ -1062,14 +1064,23 @@ static void handleSettingsImportFinish() {
       if (p["cloudUserId"].is<const char*>()) strlcpy(cfg.cloudUserId, p["cloudUserId"], sizeof(cfg.cloudUserId));
       if (p["region"].is<uint8_t>())          cfg.region = (CloudRegion)p["region"].as<uint8_t>();
       JsonArray slots = p["gaugeSlots"];
-      if (slots && slots.size() == GAUGE_SLOT_COUNT) {
+      // Accept the current 9-slot format and any earlier 6/8-slot export;
+      // fill missing trailing entries with EMPTY so importing an older config
+      // doesn't randomise the extended-mode slots.
+      if (slots && slots.size() >= 6) {
         static const uint8_t defSlots[GAUGE_SLOT_COUNT] = {
           GAUGE_PROGRESS, GAUGE_NOZZLE, GAUGE_BED,
-          GAUGE_PART_FAN, GAUGE_AUX_FAN, GAUGE_CHAMBER_FAN
+          GAUGE_PART_FAN, GAUGE_AUX_FAN, GAUGE_CHAMBER_FAN,
+          GAUGE_EMPTY,    GAUGE_EMPTY,    GAUGE_EMPTY
         };
+        const size_t n = slots.size();
         for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
-          uint8_t v = slots[g].as<uint8_t>();
-          cfg.gaugeSlots[g] = (v < GAUGE_TYPE_COUNT) ? v : defSlots[g];
+          if (g < n) {
+            uint8_t v = slots[g].as<uint8_t>();
+            cfg.gaugeSlots[g] = (v < GAUGE_TYPE_COUNT) ? v : defSlots[g];
+          } else {
+            cfg.gaugeSlots[g] = GAUGE_EMPTY;
+          }
         }
       }
       if (p["amsView"].is<bool>()) {

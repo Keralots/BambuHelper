@@ -776,7 +776,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p>Six display slots, configured per printer. Set any slot to <em>Empty</em> to hide it.</p>
+        <p>Per-printer display slots. The first six are always shown; slots 7-9 only appear when <em>Landscape 8 slots</em> or <em>Portrait 9 slots</em> is enabled in Display. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
@@ -793,6 +793,14 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="cell"><label>Bot-left</label><select id="gs3" class="gauge-slot-sel"></select></div>
         <div class="cell"><label>Bot-center</label><select id="gs4" class="gauge-slot-sel"></select></div>
         <div class="cell"><label>Bot-right</label><select id="gs5" class="gauge-slot-sel"></select></div>
+      </div>
+    </div>
+    <div id="extraColGroup">
+      <div class="row-divider">&#9656; Extra slots (used by <em>Landscape 8 slots</em> and <em>Portrait 9 slots</em>; same gauge type, different physical position per orientation)</div>
+      <div class="gauge-grid">
+        <div class="cell"><label>Slot 7 (land col 4 top / port row 3 left)</label><select id="gs6" class="gauge-slot-sel"></select></div>
+        <div class="cell"><label>Slot 8 (land col 4 bot / port row 3 mid)</label><select id="gs7" class="gauge-slot-sel"></select></div>
+        <div class="cell"><label>Slot 9 (port row 3 right only)</label><select id="gs8" class="gauge-slot-sel"></select></div>
       </div>
     </div>
     <div class="action-bar">
@@ -835,6 +843,8 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
     </label>
+%L8S_ROW%
+%P9S_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
   </div>
@@ -1544,7 +1554,8 @@ var gaugeTypes = [
   'Layer Progress',
   'AMS 1 Temp','AMS 2 Temp','AMS 3 Temp','AMS 4 Temp',
   'AMS 1 Filament','AMS 2 Filament','AMS 3 Filament','AMS 4 Filament',
-  'Aux Fan Right (X2D)','Exhaust Fan'
+  'Aux Fan Right (X2D)','Exhaust Fan',
+  'AMS 1 Bars','AMS 2 Bars','AMS 3 Bars','AMS 4 Bars'
 ];
 var GAUGE_REQUIRES = { 23: 'hasAuxFanRight', 24: 'hasExhaustFan' };
 var gaugeCaps = {}, persistedGauges = {};
@@ -1591,14 +1602,15 @@ function refreshGaugeCaps(){
 refreshGaugeCaps();
 
 function resetGaugeLayout(){
-  var d = [1,2,3,4,5,6];
-  for (var i = 0; i < 6; i++) { var s = document.getElementById('gs' + i); if (s) s.value = d[i]; }
+  // Slots 0..5 = standard 2x3; slots 6..8 = extended-mode extras, default Empty.
+  var d = [1,2,3,4,5,6,0,0,0];
+  for (var i = 0; i < 9; i++) { var s = document.getElementById('gs' + i); if (s) s.value = d[i]; }
   showToast('Restored layout defaults');
 }
 function saveGaugeLayout(){
   var p = new URLSearchParams();
   p.append('slot', currentSlot);
-  for (var g = 0; g < 6; g++) { var s = document.getElementById('gs' + g); if (s) p.append('gs' + g, s.value); }
+  for (var g = 0; g < 9; g++) { var s = document.getElementById('gs' + g); if (s) p.append('gs' + g, s.value); }
   var av = document.getElementById('amsv');
   if (av && av.checked) p.append('amsv', '1');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
@@ -1636,7 +1648,7 @@ function selectPrinterTab(slot){
       });
     }
     if (capsChanged) rebuildGaugeOptions();
-    if (d.gaugeSlots) { for (var g = 0; g < 6; g++) { var sel = document.getElementById('gs' + g); if (sel) sel.value = d.gaugeSlots[g] || 0; } }
+    if (d.gaugeSlots) { for (var g = 0; g < 9; g++) { var sel = document.getElementById('gs' + g); if (sel) sel.value = d.gaugeSlots[g] || 0; } }
     var av = document.getElementById('amsv');
     if (av) { av.checked = !!d.amsView; syncAmsView(); }
     toggleConnMode();

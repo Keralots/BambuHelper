@@ -48,6 +48,14 @@
 #define LY_ROW1      92           // top row center Y (gauge top edge y=44)
 #define LY_ROW2      228          // bottom row center Y (gauge top edge y=180)
 
+// 3x3 portrait variant (DisplaySettings.portrait9Slots = true).
+// Drops the AMS strip in favour of a third gauge row. R shrinks 48->46 to
+// keep row 3's label clear of ETA (y=380) with comfortable headroom.
+#define LY_PORT9_GAUGE_R 46
+#define LY_PORT9_ROW1    86
+#define LY_PORT9_ROW2    196
+#define LY_PORT9_ROW3    306
+
 // --- AMS tray visualization zone (below gauge grid) ---
 // Row 2 gauges bottom edge is at y=276 (228+48). Labels extend ~12px below,
 // so AMS starts at y=295. Zone is 72 px tall with 42 px bars; ETA begins at
@@ -171,6 +179,13 @@
 #define LY_LAND_COL3          300
 #define LY_LAND_ROW1          76     // gauge spans y=28..124, label band 111..135
 #define LY_LAND_ROW2          192    // gauge spans y=144..240, label band 227..251
+// 4-column landscape variant (DisplaySettings.landscape8Slots).
+// Evenly spaced across 480px: 60 / 180 / 300 / 420. R=48 keeps gauges from
+// touching neighbours (96px diameter on 120px column pitch).
+#define LY_LAND8_COL1         60
+#define LY_LAND8_COL2         180
+#define LY_LAND8_COL3         300
+#define LY_LAND8_COL4         420
 
 // --- AMS sidebar (landscape) ---
 #define LY_LAND_AMS_X         365    // 5 px gap from right edge of gauge area (348)

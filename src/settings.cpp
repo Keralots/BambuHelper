@@ -135,6 +135,8 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.fanMatchPrinter = true;
   ds.invertColors = false;
   ds.cydPanelClassic = false;
+  ds.landscape8Slots = false;
+  ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT;
   ds.clockDateColor = CLR_TEXT_DIM;
   ds.clockTimeSize = 0;        // Auto
@@ -163,7 +165,9 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
 }
 
-// Default gauge slot layout: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan
+// Default gauge slot layout: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
+// Slots 6-8 only render in landscape-8 / portrait-9 modes — default to EMPTY
+// so enabling either mode does not surprise the user with random gauges.
 static void defaultGaugeSlots(uint8_t* slots) {
   slots[0] = GAUGE_PROGRESS;
   slots[1] = GAUGE_NOZZLE;
@@ -171,6 +175,9 @@ static void defaultGaugeSlots(uint8_t* slots) {
   slots[3] = GAUGE_PART_FAN;
   slots[4] = GAUGE_AUX_FAN;
   slots[5] = GAUGE_CHAMBER_FAN;
+  slots[6] = GAUGE_EMPTY;
+  slots[7] = GAUGE_EMPTY;
+  slots[8] = GAUGE_EMPTY;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,12 +246,17 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_region", i);
     cfg.region = (CloudRegion)prefs.getUChar(key, REGION_US);
 
-    // Gauge slot layout (per-printer)
+    // Gauge slot layout (per-printer).
+    // Legacy records hold only 6 bytes (pre-landscape-8-slot mode). Treat any
+    // partial read >=6 as valid and default the missing trailing slots to EMPTY
+    // so the user opts in to landscape extras via the web UI.
     snprintf(key, sizeof(key), "p%d_slots", i);
+    memset(cfg.gaugeSlots, GAUGE_EMPTY, GAUGE_SLOT_COUNT);
     size_t read = prefs.getBytes(key, cfg.gaugeSlots, GAUGE_SLOT_COUNT);
-    if (read != GAUGE_SLOT_COUNT) {
+    if (read < 6) {
       defaultGaugeSlots(cfg.gaugeSlots);
     } else {
+      // Anything past `read` was zeroed by memset (GAUGE_EMPTY == 0).
       for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
         if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) {
           uint8_t def[GAUGE_SLOT_COUNT];
@@ -292,6 +304,8 @@ void loadSettings() {
   dispSettings.fanMatchPrinter = prefs.getBool("dsp_fanmp", def.fanMatchPrinter);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
+  dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
+  dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
   dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM);
   {
@@ -530,6 +544,8 @@ void saveSettings() {
   prefs.putBool("dsp_fanmp", dispSettings.fanMatchPrinter);
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
+  prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
+  prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
   prefs.putUShort("dsp_clkd", dispSettings.clockDateColor);
   prefs.putUChar("dsp_clkts", dispSettings.clockTimeSize);

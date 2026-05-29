@@ -210,6 +210,37 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "L8S_ROW") == 0) {
+    // 8-slot landscape grid is meaningful only on layouts that actually flip
+    // to landscape (LAYOUT_HAS_LANDSCAPE). Hide the toggle elsewhere so it
+    // doesn't read as "broken on this board".
+#if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"l8s\" value=\"1\" ";
+    out += dispSettings.landscape8Slots ? "checked" : "";
+    out += " onchange=\"toggleSetting('l8s',this.checked)\">";
+    out += "<label for=\"l8s\">Landscape 8 gauge slots (replaces AMS sidebar with a 2x4 grid; configure slots 7/8 under Gauge Layout)</label>";
+    out += "</label>";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "P9S_ROW") == 0) {
+    // 9-slot portrait grid: 240x320 + 320x480 only. Gauge R shrinks to fit
+    // a third row above ETA, and the permanent AMS strip is replaced.
+#if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"p9s\" value=\"1\" ";
+    out += dispSettings.portrait9Slots ? "checked" : "";
+    out += " onchange=\"toggleSetting('p9s',this.checked)\">";
+    out += "<label for=\"p9s\">Portrait 9 gauge slots (replaces AMS strip with a 3x3 grid; configure slots 7/8/9 under Gauge Layout)</label>";
+    out += "</label>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMSV_ROW") == 0) {
 #if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480)
     out  = "<label class=\"check-row\">";
