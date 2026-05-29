@@ -777,9 +777,9 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p>Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under Display. Set any slot to <em>Empty</em> to hide it.</p>
+        <p>Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeLayout()">Reset to default</button>
+      <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
 %AMSV_ROW%
     <div class="row-divider" style="margin-top:var(--sp-3)">&#9650; Top row</div>
