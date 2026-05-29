@@ -158,18 +158,16 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "DUALP_ADVANCED") == 0) {
+    // Renders bare inside the Advanced > Danger Zone card; no outer card
+    // wrapper. The danger-zone gate checkbox controls the surrounding
+    // <div id="dangerOps"> visibility.
 #ifdef BOARD_LOW_RAM
-    out  = "<div class=\"card\" style=\"border-color:rgba(216, 154, 44, 0.30)\">";
-    out += "<div class=\"card-head\"><div><h3>Advanced (experimental)</h3>";
-    out += "<p>Low-RAM boards are tight on memory. Two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device.</p>";
-    out += "</div></div>";
-    out += "<label class=\"check-row\">";
+    out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"dualp\" value=\"1\" ";
     if (dualPrinterUnsafe) out += "checked";
     out += " onchange=\"toggleDualPrinterMode(this.checked)\">";
-    out += "<label for=\"dualp\">Enable 2-printer mode (not supported on this board, may crash)</label>";
+    out += "<label for=\"dualp\">Enable 2-printer mode (experimental on low-RAM boards: two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device)</label>";
     out += "</label>";
-    out += "</div>";
 #else
     out = "";
 #endif
@@ -210,20 +208,36 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
-  if (strcmp(name, "L8S_ROW") == 0) {
-    // 8-slot landscape grid is meaningful only on layouts that actually flip
-    // to landscape (LAYOUT_HAS_LANDSCAPE). Hide the toggle elsewhere so it
-    // doesn't read as "broken on this board".
+  if (strcmp(name, "EXTENDED_MODES_CARD") == 0) {
+    // Card lives in the Advanced section. Only renders on layouts that
+    // actually have extended grid modes, otherwise the whole card is empty.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
-    out  = "<label class=\"check-row\">";
+    out  = "<div class=\"card\">";
+    out += "<div class=\"card-head\"><div><h3>Extended grid modes</h3>";
+    out += "<p>Trade the on-screen AMS area for extra gauge slots. ";
+    out += "Configure the new slots under <strong>Gauge Layout</strong>.</p>";
+    out += "</div></div>";
+    out += "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"l8s\" value=\"1\" ";
     out += dispSettings.landscape8Slots ? "checked" : "";
-    out += " onchange=\"toggleSetting('l8s',this.checked)\">";
-    out += "<label for=\"l8s\">Landscape 8 gauge slots (replaces AMS sidebar with a 2x4 grid; configure slots 7/8 under Gauge Layout)</label>";
+    out += " onchange=\"toggleGridMode('l8s', this.checked)\">";
+    out += "<label for=\"l8s\">Landscape 8 gauge slots (replaces AMS sidebar with a 2x4 grid)</label>";
     out += "</label>";
+    out += "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"p9s\" value=\"1\" ";
+    out += dispSettings.portrait9Slots ? "checked" : "";
+    out += " onchange=\"toggleGridMode('p9s', this.checked)\">";
+    out += "<label for=\"p9s\">Portrait 9 gauge slots (replaces AMS strip with a 3x3 grid)</label>";
+    out += "</label>";
+    out += "</div>";
 #else
     out = "";
 #endif
+    return true;
+  }
+  if (strcmp(name, "L8S_ROW") == 0) {
+    // Kept as a no-op token in case any old template still references it.
+    out = "";
     return true;
   }
   if (strcmp(name, "EXTRAS_SECTIONS") == 0) {
@@ -231,16 +245,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // Each is gauge-type-configured per-printer through landscapeExtras /
     // portraitExtras. Boards without LAYOUT_HAS_LANDSCAPE / LY_PORT9_GAUGE_R
     // don't render anything here so the user isn't offered settings the
-    // device can't use.
+    // device can't use. Inline display:none reflects the toggle's state at
+    // render time; toggleGridMode() in the Advanced section keeps it in sync.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
-    out  = "<div id=\"landExtrasGroup\">";
-    out += "<div class=\"row-divider\">&#9656; Landscape extras (column 4, rendered when <em>Landscape 8 slots</em> is on)</div>";
+    out  = "<div id=\"landExtrasGroup\"";
+    if (!dispSettings.landscape8Slots) out += " style=\"display:none\"";
+    out += "><div class=\"row-divider\">&#9656; Landscape extras (column 4, used by <em>Landscape 8 slots</em>)</div>";
     out += "<div class=\"gauge-grid\">";
     out += "<div class=\"cell\"><label>Col 4 top</label><select id=\"lx0\" class=\"gauge-slot-sel\"></select></div>";
     out += "<div class=\"cell\"><label>Col 4 bot</label><select id=\"lx1\" class=\"gauge-slot-sel\"></select></div>";
     out += "</div></div>";
-    out += "<div id=\"portExtrasGroup\">";
-    out += "<div class=\"row-divider\">&#9656; Portrait extras (row 3, rendered when <em>Portrait 9 slots</em> is on)</div>";
+    out += "<div id=\"portExtrasGroup\"";
+    if (!dispSettings.portrait9Slots) out += " style=\"display:none\"";
+    out += "><div class=\"row-divider\">&#9656; Portrait extras (row 3, used by <em>Portrait 9 slots</em>)</div>";
     out += "<div class=\"gauge-grid\">";
     out += "<div class=\"cell\"><label>Row 3 left</label><select id=\"px0\" class=\"gauge-slot-sel\"></select></div>";
     out += "<div class=\"cell\"><label>Row 3 mid</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>";
@@ -252,18 +269,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "P9S_ROW") == 0) {
-    // 9-slot portrait grid: 240x320 + 320x480 only. Gauge R shrinks to fit
-    // a third row above ETA, and the permanent AMS strip is replaced.
-#if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
-    out  = "<label class=\"check-row\">";
-    out += "<input type=\"checkbox\" id=\"p9s\" value=\"1\" ";
-    out += dispSettings.portrait9Slots ? "checked" : "";
-    out += " onchange=\"toggleSetting('p9s',this.checked)\">";
-    out += "<label for=\"p9s\">Portrait 9 gauge slots (replaces AMS strip with a 3x3 grid; configure slots 7/8/9 under Gauge Layout)</label>";
-    out += "</label>";
-#else
+    // Kept as a no-op token after the toggle moved into EXTENDED_MODES_CARD.
     out = "";
-#endif
     return true;
   }
   if (strcmp(name, "AMSV_ROW") == 0) {

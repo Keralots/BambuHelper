@@ -634,6 +634,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
   <button class="nav-item" type="button" data-section="printer" aria-current="true"><span>Printer</span></button>
   <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
   <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
+  <button class="nav-item" type="button" data-section="advanced"><span>Advanced</span></button>
   <h4>Network</h4>
   <button class="nav-item" type="button" data-section="wifi"><span>WiFi &amp; System</span></button>
   <button class="nav-item" type="button" data-section="power"><span>Power</span></button>
@@ -836,8 +837,6 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
     </label>
-%L8S_ROW%
-%P9S_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
   </div>
@@ -1153,7 +1152,6 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
   </div>
 
 %BAT_TOGGLE_ROW%
-%DUALP_ADVANCED%
 
   <div class="card">
     <div class="card-head">
@@ -1176,7 +1174,33 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
   </div>
 </div>
 
-<!-- ===== Section 4: WiFi & System ===== -->
+<!-- ===== Section 4: Advanced ===== -->
+<div class="section" id="sec-advanced" hidden>
+  <div class="section-intro">
+    <h2>Advanced</h2>
+    <p>Extended display layouts and operations that need extra care. Most users do not need anything here.</p>
+  </div>
+
+%EXTENDED_MODES_CARD%
+
+  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
+    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="dangerUnlock" onchange="toggleDangerUnlock(this.checked)">
+      <label for="dangerUnlock">Show advanced operations</label>
+    </label>
+    <div id="dangerOps" style="display:none;margin-top:var(--sp-3)">
+%DUALP_ADVANCED%
+      <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
+        <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
+        <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
+      </div>
+      <p class="hint" style="margin-top:var(--sp-2)">Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Section 5: WiFi & System ===== -->
 <div class="section" id="sec-wifi" hidden>
   <div class="section-intro">
     <h2>WiFi &amp; System</h2>
@@ -1315,16 +1339,10 @@ R"rawliteral(
 R"rawliteral(
   </div>
 
-  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
-    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p></div></div>
-    <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap">
-      <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
-      <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
-    </div>
-  </div>
+  <p class="hint" style="margin-top:var(--sp-3)">Reboot and factory reset have moved to the <strong>Advanced</strong> section.</p>
 </div>
 
-<!-- ===== Section 5: Power Monitoring ===== -->
+<!-- ===== Section 6: Power Monitoring ===== -->
 <div class="section" id="sec-power" hidden>
   <div class="section-intro">
     <h2>Power Monitoring</h2>
@@ -1444,6 +1462,7 @@ var SECTION_LABELS = {
   printer: 'Printer Settings',
   display: 'Display',
   hardware: 'Hardware',
+  advanced: 'Advanced',
   wifi: 'WiFi & System',
   power: 'Power Monitoring',
   diag: 'Diagnostics'
@@ -2107,6 +2126,19 @@ function toggleDualPrinterMode(on){
   var d = document.getElementById('topStatusDot1');
   if (d) d.style.display = on ? '' : 'none';
   if (!on) selectPrinterTab(0);
+}
+/* Toggle a grid mode (l8s / p9s) and sync the matching Gauge Layout extras
+   block in the Printer section. Hides the extra dropdowns when the user
+   doesn't have the mode enabled so the layout card stays compact. */
+function toggleGridMode(key, on){
+  toggleSetting(key, on);
+  var elId = (key === 'l8s') ? 'landExtrasGroup' : 'portExtrasGroup';
+  var el = document.getElementById(elId);
+  if (el) el.style.display = on ? '' : 'none';
+}
+function toggleDangerUnlock(on){
+  var ops = document.getElementById('dangerOps');
+  if (ops) ops.style.display = on ? '' : 'none';
 }
 
 /* ============ Diagnostics ============ */
