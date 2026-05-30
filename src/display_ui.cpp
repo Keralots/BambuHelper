@@ -2686,7 +2686,7 @@ static void computeSlotGrid(SlotGrid& g, const PrinterConfig& cfg, bool landscap
   for (uint8_t i = 0; i < GAUGE_SLOT_COUNT; i++) g.types[i] = cfg.gaugeSlots[i];
 
   if (eight) {
-#if defined(LAYOUT_HAS_LANDSCAPE)
+#if defined(LAYOUT_HAS_LANDSCAPE) && defined(LY_LAND8_COL1)
     const int16_t cs[4] = { LY_LAND8_COL1, LY_LAND8_COL2, LY_LAND8_COL3, LY_LAND8_COL4 };
     const int16_t rs[2] = { LY_LAND_ROW1,  LY_LAND_ROW2 };
     g.r = LY_GAUGE_R; g.count = 8;

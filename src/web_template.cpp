@@ -235,11 +235,6 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
-  if (strcmp(name, "L8S_ROW") == 0) {
-    // Kept as a no-op token in case any old template still references it.
-    out = "";
-    return true;
-  }
   if (strcmp(name, "EXTRAS_SECTIONS") == 0) {
     // Two independent extras blocks - landscape col 4 + portrait row 3.
     // Each is gauge-type-configured per-printer through landscapeExtras /
@@ -266,11 +261,6 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #else
     out = "";
 #endif
-    return true;
-  }
-  if (strcmp(name, "P9S_ROW") == 0) {
-    // Kept as a no-op token after the toggle moved into EXTENDED_MODES_CARD.
-    out = "";
     return true;
   }
   if (strcmp(name, "AMSV_ROW") == 0) {
