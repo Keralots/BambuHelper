@@ -2203,14 +2203,36 @@ static void drawAmsTrayBar(int16_t x, int16_t y, int16_t w, int16_t h,
   }
 }
 
-// Gauge-slot AMS visualization: 4 rounded vertical tray bars (same look as
-// the landscape sidebar / portrait strip), no humidity. Centered in a square
-// 2R x 2R region; "AMS N" label below at the standard gauge-label position.
+// Gauge-slot AMS visualization: one rounded vertical bar per loaded tray (same
+// look as the landscape sidebar / portrait strip), no humidity. Bar count tracks
+// the unit's actual trayCount, so an AMS HT (single slot) shows one centered bar
+// instead of three empty ones. Centered in a square 2R x 2R region; "AMS N"
+// label below at the standard gauge-label position.
 static void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
                              const AmsState& ams, uint8_t unitIndex,
                              bool forceRedraw) {
   uint16_t bg = dispSettings.bgColor;
-  if (forceRedraw) {
+
+  const bool unitPresent = ams.present
+                        && unitIndex < AMS_MAX_UNITS
+                        && unitIndex < ams.unitCount
+                        && ams.units[unitIndex].present;
+
+  // Number of bars = the unit's actual tray count, so an AMS HT (1 slot) draws
+  // a single centered bar. Mirrors the standard AMS strip/sidebar (drawAmsZone),
+  // which also centers `trayCount` bars. Fall back to the full count while the
+  // unit isn't reporting yet (placeholder before AMS data arrives).
+  uint8_t bars = unitPresent ? ams.units[unitIndex].trayCount : AMS_TRAYS_PER_UNIT;
+  if (bars == 0 || bars > AMS_TRAYS_PER_UNIT) bars = AMS_TRAYS_PER_UNIT;
+
+  // The bar count can shrink at runtime (4 placeholder bars before AMS HT data
+  // arrives, then 1). That transition doesn't always come with forceRedraw, so
+  // the leftover bars would ghost; track the last-drawn count per unit and wipe
+  // the slot whenever it changes as well.
+  static uint8_t prevBars[AMS_MAX_UNITS] = { 0, 0, 0, 0 };
+  bool clear = forceRedraw || (unitIndex < AMS_MAX_UNITS && prevBars[unitIndex] != bars);
+  if (unitIndex < AMS_MAX_UNITS) prevBars[unitIndex] = bars;
+  if (clear) {
     // Rect clear (not circle) - bars are top-anchored and reach into the
     // corners of the bounding square, where a circle of radius+2 would miss
     // a few pixels at every corner. Match the slot-type-change clear in
@@ -2219,10 +2241,11 @@ static void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
     tft.fillRect(cx - radius - 2, cy - radius - 2, side, side, bg);
   }
 
-  const int16_t bars = AMS_TRAYS_PER_UNIT;
   const int16_t innerSize = radius * 2;
   const int16_t barGap = 2;
-  int16_t barW = (innerSize - (bars - 1) * barGap) / bars;
+  // Bar width is sized for the full 4-slot layout so a 1-tray HT unit shows a
+  // single bar the same width as one bar in a 4-tray unit, just centered.
+  int16_t barW = (innerSize - (AMS_TRAYS_PER_UNIT - 1) * barGap) / AMS_TRAYS_PER_UNIT;
   if (barW < 4) barW = 4;
   if (barW > 18) barW = 18;
   // Reserve top space for the active-tray notch and bottom space so the slot
@@ -2235,11 +2258,6 @@ static void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
   const int16_t totalW = barW * bars + (bars - 1) * barGap;
   const int16_t startX = cx - totalW / 2;
   const int16_t startY = cy - innerSize / 2 + barTopMargin;
-
-  const bool unitPresent = ams.present
-                        && unitIndex < AMS_MAX_UNITS
-                        && unitIndex < ams.unitCount
-                        && ams.units[unitIndex].present;
 
   AmsTray absent{};
   absent.present = false;
