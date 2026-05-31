@@ -487,6 +487,27 @@ static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
   }
 }
 
+// Choose the largest humidity-number font that leaves room for a small "%"
+// suffix inside the clearable center disc. Compact R=28 gauges start at BODY
+// for vertical fit; larger layouts retain their normal value font when it fits.
+static FontID fitHumidityValueFont(lgfx::LovyanGFX& gfx, const char* value,
+                                   int16_t radius, int16_t thickness,
+                                   FontID base, int16_t suffixGap) {
+  setFont(gfx, FONT_SMALL);
+  const int16_t suffixW = gfx.textWidth("%");
+  const int16_t innerW = 2 * (radius - thickness - 1) - 2;
+
+  FontID candidates[] = { base, FONT_LARGE, FONT_BODY, FONT_SMALL };
+  for (FontID f : candidates) {
+    if (radius < 30 && (f == FONT_LARGE || f == FONT_XLARGE)) continue;
+    setFont(gfx, f);
+    if (gfx.textWidth(value) + suffixGap + suffixW <= innerW) return f;
+  }
+
+  setFont(gfx, FONT_SMALL);
+  return FONT_SMALL;
+}
+
 // Keep selected gauge text transparent on direct-draw panels: the center disc
 // is already cleared before text redraw, and an opaque VLW background box can
 // clip the line above or spill across the arc. The JC3248W535 rotated sprite
@@ -594,7 +615,7 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
     gfx.setTextDatum(MC_DATUM);
-    gfx.setTextColor(gc.value, bg);
+    setGaugeClearedTextColor(gfx, gc.value, bg);
     fitValueFont(gfx, pctBuf, radius, thickness, LY_GAUGE_VALUE_FONT);
     gfx.drawString(pctBuf, cx, cy - (compact ? 4 : 8) + LY_GAUGE_VALUE_NUDGE_Y);
 
@@ -658,10 +679,10 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
 
     gfx.setTextDatum(MC_DATUM);
     fitValueFont(gfx, tempBuf, radius, thickness, LY_GAUGE_VALUE_FONT);
-    // Pass bg explicitly so VLW glyphs render with a solid background instead
-    // of alpha-blending against the sprite buffer — on rotated sprites the
-    // blend leaves hollow-looking glyphs (bright outline, dark interior).
-    gfx.setTextColor(valColor, bg);
+    // Direct panels draw transparently after the center clear. The helper keeps
+    // an explicit background on the rotated JC sprite, where alpha blending
+    // leaves hollow-looking glyphs (bright outline, dark interior).
+    setGaugeClearedTextColor(gfx, valColor, bg);
     gfx.drawString(tempBuf, cx, hasTarget ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTarget) {
@@ -718,7 +739,7 @@ void drawFanGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
 
     gfx.setTextDatum(MC_DATUM);
     fitValueFont(gfx, buf, radius, thickness, LY_GAUGE_VALUE_FONT);
-    gfx.setTextColor(valColor, bg);
+    setGaugeClearedTextColor(gfx, valColor, bg);
     gfx.drawString(buf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
@@ -761,23 +782,47 @@ void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t rad
   uint16_t drawFill = (pct > 0) ? fillEnd : startAngle;
   drawArcFill(gfx, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
 
-  // Build display string
-  char buf[8];
+  // Build display strings. Cache the fully rendered form, but draw the "%"
+  // separately so it can use a smaller suffix font.
+  char buf[8], valueBuf[8];
   if (present) {
     snprintf(buf, sizeof(buf), "%d%%", humidityRaw);
+    snprintf(valueBuf, sizeof(valueBuf), "%d", humidityRaw);
   } else {
     strlcpy(buf, "--", sizeof(buf));
+    valueBuf[0] = '\0';
   }
 
   if (gaugeTextChanged(cx, cy, buf, "", forceRedraw)) {
     clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
-    gfx.setTextDatum(MC_DATUM);
-    fitValueFont(gfx, buf, radius, thickness, LY_GAUGE_VALUE_FONT);
-    setGaugeClearedTextColor(gfx, present ? CLR_TEXT : CLR_TEXT_DIM, bg);
-    gfx.drawString(buf, cx, cy);
+    if (present) {
+      const int16_t suffixGap = 1;
+      FontID valueFont = fitHumidityValueFont(
+          gfx, valueBuf, radius, thickness, LY_GAUGE_VALUE_FONT, suffixGap);
+      const int16_t valueW = gfx.textWidth(valueBuf);
+      setFont(gfx, FONT_SMALL);
+      const int16_t suffixW = gfx.textWidth("%");
+      const int16_t splitX = cx - (valueW + suffixGap + suffixW) / 2 + valueW;
+
+      setFont(gfx, valueFont);
+      gfx.setTextDatum(MR_DATUM);
+      setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+      gfx.drawString(valueBuf, splitX, cy);
+
+      setFont(gfx, FONT_SMALL);
+      gfx.setTextDatum(ML_DATUM);
+      setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+      gfx.drawString("%", splitX + suffixGap, cy);
+    } else {
+      gfx.setTextDatum(MC_DATUM);
+      fitValueFont(gfx, buf, radius, thickness, LY_GAUGE_VALUE_FONT);
+      setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
+      gfx.drawString(buf, cx, cy);
+    }
 
     bool sm = dispSettings.smallLabels;
+    gfx.setTextDatum(MC_DATUM);
     setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
     gfx.setTextColor(arcColor, bg);
     gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
@@ -824,7 +869,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
     bool useSmall = (digits > 7);
 
     fitValueFont(gfx, layerBuf, radius, thickness, useSmall ? FONT_BODY : LY_GAUGE_VALUE_FONT);
-    gfx.setTextColor(CLR_TEXT, bg);
+    setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
     gfx.drawString(layerBuf, cx, hasTot ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTot) {
@@ -877,7 +922,7 @@ void drawClockWidget(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     // Clock clears the full radius-1 disc above, so budget the wider inner
     // width (thickness=0) instead of the arc-inset radius-thickness-1.
     fitValueFont(gfx, timeBuf, radius, 0, LY_GAUGE_VALUE_FONT);
-    gfx.setTextColor(CLR_TEXT, bg);
+    setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
     gfx.drawString(timeBuf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
