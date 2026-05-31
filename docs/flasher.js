@@ -14,6 +14,10 @@ const BOARDS = {
     chipFamily: 'ESP32-S3',
     label: 'DIY - Waveshare ESP32-S3-Zero + 1.54" ST7789',
   },
+  esp32s3_zero_320: {
+    chipFamily: 'ESP32-S3',
+    label: 'DIY - Waveshare ESP32-S3-Zero + 2.0" ST7789 (240x320)',
+  },
   esp32c3: {
     chipFamily: 'ESP32-C3',
     label: 'DIY - ESP32-C3 SuperMini + 1.54" ST7789',

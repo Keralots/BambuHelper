@@ -32,6 +32,7 @@ from pathlib import Path
 WEB_FLASHER_BOARDS = [
     "esp32s3",
     "esp32s3_zero",
+    "esp32s3_zero_320",
     "esp32c3",
     "ws_lcd_200",
     "ws_lcd_154",

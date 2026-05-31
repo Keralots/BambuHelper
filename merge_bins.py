@@ -57,6 +57,14 @@ BOARDS = {
         'build_env': 'esp32s3_zero',
         'board_id': 'esp32s3_zero',
     },
+    'esp32s3_zero_320': {
+        'build_dir': '.pio/build/esp32s3_zero_320',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'esp32s3_zero_320',
+        'board_id': 'esp32s3_zero_320',
+    },
     'cyd': {
         'build_dir': '.pio/build/cyd',
         'bootloader_offset': 0x1000,    # Standard ESP32 starts at 0x1000
@@ -121,6 +129,9 @@ BOARD_ALIASES = {
     's3zero': 'esp32s3_zero',
     's3_zero': 'esp32s3_zero',
     'esp32s3_zero': 'esp32s3_zero',
+    's3zero320': 'esp32s3_zero_320',
+    's3_zero_320': 'esp32s3_zero_320',
+    'esp32s3_zero_320': 'esp32s3_zero_320',
     'cyd': 'cyd',
     'tzt': 'tzt_2432',
     'tzt_2432': 'tzt_2432',
