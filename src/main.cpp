@@ -17,6 +17,7 @@
 static unsigned long splashEnd = 0;
 static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
+bool httpForceClock = false;  // runtime override from HTTP /api/mode/clock
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
 static bool finishDismissedByWake = false;  // true once user taps to wake while printer is GCODE_FINISH; cleared on printer state change
@@ -741,6 +742,14 @@ void loop() {
   }
 
   handleDisplaySleepTimeouts();
+
+  if (httpForceClock) {
+    ScreenState s = getScreenState();
+    if (s == SCREEN_PRINTING || s == SCREEN_IDLE || s == SCREEN_FINISHED) {
+      setScreenState(SCREEN_CLOCK);
+    }
+  }
+
   handleConnectingScreenRecovery();
   handleGcodeStateTransitions();
   handleBedCooldownBuzzers();
@@ -749,6 +758,7 @@ void loop() {
   Battery::tick();
   ledTick();
   checkNightMode();
+  checkOrbit();
   updateDisplay();
 
   // MQTT and rotation after display update - TLS reconnect can block for

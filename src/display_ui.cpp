@@ -561,7 +561,6 @@ lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
 // arbitrary Y per draw (see lgfx_panel_axs15231b_agfx.hpp), so a
 // framebuffer-and-single-raster-flush is the only reliable render path.
 static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
-
 // Dirty flag: start true so the very first flushFrame() pushes the cleared
 // sprite + splash. Redraw sites call markFrameDirty() to request another
 // push. A keepalive in flushFrame() also forces one push every
@@ -569,9 +568,26 @@ static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
 static bool g_frame_dirty = true;
 static unsigned long g_last_flush_ms = 0;
 static const unsigned long FRAME_KEEPALIVE_MS = 500;
+
+#elif !defined(BOARD_LOW_RAM)
+// Orbit sprite: all draws go here; flushFrame() pushes to the real panel at
+// (orbitX, orbitY), physically shifting which pixels are driven each step.
+// Skipped on BOARD_LOW_RAM targets (CYD, esp32c3) where SRAM is too tight.
+static lgfx::LGFX_Sprite _orbit_sprite(&_tft_instance);
+
 #else
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
+
+// Pixel orbit state — declared here so flushFrame() and initDisplay() can reach them.
+static const int8_t ORBIT_PX[] = {0, 1, 2, 2, 2, 1, 0, 0, 1};
+static const int8_t ORBIT_PY[] = {0, 0, 0, 1, 2, 2, 2, 1, 1};
+static uint8_t  orbitStep    = 0;
+static int8_t   orbitX       = 0;
+static int8_t   orbitY       = 0;
+static bool     orbitEnabled = true;
+static unsigned long lastOrbitMs = 0;
+static const uint32_t ORBIT_INTERVAL_MS = 3 * 60 * 1000UL;
 
 void markFrameDirty() {
 #if defined(BOARD_IS_JC3248W535)
@@ -590,6 +606,10 @@ void flushFrame() {
     320u * 480u);
   g_frame_dirty = false;
   g_last_flush_ms = now;
+#elif !defined(BOARD_LOW_RAM)
+  if (_orbit_sprite.getBuffer()) {
+    _orbit_sprite.pushSprite(orbitX, orbitY);
+  }
 #endif
 }
 
@@ -706,6 +726,7 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
 //  Backlight
 // ---------------------------------------------------------------------------
 static uint8_t lastAppliedBrightness = 0;
+static bool displayForcedOff = false;
 
 void setBacklight(uint8_t level) {
 #if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
@@ -860,6 +881,20 @@ void initDisplay() {
     flushFrame();  // push cleared sprite so panel shows CLR_BG during splash
   } else {
     Serial.println("Display: frame sprite alloc FAILED — will draw direct to panel (expect artifacts)");
+  }
+#elif !defined(BOARD_LOW_RAM)
+  // Orbit sprite: draws go here; flushFrame() pushes to the panel at
+  // (orbitX, orbitY), physically shifting lit pixels every orbit step.
+  _orbit_sprite.setColorDepth(16);
+  if (_orbit_sprite.createSprite(_tft_instance.width(), _tft_instance.height())) {
+    _orbit_sprite.setTextDatum(MC_DATUM);
+    tft_ptr = &_orbit_sprite;
+    Serial.printf("Display: orbit sprite %dx%d allocated (%u KB free)\n",
+                  _tft_instance.width(), _tft_instance.height(),
+                  (unsigned)(ESP.getFreeHeap() / 1024));
+  } else {
+    Serial.println("Display: orbit sprite alloc FAILED, orbit disabled");
+    orbitEnabled = false;
   }
 #endif
 
@@ -3762,6 +3797,44 @@ static void drawFinished() {
 }
 
 // ---------------------------------------------------------------------------
+//  Pixel orbit — slow 2-px coordinate shift to spread OLED wear
+// ---------------------------------------------------------------------------
+// 9-position 3×3 grid traversed in a spiral so consecutive steps never
+// jump more than 1 px in any direction (minimises visible content jump).
+// Variables declared earlier (after forceRedraw) so initDisplay() can access them.
+
+bool isOrbitEnabled() { return orbitEnabled; }
+void setOrbitEnabled(bool en) {
+  orbitEnabled = en;
+  if (!en) { orbitStep = 0; orbitX = 0; orbitY = 0; }
+  forceRedraw = true;
+  lastDisplayUpdate = 0;
+}
+
+void checkOrbit() {
+  // Orbit is meaningless when display is off or already animated
+  if (!orbitEnabled) return;
+  if (currentScreen == SCREEN_OFF || currentScreen == SCREEN_SPLASH ||
+      currentScreen == SCREEN_AP_MODE || currentScreen == SCREEN_CONNECTING_WIFI ||
+      currentScreen == SCREEN_CONNECTING_MQTT || currentScreen == SCREEN_OTA_UPDATE ||
+      currentScreen == SCREEN_WIFI_CONNECTED) return;
+  // Clock with pong is already animated; static clock benefits from orbit
+  if (currentScreen == SCREEN_CLOCK && dispSettings.pongClock) return;
+
+  unsigned long now = millis();
+  if (now - lastOrbitMs < ORBIT_INTERVAL_MS) return;
+  lastOrbitMs = now;
+
+  orbitStep = (orbitStep + 1) % 9;
+  orbitX = ORBIT_PX[orbitStep];
+  orbitY = ORBIT_PY[orbitStep];
+  // flushFrame() will push the sprite at the new (orbitX, orbitY) offset;
+  // a full redraw ensures no stale content from the previous position bleeds through.
+  forceRedraw = true;
+  lastDisplayUpdate = 0;
+}
+
+// ---------------------------------------------------------------------------
 //  Night mode — scheduled brightness dimming
 // ---------------------------------------------------------------------------
 static unsigned long lastNightCheck = 0;
@@ -3802,14 +3875,37 @@ void checkNightMode() {
   if (now - lastNightCheck < 60000) return;
   lastNightCheck = now;
 
-  // Don't interfere with screen off
-  if (currentScreen == SCREEN_OFF) return;
+  // Don't interfere with screen off or HTTP-forced off
+  if (currentScreen == SCREEN_OFF || displayForcedOff) return;
 
   uint8_t target = getEffectiveBrightness();
   if (target != lastAppliedBrightness) {
     setBacklight(target);
     lastAppliedBrightness = target;
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Runtime display control (HTTP API) — not persisted to flash
+
+bool isDisplayForcedOff() {
+  return displayForcedOff;
+}
+
+void setDisplayForcedOff(bool off) {
+  displayForcedOff = off;
+  if (off) {
+    setBacklight(0);
+  } else {
+    setBacklight(getEffectiveBrightness());
+  }
+}
+
+void setDisplayBrightnessPercent(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  brightness = (uint16_t)percent * 255 / 100;
+  displayForcedOff = (brightness == 0);
+  setBacklight(getEffectiveBrightness());
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,8 @@ extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_star
 // via `extern WebServer server;` in include/web_template.h.
 WebServer server(80);
 
+extern bool httpForceClock;
+
 // ---------------------------------------------------------------------------
 //  Deferred restart — avoids blocking delay() before ESP.restart()
 // ---------------------------------------------------------------------------
@@ -343,6 +345,137 @@ static void handleStatus() {
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// ========== Runtime Control API ==========
+// GET endpoints — no auth, runtime-only (no flash writes), CORS open.
+
+static void handleApiDisplayOn() {
+  setDisplayForcedOff(false);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"displayOn\":true}");
+}
+
+static void handleApiDisplayOff() {
+  setDisplayForcedOff(true);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"displayOn\":false}");
+}
+
+static int parseBrightnessArg() {
+  if (!server.hasArg("value")) return -1;
+  int v = server.arg("value").toInt();
+  if (v < 0) v = 0;
+  if (v > 100) v = 100;
+  return v;
+}
+
+static void handleApiSetDayBrightness() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  int value = parseBrightnessArg();
+  if (value < 0) { server.send(400, "application/json", "{\"error\":\"Missing value (0-100)\"}"); return; }
+  setDisplayBrightnessPercent((uint8_t)value);
+  server.send(200, "application/json",
+              "{\"success\":true,\"daytime_brightness\":" + String(value) + "}");
+}
+
+static void handleApiSetNightBrightness() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  int value = parseBrightnessArg();
+  if (value < 0) { server.send(400, "application/json", "{\"error\":\"Missing value (0-100)\"}"); return; }
+  dpSettings.nightBrightness = (uint8_t)((value * 255) / 100);
+  setBacklight(getEffectiveBrightness());
+  server.send(200, "application/json",
+              "{\"success\":true,\"night_brightness\":" + String(value) + "}");
+}
+
+static void handleApiSetScreensaverBrightness() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  int value = parseBrightnessArg();
+  if (value < 0) { server.send(400, "application/json", "{\"error\":\"Missing value (0-100)\"}"); return; }
+  dpSettings.screensaverBrightness = (uint8_t)((value * 255) / 100);
+  setBacklight(getEffectiveBrightness());
+  server.send(200, "application/json",
+              "{\"success\":true,\"screensaver_brightness\":" + String(value) + "}");
+}
+
+static void handleApiOrbitOn() {
+  setOrbitEnabled(true);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"orbit\":true}");
+}
+
+static void handleApiOrbitOff() {
+  setOrbitEnabled(false);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"orbit\":false}");
+}
+
+static void handleApiPongOn() {
+  dispSettings.pongClock = true;
+  triggerDisplayTransition();
+  if (getScreenState() == SCREEN_CLOCK) resetPongClock();
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"pongClock\":true}");
+}
+
+static void handleApiPongOff() {
+  dispSettings.pongClock = false;
+  triggerDisplayTransition();
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"pongClock\":false}");
+}
+
+static void handleApiModeClock() {
+  httpForceClock = true;
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"mode\":\"clock\"}");
+}
+
+static void handleApiModeAuto() {
+  httpForceClock = false;
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"mode\":\"auto\"}");
+}
+
+static void handleApiStatus() {
+  bool anyOnline = false;
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+    if (isPrinterConfigured(i) && printers[i].state.connected) {
+      anyOnline = true;
+      break;
+    }
+  }
+
+  const char* modeName = "clock";
+  ScreenState scr = getScreenState();
+  if (scr == SCREEN_PRINTING) modeName = "printing";
+  else if (scr == SCREEN_IDLE) modeName = "idle";
+  else if (scr == SCREEN_FINISHED) modeName = "finished";
+  else if (scr == SCREEN_OFF) modeName = "off";
+
+  JsonDocument doc;
+  doc["displayOn"]              = !isDisplayForcedOff() && brightness > 0;
+  doc["forcedOff"]              = isDisplayForcedOff();
+  doc["mode"]                   = modeName;
+  doc["forcedClock"]            = httpForceClock;
+  doc["daytime_brightness"]     = (brightness * 100) / 255;
+  doc["night_brightness"]       = (dpSettings.nightBrightness * 100) / 255;
+  doc["screensaver_brightness"] = (dpSettings.screensaverBrightness * 100) / 255;
+  doc["pongClock"]              = dispSettings.pongClock;
+  doc["orbit"]                  = isOrbitEnabled();
+  doc["anyOnline"]              = anyOnline;
+
+  String json;
+  serializeJson(doc, json);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+}
+
+static void handleApiReboot() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\"success\":true,\"message\":\"Rebooting\"}");
+  scheduleRestart(500);
 }
 
 // Clean reboot (preserves NVS). Wired to the Danger Zone "Reboot" button.
@@ -1564,7 +1697,20 @@ void initWebServer() {
   server.on("/apply", HTTP_POST, handleApply);
   server.on("/brightness", HTTP_GET, handleBrightnessPreview);
   server.on("/status", HTTP_GET, handleStatus);
-  server.on("/api/timezones", HTTP_GET, handleTimezones);
+  server.on("/api/timezones",          HTTP_GET, handleTimezones);
+  server.on("/api/status",             HTTP_GET, handleApiStatus);
+  server.on("/api/display/on",         HTTP_GET, handleApiDisplayOn);
+  server.on("/api/display/off",        HTTP_GET, handleApiDisplayOff);
+  server.on("/api/display/brightness/day",        HTTP_GET, handleApiSetDayBrightness);
+  server.on("/api/display/brightness/night",      HTTP_GET, handleApiSetNightBrightness);
+  server.on("/api/display/brightness/screensaver",HTTP_GET, handleApiSetScreensaverBrightness);
+  server.on("/api/display/orbit/on",   HTTP_GET, handleApiOrbitOn);
+  server.on("/api/display/orbit/off",  HTTP_GET, handleApiOrbitOff);
+  server.on("/api/clock/pong/on",      HTTP_GET, handleApiPongOn);
+  server.on("/api/clock/pong/off",     HTTP_GET, handleApiPongOff);
+  server.on("/api/mode/clock",         HTTP_GET, handleApiModeClock);
+  server.on("/api/mode/auto",          HTTP_GET, handleApiModeAuto);
+  server.on("/api/reboot",             HTTP_GET, handleApiReboot);
   server.on("/reset", HTTP_GET, handleReset);
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);

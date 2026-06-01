@@ -1,6 +1,7 @@
 #ifndef DISPLAY_UI_H
 #define DISPLAY_UI_H
 
+#include <stdint.h>
 #include <LovyanGFX.hpp>
 
 // Forward-declare the panel type so callers can use the pointer without
@@ -56,5 +57,15 @@ void applyDisplaySettings();  // re-apply rotation, bg, force redraw
 void triggerDisplayTransition(); // start printer-name overlay on rotation
 void checkNightMode();        // apply scheduled brightness dimming
 uint8_t getEffectiveBrightness(); // current brightness (night or normal)
+
+// Runtime display control (HTTP API) — not persisted to flash
+void setDisplayForcedOff(bool off);
+bool isDisplayForcedOff();
+void setDisplayBrightnessPercent(uint8_t percent);
+
+// Pixel orbit — slow coordinate shift to spread OLED wear
+void checkOrbit();
+void setOrbitEnabled(bool en);
+bool isOrbitEnabled();
 
 #endif // DISPLAY_UI_H
