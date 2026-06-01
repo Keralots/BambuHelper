@@ -580,8 +580,8 @@ lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
 
 // Pixel orbit state — declared here so flushFrame() and initDisplay() can reach them.
-static const int8_t ORBIT_PX[] = {0, 1, 2, 2, 2, 1, 0, 0, 1};
-static const int8_t ORBIT_PY[] = {0, 0, 0, 1, 2, 2, 2, 1, 1};
+static const int8_t ORBIT_PX[] = {0, 5, 10, 10, 10, 5, 0, 0, 5};
+static const int8_t ORBIT_PY[] = {0, 0, 0, 5, 10, 10, 10, 5, 5};
 static uint8_t  orbitStep    = 0;
 static int8_t   orbitX       = 0;
 static int8_t   orbitY       = 0;
@@ -3812,14 +3812,20 @@ void setOrbitEnabled(bool en) {
 }
 
 void checkOrbit() {
-  // Orbit is meaningless when display is off or already animated
   if (!orbitEnabled) return;
-  if (currentScreen == SCREEN_OFF || currentScreen == SCREEN_SPLASH ||
-      currentScreen == SCREEN_AP_MODE || currentScreen == SCREEN_CONNECTING_WIFI ||
-      currentScreen == SCREEN_CONNECTING_MQTT || currentScreen == SCREEN_OTA_UPDATE ||
-      currentScreen == SCREEN_WIFI_CONNECTED) return;
-  // Clock with pong is already animated; static clock benefits from orbit
-  if (currentScreen == SCREEN_CLOCK && dispSettings.pongClock) return;
+
+  // Only orbit during the static clock screensaver (pong already moves on its own)
+  bool shouldOrbit = (currentScreen == SCREEN_CLOCK && !dispSettings.pongClock);
+
+  if (!shouldOrbit) {
+    // Snap back to centre when leaving clock screensaver
+    if (orbitX != 0 || orbitY != 0) {
+      orbitStep = 0; orbitX = 0; orbitY = 0;
+      forceRedraw = true;
+      lastDisplayUpdate = 0;
+    }
+    return;
+  }
 
   unsigned long now = millis();
   if (now - lastOrbitMs < ORBIT_INTERVAL_MS) return;
@@ -3828,8 +3834,6 @@ void checkOrbit() {
   orbitStep = (orbitStep + 1) % 9;
   orbitX = ORBIT_PX[orbitStep];
   orbitY = ORBIT_PY[orbitStep];
-  // flushFrame() will push the sprite at the new (orbitX, orbitY) offset;
-  // a full redraw ensures no stale content from the previous position bleeds through.
   forceRedraw = true;
   lastDisplayUpdate = 0;
 }
