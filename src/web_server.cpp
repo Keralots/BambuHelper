@@ -17,6 +17,8 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include "esp_ota_ops.h"
+#include "wireguard_config.h"
+#include "wireguard_manager.h"
 #ifdef ENABLE_OTA_AUTO
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
@@ -3787,7 +3789,7 @@ static void handleSaveWireguard() {
   }
 
   // Try to parse and validate the config
-  if (!parseWireguardConfig(config.c_str())) {
+  if (!parseWireguardConfig(config.c_str(), wireguardConfig)) {
     server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"Invalid Wireguard configuration format\"}");
     return;
   }
