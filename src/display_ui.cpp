@@ -14,8 +14,8 @@
 #include "battery.h"
 #include <WiFi.h>
 #include <time.h>
-#if defined(BOARD_IS_SENSECAP)
-#include <Wire.h>     // PCA9535PW I2C IO expander
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350)
+#include <Wire.h>     // SenseCAP: PCA9535PW IO expander / ws_lcd_350: TCA9554 LCD reset
 #endif
 #include <new>   // placement new for CYD panel variant selection
 
@@ -340,6 +340,58 @@ public:
   }
 };
 static LGFX_WS154 _tft_instance;
+
+#elif defined(BOARD_IS_WS350)
+// --- Waveshare ESP32-S3-Touch-LCD-3.5 (3.5" ST7796 320x480 IPS) -------------
+// ST7796 over plain 4-wire SPI -> native LovyanGFX Panel_ST7796 (no Arduino_GFX
+// wrapper, unlike jc3248w535's AXS15231B QSPI). Two board quirks:
+//   - LCD reset is NOT on a GPIO; it hangs off the TCA9554 I2C IO expander
+//     (P1). So pin_rst = -1 here, and initDisplay() pulses the expander before
+//     init() (see the BOARD_IS_WS350 block there).
+//   - CS is hardwired on the board (the Waveshare demo uses LCD_CS = -1), so
+//     pin_cs = -1.
+// invert = true: the panel is IPS and the demo inits ST7796 with IPS=true,
+// which sends INVON (0x21). LovyanGFX sends the same when cfg.invert is set.
+// (UNTESTED on hardware - flip if colors come out inverted.)
+class LGFX_WS350 : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7796  _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_WS350() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;   // conservative; demo drives ST7796 at SPI default
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 5;
+      cfg.pin_mosi   = 1;
+      cfg.pin_miso   = 2;
+      cfg.pin_dc     = 3;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = -1;   // hardwired on-board (demo uses LCD_CS=-1)
+      cfg.pin_rst  = -1;   // reset is on the TCA9554 expander - see initDisplay()
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 320;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 320;
+      cfg.panel_height  = 480;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      cfg.invert        = true;   // IPS panel (demo: ST7796 IPS=true -> INVON)
+      cfg.rgb_order     = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_WS350 _tft_instance;
 
 #elif defined(BOARD_IS_JC3248W535)
 // --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
@@ -748,6 +800,36 @@ static inline bool landBottomBarFullWidth(uint8_t) { return true; }
 // ---------------------------------------------------------------------------
 void initDisplay() {
 
+#if defined(BOARD_IS_WS350)
+  // The ST7796 reset line is not on a GPIO - it is driven by the TCA9554 I2C
+  // IO expander (@0x20, expander P1). Bring up the shared I2C bus (also used
+  // by the FT6336 touch controller) and pulse reset before tft.init(), exactly
+  // as the Waveshare demo's lcd_reset() does. The panel class sets pin_rst=-1
+  // so LovyanGFX never tries to toggle a (nonexistent) reset GPIO itself.
+  {
+    const uint8_t  TCA_ADDR    = 0x20;
+    const uint8_t  TCA_RST_BIT = 1;       // expander P1 = LCD reset
+    const uint8_t  TCA_REG_OUT = 0x01;    // TCA9554 Output Port register
+    const uint8_t  TCA_REG_CFG = 0x03;    // TCA9554 Configuration register (1=in, 0=out)
+    Wire.begin(8 /*SDA*/, 7 /*SCL*/);
+    Wire.setClock(400000);
+    auto tcaWrite = [&](uint8_t reg, uint8_t val) {
+      Wire.beginTransmission(TCA_ADDR);
+      Wire.write(reg);
+      Wire.write(val);
+      Wire.endTransmission();
+    };
+    // Drive only P1 as an output; leave every other expander pin as an input
+    // (high-Z), matching the demo which only touches P1.
+    tcaWrite(TCA_REG_CFG, (uint8_t)~(1 << TCA_RST_BIT));
+    tcaWrite(TCA_REG_OUT, (1 << TCA_RST_BIT));   // high
+    delay(10);
+    tcaWrite(TCA_REG_OUT, 0);                    // low
+    delay(10);
+    tcaWrite(TCA_REG_OUT, (1 << TCA_RST_BIT));   // high
+    delay(200);                                  // ST7796 settle after reset
+  }
+#endif
 #if defined(BOARD_IS_SENSECAP)
   // Initialize PCA9535PW I2C IO expander before display init.
   // The SenseCAP Indicator routes display CS and RESET through this expander

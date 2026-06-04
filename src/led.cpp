@@ -104,6 +104,15 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_WS350)
+  // Waveshare ESP32-S3-Touch-LCD-3.5 (ST7796 SPI + FT6336/TCA9554 I2C)
+  if (pin == 1 || pin == 2 || pin == 3 || pin == 5) return false;                  // display SPI (MOSI/MISO/DC/SCLK)
+  if (pin == 6) return false;                                                      // backlight
+  if (pin == 7 || pin == 8) return false;                                          // I2C (FT6336 touch + TCA9554 expander)
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_C3)
   // LOLIN C3 mini
   if (pin == 6 || pin == 7 || pin == 10 || pin == 20 || pin == 21) return false;   // display SPI

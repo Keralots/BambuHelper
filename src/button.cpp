@@ -60,7 +60,12 @@
     value = Wire.read();
     return true;
   }
-#elif defined(USE_FT5X06)
+#elif defined(USE_FT5X06) || defined(USE_FT6336)
+  // FocalTech capacitive touch family. FT6336 (ws_lcd_350) and FT5X06
+  // (SenseCAP) share the same register map: addr 0x38, TD_STATUS at 0x02
+  // (low nibble = number of active touch points). BambuHelper only needs the
+  // boolean "finger down", so the same code drives both - they differ only in
+  // which I2C pins the bus is brought up on (handled in initButton below).
   #include <Wire.h>
   #ifndef TOUCH_SLAVE_ADDRESS
     #define TOUCH_SLAVE_ADDRESS 0x38
@@ -150,6 +155,10 @@ void sanitizeButtonPin() {
   if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
   if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
   if (buttonPin == AXS_TOUCH_INT) { clash("AXS touch INT"); return; }
+#endif
+#if defined(USE_FT6336)
+  if (buttonPin == FT6336_SDA) { clash("FT6336 touch SDA"); return; }
+  if (buttonPin == FT6336_SCL) { clash("FT6336 touch SCL"); return; }
 #endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
@@ -257,26 +266,33 @@ void initButton() {
     }
     return;
   }
-#elif defined(USE_FT5X06)
+#elif defined(USE_FT5X06) || defined(USE_FT6336)
   if (buttonType == BTN_TOUCHSCREEN) {
-    // FT5X06 uses same I2C bus as PCA9535PW IO expander (SDA=39, SCL=40)
-    // Touch RST is handled via PCA9535 pin 7 during display init
+#if defined(USE_FT6336)
+    // ws_lcd_350: FT6336 shares the I2C bus that also carries the TCA9554
+    // LCD-reset expander (SDA=8, SCL=7). Reset is handled by the board POR;
+    // the retry-at-runtime path covers any startup delay.
+    Wire.begin(FT6336_SDA, FT6336_SCL);
+#else
+    // SenseCAP: FT5X06 shares the PCA9535PW IO-expander I2C bus (SDA=39,
+    // SCL=40). Touch RST is pulsed via PCA9535 pin 7 during display init.
     Wire.begin(39, 40);
+#endif
     Wire.setClock(400000);
     ft5x06BusReady = true;
     delay(50);  // Wait for touch controller to be ready after RST release
     if (ft5x06Probe()) {
       uint8_t touchPoints = 0;
       if (ft5x06ReadReg(FT5X06_TOUCH_POINTS_REG, touchPoints)) {
-        Serial.printf("FT5X06 touch initialized (I2C addr 0x%02X, touchPoints=%d)\n",
+        Serial.printf("FocalTech touch initialized (I2C addr 0x%02X, touchPoints=%d)\n",
                       TOUCH_SLAVE_ADDRESS, touchPoints);
         ft5x06Seen = true;
       } else {
-        Serial.printf("FT5X06 detected on I2C addr 0x%02X, but register reads failed\n",
+        Serial.printf("FocalTech touch detected on I2C addr 0x%02X, but register reads failed\n",
                       TOUCH_SLAVE_ADDRESS);
       }
     } else {
-      Serial.printf("FT5X06 touch did not answer at init (addr 0x%02X); will keep retrying at runtime\n",
+      Serial.printf("FocalTech touch did not answer at init (addr 0x%02X); will keep retrying at runtime\n",
                     TOUCH_SLAVE_ADDRESS);
     }
     return;
@@ -346,15 +362,17 @@ bool wasButtonPressed() {
     // is "finger present". Checking the full byte is wrong because a
     // lifted finger can still report a non-zero ID.
     raw = ((fingerState & 0x0F) == CST328_FINGER_DOWN_STATE);
-#elif defined(USE_FT5X06)
+#elif defined(USE_FT5X06) || defined(USE_FT6336)
     if (!ft5x06BusReady) return false;
     uint8_t touchPoints = 0;
     if (!ft5x06ReadReg(FT5X06_TOUCH_POINTS_REG, touchPoints)) return false;
     if (!ft5x06Seen) {
-      Serial.printf("FT5X06 touch became responsive at runtime (addr 0x%02X)\n", TOUCH_SLAVE_ADDRESS);
+      Serial.printf("FocalTech touch became responsive at runtime (addr 0x%02X)\n", TOUCH_SLAVE_ADDRESS);
       ft5x06Seen = true;
     }
-    raw = (touchPoints > 0);
+    // TD_STATUS low nibble = active touch points; mask off the reserved high
+    // bits so a stray high bit can't be misread as a permanent touch.
+    raw = ((touchPoints & 0x0F) > 0);
 #elif defined(USE_AXS_TOUCH)
     if (!axsTouchBusReady) return false;
     // The AXS15231B pulses INT low→high→low while a finger is held (the
