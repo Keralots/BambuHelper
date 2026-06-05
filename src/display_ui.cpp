@@ -935,6 +935,15 @@ void triggerDisplayTransition() {
   tft.fillScreen(dispSettings.bgColor);
   markFrameDirty();
   forceRedraw = true;
+  // If the clock is on screen (e.g. a non-displayed printer hit its FINISH edge
+  // while idle), the fillScreen above wiped it but the clock keeps its own digit
+  // cache and ignores forceRedraw - so drawClock() would only repaint the digits
+  // that changed since the stale cache, leaving a single digit on a blank screen
+  // until the next full clear. Reset the active clock cache so it repaints whole.
+  if (currentScreen == SCREEN_CLOCK) {
+    if (dispSettings.pongClock) resetPongClock();
+    else resetClock();
+  }
 }
 
 void setScreenState(ScreenState state) {
