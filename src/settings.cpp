@@ -127,6 +127,24 @@ void rgb565ToHtml(uint16_t c, char* buf) {
   snprintf(buf, 8, "#%02X%02X%02X", r, g, b);
 }
 
+void sanitizeHostname(const char* in, char* out, size_t outSize) {
+  if (outSize == 0) return;
+  size_t n = 0;
+  for (const char* p = in; *p && n < outSize - 1; p++) {
+    char c = *p;
+    if (c >= 'A' && c <= 'Z') c += 32;  // tolower
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') out[n++] = c;
+  }
+  out[n] = '\0';
+  // Strip leading/trailing hyphens (invalid as DNS label boundaries).
+  size_t start = 0;
+  while (out[start] == '-') start++;
+  if (start > 0) memmove(out, out + start, strlen(out + start) + 1);
+  size_t len = strlen(out);
+  while (len > 0 && out[len - 1] == '-') out[--len] = '\0';
+  if (out[0] == '\0') strlcpy(out, "bambuhelper", outSize);
+}
+
 // ---------------------------------------------------------------------------
 //  Default display settings (matches original config.h colors)
 // ---------------------------------------------------------------------------
@@ -149,6 +167,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.clockTimeSize = 0;        // Auto
   ds.hideClockDate = false;
   ds.showClockInfo = false;
+  ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.showBatteryIndicator = true;
 
   // Progress: green arc, green label, white value
@@ -331,6 +350,7 @@ void loadSettings() {
   }
   dispSettings.hideClockDate = prefs.getBool("dsp_clkhd", def.hideClockDate);
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
+  dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
@@ -360,6 +380,11 @@ void loadSettings() {
   strlcpy(netSettings.subnet, prefs.getString("net_sn", "255.255.255.0").c_str(), sizeof(netSettings.subnet));
   strlcpy(netSettings.dns, prefs.getString("net_dns", "").c_str(), sizeof(netSettings.dns));
   netSettings.showIPAtStartup = prefs.getBool("net_showip", true);
+  netSettings.mdnsEnabled = prefs.getBool("net_mdns", false);
+  // Sanitize on load too: a bad value from an older build or corrupted NVS must
+  // never reach %MDNS_HOST% raw.
+  sanitizeHostname(prefs.getString("net_host", "bambuhelper").c_str(),
+                   netSettings.hostname, sizeof(netSettings.hostname));
 
   // Timezone: load POSIX string, migrating from legacy gmtOffsetMin if needed.
   // All reads and any migration writes happen in the same open transaction to
@@ -569,6 +594,7 @@ void saveSettings() {
   prefs.putUChar("dsp_clkts", dispSettings.clockTimeSize);
   prefs.putBool("dsp_clkhd", dispSettings.hideClockDate);
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
+  prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
@@ -589,6 +615,8 @@ void saveSettings() {
   prefs.putString("net_sn", netSettings.subnet);
   prefs.putString("net_dns", netSettings.dns);
   prefs.putBool("net_showip", netSettings.showIPAtStartup);
+  prefs.putBool("net_mdns", netSettings.mdnsEnabled);
+  prefs.putString("net_host", netSettings.hostname);
   prefs.putString("net_tzstr", netSettings.timezoneStr);
   prefs.putUChar("net_tzidx", netSettings.timezoneIndex);
   prefs.putBool("net_24h", netSettings.use24h);

@@ -463,6 +463,8 @@ Perform an antenna mod by soldering two individual goldpins to the antenna pads,
 
 ![wiring](img/antenamod.png)
 
+> **Check your external antenna orientation first.** On boards with a detachable IPEX/U.FL antenna (e.g. ESP32-C3), the antenna is often mounted the wrong way around. The white mark on the antenna is the input - simply rotating it to the correct orientation can fix poor WiFi reception, often better than soldering wires to the pads. See [issue #106](https://github.com/Keralots/BambuHelper/issues/106) - it may help as well.
+
 ### Printer shows "Connecting" but never connects
 
 - **LAN Direct:** Make sure the printer and ESP32 are on the same network. Check that LAN mode is enabled on the printer and the access code is correct.

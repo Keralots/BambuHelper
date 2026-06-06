@@ -4,6 +4,7 @@
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
 #include "bambu_cloud.h"
+#include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
 #include "config.h"
@@ -140,6 +141,9 @@ static void handleRoot() {
 
 // Save printer settings only (no restart — reinit MQTT)
 static void handleSavePrinter() {
+  // Free any active SSDP scan sockets before we reinit networking below.
+  ssdpStopScan();
+
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
@@ -268,6 +272,14 @@ static void handleSaveWifi() {
   if (server.hasArg("has_showip"))  // full page sends this; AP page doesn't
     netSettings.showIPAtStartup = server.hasArg("showip");
 
+  if (server.hasArg("has_mdns")) {
+    netSettings.mdnsEnabled = server.hasArg("mdns_en");
+    // Don't trust the client - sanitize server-side too.
+    if (server.hasArg("mdns_host"))
+      sanitizeHostname(server.arg("mdns_host").c_str(), netSettings.hostname,
+                       sizeof(netSettings.hostname));
+  }
+
   saveSettings();
 
   server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -316,6 +328,14 @@ static void handleStatus() {
   doc["connected"] = st.connected;
   doc["configured"] = isPrinterConfigured(slot);
   doc["state"] = st.gcodeState;
+  // "Connected but no data": broker accepted us but zero messages have arrived
+  // 20s after connecting. Means a wrong serial (topic never matches) or the
+  // printer is powered off - both look identical from the broker's side.
+  {
+    const MqttDiag& d = getMqttDiag(slot);
+    doc["no_data"] = st.connected && d.messagesRx == 0 && d.connectTime > 0 &&
+                     (millis() - d.connectTime) > 20000;
+  }
   doc["progress"] = st.progress;
   doc["nozzle"] = (int)st.nozzleTemp;
   doc["nozzle_t"] = (int)st.nozzleTarget;
@@ -462,6 +482,7 @@ static void handleToggleSetting() {
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
+  else if (key == "amst")    dispSettings.amsTrayTypes = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
 #ifdef BOARD_LOW_RAM
@@ -477,6 +498,7 @@ static void handleToggleSetting() {
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
+  if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
     if (!on) {
@@ -504,6 +526,32 @@ static void handleToggleSetting() {
 static void handleCloudLogout() {
   clearCloudToken();
   server.send(200, "text/plain", "OK");
+}
+
+// Discover Bambu printers on the local network via SSDP so the user can pick the
+// exact serial (and IP) instead of typing it. POST starts a scan, GET polls.
+static void handleLanScan() {
+  if (server.method() == HTTP_POST) {
+    int opened = ssdpStartScan();
+    if (opened == 0) {
+      server.send(200, "application/json",
+                  "{\"status\":\"error\",\"msg\":\"Cannot scan: not on a Wi-Fi network, "
+                  "or the network blocks multicast.\"}");
+      return;
+    }
+    server.send(200, "application/json", "{\"status\":\"scanning\"}");
+    return;
+  }
+
+  // GET: report progress + whatever has been discovered so far.
+  String devices;
+  ssdpScanResultJson(devices);
+  String json = "{\"status\":\"";
+  json += ssdpScanActive() ? "scanning" : "done";
+  json += "\",\"devices\":";
+  json += devices;
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 // Get printer config for a specific slot (multi-printer tabs)
@@ -883,6 +931,7 @@ static void handleSettingsExport() {
   disp["clockTimeSize"] = dispSettings.clockTimeSize;
   disp["hideClockDate"] = dispSettings.hideClockDate;
   disp["showClockInfo"] = dispSettings.showClockInfo;
+  disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
   disp["animatedBar"] = dispSettings.animatedBar;
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
@@ -925,6 +974,8 @@ static void handleSettingsExport() {
   net["timezoneStr"] = netSettings.timezoneStr;
   net["use24h"] = netSettings.use24h;
   net["dateFormat"] = netSettings.dateFormat;
+  net["mdnsEnabled"] = netSettings.mdnsEnabled;
+  net["hostname"] = netSettings.hostname;
 
   // Rotation
   JsonObject rot = doc["rotation"].to<JsonObject>();
@@ -1128,6 +1179,7 @@ static void handleSettingsImportFinish() {
     }
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();
+    if (disp["amsTrayTypes"].is<bool>())  dispSettings.amsTrayTypes = disp["amsTrayTypes"].as<bool>();
     if (disp["animatedBar"].is<bool>())       dispSettings.animatedBar = disp["animatedBar"].as<bool>();
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
@@ -1185,6 +1237,8 @@ static void handleSettingsImportFinish() {
     }
     if (net["use24h"].is<bool>())             netSettings.use24h = net["use24h"].as<bool>();
     if (net["dateFormat"].is<uint8_t>())     netSettings.dateFormat = net["dateFormat"].as<uint8_t>();
+    if (net["mdnsEnabled"].is<bool>())        netSettings.mdnsEnabled = net["mdnsEnabled"].as<bool>();
+    if (net["hostname"].is<const char*>())    sanitizeHostname(net["hostname"], netSettings.hostname, sizeof(netSettings.hostname));
   }
 
   // Rotation
@@ -1571,6 +1625,8 @@ void initWebServer() {
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
+  server.on("/lan/scan", HTTP_POST, handleLanScan);
+  server.on("/lan/scan", HTTP_GET, handleLanScan);
   server.on("/settings/export", HTTP_GET, handleSettingsExport);
   server.on("/settings/import", HTTP_POST, handleSettingsImportFinish, handleSettingsImportUpload);
   server.on("/ota/upload", HTTP_POST, handleOtaFinish, handleOtaUpload);

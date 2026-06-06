@@ -5,6 +5,7 @@
 #include "improv_setup.h"
 #include <WiFi.h>
 #include <DNSServer.h>
+#include <ESPmDNS.h>
 
 static bool apMode = false;
 static DNSServer* dnsServer = nullptr;
@@ -40,6 +41,8 @@ static void stopAP() {
 }
 
 static void startAP() {
+  MDNS.end();  // tear down any responder bound to the now-dead STA interface
+
   // Build SSID from MAC
   uint32_t mac = (uint32_t)(ESP.getEfuseMac() & 0xFFFF);
   char ssidBuf[32];
@@ -104,6 +107,26 @@ static void applyStaticNetworkConfig() {
   }
 }
 
+// Start (or restart) the mDNS responder so the device is reachable at
+// <hostname>.local. No-op unless the user enabled it. Safe to call repeatedly:
+// MDNS.end() first lets us re-announce after a WiFi drop/reconnect, which the
+// ESP32 responder does not always recover on its own.
+static void startMDNS() {
+  if (!netSettings.mdnsEnabled || netSettings.hostname[0] == '\0') return;
+
+  // The web UI validates too, but never trust stored input.
+  char host[32];
+  sanitizeHostname(netSettings.hostname, host, sizeof(host));
+
+  MDNS.end();
+  if (MDNS.begin(host)) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.printf("mDNS started: http://%s.local\n", host);
+  } else {
+    Serial.println("mDNS start failed");
+  }
+}
+
 static void completeWiFiStartup() {
   Serial.printf("WiFi connected! IP: %s\n",
                 WiFi.localIP().toString().c_str());
@@ -116,6 +139,8 @@ static void completeWiFiStartup() {
   // Sync time via NTP with automatic DST
   configTzTime(netSettings.timezoneStr, "pool.ntp.org", "time.nist.gov");
   Serial.printf("NTP configured: %s\n", netSettings.timezoneStr);
+
+  startMDNS();
 
   // Show IP screen for 1.5 seconds if enabled
   if (netSettings.showIPAtStartup) {
@@ -260,6 +285,7 @@ void handleWiFi() {
         phase3StartTime = 0;
 
         configTzTime(netSettings.timezoneStr, "pool.ntp.org", "time.nist.gov");
+        startMDNS();
         setScreenState(SCREEN_WIFI_CONNECTED);
       } else {
         Serial.println("STA probe failed, staying in AP mode");
@@ -313,6 +339,7 @@ void handleWiFi() {
   } else {
     if (disconnectTime > 0) {
       Serial.println("WiFi reconnected!");
+      startMDNS();  // re-announce; responder may not survive a link drop
     }
     disconnectTime = 0;
     reconnectAttempts = 0;

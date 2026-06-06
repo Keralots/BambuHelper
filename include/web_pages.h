@@ -707,6 +707,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
           <div class="hint">Find it on the printer: Settings -&gt; Network -&gt; LAN Mode.</div>
         </div>
       </div>
+      <div class="field" style="margin-top:var(--sp-2)">
+        <button type="button" class="btn btn-ghost btn-sm" id="lan_scanBtn" onclick="scanLan('lan')">Scan local network</button>
+        <select id="lan_devsel" onchange="pickLanDevice('lan')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+        <div class="hint">Finds printers on the same Wi-Fi and fills serial + IP. Same subnet only.</div>
+      </div>
     </div>
 
     <div id="cloudFields" style="display:none;margin-top:var(--sp-3)">
@@ -756,7 +761,9 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="field">
           <label for="cl_serial">Printer serial number</label>
           <input type="text" id="cl_serial" class="mono" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
-          <div class="hint">Find it in Bambu Handy or on the printer's label.</div>
+          <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')" style="margin-top:var(--sp-2)">Scan local network</button>
+          <select id="cl_devsel" onchange="pickLanDevice('cloud')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+          <div class="hint">Must match exactly (UPPERCASE). Scan finds it if the printer is on the same Wi-Fi; otherwise use Bambu Handy, the printer label, or the Companion Tool. A wrong serial connects but shows no data.</div>
         </div>
         <div class="field">
           <label for="cl_pname">Printer name</label>
@@ -837,6 +844,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
     </label>
+%AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
   </div>
@@ -1254,6 +1262,15 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="showip" value="1" %SHOWIP%>
       <label for="showip">Show IP on startup (1.5 s)</label>
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="mdns_en" value="1" %MDNS_EN%>
+      <label for="mdns_en">Enable .local name (mDNS)</label>
+    </label>
+    <div class="field">
+      <label for="mdns_host">Hostname</label>
+      <input type="text" id="mdns_host" class="mono" value="%MDNS_HOST%" placeholder="bambuhelper" maxlength="31">
+      <div class="hint">Reach the device at <span class="mono">name.local</span> in a browser.</div>
+    </div>
     <dl class="kv" id="wifiInfo" style="margin-top:var(--sp-3)">
       <dt>Signal</dt><dd id="wifiRssi">-</dd>
       <dt>Uptime</dt><dd id="wifiUptime">-</dd>
@@ -1775,6 +1792,12 @@ function savePrinter(){
   var nameField = mode === 'cloud_all' ? document.getElementById('cl_pname') : document.getElementById('pname');
   var serialField = mode === 'cloud_all' ? document.getElementById('cl_serial') : document.getElementById('serial');
   var serial = serialField.value.trim().toUpperCase();
+  // Fallback: if the field is empty but a scan dropdown still has a selection,
+  // use it (covers the case where the field got cleared after picking).
+  if (serial.length === 0){
+    var dsel = document.getElementById(mode === 'cloud_all' ? 'cl_devsel' : 'lan_devsel');
+    if (dsel && dsel.value){ serial = dsel.value.trim().toUpperCase(); serialField.value = serial; }
+  }
   var token = document.getElementById('cl_token').value.trim();
   if (nameField && nameField.value.trim().length === 0) { showToast('Printer name is required'); return; }
   if (serial.length === 0) { showToast(mode === 'cloud_all' ? 'Cloud mode requires a printer serial number' : 'LAN mode requires a printer serial number'); return; }
@@ -1816,6 +1839,80 @@ function cloudLogout(){
   });
 }
 
+/* ============ SSDP local-network printer scan ============ */
+var lanScanRunId = 0;
+function scanLan(mode){
+  var btn = document.getElementById(mode === 'lan' ? 'lan_scanBtn' : 'cl_scanBtn');
+  var sel = document.getElementById(mode === 'lan' ? 'lan_devsel' : 'cl_devsel');
+  sel.innerHTML = ''; sel.style.display = 'none';
+  // Guard against results landing after the user switches tab/mode mid-scan.
+  var slotAtStart = currentSlot;
+  var modeAtStart = document.getElementById('connmode').value;
+  var myRun = ++lanScanRunId;
+  function stale(){
+    return myRun !== lanScanRunId || currentSlot !== slotAtStart ||
+           document.getElementById('connmode').value !== modeAtStart;
+  }
+  function restore(){ btn.disabled = false; btn.textContent = 'Scan local network'; }
+  btn.disabled = true; btn.textContent = 'Scanning...';
+  fetch('/lan/scan',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if (stale()){ restore(); return; }
+    if (d.status === 'error'){ showToast(d.msg || 'Scan failed'); restore(); return; }
+    var deadline = Date.now() + 13000;  // a hair past the device's 12s scan window
+    (function poll(){
+      if (stale()){ restore(); return; }
+      fetch('/lan/scan').then(function(r){return r.json();}).then(function(d){
+        if (stale()){ restore(); return; }
+        var devs = d.devices || [];
+        if (d.status === 'done' || Date.now() > deadline){
+          renderLanDevices(mode, sel, devs); restore();
+        } else {
+          setTimeout(poll, 1000);
+        }
+      }).catch(function(e){ showToast('Scan failed: network error'); restore(); console.warn('scanLan poll:', e); });
+    })();
+  }).catch(function(e){ showToast('Scan failed: network error'); restore(); console.warn('scanLan start:', e); });
+}
+
+function renderLanDevices(mode, sel, devs){
+  if (devs.length === 0){ showToast('No printers found on the LAN. Same Wi-Fi/subnet required; or type it manually.'); return; }
+  if (devs.length === 1){
+    fillLanDevice(mode, devs[0]);
+    showToast('Found ' + (devs[0].name || devs[0].serial) + (devs[0].model ? ' (' + devs[0].model + ')' : ''));
+    return;
+  }
+  var ph = document.createElement('option');
+  ph.value = ''; ph.textContent = 'Select a printer (' + devs.length + ' found)...';
+  sel.appendChild(ph);
+  devs.forEach(function(dev){
+    var o = document.createElement('option');
+    o.value = (dev.serial || '').toUpperCase();
+    o.setAttribute('data-ip', dev.ip || '');
+    o.textContent = (dev.name || dev.serial) + (dev.model ? ' (' + dev.model + ')' : '') +
+                    ' - ' + o.value + (dev.ip ? ' @ ' + dev.ip : '');
+    sel.appendChild(o);
+  });
+  sel.style.display = '';
+  showToast(devs.length + ' printers found - pick one');
+}
+
+function fillLanDevice(mode, dev){
+  var serial = (dev.serial || '').toUpperCase();
+  if (mode === 'lan'){
+    document.getElementById('serial').value = serial;
+    if (dev.ip) document.getElementById('ip').value = dev.ip;
+  } else {
+    document.getElementById('cl_serial').value = serial;
+  }
+}
+
+function pickLanDevice(mode){
+  var sel = document.getElementById(mode === 'lan' ? 'lan_devsel' : 'cl_devsel');
+  if (!sel.value) return;
+  var opt = sel.options[sel.selectedIndex];
+  fillLanDevice(mode, { serial: sel.value, ip: opt.getAttribute('data-ip') });
+}
+
 /* ============ Save WiFi ============ */
 function saveWifi(){
   var ssid = document.getElementById('ssid').value.trim();
@@ -1842,6 +1939,12 @@ function saveWifi(){
   p.append('net_dns', dns);
   p.append('has_showip', '1');
   if (document.getElementById('showip').checked) p.append('showip', '1');
+  var host = document.getElementById('mdns_host').value.trim().toLowerCase()
+               .replace(/[^a-z0-9-]/g,'').replace(/^-+|-+$/g,'');
+  if (!host) host = 'bambuhelper';
+  p.append('has_mdns', '1');
+  p.append('mdns_host', host);
+  if (document.getElementById('mdns_en').checked) p.append('mdns_en', '1');
   fetch('/save/wifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(readJsonResponse)
     .then(function(d){
@@ -2242,6 +2345,7 @@ function refreshLiveStats(){
     var h = '';
     if (d.display_off) h += '<div class="stat-row"><span>Display:</span><span class="stat-val" style="color:var(--danger)">Off</span></div>';
     if (d.connected){
+      if (d.no_data) h += '<div style="margin-bottom:var(--sp-2);padding:8px 10px;border:1px solid var(--danger);border-radius:6px;background:rgba(220,53,69,0.08);color:var(--danger);font-size:12.5px;line-height:1.5">Connected to Bambu, but no data received from the printer. Check: (1) the serial number is correct and UPPERCASE, (2) the printer is powered on.</div>';
       h += '<div class="stat-row"><span>State:</span><span class="stat-val">'+esc(d.state)+'</span></div>';
       h += '<div class="stat-row"><span>Nozzle:</span><span class="stat-val">'+d.nozzle+'/'+d.nozzle_t+'&deg;C</span></div>';
       h += '<div class="stat-row"><span>Bed:</span><span class="stat-val">'+d.bed+'/'+d.bed_t+'&deg;C</span></div>';

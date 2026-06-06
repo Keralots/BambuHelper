@@ -1157,6 +1157,7 @@ static void reconnectConn(MqttConn& c) {
     bool quickDisconnect = c.connectTime > 0 &&
                            (millis() - c.connectTime < 30000);
     c.connectTime = millis();
+    c.diag.connectTime = c.connectTime;
     c.initialPushallSent = false;
     c.gotDataSinceConnect = false;
     if (!quickDisconnect) {
@@ -1228,6 +1229,7 @@ static void handleConn(MqttConn& c) {
       return;  // still within grace period, skip reconnect
     }
     s.connected = false;
+    c.diag.connectTime = 0;
     reconnectConn(c);
   } else {
     c.disconnectSince = 0;  // reset grace timer on healthy connection

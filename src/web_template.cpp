@@ -96,6 +96,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "NET_SN") == 0)     { out = netSettings.subnet; return true; }
   if (strcmp(name, "NET_DNS") == 0)    { out = netSettings.dns; return true; }
   if (strcmp(name, "SHOWIP") == 0)     { out = netSettings.showIPAtStartup ? "checked" : ""; return true; }
+  if (strcmp(name, "MDNS_EN") == 0)    { out = netSettings.mdnsEnabled ? "checked" : ""; return true; }
+  if (strcmp(name, "MDNS_HOST") == 0)  { out = netSettings.hostname; return true; }
 
   // --- Clock ---
   if (strcmp(name, "USE24H") == 0)     { out = netSettings.use24h ? "checked" : ""; return true; }
@@ -183,6 +185,24 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "SHTIRE") == 0) { out = dispSettings.showTimeRemaining ? "checked" : ""; return true; }
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
+  if (strcmp(name, "AMST_ROW") == 0) {
+    // Per-tray filament-type labels only render in the enhanced portrait AMS
+    // strip, and only 320x480 (Guition / ws_lcd_350) drives the 3-AMS case
+    // where the labels get too cramped to read. On 240x320 the 3-AMS view
+    // never enters the enhanced layout, so the toggle would be a no-op there.
+    // Gate the row to the layouts where it actually does something.
+#if defined(DISPLAY_320x480)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"amst\" value=\"1\" ";
+    out += dispSettings.amsTrayTypes ? "checked" : "";
+    out += " onchange=\"toggleSetting('amst',this.checked)\">";
+    out += "<label for=\"amst\">Show filament type under AMS bars</label>";
+    out += "</label>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "INVCOL_ROW") == 0) {
 #if defined(DISPLAY_240x320)
     out  = "<label class=\"check-row\">";

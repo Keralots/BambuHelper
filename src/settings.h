@@ -80,6 +80,7 @@ struct DisplaySettings {
   uint8_t  clockTimeSize;  // 0=Auto, 1=Normal(1.0x), 2=Medium(1.5x), 3=Large(2.0x). Auto = Large on >=480, Medium on >=320, else Normal.
   bool     hideClockDate;  // minimalist mode: time only, no date line
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
+  bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
   GaugeColors progress;
   GaugeColors nozzle;
@@ -105,6 +106,8 @@ struct NetworkSettings {
   char timezoneStr[64];   // POSIX TZ string (e.g. "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00")
   bool use24h;            // true = 24h format (default), false = 12h AM/PM
   uint8_t dateFormat;     // 0=DD.MM.YYYY, 1=DD-MM-YYYY, 2=MM/DD/YYYY, 3=YYYY-MM-DD, 4=DD MMM YYYY, 5=MMM DD, YYYY
+  bool mdnsEnabled;       // advertise <hostname>.local over mDNS (default false)
+  char hostname[32];      // mDNS/host label, sanitized [a-z0-9-], default "bambuhelper"
 };
 
 // Display power settings
@@ -198,6 +201,11 @@ extern bool dualPrinterUnsafe;
 
 void loadSettings();
 void saveSettings();
+
+// Normalize a string into a valid mDNS/DNS label: lowercase, keep only
+// [a-z0-9-], strip leading/trailing hyphens. Falls back to "bambuhelper" if
+// nothing usable remains. Used by every path that writes netSettings.hostname.
+void sanitizeHostname(const char* in, char* out, size_t outSize);
 void savePrinterConfig(uint8_t index);
 void saveRotationSettings();
 void saveButtonSettings();

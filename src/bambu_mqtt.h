@@ -19,6 +19,7 @@ struct MqttDiag {
   uint16_t recoveryFinishHot;// recovery: FINISH state with armed cold->hot target transition
   uint16_t recoveryFailed;   // recovery: stuck in FAILED on cloud
   bool     tcpOk;           // last TCP reachability result
+  unsigned long connectTime;   // millis() of current MQTT connection (0 if down)
   unsigned long lastAttemptMs; // millis() of last attempt
   unsigned long connectDurMs;  // how long last connect() took
   unsigned long lastPushallMs; // millis() of last pushall request
