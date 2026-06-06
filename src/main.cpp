@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "wifi_manager.h"
 #include "web_server.h"
+#include "ssdp_discovery.h"
 #include "bambu_mqtt.h"
 #include "config.h"
 #include "bambu_state.h"
@@ -733,6 +734,7 @@ void loop() {
 
   handleWiFi();
   handleWebServer();
+  ssdpTick();  // closes SSDP scan sockets when the window elapses (no-op otherwise)
   handleBoardPowerOff();
   handleWakeButton();
 

@@ -707,6 +707,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
           <div class="hint">Find it on the printer: Settings -&gt; Network -&gt; LAN Mode.</div>
         </div>
       </div>
+      <div class="field" style="margin-top:var(--sp-2)">
+        <button type="button" class="btn btn-ghost btn-sm" id="lan_scanBtn" onclick="scanLan('lan')">Scan local network</button>
+        <select id="lan_devsel" onchange="pickLanDevice('lan')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+        <div class="hint">Finds printers on the same Wi-Fi and fills serial + IP. Same subnet only.</div>
+      </div>
     </div>
 
     <div id="cloudFields" style="display:none;margin-top:var(--sp-3)">
@@ -756,7 +761,9 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="field">
           <label for="cl_serial">Printer serial number</label>
           <input type="text" id="cl_serial" class="mono" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
-          <div class="hint">Must match exactly (UPPERCASE). Find it in Bambu Handy, on the printer's label, or with the Companion Tool. A wrong serial connects but shows no data.</div>
+          <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')" style="margin-top:var(--sp-2)">Scan local network</button>
+          <select id="cl_devsel" onchange="pickLanDevice('cloud')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+          <div class="hint">Must match exactly (UPPERCASE). Scan finds it if the printer is on the same Wi-Fi; otherwise use Bambu Handy, the printer label, or the Companion Tool. A wrong serial connects but shows no data.</div>
         </div>
         <div class="field">
           <label for="cl_pname">Printer name</label>
@@ -1785,6 +1792,12 @@ function savePrinter(){
   var nameField = mode === 'cloud_all' ? document.getElementById('cl_pname') : document.getElementById('pname');
   var serialField = mode === 'cloud_all' ? document.getElementById('cl_serial') : document.getElementById('serial');
   var serial = serialField.value.trim().toUpperCase();
+  // Fallback: if the field is empty but a scan dropdown still has a selection,
+  // use it (covers the case where the field got cleared after picking).
+  if (serial.length === 0){
+    var dsel = document.getElementById(mode === 'cloud_all' ? 'cl_devsel' : 'lan_devsel');
+    if (dsel && dsel.value){ serial = dsel.value.trim().toUpperCase(); serialField.value = serial; }
+  }
   var token = document.getElementById('cl_token').value.trim();
   if (nameField && nameField.value.trim().length === 0) { showToast('Printer name is required'); return; }
   if (serial.length === 0) { showToast(mode === 'cloud_all' ? 'Cloud mode requires a printer serial number' : 'LAN mode requires a printer serial number'); return; }
@@ -1824,6 +1837,80 @@ function cloudLogout(){
     cs.style.color = 'var(--text-mid)'; cs.textContent = 'No token set';
     document.getElementById('cl_token').value = '';
   });
+}
+
+/* ============ SSDP local-network printer scan ============ */
+var lanScanRunId = 0;
+function scanLan(mode){
+  var btn = document.getElementById(mode === 'lan' ? 'lan_scanBtn' : 'cl_scanBtn');
+  var sel = document.getElementById(mode === 'lan' ? 'lan_devsel' : 'cl_devsel');
+  sel.innerHTML = ''; sel.style.display = 'none';
+  // Guard against results landing after the user switches tab/mode mid-scan.
+  var slotAtStart = currentSlot;
+  var modeAtStart = document.getElementById('connmode').value;
+  var myRun = ++lanScanRunId;
+  function stale(){
+    return myRun !== lanScanRunId || currentSlot !== slotAtStart ||
+           document.getElementById('connmode').value !== modeAtStart;
+  }
+  function restore(){ btn.disabled = false; btn.textContent = 'Scan local network'; }
+  btn.disabled = true; btn.textContent = 'Scanning...';
+  fetch('/lan/scan',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if (stale()){ restore(); return; }
+    if (d.status === 'error'){ showToast(d.msg || 'Scan failed'); restore(); return; }
+    var deadline = Date.now() + 13000;  // a hair past the device's 12s scan window
+    (function poll(){
+      if (stale()){ restore(); return; }
+      fetch('/lan/scan').then(function(r){return r.json();}).then(function(d){
+        if (stale()){ restore(); return; }
+        var devs = d.devices || [];
+        if (d.status === 'done' || Date.now() > deadline){
+          renderLanDevices(mode, sel, devs); restore();
+        } else {
+          setTimeout(poll, 1000);
+        }
+      }).catch(function(e){ showToast('Scan failed: network error'); restore(); console.warn('scanLan poll:', e); });
+    })();
+  }).catch(function(e){ showToast('Scan failed: network error'); restore(); console.warn('scanLan start:', e); });
+}
+
+function renderLanDevices(mode, sel, devs){
+  if (devs.length === 0){ showToast('No printers found on the LAN. Same Wi-Fi/subnet required; or type it manually.'); return; }
+  if (devs.length === 1){
+    fillLanDevice(mode, devs[0]);
+    showToast('Found ' + (devs[0].name || devs[0].serial) + (devs[0].model ? ' (' + devs[0].model + ')' : ''));
+    return;
+  }
+  var ph = document.createElement('option');
+  ph.value = ''; ph.textContent = 'Select a printer (' + devs.length + ' found)...';
+  sel.appendChild(ph);
+  devs.forEach(function(dev){
+    var o = document.createElement('option');
+    o.value = (dev.serial || '').toUpperCase();
+    o.setAttribute('data-ip', dev.ip || '');
+    o.textContent = (dev.name || dev.serial) + (dev.model ? ' (' + dev.model + ')' : '') +
+                    ' - ' + o.value + (dev.ip ? ' @ ' + dev.ip : '');
+    sel.appendChild(o);
+  });
+  sel.style.display = '';
+  showToast(devs.length + ' printers found - pick one');
+}
+
+function fillLanDevice(mode, dev){
+  var serial = (dev.serial || '').toUpperCase();
+  if (mode === 'lan'){
+    document.getElementById('serial').value = serial;
+    if (dev.ip) document.getElementById('ip').value = dev.ip;
+  } else {
+    document.getElementById('cl_serial').value = serial;
+  }
+}
+
+function pickLanDevice(mode){
+  var sel = document.getElementById(mode === 'lan' ? 'lan_devsel' : 'cl_devsel');
+  if (!sel.value) return;
+  var opt = sel.options[sel.selectedIndex];
+  fillLanDevice(mode, { serial: sel.value, ip: opt.getAttribute('data-ip') });
 }
 
 /* ============ Save WiFi ============ */

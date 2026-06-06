@@ -4,6 +4,7 @@
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
 #include "bambu_cloud.h"
+#include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
 #include "config.h"
@@ -140,6 +141,9 @@ static void handleRoot() {
 
 // Save printer settings only (no restart — reinit MQTT)
 static void handleSavePrinter() {
+  // Free any active SSDP scan sockets before we reinit networking below.
+  ssdpStopScan();
+
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
@@ -522,6 +526,32 @@ static void handleToggleSetting() {
 static void handleCloudLogout() {
   clearCloudToken();
   server.send(200, "text/plain", "OK");
+}
+
+// Discover Bambu printers on the local network via SSDP so the user can pick the
+// exact serial (and IP) instead of typing it. POST starts a scan, GET polls.
+static void handleLanScan() {
+  if (server.method() == HTTP_POST) {
+    int opened = ssdpStartScan();
+    if (opened == 0) {
+      server.send(200, "application/json",
+                  "{\"status\":\"error\",\"msg\":\"Cannot scan: not on a Wi-Fi network, "
+                  "or the network blocks multicast.\"}");
+      return;
+    }
+    server.send(200, "application/json", "{\"status\":\"scanning\"}");
+    return;
+  }
+
+  // GET: report progress + whatever has been discovered so far.
+  String devices;
+  ssdpScanResultJson(devices);
+  String json = "{\"status\":\"";
+  json += ssdpScanActive() ? "scanning" : "done";
+  json += "\",\"devices\":";
+  json += devices;
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 // Get printer config for a specific slot (multi-printer tabs)
@@ -1595,6 +1625,8 @@ void initWebServer() {
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
+  server.on("/lan/scan", HTTP_POST, handleLanScan);
+  server.on("/lan/scan", HTTP_GET, handleLanScan);
   server.on("/settings/export", HTTP_GET, handleSettingsExport);
   server.on("/settings/import", HTTP_POST, handleSettingsImportFinish, handleSettingsImportUpload);
   server.on("/ota/upload", HTTP_POST, handleOtaFinish, handleOtaUpload);
