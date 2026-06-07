@@ -139,6 +139,12 @@
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
+#elif defined(BOARD_IS_WS350)
+// Waveshare ESP32-S3-Touch-LCD-3.5: no buzzer hardware. Critically, the generic
+// S3 default (GPIO 5) is this board's display SCLK — initBuzzer() drives the pin
+// as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
+// the panel after boot. Disable (0) so the SPI clock is left alone.
+#define BUZZER_DEFAULT_PIN    0
 #else
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif
