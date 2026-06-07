@@ -160,6 +160,14 @@ void sanitizeButtonPin() {
   if (buttonPin == FT6336_SDA) { clash("FT6336 touch SDA"); return; }
   if (buttonPin == FT6336_SCL) { clash("FT6336 touch SCL"); return; }
 #endif
+#if defined(BOARD_IS_WS350)
+  // Display SPI lines - driving any as a button GPIO disturbs the panel bus.
+  // (Backlight 6 and I2C 7/8 are already covered above / by FT6336 checks.)
+  if (buttonPin == 1) { clash("WS350 display MOSI"); return; }
+  if (buttonPin == 2) { clash("WS350 display MISO"); return; }
+  if (buttonPin == 3) { clash("WS350 display DC");   return; }
+  if (buttonPin == 5) { clash("WS350 display SCLK"); return; }
+#endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
   if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }

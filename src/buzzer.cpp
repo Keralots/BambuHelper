@@ -11,6 +11,21 @@ void sanitizeBuzzerPin() {
     buzzerSettings.pin = 0;
     return;
   }
+#if defined(BOARD_IS_WS350)
+  // ws_lcd_350 has no buzzer hardware and the GPIO backend drives the pin LOW
+  // on init/stop even when the buzzer is disabled. The display SPI (SCLK=5,
+  // MOSI=1, MISO=2, DC=3) and shared I2C (SDA=8, SCL=7) lines must never be
+  // driven as a buzzer GPIO or the panel freezes. The default pin is 0, but a
+  // stale/manual NVS value (e.g. 5 from a pre-fix build) can still land here.
+  if (buzzerSettings.pin == 1 || buzzerSettings.pin == 2 ||
+      buzzerSettings.pin == 3 || buzzerSettings.pin == 5 ||
+      buzzerSettings.pin == 6 || buzzerSettings.pin == 7 ||
+      buzzerSettings.pin == 8) {
+    Serial.printf("Buzzer: pin %d reserved on WS350 (display/I2C), disabling\n", buzzerSettings.pin);
+    buzzerSettings.pin = 0;
+    return;
+  }
+#endif
 #if defined(BACKLIGHT_PIN)
   if (buzzerSettings.pin == BACKLIGHT_PIN) {
     Serial.printf("Buzzer: pin %d conflicts with backlight, disabling\n", buzzerSettings.pin);
