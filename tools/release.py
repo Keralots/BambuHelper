@@ -37,6 +37,7 @@ WEB_FLASHER_BOARDS = [
     "ws_lcd_200",
     "ws_lcd_154",
     "ws_lcd_280",
+    "ws_lcd_350",
     "jc3248w535",
     "cyd",
     "tzt_2432",
