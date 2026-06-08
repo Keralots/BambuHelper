@@ -5,8 +5,8 @@
 
 struct wireguard_device {
   char endpoint[64];
-  char privateKey[256];
-  char publicKey[256];
+  uint8_t privateKey[32];
+  uint8_t publicKey[32];
   char tunnelAddress[128];
   uint32_t listenPort;
   uint32_t persistentKeepalive;

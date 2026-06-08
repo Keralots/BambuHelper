@@ -130,6 +130,9 @@ bool parseWireguardConfig(const char* config_text, WireguardConfig& wg_config) {
 
   // Initialize output
   memset(&wg_config, 0, sizeof(WireguardConfig));
+  wg_config.listenPort = 51820;
+  wg_config.persistentKeepalive = 0;
+  wg_config.enabled = true;
 
   // Tracking
   bool inInterface = false;
@@ -137,7 +140,6 @@ bool parseWireguardConfig(const char* config_text, WireguardConfig& wg_config) {
   bool hasPrivateKey = false;
   bool hasPublicKey = false;
   bool hasEndpoint = false;
-  bool hasTunnelAddr = false;
 
   // Make a copy for line-by-line parsing
   size_t len = strlen(config_text) + 1;
@@ -208,7 +210,6 @@ bool parseWireguardConfig(const char* config_text, WireguardConfig& wg_config) {
           if (ipLen < sizeof(wg_config.tunnelAddress)) {
             strncpy(wg_config.tunnelAddress, valBuf, ipLen);
             wg_config.tunnelAddress[ipLen] = '\0';
-            hasTunnelAddr = true;
           }
         }
       }
@@ -238,7 +239,7 @@ bool parseWireguardConfig(const char* config_text, WireguardConfig& wg_config) {
   delete[] textCopy;
 
   // Validation: must have required fields
-  if (!hasPrivateKey || !hasPublicKey || !hasEndpoint || !hasTunnelAddr) {
+  if (!hasPrivateKey || !hasPublicKey || !hasEndpoint) {
     return false;
   }
 
@@ -266,7 +267,7 @@ bool validateWireguardConfig(const WireguardConfig& config) {
   if (!pubKeyValid) return false;
 
   if (!config.endpoint || config.endpoint[0] == '\0') return false;
-  if (!config.tunnelAddress || config.tunnelAddress[0] == '\0') return false;
+  if (config.listenPort == 0) return false;
 
   return true;
 }

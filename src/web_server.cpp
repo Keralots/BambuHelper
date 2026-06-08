@@ -804,6 +804,42 @@ R"rawliteral(
 R"rawliteral(
       </div>
       <div style="margin-top:20px;padding-top:12px;border-top:1px solid #30363D">
+        <h3 style="color:#58A6FF;font-size:14px;margin-bottom:10px">WireGuard VPN</h3>
+        <p style="font-size:12px;color:#8B949E;margin-bottom:10px">
+          Configure WireGuard for secure remote access to your printer display and settings.
+        </p>
+        <label for="wg_config" style="font-size:12px">WireGuard Configuration</label>
+        <textarea id="wg_config" rows="6" style="width:100%;padding:8px;border:1px solid #30363D;border-radius:6px;background:#0D1117;color:#E6EDF3;font-size:11px;font-family:monospace;resize:vertical" placeholder="Paste your WireGuard config file contents here..."></textarea>
+        <button type="button" class="btn btn-primary" style="margin-top:8px" onclick="saveWireGuardConfig()">Save WireGuard Config</button>
+        <div id="wgSaveStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px;font-size:13px"></div>
+        
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363D">
+          <h4 style="color:#58A6FF;font-size:13px;margin-bottom:8px">WireGuard Status</h4>
+          <div style="padding:10px;background:#0D1117;border:1px solid #30363D;border-radius:6px;font-size:12px">
+            <div style="margin-bottom:8px">
+              <label style="color:#8B949E">Status:</label>
+              <span id="wg_status" style="color:#E6EDF3;margin-left:8px">-</span>
+            </div>
+            <div style="margin-bottom:8px">
+              <label style="color:#8B949E">Interface IP:</label>
+              <span id="wg_interface_ip" style="color:#E6EDF3;margin-left:8px">-</span>
+            </div>
+            <div style="margin-bottom:8px">
+              <label style="color:#8B949E">Public Key:</label>
+              <span id="wg_public_key" style="color:#E6EDF3;margin-left:8px;font-family:monospace;font-size:11px">-</span>
+            </div>
+            <div style="margin-bottom:8px">
+              <label style="color:#8B949E">Endpoint:</label>
+              <span id="wg_endpoint" style="color:#E6EDF3;margin-left:8px">-</span>
+            </div>
+            <div>
+              <label style="color:#8B949E">Last Handshake:</label>
+              <span id="wg_last_handshake" style="color:#E6EDF3;margin-left:8px">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:20px;padding-top:12px;border-top:1px solid #30363D">
         <button type="button" class="btn btn-danger" onclick="if(confirm('Reset all settings to factory defaults?'))location='/reset'">Factory Reset</button>
       </div>
     </div>
@@ -1231,6 +1267,54 @@ function cloudLogout(){
     document.getElementById('cl_token').value='';
   });
 }
+
+// --- WireGuard VPN ---
+function saveWireGuardConfig(){
+  var config=document.getElementById('wg_config').value.trim();
+  if(!config){showToast('WireGuard configuration is required');return;}
+  var formData=new FormData();
+  formData.append('config',config);
+  fetch('/save/wireguard',{method:'POST',body:formData})
+    .then(readJsonResponse)
+    .then(function(d){
+      if(d.status&&d.status==='ok'){
+        showToast('WireGuard config saved! Device may restart.');
+      }else if(d.message){
+        showToast('Save failed: '+d.message);
+      }else{
+        showToast('Save failed');
+      }
+    })
+    .catch(function(e){showToast('Save failed: network error');console.warn('saveWireGuardConfig:',e);});
+}
+
+function loadWireGuardStatus(){
+  fetch('/wireguard/status')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      // Status: Active / Enabled / Disabled
+      var statusText = '-';
+      if (d.enabled) statusText = d.active ? 'Active' : 'Enabled (inactive)';
+      else statusText = 'Disabled';
+      document.getElementById('wg_status').textContent = statusText;
+
+      // Interface IP (tunnel address)
+      document.getElementById('wg_interface_ip').textContent = d.tunnelAddress || '-';
+
+      // Public Key (base64) if provided by backend
+      document.getElementById('wg_public_key').textContent = d.publicKey || '-';
+
+      // Endpoint
+      document.getElementById('wg_endpoint').textContent = d.endpoint || '-';
+
+      // Last handshake (ms)
+      document.getElementById('wg_last_handshake').textContent = (typeof d.lastHandshakeMs !== 'undefined' && d.lastHandshakeMs !== 0) ? d.lastHandshakeMs + ' ms' : '-';
+    })
+    .catch(function(e){console.warn('loadWireGuardStatus:',e);});
+}
+
+// Load WireGuard status on page load
+loadWireGuardStatus();
 
 // --- Hardware & Multi-Printer ---
 function toggleBtnPin(){
@@ -3796,13 +3880,18 @@ static void handleSaveWireguard() {
 
   // Validate it meets required fields
   if (!validateWireguardConfig(wireguardConfig)) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"Configuration missing required fields (PrivateKey, PublicKey, Endpoint, ListenPort, Address)\"}");
+    server.send(400, "application/json", "{\"status\":\"error\",\"error\":\"Configuration missing required fields (PrivateKey, PublicKey, Endpoint, ListenPort)\"}");
     return;
   }
 
   // Save to NVS
   saveWireguardConfig();
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Wireguard configuration saved. Tunnel will initialize on next connection.\"}");
+
+  // Apply new config immediately if possible
+  shutdownWireguard();
+  initWireguard();
+
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Wireguard configuration saved and applied. Tunnel will initialize on next connection.\"}");
 }
 
 static void handleGetWireguardStatus() {
@@ -3811,11 +3900,20 @@ static void handleGetWireguardStatus() {
   doc["active"] = isWireguardActive();
   doc["endpoint"] = wireguardConfig.endpoint;
   doc["tunnelAddress"] = wireguardConfig.tunnelAddress;
+  doc["listenPort"] = wireguardConfig.listenPort;
   doc["persistentKeepalive"] = wireguardConfig.persistentKeepalive;
   doc["lastHandshakeMs"] = wireguardConfig.lastHandshakeMs;
   doc["txBytes"] = wireguardConfig.txBytes;
   doc["rxBytes"] = wireguardConfig.rxBytes;
-  
+
+  // Include peer public key as base64 for display
+  char b64Pub[64] = {0};
+  if (base64Encode(wireguardConfig.publicKey, 32, b64Pub, sizeof(b64Pub))) {
+    doc["publicKey"] = String(b64Pub);
+  } else {
+    doc["publicKey"] = String("");
+  }
+
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
