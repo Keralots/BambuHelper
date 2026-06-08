@@ -200,6 +200,34 @@
             </ol>
           </article>
 
+          <article class="path path-secondary" aria-labelledby="path-wireguard">
+            <header class="path-head">
+              <span class="path-tag path-tag-muted">optional</span>
+              <h3 id="path-wireguard">WireGuard remote access</h3>
+            </header>
+            <p class="path-body">
+              Once the device is on your network, use the built-in web UI to paste
+              your WireGuard peer configuration into the VPN section. This enables
+              secure remote access to the printer without relying on the cloud.
+            </p>
+            <p class="path-body">
+              If you stop using the VPN, you can delete the WireGuard config from
+              the same page and the tunnel will be shut down cleanly.
+            </p>
+            <pre style="margin-top:12px;padding:12px;background:#0D1117;border:1px solid #30363D;border-radius:8px;color:#C9D1D9;overflow-x:auto;font-size:12px;line-height:1.5;">
+[Interface]
+PrivateKey = <em>your-base64-private-key</em>
+Address = 192.168.5.1/32
+ListenPort = 51820
+
+[Peer]
+PublicKey = <em>peer-base64-public-key</em>
+Endpoint = example.vpn.server:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 15
+            </pre>
+          </article>
+
           <p class="hint">Either way, the device reboots, joins your WiFi, and starts monitoring the printer.</p>
         </section>
 
