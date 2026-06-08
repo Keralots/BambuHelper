@@ -829,3 +829,23 @@ bool loadWireguardConfig() {
   return true;
 }
 
+void deleteWireguardConfig() {
+  prefs.begin(NVS_NAMESPACE, false);
+
+  // Remove all WireGuard configuration keys from NVS
+  prefs.remove("wg_enabled");
+  prefs.remove("wg_privkey");
+  prefs.remove("wg_pubkey");
+  prefs.remove("wg_endpoint");
+  prefs.remove("wg_listenport");
+  prefs.remove("wg_tunneladdr");
+  prefs.remove("wg_keepalive");
+
+  prefs.end();
+
+  // Clear the in-memory config
+  memset(&wireguardConfig, 0, sizeof(WireguardConfig));
+
+  Serial.println("[SETTINGS] Wireguard config deleted from NVS");
+}
+

@@ -191,6 +191,7 @@ void resetSettings();
 // Wireguard VPN configuration
 void saveWireguardConfig();
 bool loadWireguardConfig();
+void deleteWireguardConfig();
 
 // Cloud token persistence (shared across printer slots)
 extern char cloudEmail[64];

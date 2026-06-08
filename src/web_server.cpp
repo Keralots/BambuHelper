@@ -832,11 +832,12 @@ R"rawliteral(
               <label style="color:#8B949E">Endpoint:</label>
               <span id="wg_endpoint" style="color:#E6EDF3;margin-left:8px">-</span>
             </div>
-            <div>
+            <div style="margin-bottom:8px">
               <label style="color:#8B949E">Last Handshake:</label>
               <span id="wg_last_handshake" style="color:#E6EDF3;margin-left:8px">-</span>
             </div>
           </div>
+          <button type="button" class="btn btn-danger" style="margin-top:10px;width:100%" onclick="if(confirm('Delete WireGuard configuration?'))deleteWireGuardConfig()">Delete WireGuard Config</button>
         </div>
       </div>
       <div style="margin-top:20px;padding-top:12px;border-top:1px solid #30363D">
@@ -1279,6 +1280,8 @@ function saveWireGuardConfig(){
     .then(function(d){
       if(d.status&&d.status==='ok'){
         showToast('WireGuard config saved! Device may restart.');
+        document.getElementById('wg_config').value='';  // Clear the textarea
+        setTimeout(loadWireGuardStatus,1000);  // Reload status after a delay
       }else if(d.message){
         showToast('Save failed: '+d.message);
       }else{
@@ -1286,6 +1289,23 @@ function saveWireGuardConfig(){
       }
     })
     .catch(function(e){showToast('Save failed: network error');console.warn('saveWireGuardConfig:',e);});
+}
+
+function deleteWireGuardConfig(){
+  fetch('/delete/wireguard',{method:'POST'})
+    .then(readJsonResponse)
+    .then(function(d){
+      if(d.status&&d.status==='ok'){
+        showToast('WireGuard configuration deleted.');
+        document.getElementById('wg_config').value='';  // Clear the textarea
+        setTimeout(loadWireGuardStatus,1000);  // Reload status after a delay
+      }else if(d.message){
+        showToast('Delete failed: '+d.message);
+      }else{
+        showToast('Delete failed');
+      }
+    })
+    .catch(function(e){showToast('Delete failed: network error');console.warn('deleteWireGuardConfig:',e);});
 }
 
 function loadWireGuardStatus(){
@@ -3919,6 +3939,17 @@ static void handleGetWireguardStatus() {
   server.send(200, "application/json", json);
 }
 
+static void handleDeleteWireguard() {
+  // Shutdown the active tunnel
+  shutdownWireguard();
+  
+  // Delete from NVS
+  deleteWireguardConfig();
+  
+  Serial.println("[WG] WireGuard configuration deleted");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"WireGuard configuration deleted and tunnel shut down\"}");
+}
+
 // ---------------------------------------------------------------------------
 //  Init & handle
 // ---------------------------------------------------------------------------
@@ -3966,6 +3997,7 @@ void initWebServer() {
   server.on("/ota/status", HTTP_GET,  handleOtaStatus);
 #endif
   server.on("/save/wireguard", HTTP_POST, handleSaveWireguard);
+  server.on("/delete/wireguard", HTTP_POST, handleDeleteWireguard);
   server.on("/wireguard/status", HTTP_GET, handleGetWireguardStatus);
   server.onNotFound(handleNotFound);
   const char* otaHeaders[] = {"X-MD5"};
