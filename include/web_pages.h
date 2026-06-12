@@ -777,6 +777,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 
     <div class="action-bar">
       <button type="button" class="btn btn-primary" onclick="savePrinter()">Save Printer Settings</button>
+      <button type="button" class="btn btn-danger" onclick="clearPrinter()">Clear Printer</button>
     </div>
   </div>
 
@@ -1839,6 +1840,19 @@ function cloudLogout(){
     cs.style.color = 'var(--text-mid)'; cs.textContent = 'No token set';
     document.getElementById('cl_token').value = '';
   });
+}
+
+function clearPrinter(){
+  if (!confirm('Clear all settings for printer ' + (currentSlot + 1) + '? Connection details are removed and the gauge layout resets to defaults. The cloud token is shared and stays (use Clear Token to remove it).')) return;
+  var p = new URLSearchParams();
+  p.append('slot', currentSlot);
+  fetch('/printer/clear',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(readJsonResponse)
+    .then(function(d){
+      if (d.status === 'ok'){ showToast('Printer ' + (currentSlot + 1) + ' cleared'); selectPrinterTab(currentSlot); }
+      else showToast('Clear failed');
+    })
+    .catch(function(e){showToast('Clear failed: network error');console.warn('clearPrinter:',e);});
 }
 
 /* ============ SSDP local-network printer scan ============ */

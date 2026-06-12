@@ -215,9 +215,9 @@ static void handleSavePrinter() {
 
   savePrinterConfig(slot);
 
-  // Reinit MQTT - disconnect changed slot, then reinit all
-  disconnectBambuMqtt(slot);
-  initBambuMqtt();
+  // Reinit only the edited slot - the other printer's connection and live
+  // display state stay untouched.
+  initBambuMqttSlot(slot);
 
   if (warnings.length() > 0) {
     String resp = "{\"status\":\"ok\",\"warning\":\"" + warnings + "\"}";
@@ -225,6 +225,27 @@ static void handleSavePrinter() {
   } else {
     server.send(200, "application/json", "{\"status\":\"ok\"}");
   }
+}
+
+// Clear one printer slot back to factory defaults (connection details +
+// gauge layout) so a new printer can be configured from scratch. Without
+// this there is no way to fully vacate a slot: the access code and token
+// fields are password-style and only saved when non-empty.
+static void handleClearPrinter() {
+  ssdpStopScan();
+
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+
+  clearPrinterConfig(slot);
+  initBambuMqttSlot(slot);  // slot now unconfigured -> disconnects + clears state
+
+  if (rotState.displayIndex == slot) {
+    rotState.displayIndex = (slot == 0 && isPrinterConfigured(1)) ? 1 : 0;
+  }
+
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 // Save gauge layout only (no MQTT reinit needed)
@@ -501,12 +522,12 @@ static void handleToggleSetting() {
   if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
-    if (!on) {
+    if (!on && rotState.displayIndex == 1) {
       // User just disabled 2-printer mode - drop slot 1 from rotation/display
-      disconnectBambuMqtt(1);
-      if (rotState.displayIndex == 1) rotState.displayIndex = 0;
+      rotState.displayIndex = 0;
     }
-    initBambuMqtt();  // re-evaluate slot 1 active state without reboot
+    // Re-evaluate slot 1 active state without reboot; slot 0 stays connected.
+    initBambuMqttSlot(1);
   }
 #endif
   if (key == "kps") {
@@ -1642,6 +1663,7 @@ void initWebServer() {
   server.on("/led/preview", HTTP_POST, handleLedPreview);
   server.on("/led/test",    HTTP_POST, handleLedTest);
   server.on("/printer/config", HTTP_GET, handlePrinterConfig);
+  server.on("/printer/clear", HTTP_POST, handleClearPrinter);
   server.on("/apply", HTTP_POST, handleApply);
   server.on("/brightness", HTTP_GET, handleBrightnessPreview);
   server.on("/status", HTTP_GET, handleStatus);

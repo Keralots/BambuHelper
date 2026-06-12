@@ -1489,6 +1489,64 @@ uint8_t getActiveConnCount() {
   return count;
 }
 
+// Cloud userId extraction for one slot. Checks the raw prerequisites
+// (serial + cloud mode) instead of isPrinterConfigured(), which itself
+// requires cloudUserId — this allows self-healing slots that have a token
+// but are missing cloudUserId.
+// userId extraction uses HTTPClient (TLS) — must complete before this
+// slot's MQTT TLS session is opened.
+static void extractCloudUserIdIfNeeded(uint8_t i) {
+  PrinterConfig& cfg = printers[i].config;
+  if (!isCloudMode(cfg.mode) || strlen(cfg.serial) == 0 || strlen(cfg.cloudUserId) > 0)
+    return;
+  Serial.printf("MQTT: [%d] cloud printer needs userId extraction\n", i);
+  char tokenBuf[1200];
+  if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
+    if (!cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId))) {
+      Serial.printf("MQTT: [%d] JWT extract failed, trying API\n", i);
+      cloudFetchUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId), cfg.region);
+    }
+    if (strlen(cfg.cloudUserId) > 0) {
+      Serial.printf("MQTT: [%d] userId=%s\n", i, cfg.cloudUserId);
+      savePrinterConfig(i);
+    }
+  }
+}
+
+// Reset one connection slot + its BambuState, then arm it if configured.
+static void initConnSlot(uint8_t i) {
+  MqttConn& c = conns[i];
+  c.slotIndex = i;
+  memset(&c.diag, 0, sizeof(MqttDiag));
+  c.lastReconnectAttempt = 0;
+  c.lastPushallRequest = 0;
+  c.pushallSeqId = 0;
+  c.connectTime = 0;
+  c.initialPushallSent = false;
+  c.gotDataSinceConnect = false;
+  c.consecutiveFails = 0;
+  c.disconnectSince = 0;
+  c.wasConnected = false;
+  c.stalePushallSentMs = 0;
+  c.lastRecoveryResolvedMs = 0;
+
+  BambuState& s = printers[i].state;
+  memset(&s, 0, sizeof(BambuState));
+  setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
+
+  if (isPrinterConfigured(i)) {
+    c.active = true;
+    PrinterConfig& cfg = printers[i].config;
+    Serial.printf("MQTT: [%d] '%s' serial=%s mode=%s — ready\n",
+                  i, cfg.name, cfg.serial,
+                  isCloudMode(cfg.mode) ? "CLOUD" : "LOCAL");
+  } else {
+    c.active = false;
+    releaseClients(c);
+    Serial.printf("MQTT: [%d] not configured, skipping\n", i);
+  }
+}
+
 void initBambuMqtt() {
   Serial.println("MQTT: initBambuMqtt() — multi-printer");
 
@@ -1502,61 +1560,24 @@ void initBambuMqtt() {
   }
 
   // First: do all cloud API work (userId extraction) before any MQTT connects.
-  // Note: isPrinterConfigured() requires cloudUserId for cloud slots, so we check
-  // the prerequisites (serial + cloud mode) directly to allow self-healing slots
-  // that have a token but are missing cloudUserId.
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
-    PrinterConfig& cfg = printers[i].config;
-    if (isCloudMode(cfg.mode) && strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) == 0) {
-      Serial.printf("MQTT: [%d] cloud printer needs userId extraction\n", i);
-      // userId extraction uses HTTPClient (TLS) — must complete before MQTT TLS
-      char tokenBuf[1200];
-      if (loadCloudToken(tokenBuf, sizeof(tokenBuf))) {
-        if (!cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId))) {
-          Serial.printf("MQTT: [%d] JWT extract failed, trying API\n", i);
-          cloudFetchUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId), cfg.region);
-        }
-        if (strlen(cfg.cloudUserId) > 0) {
-          Serial.printf("MQTT: [%d] userId=%s\n", i, cfg.cloudUserId);
-          savePrinterConfig(i);
-        }
-      }
-    }
+    extractCloudUserIdIfNeeded(i);
   }
 
   // Initialize connection slots
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
-    MqttConn& c = conns[i];
-    c.slotIndex = i;
-    memset(&c.diag, 0, sizeof(MqttDiag));
-    c.lastReconnectAttempt = 0;
-    c.lastPushallRequest = 0;
-    c.pushallSeqId = 0;
-    c.connectTime = 0;
-    c.initialPushallSent = false;
-    c.gotDataSinceConnect = false;
-    c.consecutiveFails = 0;
-    c.disconnectSince = 0;
-    c.wasConnected = false;
-    c.stalePushallSentMs = 0;
-    c.lastRecoveryResolvedMs = 0;
-
-    BambuState& s = printers[i].state;
-    memset(&s, 0, sizeof(BambuState));
-    setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
-
-    if (isPrinterConfigured(i)) {
-      c.active = true;
-      PrinterConfig& cfg = printers[i].config;
-      Serial.printf("MQTT: [%d] '%s' serial=%s mode=%s — ready\n",
-                    i, cfg.name, cfg.serial,
-                    isCloudMode(cfg.mode) ? "CLOUD" : "LOCAL");
-    } else {
-      c.active = false;
-      releaseClients(c);
-      Serial.printf("MQTT: [%d] not configured, skipping\n", i);
-    }
+    initConnSlot(i);
   }
+}
+
+void initBambuMqttSlot(uint8_t slot) {
+  if (slot >= MAX_ACTIVE_PRINTERS) return;
+  Serial.printf("MQTT: initBambuMqttSlot(%d)\n", slot);
+  // Re-init only this slot: the other printer's connection and live
+  // display state stay untouched.
+  disconnectBambuMqtt(slot);
+  extractCloudUserIdIfNeeded(slot);
+  initConnSlot(slot);
 }
 
 static bool skipReconnectOnce = false;

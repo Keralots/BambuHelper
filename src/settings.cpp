@@ -714,6 +714,18 @@ void savePrinterConfig(uint8_t index) {
   if (needOpen) prefs.end();
 }
 
+void clearPrinterConfig(uint8_t index) {
+  if (index >= MAX_PRINTERS) return;
+  PrinterConfig& cfg = printers[index].config;
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.mode   = CONN_LOCAL;
+  cfg.region = REGION_US;
+  defaultGaugeSlots(cfg.gaugeSlots);
+  memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
+  memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
+  savePrinterConfig(index);
+}
+
 void saveRotationSettings() {
   prefs.begin(NVS_NAMESPACE, false);
   prefs.putUChar("rot_mode", rotState.mode);

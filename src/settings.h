@@ -209,6 +209,7 @@ void saveSettings();
 // nothing usable remains. Used by every path that writes netSettings.hostname.
 void sanitizeHostname(const char* in, char* out, size_t outSize);
 void savePrinterConfig(uint8_t index);
+void clearPrinterConfig(uint8_t index);  // reset slot to factory defaults + persist
 void saveRotationSettings();
 void saveButtonSettings();
 void saveBuzzerSettings();

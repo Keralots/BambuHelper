@@ -44,6 +44,7 @@ enum PushallReason : uint8_t {
 extern bool mqttDebugLog;   // verbose Serial logging (toggled via web)
 
 void initBambuMqtt();
+void initBambuMqttSlot(uint8_t slot);    // re-init one slot, leave the other connected
 void handleBambuMqtt();
 void disconnectBambuMqtt();              // disconnect all connections
 void disconnectBambuMqtt(uint8_t slot);  // disconnect specific slot
