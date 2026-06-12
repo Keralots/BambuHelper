@@ -290,8 +290,12 @@ void ensureTaskStarted() {
 // ----- lifecycle management -----
 
 // PA amplifier settling time after power-on.
-// Coupling capacitors need to charge before clean audio output.
-constexpr uint32_t kPaSettleMs = 30;
+// Coupling capacitors need to charge before clean audio output. 30 ms proved
+// too short on hardware: the first tone after an idle teardown had its attack
+// audibly clipped while immediately repeated sounds played fine. The delay is
+// invisible to melody timing (buzzer.cpp arms the step timer after this
+// returns), it only postpones the first sound's onset.
+constexpr uint32_t kPaSettleMs = 100;
 
 bool ensureAudioRunning() {
   if (gAudioState == AUDIO_RUNNING) return true;
