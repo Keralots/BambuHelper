@@ -1041,6 +1041,7 @@ static void handleSettingsExport() {
 //  Settings import (JSON upload)
 // ---------------------------------------------------------------------------
 static String settingsImportBuf;
+static bool   settingsImportOverflow = false;
 static bool   otaInProgress  = false;
 static bool   otaFirstChunk  = false;
 static String otaError       = "";
@@ -1086,14 +1087,27 @@ static void handleSettingsImportUpload() {
   if (upload.status == UPLOAD_FILE_START) {
     settingsImportBuf = "";
     settingsImportBuf.reserve(4096);
+    settingsImportOverflow = false;
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (settingsImportBuf.length() + upload.currentSize > 8192) return;
+    if (settingsImportOverflow) return;
+    if (settingsImportBuf.length() + upload.currentSize > 8192) {
+      settingsImportOverflow = true;
+      settingsImportBuf = "";  // free memory, rest of upload is ignored
+      return;
+    }
     for (size_t i = 0; i < upload.currentSize; i++)
       settingsImportBuf += (char)upload.buf[i];
   }
 }
 
 static void handleSettingsImportFinish() {
+  if (settingsImportOverflow) {
+    settingsImportOverflow = false;
+    server.send(400, "application/json",
+      "{\"status\":\"error\",\"message\":\"Settings file too large (max 8 KB)\"}");
+    return;
+  }
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, settingsImportBuf);
   settingsImportBuf = "";  // free memory
