@@ -63,6 +63,8 @@ struct BambuState {
   uint16_t remainingMinutes;
   float nozzleTemp;
   float nozzleTarget;
+  float nozzleTempN[2];       // per-nozzle temps when dualNozzle (index = extruder id: 0=right, 1=left)
+  float nozzleTargetN[2];
   float bedTemp;
   float bedTarget;
   float chamberTemp;

@@ -223,6 +223,8 @@ static bool requestPushall(MqttConn& c, PushallReason reason) {
 
 static void clearLiveMetrics(BambuState& s) {
   s.nozzleTemp = 0;    s.nozzleTarget = 0;
+  s.nozzleTempN[0] = 0; s.nozzleTargetN[0] = 0;
+  s.nozzleTempN[1] = 0; s.nozzleTargetN[1] = 0;
   s.bedTemp = 0;       s.bedTarget = 0;
   s.chamberTemp = 0;
   s.progress = 0;
@@ -361,6 +363,16 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
           for (JsonObject entry : info) {
             if (!entry["id"].is<int>()) continue;
             uint8_t id = entry["id"].as<int>();
+            if (id > 1) continue;
+
+            // Per-nozzle temp stored for BOTH nozzles (drives the fixed
+            // Nozzle L / Nozzle R gauges); packed as (target << 16) | current.
+            if (s.dualNozzle && entry["temp"].is<unsigned int>()) {
+              uint32_t packed = entry["temp"].as<unsigned int>();
+              s.nozzleTempN[id]   = (float)(packed & 0xFFFF);
+              s.nozzleTargetN[id] = (float)(packed >> 16);
+            }
+
             if (id != s.activeNozzle) continue;
 
             if (entry["snow"].is<unsigned int>()) {

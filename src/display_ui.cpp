@@ -695,6 +695,7 @@ static bool    batteryStateChanged() {
 //  Smooth gauge interpolation - values lerp toward MQTT actuals each frame
 // ---------------------------------------------------------------------------
 static float smoothNozzleTemp   = 0;
+static float smoothNozzleTempN[2] = {0, 0};  // dual-nozzle fixed L/R gauges
 static float smoothBedTemp      = 0;
 static float smoothPartFan     = 0;
 static float smoothAuxFan      = 0;
@@ -721,6 +722,8 @@ static void smoothLerp(float& cur, float target) {
 static bool tickGaugeSmooth(const BambuState& s, bool snap) {
   if (snap || !smoothInited) {
     smoothNozzleTemp   = s.nozzleTemp;
+    smoothNozzleTempN[0] = s.nozzleTempN[0];
+    smoothNozzleTempN[1] = s.nozzleTempN[1];
     smoothBedTemp      = s.bedTemp;
     smoothPartFan      = s.coolingFanPct;
     smoothAuxFan       = s.auxFanPct;
@@ -733,6 +736,8 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
     return false;
   }
   smoothLerp(smoothNozzleTemp,   s.nozzleTemp);
+  smoothLerp(smoothNozzleTempN[0], s.nozzleTempN[0]);
+  smoothLerp(smoothNozzleTempN[1], s.nozzleTempN[1]);
   smoothLerp(smoothBedTemp,      s.bedTemp);
   smoothLerp(smoothPartFan,      (float)s.coolingFanPct);
   smoothLerp(smoothAuxFan,       (float)s.auxFanPct);
@@ -744,6 +749,8 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
 
   const float ANIM_EPS = 0.01f;
   return (fabsf(smoothNozzleTemp   - s.nozzleTemp)              > ANIM_EPS) ||
+         (fabsf(smoothNozzleTempN[0] - s.nozzleTempN[0])        > ANIM_EPS) ||
+         (fabsf(smoothNozzleTempN[1] - s.nozzleTempN[1])        > ANIM_EPS) ||
          (fabsf(smoothBedTemp      - s.bedTemp)                 > ANIM_EPS) ||
          (fabsf(smoothPartFan      - (float)s.coolingFanPct)    > ANIM_EPS) ||
          (fabsf(smoothAuxFan       - (float)s.auxFanPct)        > ANIM_EPS) ||
@@ -3147,6 +3154,8 @@ static void drawPrinting() {
         switch (gt) {
           case GAUGE_PROGRESS:    needDraw = (s.progress != prevState.progress) || (s.remainingMinutes != prevState.remainingMinutes); break;
           case GAUGE_NOZZLE:      needDraw = animating || s.nozzleTemp != prevState.nozzleTemp || s.nozzleTarget != prevState.nozzleTarget; break;
+          case GAUGE_NOZZLE_RIGHT: needDraw = animating || s.nozzleTempN[0] != prevState.nozzleTempN[0] || s.nozzleTargetN[0] != prevState.nozzleTargetN[0]; break;
+          case GAUGE_NOZZLE_LEFT:  needDraw = animating || s.nozzleTempN[1] != prevState.nozzleTempN[1] || s.nozzleTargetN[1] != prevState.nozzleTargetN[1]; break;
           case GAUGE_BED:         needDraw = animating || s.bedTemp != prevState.bedTemp || s.bedTarget != prevState.bedTarget; break;
           case GAUGE_PART_FAN:      needDraw = animating || s.coolingFanPct != prevState.coolingFanPct; break;
           case GAUGE_AUX_FAN:       needDraw = animating || s.auxFanPct != prevState.auxFanPct; break;
@@ -3214,6 +3223,16 @@ static void drawPrinting() {
           drawTempGauge(tft, cx, cy, gR, s.nozzleTemp, s.nozzleTarget, 300.0f,
                         dispSettings.nozzle.arc, nozzleLabel(s), nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTemp);
+          break;
+        case GAUGE_NOZZLE_RIGHT:
+          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[0], s.nozzleTargetN[0], 300.0f,
+                        dispSettings.nozzle.arc, "Nozzle R", nullptr, fr,
+                        &dispSettings.nozzle, smoothNozzleTempN[0]);
+          break;
+        case GAUGE_NOZZLE_LEFT:
+          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[1], s.nozzleTargetN[1], 300.0f,
+                        dispSettings.nozzle.arc, "Nozzle L", nullptr, fr,
+                        &dispSettings.nozzle, smoothNozzleTempN[1]);
           break;
         case GAUGE_BED:
           drawTempGauge(tft, cx, cy, gR, s.bedTemp, s.bedTarget, 120.0f,
