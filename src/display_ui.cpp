@@ -415,6 +415,18 @@ void initDisplay() {
   }
 }
 
+// Repaint helper: the clock and the pong screensaver each keep a private
+// digit/frame cache and deliberately ignore forceRedraw. So any site that
+// fillScreen()s the panel while the clock is on screen must also drop that
+// cache, or the clock paints blank until its next digit/colon roll. Centralized
+// here so every screen-clear path stays correct without copy-pasting the
+// SCREEN_CLOCK block (and so a future clear site can't forget it).
+static void resetActiveClockCache() {
+  if (currentScreen != SCREEN_CLOCK) return;
+  if (dispSettings.pongClock) resetPongClock();
+  else resetClock();
+}
+
 void applyDisplaySettings() {
 #if defined(DISPLAY_240x320)
   // Pre-clear entire GRAM at rotation 0 to prevent garbage on edges
@@ -440,10 +452,7 @@ void applyDisplaySettings() {
   forceRedraw = true;
   lastDisplayUpdate = 0;  // bypass throttle so redraw is immediate after fillScreen
   // Reset clock/pong so they redraw fully after fillScreen cleared everything
-  if (currentScreen == SCREEN_CLOCK) {
-    if (dispSettings.pongClock) resetPongClock();
-    else resetClock();
-  }
+  resetActiveClockCache();
 }
 
 void triggerDisplayTransition() {
@@ -456,14 +465,9 @@ void triggerDisplayTransition() {
   markFrameDirty();
   forceRedraw = true;
   // If the clock is on screen (e.g. a non-displayed printer hit its FINISH edge
-  // while idle), the fillScreen above wiped it but the clock keeps its own digit
-  // cache and ignores forceRedraw - so drawClock() would only repaint the digits
-  // that changed since the stale cache, leaving a single digit on a blank screen
-  // until the next full clear. Reset the active clock cache so it repaints whole.
-  if (currentScreen == SCREEN_CLOCK) {
-    if (dispSettings.pongClock) resetPongClock();
-    else resetClock();
-  }
+  // while idle), the fillScreen above wiped it; reset its private cache so it
+  // repaints whole instead of leaving a single stale digit on a blank screen.
+  resetActiveClockCache();
 }
 
 void setScreenState(ScreenState state) {
@@ -3417,9 +3421,8 @@ void updateDisplay() {
     if (currentScreen == SCREEN_CONNECTING_WIFI || currentScreen == SCREEN_CONNECTING_MQTT) {
       connectScreenStart = millis();
     }
+    resetActiveClockCache();
     if (currentScreen == SCREEN_CLOCK) {
-      if (dispSettings.pongClock) resetPongClock();
-      else resetClock();
       setBacklight(getEffectiveBrightness());  // dim for screensaver
     }
     prevScreen = currentScreen;
@@ -3436,13 +3439,9 @@ void updateDisplay() {
     tft.fillScreen(dispSettings.bgColor);
     markFrameDirty();
     forceRedraw = true;
-    // The clock paints from its own digit cache and ignores forceRedraw, so the
-    // fillScreen above would leave it blank (only the colon blinks) until the
-    // next minute/hour roll. Reset the active clock cache so it repaints clean.
-    if (currentScreen == SCREEN_CLOCK) {
-      if (dispSettings.pongClock) resetPongClock();
-      else resetClock();
-    }
+    // The clock ignores forceRedraw (private digit cache), so reset it after the
+    // fillScreen or it stays blank until the next minute/hour roll.
+    resetActiveClockCache();
     prev8Slots = dispSettings.landscape8Slots;
     prev9Slots = dispSettings.portrait9Slots;
   }
