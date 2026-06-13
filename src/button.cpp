@@ -8,6 +8,27 @@
   static SPIClass touchSPI(HSPI);
   static XPT2046_Touchscreen ts(TOUCH_CS, TOUCH_IRQ);
   static bool touchReady = false;
+  #if defined(BOARD_IS_TZT_2432)
+    // Phantom-touch tolerance for TZT L1435-2.4 panels (issue #109). A pinched
+    // touch flex can squeeze the resistive layers together, so the XPT2046
+    // reports a constant weak "touch". That ramps and saves the LED brightness
+    // (hold-to-dim) and blocks screensaver wake (no fresh press edge ever
+    // arrives). Scoped to TZT only; CYD panels behave fine on lib defaults.
+    //
+    // Guard 1 - raise the pressure bar. PaulStoffregen's Z_THRESHOLD is 300 and
+    //   some TZT units idle just above it; TFT_eSPI uses 600 and works on these
+    //   boards (confirmed by the reporter), so match that.
+    #ifndef TZT_TOUCH_Z_THRESHOLD
+      #define TZT_TOUCH_Z_THRESHOLD 600
+    #endif
+    // Guard 2 - a contact held longer than any real tap or full hold-to-dim
+    //   sweep (~5 s at 3 duty/20 ms over the 10-255 range) is treated as a
+    //   phantom and ignored until a genuine release is observed, so it can no
+    //   longer drive the LED. Recovers automatically once the panel releases.
+    #ifndef TZT_TOUCH_STUCK_MS
+      #define TZT_TOUCH_STUCK_MS 10000UL
+    #endif
+  #endif
 #elif defined(USE_CST816)
   #include <Wire.h>
   #define CST816_ADDR          0x15
@@ -347,7 +368,27 @@ bool wasButtonPressed() {
   if (buttonType == BTN_TOUCHSCREEN) {
 #if defined(USE_XPT2046)
     if (!touchReady) return false;
+  #if defined(BOARD_IS_TZT_2432)
+    // Phantom-touch guards for pinched-flex TZT panels (see top of file, #109).
+    bool sensorTouch = (ts.getPoint().z >= TZT_TOUCH_Z_THRESHOLD);
+    static unsigned long touchDownMs = 0;
+    static bool touchStuck = false;
+    unsigned long nowTouch = millis();
+    if (sensorTouch) {
+      if (touchDownMs == 0) touchDownMs = nowTouch;
+      if (!touchStuck && (nowTouch - touchDownMs) > TZT_TOUCH_STUCK_MS) {
+        touchStuck = true;
+        Serial.println("XPT2046: stuck touch detected (phantom), ignoring until release");
+      }
+    } else {
+      if (touchStuck) Serial.println("XPT2046: stuck touch released, touch re-enabled");
+      touchDownMs = 0;
+      touchStuck = false;
+    }
+    raw = sensorTouch && !touchStuck;
+  #else
     raw = ts.touched();
+  #endif
 #elif defined(USE_CST816)
     if (!cst816BusReady) return false;
     uint8_t touchNum = 0;
