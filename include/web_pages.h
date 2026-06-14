@@ -619,7 +619,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
   <div class="section-title" id="sectionTitle">Printer Settings</div>
   <div class="topbar-actions">
     <span class="status-dot" id="topStatusDot" title="Printer 1 connection"><span id="topStatusText">-</span></span>
-    %DUALP_TOPBAR_DOT%
+    %TOPBAR_DOTS%
     <button class="icon-btn" id="themeToggle" aria-label="Toggle theme" type="button">
       <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
       <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -653,7 +653,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 <div class="section" id="sec-printer">
   <div class="section-intro">
     <h2>Printer Settings</h2>
-    <p>Configure up to two printers. Each slot is independent - pick LAN or Bambu Cloud per slot.</p>
+    <p>Configure up to %MAXP% printers. Each slot is independent - pick LAN or Bambu Cloud per slot.</p>
   </div>
 
   <div class="card">
@@ -661,7 +661,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <h3>Active slot</h3>
       <div class="slot-tabs" id="printerTabs">
         <button class="tab-btn active" id="tab0" type="button" onclick="selectPrinterTab(0)">Printer 1</button>
-        %DUALP_TAB%
+        %PRINTER_TABS%
       </div>
     </div>
     <p class="card-desc">Pick which slot you are editing. Settings on screen reflect the selected slot only.</p>
@@ -2353,6 +2353,8 @@ function _updateTopDot(slot, dotId, txtId){
 function refreshTopStatusDots(){
   _updateTopDot(0, 'topStatusDot', 'topStatusText');
   _updateTopDot(1, 'topStatusDot1', 'topStatusText1');
+  _updateTopDot(2, 'topStatusDot2', 'topStatusText2');
+  _updateTopDot(3, 'topStatusDot3', 'topStatusText3');
 }
 
 /* ============ Live stats (printer card) ============ */
