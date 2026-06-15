@@ -660,8 +660,13 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
   if (fillEnd <= startAngle && ratio > 0.01f) fillEnd = startAngle + 1;
   if (fillEnd > 300) fillEnd = 300;
 
-  // Use custom arc color for all fill levels
+  // Optional warning color: follows the ACTUAL reading (the displayed number),
+  // not the smoothed arc, so the value text color always matches the number.
+  // Recolors the arc fill and the value text. 0 = feature off.
+  bool warn = (dispSettings.warnThresholdPct > 0 && maxTemp > 0 &&
+               (current / maxTemp) * 100.0f >= (float)dispSettings.warnThresholdPct);
   uint16_t tempColor = arcColor;
+  if (warn) { tempColor = dispSettings.warnColor; valColor = dispSettings.warnColor; }
 
   uint16_t drawFill = (ratio > 0.01f) ? fillEnd : startAngle;
   drawArcFill(gfx, cx, cy, radius, thickness, drawFill, tempColor, forceRedraw);
@@ -673,8 +678,14 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
   if (hasTarget) snprintf(targetBuf, sizeof(targetBuf), "/%.0f", target);
   else targetBuf[0] = '\0';
 
-  // Only clear center + redraw text when displayed string actually changes
-  if (gaugeTextChanged(cx, cy, tempBuf, targetBuf, forceRedraw)) {
+  // Fold warn state into the change-detection key so a threshold crossing
+  // repaints the value text even when the rounded number is unchanged
+  // (e.g. 270.4 -> 270.6 both render "270" but cross a 90%-of-300 threshold).
+  char keyBuf[13];
+  snprintf(keyBuf, sizeof(keyBuf), "%s%s", tempBuf, warn ? "!" : "");
+
+  // Only clear center + redraw text when the displayed string or warn state changes
+  if (gaugeTextChanged(cx, cy, keyBuf, targetBuf, forceRedraw)) {
     clearGaugeCenter(gfx, cx, cy, radius, thickness);
 
     gfx.setTextDatum(MC_DATUM);

@@ -140,13 +140,16 @@ static bool  smoothInited      = false;
 static bool gaugesAnimating = false;       // true while arcs are interpolating
 static const unsigned long GAUGE_ANIM_MS = 80; // ~12 Hz during animation
 
-static const float SMOOTH_ALPHA = 0.09f;  // per frame at 12Hz — ~1s to settle
+// Per-frame easing factor (at 12Hz). Index by dispSettings.gaugeSmoothing:
+// 0=Off(instant), 1=Slow(~2s), 2=Normal(~1s, default), 3=Fast(~0.4s).
+static const float SMOOTH_ALPHAS[4] = { 1.0f, 0.05f, 0.09f, 0.18f };
 static const float SNAP_THRESH  = 0.5f;   // snap when within 0.5 of target
 
 static void smoothLerp(float& cur, float target) {
+  uint8_t mode = dispSettings.gaugeSmoothing <= 3 ? dispSettings.gaugeSmoothing : 2;
   float diff = target - cur;
   if (fabsf(diff) < SNAP_THRESH) cur = target;
-  else cur += diff * SMOOTH_ALPHA;
+  else cur += diff * SMOOTH_ALPHAS[mode];
 }
 
 // Returns true if any gauge is still animating

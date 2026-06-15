@@ -173,6 +173,9 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.bedScaleMax     = GAUGE_BED_SCALE_DEFAULT;
   ds.chamberScaleMax = GAUGE_CHAMBER_SCALE_DEFAULT;
   ds.powerScaleW     = GAUGE_POWER_SCALE_DEFAULT;
+  ds.gaugeSmoothing  = 2;          // Normal
+  ds.warnColor       = CLR_RED;
+  ds.warnThresholdPct = 0;         // off by default (no behavior change)
 
   // Progress: green arc, green label, white value
   ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
@@ -364,6 +367,12 @@ void loadSettings() {
                                            GAUGE_CHAMBER_SCALE_MIN, GAUGE_CHAMBER_SCALE_MAX);
   dispSettings.powerScaleW     = constrain((int)prefs.getUShort("dsp_pwrmx", def.powerScaleW),
                                            GAUGE_POWER_SCALE_MIN, GAUGE_POWER_SCALE_MAX);
+  {
+    uint8_t sm = prefs.getUChar("dsp_smooth", def.gaugeSmoothing);
+    dispSettings.gaugeSmoothing = (sm <= 3) ? sm : 2;
+  }
+  dispSettings.warnColor        = prefs.getUShort("dsp_wclr", def.warnColor);
+  dispSettings.warnThresholdPct = constrain((int)prefs.getUChar("dsp_wthr", def.warnThresholdPct), 0, 100);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -612,6 +621,9 @@ void saveSettings() {
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);
   prefs.putUShort("dsp_pwrmx", dispSettings.powerScaleW);
+  prefs.putUChar("dsp_smooth", dispSettings.gaugeSmoothing);
+  prefs.putUShort("dsp_wclr", dispSettings.warnColor);
+  prefs.putUChar("dsp_wthr", dispSettings.warnThresholdPct);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);

@@ -91,6 +91,9 @@ struct DisplaySettings {
   uint16_t bedScaleMax;      // C
   uint16_t chamberScaleMax;  // C (also drives the AMS unit-temp gauge)
   uint16_t powerScaleW;      // W (Tasmota power gauge full-scale)
+  uint8_t  gaugeSmoothing;   // arc easing speed: 0=Off(instant) 1=Slow 2=Normal 3=Fast
+  uint16_t warnColor;        // temp-gauge over-threshold color (arc + value), RGB565
+  uint8_t  warnThresholdPct; // temp gauge turns warnColor at >= this % of scale; 0 = off
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;

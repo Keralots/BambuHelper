@@ -111,6 +111,16 @@ static void readDisplayFromForm() {
     dispSettings.chamberScaleMax = constrain(server.arg("cht_max").toInt(), GAUGE_CHAMBER_SCALE_MIN, GAUGE_CHAMBER_SCALE_MAX);
   if (server.hasArg("pwr_max"))
     dispSettings.powerScaleW     = constrain(server.arg("pwr_max").toInt(), GAUGE_POWER_SCALE_MIN, GAUGE_POWER_SCALE_MAX);
+
+  // Gauge behavior: smoothing speed + temp warning color
+  if (server.hasArg("gsmooth")) {
+    int sm = server.arg("gsmooth").toInt();
+    dispSettings.gaugeSmoothing = (sm >= 0 && sm <= 3) ? (uint8_t)sm : 2;
+  }
+  if (server.hasArg("warn_thr"))
+    dispSettings.warnThresholdPct = constrain(server.arg("warn_thr").toInt(), 0, 100);
+  if (server.hasArg("warn_clr"))
+    dispSettings.warnColor = htmlToRgb565(server.arg("warn_clr").c_str());
   dpSettings.keepDisplayOn = server.hasArg("keepon");
   dpSettings.showClockAfterFinish = server.hasArg("clock");
   dpSettings.doorAckEnabled = server.hasArg("dack");
@@ -975,6 +985,9 @@ static void handleSettingsExport() {
   disp["bedScaleMax"]     = dispSettings.bedScaleMax;
   disp["chamberScaleMax"] = dispSettings.chamberScaleMax;
   disp["powerScaleW"]     = dispSettings.powerScaleW;
+  disp["gaugeSmoothing"]  = dispSettings.gaugeSmoothing;
+  rgb565ToHtml(dispSettings.warnColor, buf); disp["warnColor"] = String(buf);
+  disp["warnThresholdPct"] = dispSettings.warnThresholdPct;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1249,6 +1262,9 @@ static void handleSettingsImportFinish() {
     if (disp["bedScaleMax"].is<int>())     dispSettings.bedScaleMax     = constrain(disp["bedScaleMax"].as<int>(),     GAUGE_BED_SCALE_MIN,     GAUGE_BED_SCALE_MAX);
     if (disp["chamberScaleMax"].is<int>()) dispSettings.chamberScaleMax = constrain(disp["chamberScaleMax"].as<int>(), GAUGE_CHAMBER_SCALE_MIN, GAUGE_CHAMBER_SCALE_MAX);
     if (disp["powerScaleW"].is<int>())     dispSettings.powerScaleW     = constrain(disp["powerScaleW"].as<int>(),     GAUGE_POWER_SCALE_MIN,   GAUGE_POWER_SCALE_MAX);
+    if (disp["gaugeSmoothing"].is<int>())  { int sm = disp["gaugeSmoothing"].as<int>(); dispSettings.gaugeSmoothing = (sm >= 0 && sm <= 3) ? (uint8_t)sm : 2; }
+    if (disp["warnColor"].is<const char*>()) dispSettings.warnColor = htmlToRgb565(disp["warnColor"]);
+    if (disp["warnThresholdPct"].is<int>()) dispSettings.warnThresholdPct = constrain(disp["warnThresholdPct"].as<int>(), 0, 100);
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 

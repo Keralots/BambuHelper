@@ -353,6 +353,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "CHT_MAX") == 0) { out = String(dispSettings.chamberScaleMax); return true; }
   if (strcmp(name, "PWR_MAX") == 0) { out = String(dispSettings.powerScaleW); return true; }
 
+  // --- Gauge behavior: smoothing speed + temp warning color ---
+  if (strcmp(name, "GSMOOTH_OFF") == 0)  { out = dispSettings.gaugeSmoothing == 0 ? "selected" : ""; return true; }
+  if (strcmp(name, "GSMOOTH_SLOW") == 0) { out = dispSettings.gaugeSmoothing == 1 ? "selected" : ""; return true; }
+  if (strcmp(name, "GSMOOTH_NORM") == 0) { out = dispSettings.gaugeSmoothing == 2 ? "selected" : ""; return true; }
+  if (strcmp(name, "GSMOOTH_FAST") == 0) { out = dispSettings.gaugeSmoothing == 3 ? "selected" : ""; return true; }
+  if (strcmp(name, "WARN_CLR") == 0) { rgb565ToHtml(dispSettings.warnColor, buf); out = buf; return true; }
+  if (strcmp(name, "WARN_THR") == 0) { out = String(dispSettings.warnThresholdPct); return true; }
+
   // --- Button ---
   if (strcmp(name, "BTN_OFF") == 0)    { out = buttonType == BTN_DISABLED ? "selected" : ""; return true; }
   if (strcmp(name, "BTN_PUSH") == 0)   { out = buttonType == BTN_PUSH ? "selected" : ""; return true; }

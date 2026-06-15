@@ -79,6 +79,7 @@ function saveWifi(){
 //              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, invcol,
 //              cydcls, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
+//              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk + _a/_l/_v
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
@@ -1203,10 +1204,31 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 
   <div class="card">
     <div class="card-head"><div><h3>Gauge scales</h3><p>Full-scale value each arc represents. Lower a scale so the arc sweeps fuller for your printer's normal range. Defaults suit any Bambu printer.</p></div></div>
-    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C</span></div></div>
-    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C</span></div></div>
-    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C</span></div></div>
-    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W</span></div></div>
+    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 300</span></div></div>
+    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 120</span></div></div>
+    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 60</span></div></div>
+    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W &middot; default 1000</span></div></div>
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
+    <div class="field"><label for="gsmooth">Arc smoothing</label>
+      <select id="gsmooth">
+        <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
+        <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
+        <option value="2" %GSMOOTH_NORM%>Normal (~1s)</option>
+        <option value="3" %GSMOOTH_FAST%>Fast (~0.4s)</option>
+      </select>
+      <span class="text-dim small">default Normal</span>
+    </div>
+    <div class="field"><label for="warn_thr">Warning threshold</label>
+      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="warn_thr" min="0" max="100" step="5" value="%WARN_THR%" style="max-width:120px"><span class="text-dim small">% of scale &middot; default 0 (off)</span></div>
+    </div>
+    <div class="field"><label for="warn_clr">Warning color</label>
+      <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
+    </div>
+    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale.</p>
     <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
   </div>
 
@@ -2244,6 +2266,9 @@ function applyDisplay(){
   p.append('bed_max', document.getElementById('bed_max').value);
   p.append('cht_max', document.getElementById('cht_max').value);
   p.append('pwr_max', document.getElementById('pwr_max').value);
+  p.append('gsmooth', document.getElementById('gsmooth').value);
+  p.append('warn_thr', document.getElementById('warn_thr').value);
+  p.append('warn_clr', document.getElementById('warn_clr').value);
   for (var i = 0; i < GAUGE_KEYS.length; i++){
     var k = GAUGE_KEYS[i];
     p.append(k + '_a', document.getElementById(k + '_a').value);
