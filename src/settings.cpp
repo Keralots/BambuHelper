@@ -169,6 +169,13 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.showBatteryIndicator = true;
+  ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
+  ds.bedScaleMax     = GAUGE_BED_SCALE_DEFAULT;
+  ds.chamberScaleMax = GAUGE_CHAMBER_SCALE_DEFAULT;
+  ds.powerScaleW     = GAUGE_POWER_SCALE_DEFAULT;
+  ds.gaugeSmoothing  = 2;          // Normal
+  ds.warnColor       = CLR_RED;
+  ds.warnThresholdPct = 0;         // off by default (no behavior change)
 
   // Progress: green arc, green label, white value
   ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
@@ -352,6 +359,20 @@ void loadSettings() {
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
+  dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
+                                           GAUGE_NOZZLE_SCALE_MIN, GAUGE_NOZZLE_SCALE_MAX);
+  dispSettings.bedScaleMax     = constrain((int)prefs.getUShort("dsp_bedmx", def.bedScaleMax),
+                                           GAUGE_BED_SCALE_MIN, GAUGE_BED_SCALE_MAX);
+  dispSettings.chamberScaleMax = constrain((int)prefs.getUShort("dsp_chbmx", def.chamberScaleMax),
+                                           GAUGE_CHAMBER_SCALE_MIN, GAUGE_CHAMBER_SCALE_MAX);
+  dispSettings.powerScaleW     = constrain((int)prefs.getUShort("dsp_pwrmx", def.powerScaleW),
+                                           GAUGE_POWER_SCALE_MIN, GAUGE_POWER_SCALE_MAX);
+  {
+    uint8_t sm = prefs.getUChar("dsp_smooth", def.gaugeSmoothing);
+    dispSettings.gaugeSmoothing = (sm <= 3) ? sm : 2;
+  }
+  dispSettings.warnColor        = prefs.getUShort("dsp_wclr", def.warnColor);
+  dispSettings.warnThresholdPct = constrain((int)prefs.getUChar("dsp_wthr", def.warnThresholdPct), 0, 100);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -596,6 +617,13 @@ void saveSettings() {
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
+  prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
+  prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
+  prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);
+  prefs.putUShort("dsp_pwrmx", dispSettings.powerScaleW);
+  prefs.putUChar("dsp_smooth", dispSettings.gaugeSmoothing);
+  prefs.putUShort("dsp_wclr", dispSettings.warnColor);
+  prefs.putUChar("dsp_wthr", dispSettings.warnThresholdPct);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);

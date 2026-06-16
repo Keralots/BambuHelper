@@ -21,6 +21,10 @@ uint8_t tasmotaPrinterSlotForPlug(uint8_t plug);
 //   tasmotaTariffForSlot - returns the global tariff (slot ignored)
 //   tasmotaCurrencySymbol - global UTF-8 currency symbol
 bool        tasmotaIsActiveForSlot(uint8_t slot);
+// LOOSE configuration check (enabled + assignment match, ignores freshness).
+// Used by the web UI to decide whether the Power gauge option is offered for a
+// slot, since a plug may be offline at config time.
+bool        tasmotaConfiguredForSlot(uint8_t slot);
 float       tasmotaGetWattsForSlot(uint8_t slot);
 uint8_t     tasmotaDisplayModeForSlot(uint8_t slot);
 float       tasmotaGetPrintKwhUsedForSlot(uint8_t slot);

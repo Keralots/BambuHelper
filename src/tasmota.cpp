@@ -401,6 +401,10 @@ bool tasmotaIsActiveForSlot(uint8_t slot) {
   return (millis() - g_rt[p].lastOkMs) < TASMOTA_STALE_MS;
 }
 
+bool tasmotaConfiguredForSlot(uint8_t slot) {
+  return visiblePlugForSlot(slot) != 0xFF;
+}
+
 float tasmotaGetWattsForSlot(uint8_t slot) {
   uint8_t p = visiblePlugForSlot(slot);
   if (p == 0xFF || g_rt[p].lastOkMs == 0) return 0.0f;

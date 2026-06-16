@@ -119,6 +119,24 @@
 #define ROTATE_MAX_MS         600000  // max allowed interval (10 min)
 
 // =============================================================================
+//  Gauge full-scale ranges (user-configurable arc maxima)
+//  Defaults cover every Bambu printer; lowering a scale makes the arc sweep
+//  fuller for a printer's normal range (better visual resolution).
+// =============================================================================
+#define GAUGE_NOZZLE_SCALE_DEFAULT  300   // C
+#define GAUGE_NOZZLE_SCALE_MIN      100
+#define GAUGE_NOZZLE_SCALE_MAX      400
+#define GAUGE_BED_SCALE_DEFAULT     120   // C
+#define GAUGE_BED_SCALE_MIN         40
+#define GAUGE_BED_SCALE_MAX         150
+#define GAUGE_CHAMBER_SCALE_DEFAULT 60    // C (also AMS unit-temp gauge)
+#define GAUGE_CHAMBER_SCALE_MIN     30
+#define GAUGE_CHAMBER_SCALE_MAX     120
+#define GAUGE_POWER_SCALE_DEFAULT   1000  // W (Tasmota power gauge)
+#define GAUGE_POWER_SCALE_MIN       100
+#define GAUGE_POWER_SCALE_MAX       5000
+
+// =============================================================================
 //  Physical button
 // =============================================================================
 #ifdef DISPLAY_240x320

@@ -140,13 +140,16 @@ static bool  smoothInited      = false;
 static bool gaugesAnimating = false;       // true while arcs are interpolating
 static const unsigned long GAUGE_ANIM_MS = 80; // ~12 Hz during animation
 
-static const float SMOOTH_ALPHA = 0.09f;  // per frame at 12Hz — ~1s to settle
+// Per-frame easing factor (at 12Hz). Index by dispSettings.gaugeSmoothing:
+// 0=Off(instant), 1=Slow(~2s), 2=Normal(~1s, default), 3=Fast(~0.4s).
+static const float SMOOTH_ALPHAS[4] = { 1.0f, 0.05f, 0.09f, 0.18f };
 static const float SNAP_THRESH  = 0.5f;   // snap when within 0.5 of target
 
 static void smoothLerp(float& cur, float target) {
+  uint8_t mode = dispSettings.gaugeSmoothing <= 3 ? dispSettings.gaugeSmoothing : 2;
   float diff = target - cur;
   if (fabsf(diff) < SNAP_THRESH) cur = target;
-  else cur += diff * SMOOTH_ALPHA;
+  else cur += diff * SMOOTH_ALPHAS[mode];
 }
 
 // One dot per configured printer, centered on cx; green = currently displayed
@@ -1425,13 +1428,13 @@ static void drawIdle() {
   if (tempChanged) {
     markFrameDirty();
     drawTempGauge(tft, cx - lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.nozzleTemp, s.nozzleTarget, 300.0f,
+                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
                   dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
                   &dispSettings.nozzle, smoothNozzleTemp);
 
     // Bed temp gauge
     drawTempGauge(tft, cx + lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.bedTemp, s.bedTarget, 120.0f,
+                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
                   dispSettings.bed.arc, "Bed", nullptr, forceRedraw,
                   &dispSettings.bed, smoothBedTemp);
   }
@@ -2602,6 +2605,7 @@ static void drawPrinting() {
           case GAUGE_CHAMBER_TEMP:  needDraw = animating || s.chamberTemp != prevState.chamberTemp; break;
           case GAUGE_HEATBREAK:     needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
+          case GAUGE_POWER:       needDraw = true; break;  // watts live in tasmota runtime; text cache + incremental arc gate the redraw
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
           default:
             // AMS humidity / temperature / filament gauges — index derived from enum value
@@ -2657,22 +2661,22 @@ static void drawPrinting() {
           drawProgressArc(tft, cx, cy, gR, gT, s.progress, prevState.progress, s.remainingMinutes, fr);
           break;
         case GAUGE_NOZZLE:
-          drawTempGauge(tft, cx, cy, gR, s.nozzleTemp, s.nozzleTarget, 300.0f,
+          drawTempGauge(tft, cx, cy, gR, s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
                         dispSettings.nozzle.arc, nozzleLabel(s), nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTemp);
           break;
         case GAUGE_NOZZLE_RIGHT:
-          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[0], s.nozzleTargetN[0], 300.0f,
+          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[0], s.nozzleTargetN[0], (float)dispSettings.nozzleScaleMax,
                         dispSettings.nozzle.arc, "Nozzle R", nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTempN[0]);
           break;
         case GAUGE_NOZZLE_LEFT:
-          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[1], s.nozzleTargetN[1], 300.0f,
+          drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[1], s.nozzleTargetN[1], (float)dispSettings.nozzleScaleMax,
                         dispSettings.nozzle.arc, "Nozzle L", nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTempN[1]);
           break;
         case GAUGE_BED:
-          drawTempGauge(tft, cx, cy, gR, s.bedTemp, s.bedTarget, 120.0f,
+          drawTempGauge(tft, cx, cy, gR, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
                         dispSettings.bed.arc, "Bed", nullptr, fr,
                         &dispSettings.bed, smoothBedTemp);
           break;
@@ -2706,7 +2710,7 @@ static void drawPrinting() {
                        &dispSettings.exhaustFan, smoothExhaustFan);
           break;
         case GAUGE_CHAMBER_TEMP:
-          drawTempGauge(tft, cx, cy, gR, s.chamberTemp, 0.0f, 60.0f,
+          drawTempGauge(tft, cx, cy, gR, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
                         dispSettings.chamberTemp.arc, "Chamber", nullptr, fr,
                         &dispSettings.chamberTemp, smoothChamberTemp);
           break;
@@ -2719,6 +2723,11 @@ static void drawPrinting() {
           break;
         case GAUGE_LAYER:
           drawLayerGauge(tft, cx, cy, gR, gT, s.layerNum, s.totalLayers, fr);
+          break;
+        case GAUGE_POWER:
+          drawPowerGauge(tft, cx, cy, gR,
+                         tasmotaGetWattsForSlot(rotState.displayIndex),
+                         tasmotaIsActiveForSlot(rotState.displayIndex), "Power", fr);
           break;
         case GAUGE_EMPTY:
           if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);
@@ -2733,7 +2742,7 @@ static void drawPrinting() {
           } else if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
             uint8_t ui = gt - GAUGE_AMS_TEMP_1;
             const AmsUnit& u = s.ams.units[ui];
-            drawTempGauge(tft, cx, cy, gR, u.present ? u.temp : 0, 0, 60.0f,
+            drawTempGauge(tft, cx, cy, gR, u.present ? u.temp : 0, 0, (float)dispSettings.chamberScaleMax,
                           dispSettings.chamberTemp.arc, amsLabel[ui], nullptr, fr, &dispSettings.chamberTemp);
           } else if (gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) {
             uint8_t ui = gt - GAUGE_AMS_FILAMENT_1;
@@ -3131,12 +3140,12 @@ static void drawFinished() {
   if (tempChanged) {
     markFrameDirty();
     drawTempGauge(tft, gaugeLeft, gaugeY, gR,
-                  s.nozzleTemp, s.nozzleTarget, 300.0f,
+                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
                   dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
                   &dispSettings.nozzle, smoothNozzleTemp);
 
     drawTempGauge(tft, gaugeRight, gaugeY, gR,
-                  s.bedTemp, s.bedTarget, 120.0f,
+                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
                   dispSettings.bed.arc, "Bed", nullptr, forceRedraw,
                   &dispSettings.bed, smoothBedTemp);
   }

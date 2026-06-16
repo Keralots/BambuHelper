@@ -37,6 +37,7 @@ enum GaugeType : uint8_t {
   GAUGE_AMS_BARS_4     = 28,    // AMS unit 4
   GAUGE_NOZZLE_RIGHT   = 29,    // dual-nozzle (H2D/H2C/X2D): right extruder (id 0), fixed side
   GAUGE_NOZZLE_LEFT    = 30,    // dual-nozzle: left extruder (id 1), fixed side
+  GAUGE_POWER          = 31,    // Tasmota smart-plug live power draw (W / kW)
   GAUGE_TYPE_COUNT  // sentinel - always last
 };
 
@@ -84,6 +85,15 @@ struct DisplaySettings {
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
+  // Gauge full-scale ranges (arc maxima). Lowering a scale makes the arc sweep
+  // fuller for a printer's normal range. Defaults suit any Bambu printer.
+  uint16_t nozzleScaleMax;   // C
+  uint16_t bedScaleMax;      // C
+  uint16_t chamberScaleMax;  // C (also drives the AMS unit-temp gauge)
+  uint16_t powerScaleW;      // W (Tasmota power gauge full-scale)
+  uint8_t  gaugeSmoothing;   // arc easing speed: 0=Off(instant) 1=Slow 2=Normal 3=Fast
+  uint16_t warnColor;        // temp-gauge over-threshold color (arc + value), RGB565
+  uint8_t  warnThresholdPct; // temp gauge turns warnColor at >= this % of scale; 0 = off
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;
