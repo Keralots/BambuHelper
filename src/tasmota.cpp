@@ -34,6 +34,8 @@ struct TasmotaPlugRuntime {
   uint8_t  failCount;
   bool     plugOffline;
   bool     kwhChanged;
+  bool     powerStateKnown;  // true when the plug reports relay state directly (Shelly)
+  bool     powerOn;          // valid only when powerStateKnown
   uint32_t finishEnteredMs; // millis() when this plug's printer entered FINISH
   bool     autoOffFired;    // latch: true once Power Off has succeeded for this cycle
 };
@@ -110,9 +112,30 @@ static void markPollFailure(uint8_t i) {
   }
 }
 
-static void pollOne(uint8_t i) {
+// Common post-parse update shared by the Tasmota and Shelly pollers. Negative
+// values mean "not reported" and leave the corresponding field untouched.
+static void applyReadings(uint8_t i, float watts, float todayKwh,
+                          float yestKwh, float totalKwh) {
+  // Fallback: if Total is missing but Today is present, use Today as a degraded
+  // same-day odometer so per-print math still works within a day.
+  if (totalKwh < 0.0f && todayKwh >= 0.0f) totalKwh = todayKwh;
+
+  g_rt[i].watts       = watts;
+  g_rt[i].lastOkMs    = millis();
+  g_rt[i].failCount   = 0;
+  g_rt[i].plugOffline = false;
+
+  if (todayKwh >= 0.0f && todayKwh != g_rt[i].todayKwh) {
+    g_rt[i].todayKwh   = todayKwh;
+    g_rt[i].kwhChanged = true;
+  }
+  if (yestKwh >= 0.0f)  g_rt[i].yesterdayKwh = yestKwh;
+  if (totalKwh >= 0.0f) g_rt[i].totalKwh     = totalKwh;
+}
+
+// Tasmota: GET /cm?cmnd=Status 10 -> StatusSNS.ENERGY {Power, Today, Yesterday, Total}
+static void pollTasmota(uint8_t i) {
   TasmotaSettings& s = tasmotaSettings[i];
-  if (!s.enabled || s.ip[0] == '\0') return;
 
   char url[64];
   snprintf(url, sizeof(url), "http://%s/cm?cmnd=Status%%2010", s.ip);
@@ -168,24 +191,86 @@ static void pollOne(uint8_t i) {
   float newYest  = yesterday.isNull() ? -1.0f : yesterday.as<float>();
   float newTotal = total.isNull()     ? -1.0f : total.as<float>();
 
-  // Fallback: if plug omits Total (very old Tasmota firmware), use Today as
-  // a degraded same-day odometer so per-print math still works within a day.
-  if (newTotal < 0.0f && newToday >= 0.0f) newTotal = newToday;
-
-  g_rt[i].watts       = newWatts;
-  g_rt[i].lastOkMs    = millis();
-  g_rt[i].failCount   = 0;
-  g_rt[i].plugOffline = false;
-
-  if (newToday >= 0.0f && newToday != g_rt[i].todayKwh) {
-    g_rt[i].todayKwh   = newToday;
-    g_rt[i].kwhChanged = true;
-  }
-  if (newYest >= 0.0f) g_rt[i].yesterdayKwh = newYest;
-  if (newTotal >= 0.0f) g_rt[i].totalKwh = newTotal;
+  // Tasmota's Status 10 has no relay state — keep the watt-inference fallback
+  // for the on/off buttons.
+  g_rt[i].powerStateKnown = false;
+  applyReadings(i, newWatts, newToday, newYest, newTotal);
 
   Serial.printf("[Tasmota %u] Power=%.0fW Today=%.3fkWh Total=%.3fkWh\n",
                 i, newWatts, newToday, newTotal);
+}
+
+// Shelly Gen2/Gen3 (same RPC API): GET /rpc/Switch.GetStatus?id=0 -> {apower (W),
+// aenergy.total (Wh), output (bool)}.
+// Issue #115 reporter used /rpc/Shelly.GetStatus -> "switch:0".apower
+// and /relay/0?turn=on|off; the Switch RPC is the narrower equivalent.
+// Shelly reports no Today/Yesterday odometer, so those stay at their -1 sentinel.
+// aenergy.total is a cumulative Wh counter (can be reset) — divide by 1000 for kWh.
+static void pollShelly(uint8_t i) {
+  TasmotaSettings& s = tasmotaSettings[i];
+
+  char url[64];
+  snprintf(url, sizeof(url), "http://%s/rpc/Switch.GetStatus?id=0", s.ip);
+
+  HTTPClient http;
+  http.setTimeout(g_rt[i].plugOffline ? TASMOTA_TIMEOUT_FAST_MS : TASMOTA_TIMEOUT_MS);
+  if (!http.begin(url)) {
+    Serial.printf("[Shelly %u] begin failed: %s\n", i, url);
+    markPollFailure(i);
+    return;
+  }
+
+  int code = http.GET();
+  if (code != 200) {
+    if (code == 401) {
+      Serial.printf("[Shelly %u] HTTP 401 — password-protected Shelly not supported "
+                    "(digest auth unavailable)\n", i);
+    } else {
+      Serial.printf("[Shelly %u] HTTP %d from %s\n", i, code, s.ip);
+    }
+    http.end();
+    markPollFailure(i);
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    Serial.printf("[Shelly %u] JSON parse error: %s\n", i, err.c_str());
+    markPollFailure(i);
+    return;
+  }
+
+  JsonVariant apower = doc["apower"];
+  if (apower.isNull()) {
+    Serial.printf("[Shelly %u] apower field missing\n", i);
+    markPollFailure(i);
+    return;
+  }
+
+  float newWatts = apower.as<float>();
+  JsonVariant aetotal = doc["aenergy"]["total"];          // Wh
+  float newTotal = aetotal.isNull() ? -1.0f : (aetotal.as<float>() / 1000.0f);
+
+  JsonVariant output = doc["output"];
+  g_rt[i].powerStateKnown = !output.isNull();
+  g_rt[i].powerOn         = output.as<bool>();
+
+  // Shelly has no Today/Yesterday — pass -1 so those stay unavailable.
+  applyReadings(i, newWatts, -1.0f, -1.0f, newTotal);
+
+  Serial.printf("[Shelly %u] Power=%.0fW Total=%.3fkWh Output=%d\n",
+                i, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
+}
+
+static void pollOne(uint8_t i) {
+  TasmotaSettings& s = tasmotaSettings[i];
+  if (!s.enabled || s.ip[0] == '\0') return;
+  if (s.plugType == 1) pollShelly(i);
+  else                 pollTasmota(i);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,8 +280,15 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (s.ip[0] == '\0') return false;
 
+  const char* tag = (s.plugType == 1) ? "Shelly" : "Tasmota";
   char url[64];
-  snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power%%20%s", s.ip, on ? "On" : "Off");
+  if (s.plugType == 1) {
+    // Shelly Gen2: GET /rpc/Switch.Set?id=0&on=true|false (issue #115 Gen1
+    // equivalent was /relay/0?turn=on|off).
+    snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=0&on=%s", s.ip, on ? "true" : "false");
+  } else {
+    snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power%%20%s", s.ip, on ? "On" : "Off");
+  }
 
   HTTPClient http;
   http.setTimeout(TASMOTA_TIMEOUT_MS);
@@ -205,10 +297,10 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   http.end();
 
   if (code == 200) {
-    Serial.printf("[Tasmota %u] Power %s sent successfully\n", i, on ? "On" : "Off");
+    Serial.printf("[%s %u] Power %s sent successfully\n", tag, i, on ? "On" : "Off");
     return true;
   }
-  Serial.printf("[Tasmota %u] Power %s HTTP %d\n", i, on ? "On" : "Off", code);
+  Serial.printf("[%s %u] Power %s HTTP %d\n", tag, i, on ? "On" : "Off", code);
   return false;
 }
 
@@ -450,14 +542,18 @@ void tasmotaGetStats(uint8_t plug, TasmotaPlugStatsView* out) {
     out->todayKwh = -1.0f;
     out->totalKwh = -1.0f;
     out->printUsedKwh = -1.0f;
+    out->powerStateKnown = false;
+    out->powerOn = false;
     return;
   }
   bool online = tasmotaSettings[plug].enabled
              && g_rt[plug].lastOkMs > 0
              && (millis() - g_rt[plug].lastOkMs) < TASMOTA_STALE_MS;
-  out->online       = online;
-  out->watts        = g_rt[plug].watts;
-  out->todayKwh     = g_rt[plug].todayKwh;
-  out->totalKwh     = g_rt[plug].totalKwh;
-  out->printUsedKwh = g_rt[plug].printUsedKwh;
+  out->online          = online;
+  out->watts           = g_rt[plug].watts;
+  out->todayKwh        = g_rt[plug].todayKwh;
+  out->totalKwh        = g_rt[plug].totalKwh;
+  out->printUsedKwh    = g_rt[plug].printUsedKwh;
+  out->powerStateKnown = online && g_rt[plug].powerStateKnown;
+  out->powerOn         = g_rt[plug].powerOn;
 }

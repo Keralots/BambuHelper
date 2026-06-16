@@ -88,7 +88,7 @@ function saveWifi(){
 //              lederr, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
-//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_ip, tsm_dm (radio), tsm_pi,
+//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_ip, tsm_dm (radio), tsm_pi,
 //              tsm_ao, tsm_ad, tsm_aod, tsm_slot
 //    Diag:     dbglog
 // -----------------------------------------------------------------------------
@@ -1430,8 +1430,13 @@ R"rawliteral(
       <input type="checkbox" id="tsm_en" value="1">
       <label for="tsm_en">Enable power monitoring for this plug</label>
     </label>
+    <div class="field" style="margin-top:var(--sp-3)">
+      <label for="tsm_pt">Power plug type</label>
+      <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option></select>
+    </div>
+    <div class="hint" id="tsm_shelly_hint" style="margin-top:-4px;display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
     <div class="row" style="margin-top:var(--sp-3)">
-      <div class="field"><label for="tsm_ip">Tasmota plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
+      <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
     </div>
     %POWER_SLOT_BLOCK%
@@ -1467,7 +1472,7 @@ R"rawliteral(
     <dl class="kv">
       <dt>Status</dt><dd><span id="ptStatusDot" class="text-dim">(offline)</span></dd>
       <dt>This print</dt><dd id="ptThis">-</dd>
-      <dt>Today</dt><dd id="ptToday">-</dd>
+      <dt id="ptTodayLabel">Today</dt><dd id="ptToday">-</dd>
       <dt>Total</dt><dd id="ptTotal">-</dd>
       <dt>Now</dt><dd id="ptWatts">-</dd>
     </dl>
@@ -2099,6 +2104,8 @@ function selectPowerTab(plug){
   fetch('/power/config?plug=' + plug).then(function(r){return r.json();}).then(function(d){
     if (plug !== currentPowerPlug) return;
     document.getElementById('tsm_en').checked = !!d.enabled;
+    document.getElementById('tsm_pt').value = (d.plugType === 1) ? '1' : '0';
+    onPlugTypeChange();
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
     for (var j = 0; j < dm.length; j++) dm[j].checked = (parseInt(dm[j].value) === (d.displayMode || 0));
@@ -2112,6 +2119,16 @@ function selectPowerTab(plug){
     if (typeof d.currency === 'string') document.getElementById('tsm_cur').value = d.currency;
     refreshPowerStats();
   }).catch(function(e){console.warn('selectPowerTab:',e);});
+}
+function onPlugTypeChange(){
+  var shelly = (document.getElementById('tsm_pt').value === '1');
+  var hint = document.getElementById('tsm_shelly_hint');
+  if (hint) hint.style.display = shelly ? '' : 'none';
+  // Shelly has no Today odometer - hide the row (label + value) for it.
+  var tdLbl = document.getElementById('ptTodayLabel');
+  var tdVal = document.getElementById('ptToday');
+  if (tdLbl) tdLbl.style.display = shelly ? 'none' : '';
+  if (tdVal) tdVal.style.display = shelly ? 'none' : '';
 }
 function fmtKwh(v){ return (v >= 0) ? (v.toFixed(3) + ' kWh') : '-'; }
 function fmtMoney(v, cur){ if (!(v >= 0) || !cur) return ''; return ' (' + v.toFixed(2) + ' ' + cur + ')'; }
@@ -2128,7 +2145,9 @@ function refreshPowerStats(){
     document.getElementById('ptToday').textContent = fmtKwh(s.today) + (s.today >= 0 ? fmtMoney(s.today * tar, cur) : '');
     document.getElementById('ptTotal').textContent = fmtKwh(s.total) + (s.total >= 0 ? fmtMoney(s.total * tar, cur) : '');
     document.getElementById('ptWatts').textContent = (s.online && s.watts >= 0) ? (s.watts.toFixed(0) + ' W') : '-';
-    var on = s.online && s.watts > 0.5;
+    // Prefer the real relay state when the plug reports it (Shelly output);
+    // otherwise fall back to watt inference (Tasmota has no state field).
+    var on = s.stateKnown ? !!s.on : (s.online && s.watts > 0.5);
     document.getElementById('btnPowerOn').style.display = on ? 'none' : '';
     document.getElementById('btnPowerOff').style.display = on ? '' : 'none';
   }).catch(function(){});
@@ -2151,6 +2170,7 @@ function savePower(){
   var p = new URLSearchParams();
   p.append('plug', String(currentPowerPlug));
   p.append('tsm_en', document.getElementById('tsm_en').checked ? '1' : '0');
+  p.append('tsm_pt', document.getElementById('tsm_pt').value);
   p.append('tsm_ip', document.getElementById('tsm_ip').value.trim());
   var dm = document.querySelector('input[name="tsm_dm"]:checked');
   if (dm) p.append('tsm_dm', dm.value);

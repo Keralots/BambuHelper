@@ -185,6 +185,7 @@ struct LedSettings {
 
 struct TasmotaSettings {
   bool    enabled;
+  uint8_t plugType;          // 0=Tasmota, 1=Shelly Gen2/Gen3 (same RPC API)
   char    ip[16];
   uint8_t displayMode;       // 0=alternate layers/power every 4s, 1=always show power
   uint8_t pollInterval;      // poll interval in seconds (10-60)
