@@ -823,6 +823,7 @@ static void handleGetPowerConfig() {
   TasmotaSettings& s = tasmotaSettings[plug];
   JsonDocument doc;
   doc["enabled"]         = s.enabled;
+  doc["plugType"]        = s.plugType;            // 0=Tasmota, 1=Shelly Gen2
   doc["ip"]              = s.ip;
   doc["displayMode"]     = s.displayMode;
   doc["pollInterval"]    = s.pollInterval;
@@ -846,11 +847,14 @@ static void handleGetPowerStats() {
     TasmotaPlugStatsView v;
     tasmotaGetStats(i, &v);
     JsonObject o = arr.add<JsonObject>();
-    o["online"]    = v.online;
-    o["watts"]     = v.watts;
-    o["today"]     = v.todayKwh;
-    o["total"]     = v.totalKwh;
-    o["thisPrint"] = v.printUsedKwh;
+    o["online"]     = v.online;
+    o["watts"]      = v.watts;
+    o["today"]      = v.todayKwh;
+    o["total"]      = v.totalKwh;
+    o["thisPrint"]  = v.printUsedKwh;
+    o["plugType"]   = tasmotaSettings[i].plugType;  // JS hides Today row for Shelly
+    o["stateKnown"] = v.powerStateKnown;            // true => use real on/off below
+    o["on"]         = v.powerOn;
   }
   String json;
   serializeJson(doc, json);
@@ -878,6 +882,7 @@ static void handleSavePower() {
 
   // Checkboxes are always submitted as 0/1 from the JS; treat "absent" as no change
   if (server.hasArg("tsm_en"))  s.enabled = (server.arg("tsm_en").toInt() != 0);
+  if (server.hasArg("tsm_pt"))  s.plugType = (server.arg("tsm_pt").toInt() == 1) ? 1 : 0;
   if (server.hasArg("tsm_ip"))  strlcpy(s.ip, server.arg("tsm_ip").c_str(), sizeof(s.ip));
   if (server.hasArg("tsm_dm"))  s.displayMode = server.arg("tsm_dm").toInt() ? 1 : 0;
   if (server.hasArg("tsm_pi")) {
@@ -1068,6 +1073,7 @@ static void handleSettingsExport() {
   for (uint8_t i = 0; i < TASMOTA_PLUG_COUNT; i++) {
     JsonObject p = plugs.add<JsonObject>();
     p["enabled"]         = tasmotaSettings[i].enabled;
+    p["plugType"]        = tasmotaSettings[i].plugType;
     p["ip"]              = tasmotaSettings[i].ip;
     p["displayMode"]     = tasmotaSettings[i].displayMode;
     p["pollInterval"]    = tasmotaSettings[i].pollInterval;
@@ -1412,6 +1418,7 @@ static void handleSettingsImportFinish() {
       if (idx >= TASMOTA_PLUG_COUNT) return;
       TasmotaSettings& s = tasmotaSettings[idx];
       if (p["enabled"].is<bool>())          s.enabled = p["enabled"].as<bool>();
+      if (p["plugType"].is<uint8_t>())      s.plugType = (p["plugType"].as<uint8_t>() == 1) ? 1 : 0;
       if (p["ip"].is<const char*>())        strlcpy(s.ip, p["ip"], sizeof(s.ip));
       if (p["displayMode"].is<uint8_t>())   s.displayMode = p["displayMode"].as<uint8_t>() ? 1 : 0;
       if (p["pollInterval"].is<uint8_t>()) {

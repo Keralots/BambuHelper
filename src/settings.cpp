@@ -545,6 +545,11 @@ void loadSettings() {
   for (uint8_t i = 0; i < TASMOTA_PLUG_COUNT; i++) {
     char k[12];
     snprintf(k, sizeof(k), "tsm%u_en",  i); tasmotaSettings[i].enabled = prefs.getBool(k, false);
+    snprintf(k, sizeof(k), "tsm%u_pt",  i); {
+      uint8_t pt = prefs.getUChar(k, 0);
+      if (pt > 1) pt = 0;                       // 0=Tasmota, 1=Shelly Gen2
+      tasmotaSettings[i].plugType = pt;
+    }
     snprintf(k, sizeof(k), "tsm%u_ip",  i); strlcpy(tasmotaSettings[i].ip, prefs.getString(k, "").c_str(), sizeof(tasmotaSettings[i].ip));
     snprintf(k, sizeof(k), "tsm%u_dm",  i); tasmotaSettings[i].displayMode = prefs.getUChar(k, 0);
     snprintf(k, sizeof(k), "tsm%u_pi",  i); {
@@ -672,6 +677,7 @@ void saveSettings() {
     if (ad < 1 || ad > 240) ad = 10;
 
     snprintf(k, sizeof(k), "tsm%u_en",  i); prefs.putBool(k, tasmotaSettings[i].enabled);
+    snprintf(k, sizeof(k), "tsm%u_pt",  i); prefs.putUChar(k, tasmotaSettings[i].plugType <= 1 ? tasmotaSettings[i].plugType : 0);
     snprintf(k, sizeof(k), "tsm%u_ip",  i); prefs.putString(k, tasmotaSettings[i].ip);
     snprintf(k, sizeof(k), "tsm%u_dm",  i); prefs.putUChar(k, tasmotaSettings[i].displayMode);
     snprintf(k, sizeof(k), "tsm%u_pi",  i); prefs.putUChar(k, pi);

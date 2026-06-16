@@ -52,5 +52,7 @@ struct TasmotaPlugStatsView {
   float todayKwh;
   float totalKwh;
   float printUsedKwh;
+  bool  powerStateKnown;   // true when the plug reports relay state (Shelly output)
+  bool  powerOn;           // valid only when powerStateKnown
 };
 void tasmotaGetStats(uint8_t plug, TasmotaPlugStatsView* out);
