@@ -6,6 +6,7 @@
 
 #include "display_ui.h"      // tft, markFrameDirty, isDisplayForceRedraw, drawAmsBarsGauge
 #include "display_gauges.h"  // arc/temp/fan/... primitives
+#include "icons.h"           // drawIcon16, icon_lock / icon_unlock (door status)
 #include "settings.h"        // dispSettings, GaugeType enum
 #include "bambu_state.h"     // printers[], rotState, BambuState
 #include "fonts.h"           // setFont, FontID
@@ -27,6 +28,7 @@ struct BandGeom {
   int16_t barY;          // progress bar top Y
   int16_t cols[3];       // gauge column center X
   int16_t rows[2];       // gauge row center Y (rows[1] unused when slots <= 3)
+  int16_t footCY;        // bottom info-line center Y
   int16_t r, t;          // gauge radius, arc thickness
   uint8_t slots;         // 3 or 6
 };
@@ -37,6 +39,7 @@ uint8_t    sPrevTypes[2][6] = { { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
 uint32_t   sPrevAirduct[2]  = { 0xFFFFFFFFu, 0xFFFFFFFFu };
 uint8_t    sPrevHdrState[2] = { 0xFF, 0xFF };
 uint8_t    sPrevBarProg[2]  = { 0xFF, 0xFF };
+char       sPrevFootCenter[2][20] = { { 0 }, { 0 } };
 BambuState sPrevState[2];
 
 // Draw the printer name left-aligned at (x, cy), trimming with a ".." suffix if
@@ -271,6 +274,69 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     drawTile(gt, s, slotIndex, cx, cy, g.r, g.t, force || typeChanged);
   }
 
+  // --- Bottom info line: filament swatch + layers/power + door (mirrors the
+  // single-printer bottom bar, compacted into the free space below the gauges) ---
+  {
+    char cbuf[20];
+    const float w = tasmotaGetWattsForSlot(slotIndex);
+    if (tasmotaIsActiveForSlot(slotIndex) && w > 0.5f) {
+      snprintf(cbuf, sizeof(cbuf), "%.0fW", w);
+    } else {
+      snprintf(cbuf, sizeof(cbuf), "%d/%d", s.layerNum, s.totalLayers);
+    }
+    bool footChanged = force
+      || s.doorOpen != prev.doorOpen
+      || s.doorSensorPresent != prev.doorSensorPresent
+      || s.ams.activeTray != prev.ams.activeTray
+      || strcmp(cbuf, sPrevFootCenter[bandIdx]) != 0;
+    if (footChanged) {
+      markFrameDirty();
+      strlcpy(sPrevFootCenter[bandIdx], cbuf, sizeof(sPrevFootCenter[bandIdx]));
+      const int16_t fy = g.footCY;
+      tft.fillRect(0, fy - 8, LY_W, 16, CLR_BG);
+      setFont(tft, FONT_SMALL);
+
+      // Centre string drawn first so the left filament label can clamp to it.
+      const int16_t centerLeft = LY_W / 2 - tft.textWidth(cbuf) / 2;
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString(cbuf, LY_W / 2, fy);
+
+      // Left: active filament swatch + type (or nothing if no AMS).
+      const int16_t lx = LY_SPLIT_BAR_MARGIN;
+      uint16_t swColor = 0;
+      const char* swType = nullptr;
+      if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS &&
+          s.ams.trays[s.ams.activeTray].present) {
+        swColor = s.ams.trays[s.ams.activeTray].colorRgb565;
+        swType  = s.ams.trays[s.ams.activeTray].type;
+      } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
+        swColor = s.ams.vtColorRgb565;
+        swType  = s.ams.vtType;
+      }
+      if (swType) {
+        tft.drawCircle(lx + 5, fy, 5, CLR_TEXT_DARK);
+        tft.fillCircle(lx + 5, fy, 4, swColor);
+        const int16_t typeMaxW = centerLeft - 3 - (lx + 14);
+        if (typeMaxW > 12) {
+          tft.setTextDatum(ML_DATUM);
+          tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+          drawClippedName(swType, lx + 14, fy, typeMaxW);
+        }
+      }
+
+      // Right: door status (only when the printer has a door sensor).
+      if (s.doorSensorPresent) {
+        uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+        tft.setTextDatum(MR_DATUM);
+        tft.setTextColor(clr, CLR_BG);
+        tft.drawString("Door", LY_W - LY_SPLIT_BAR_MARGIN - 18, fy);
+        drawIcon16(tft, LY_W - LY_SPLIT_BAR_MARGIN - 16, fy - 8,
+                   s.doorOpen ? icon_unlock : icon_lock, clr);
+      }
+    }
+  }
+
   sPrevAirduct[bandIdx] = s.airductFuncs;
   memcpy(&prev, &s, sizeof(BambuState));
 }
@@ -296,6 +362,8 @@ void drawSplit() {
   gb.top = LY_SPLIT_DIV_Y; gb.height = LY_H - LY_SPLIT_DIV_Y;
   ga.hdrCY = LY_SPLIT_A_HDR_CY; ga.barY = LY_SPLIT_A_BAR_Y; ga.rows[0] = LY_SPLIT_A_ROW1;
   gb.hdrCY = LY_SPLIT_B_HDR_CY; gb.barY = LY_SPLIT_B_BAR_Y; gb.rows[0] = LY_SPLIT_B_ROW1;
+  ga.footCY = ga.top + ga.height - 12;
+  gb.footCY = gb.top + gb.height - 12;
 #if LY_SPLIT_SLOTS >= 6
   ga.rows[1] = LY_SPLIT_A_ROW2;
   gb.rows[1] = LY_SPLIT_B_ROW2;
