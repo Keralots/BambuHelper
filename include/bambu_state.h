@@ -194,6 +194,8 @@ struct RotationState {
   uint8_t displayIndex;           // which printer slot is currently shown
   unsigned long lastRotateMs;
   unsigned long displayHoldUntilMs;  // suppresses Smart snap/rotation so a manually-peeked or freshly-finished slot stays on screen for one interval
+  bool splitEnabled;              // checkbox: show two active printers together (composes with mode)
+  uint8_t splitIndexB;            // second printer slot shown in split view (displayIndex is the first)
 };
 
 extern RotationState rotState;

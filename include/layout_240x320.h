@@ -47,6 +47,24 @@
 #define LY_PORT9_ROW2    134
 #define LY_PORT9_ROW3    208
 
+// --- Split dual-printer screen (top/bottom bands, 3 gauges each) ---
+// Two 160px bands; roomier than 240x240 so R grows to 34.
+#define LAYOUT_HAS_SPLIT   1
+#define LY_SPLIT_SLOTS     3
+#define LY_SPLIT_DIV_Y     160
+#define LY_SPLIT_GAUGE_R   34
+#define LY_SPLIT_GAUGE_T   LY_GAUGE_T
+#define LY_SPLIT_BAR_H     5
+#define LY_SPLIT_BAR_MARGIN 8
+// Band A (top, y 0..159)
+#define LY_SPLIT_A_HDR_CY  14
+#define LY_SPLIT_A_BAR_Y   28
+#define LY_SPLIT_A_ROW1    82
+// Band B (bottom, y 160..319)
+#define LY_SPLIT_B_HDR_CY  174
+#define LY_SPLIT_B_BAR_Y   188
+#define LY_SPLIT_B_ROW1    242
+
 // --- AMS tray visualization zone (CYD portrait, between gauges and ETA) ---
 // Gauge row 2 labels extend to ~y=187, so AMS starts at 190 to avoid overlap.
 #define LY_AMS_Y          190   // top of AMS zone (below gauge row 2 labels)

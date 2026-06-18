@@ -9,7 +9,7 @@
 // Global state
 PrinterSlot printers[MAX_PRINTERS];
 uint8_t activePrinterIndex = 0;
-RotationState rotState = { ROTATE_SMART, ROTATE_INTERVAL_MS, 0, 0, 0 };
+RotationState rotState = { ROTATE_SMART, ROTATE_INTERVAL_MS, 0, 0, 0, false, 1 };
 char wifiSSID[33] = {0};
 char wifiPass[65] = {0};
 uint8_t brightness = 200;
@@ -468,7 +468,9 @@ void loadSettings() {
   rotState.intervalMs = prefs.getULong("rot_intv", ROTATE_INTERVAL_MS);
   if (rotState.intervalMs < ROTATE_MIN_MS) rotState.intervalMs = ROTATE_MIN_MS;
   if (rotState.intervalMs > ROTATE_MAX_MS) rotState.intervalMs = ROTATE_MAX_MS;
+  rotState.splitEnabled = prefs.getBool("rot_split", false);
   rotState.displayIndex = 0;
+  rotState.splitIndexB = 1;
   rotState.lastRotateMs = 0;
 
   // Button settings
@@ -764,6 +766,7 @@ void saveRotationSettings() {
   prefs.begin(NVS_NAMESPACE, false);
   prefs.putUChar("rot_mode", rotState.mode);
   prefs.putULong("rot_intv", rotState.intervalMs);
+  prefs.putBool("rot_split", rotState.splitEnabled);
   prefs.end();
 }
 

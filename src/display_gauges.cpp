@@ -525,7 +525,10 @@ static void setGaugeClearedTextColor(lgfx::LovyanGFX& gfx,
 // ---------------------------------------------------------------------------
 //  Text cache — only clear+redraw gauge text when displayed string changes
 // ---------------------------------------------------------------------------
-#define GAUGE_CACHE_SLOTS 12
+// 12 covers every single-printer screen (max 9 gauges). The split screen draws
+// up to 12 tiles (2 printers x 6 on 320x480); 16 leaves headroom so distinct
+// (cx,cy) tiles never evict each other mid-frame.
+#define GAUGE_CACHE_SLOTS 16
 
 struct GaugeTextCache {
   int16_t cx, cy;

@@ -33,6 +33,25 @@
 #define LY_ROW1      60      // row 1 center Y
 #define LY_ROW2      148     // row 2 center Y
 
+// --- Split dual-printer screen (top/bottom bands, 3 gauges each) ---
+// Two 120px bands. Each band: header line (name + state dot), thin progress
+// bar, then a single row of 3 gauges reusing the gaugeSlots[0..2] config.
+#define LAYOUT_HAS_SPLIT   1
+#define LY_SPLIT_SLOTS     3      // gauges drawn per band (gaugeSlots[0..2])
+#define LY_SPLIT_DIV_Y     120    // divider line Y (band boundary)
+#define LY_SPLIT_GAUGE_R   30
+#define LY_SPLIT_GAUGE_T   LY_GAUGE_T
+#define LY_SPLIT_BAR_H     4
+#define LY_SPLIT_BAR_MARGIN 8
+// Band A (top, y 0..119)
+#define LY_SPLIT_A_HDR_CY  11
+#define LY_SPLIT_A_BAR_Y   22
+#define LY_SPLIT_A_ROW1    60
+// Band B (bottom, y 120..239)
+#define LY_SPLIT_B_HDR_CY  131
+#define LY_SPLIT_B_BAR_Y   142
+#define LY_SPLIT_B_ROW1    180
+
 // --- AMS tray visualization (replaces gauge row 2 when amsView enabled) ---
 // Row 1 gauges (R=32 at Y=60) end at y=92 with labels to ~95.
 // ETA starts at Y=190. Available band: ~98 px.

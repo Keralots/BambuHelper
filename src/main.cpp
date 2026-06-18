@@ -435,6 +435,32 @@ static void updateDisplayedPrinterScreenState() {
     return;
   }
 
+  // Split (dual-printer) screen: when the checkbox is on and the layout
+  // supports it, show two active printers together instead of rotating. Composes
+  // with the rotation mode - below 2 active printers the normal single-printer
+  // logic runs. Suppressed during a display hold so a fresh finish / manual peek
+  // keeps its single-printer screen for one interval.
+  if (rotState.splitEnabled && displaySupportsSplit() && !displayHold) {
+    uint8_t active[MAX_ACTIVE_PRINTERS];
+    uint8_t activeCount = 0;
+    for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+      if (isPrinterActiveForDisplay(i)) active[activeCount++] = i;
+    }
+    if (activeCount >= 2) {
+      uint8_t a = active[0], b = active[1];
+      bool pairChanged = (current != SCREEN_SPLIT) ||
+                         (rotState.displayIndex != a) || (rotState.splitIndexB != b);
+      rotState.displayIndex = a;
+      rotState.splitIndexB  = b;
+      if (pairChanged) triggerDisplayTransition();  // clear caches for the new pair
+      setScreenState(SCREEN_SPLIT);
+      setBacklight(getEffectiveBrightness());
+      finishActive = false;
+      idleClockActive = false;
+      return;
+    }
+  }
+
   BambuState& s = displayedPrinter().state;
   if (!s.connected) {
     uint8_t displayed = rotState.displayIndex < MAX_ACTIVE_PRINTERS
@@ -646,6 +672,8 @@ static void rotateWithinSlots(const uint8_t slots[], uint8_t count, unsigned lon
 }
 
 static void handleRotation() {
+  // Split view owns the screen while it is active - never rotate underneath it.
+  if (getScreenState() == SCREEN_SPLIT) return;
   if (rotState.mode == ROTATE_OFF) return;
   if (getActiveConnCount() < 2) return;
 

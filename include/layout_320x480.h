@@ -56,6 +56,26 @@
 #define LY_PORT9_ROW2    196
 #define LY_PORT9_ROW3    306
 
+// --- Split dual-printer screen (top/bottom bands, 6 gauges each) ---
+// Two 240px bands; each holds a full 2x3 grid (gaugeSlots[0..5]) at R=44.
+#define LAYOUT_HAS_SPLIT   1
+#define LY_SPLIT_SLOTS     6
+#define LY_SPLIT_DIV_Y     240
+#define LY_SPLIT_GAUGE_R   44
+#define LY_SPLIT_GAUGE_T   LY_GAUGE_T
+#define LY_SPLIT_BAR_H     6
+#define LY_SPLIT_BAR_MARGIN 10
+// Band A (top, y 0..239) - two gauge rows
+#define LY_SPLIT_A_HDR_CY  18
+#define LY_SPLIT_A_BAR_Y   34
+#define LY_SPLIT_A_ROW1    90
+#define LY_SPLIT_A_ROW2    190
+// Band B (bottom, y 240..479)
+#define LY_SPLIT_B_HDR_CY  258
+#define LY_SPLIT_B_BAR_Y   274
+#define LY_SPLIT_B_ROW1    330
+#define LY_SPLIT_B_ROW2    430
+
 // --- AMS tray visualization zone (below gauge grid) ---
 // Row 2 gauges bottom edge is at y=276 (228+48). Labels extend ~12px below,
 // so AMS starts at y=295. Zone is 72 px tall with 42 px bars; ETA begins at
