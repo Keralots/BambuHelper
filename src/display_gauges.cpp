@@ -461,30 +461,53 @@ static void clearGaugeCenter(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 }
 
 // ---------------------------------------------------------------------------
-//  Helper: choose a center-value font that fits a small gauge.
+//  Helper: choose a center-value font that fits a gauge.
 //
-//  Large gauges (R>=30: standard 2x3, landscape 8-slot, idle/finished, 320x480)
-//  keep the full-size `base` font - behaviour is byte-identical to before. Only
-//  the small R=28 portrait 9-slot gauges shrink: at that size a 3-4 digit
-//  reading (e.g. "220", "100%") in LY_GAUGE_VALUE_FONT overruns the clearable
-//  inner circle (clearGaugeCenter clears radius-thickness-1), so its glyph
-//  background can spill onto the arc ring. Step the font down until the string
-//  fits the inner width. Leaves the chosen font active on gfx.
+//  Picks the largest font, up to the layout's `base`, whose rendered width fits
+//  inside the clearable inner circle (clearGaugeCenter clears radius-thickness-1).
+//  On JC3248W535 the value text is drawn with an opaque background, so a glyph
+//  box wider than the inner circle paints over the arc ring. This bites where a
+//  wide reading (e.g. a 3-digit "220" / "140") meets a smaller-than-usual gauge:
+//  the R=28 portrait 9-slot grid, and the R=38 dual-printer split gauges (whose
+//  base is FONT_XLARGE on 320x480). Stepping down happens only when the base
+//  font actually overflows, so layouts where it already fits are unchanged.
+//  Leaves the chosen font active on gfx.
 // ---------------------------------------------------------------------------
 static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
                          int16_t radius, int16_t thickness, FontID base) {
-  if (radius >= 30) { setFont(gfx, base); return; }  // large gauge: unchanged
-  // Small gauges (the R=28 portrait 9-slot grid): LY_GAUGE_VALUE_FONT (Inter
-  // 19pt, ~26px tall) overruns the ~42px inner circle no matter how narrow the
-  // string is, so its glyph background can bleed onto the arc ring. Cap at
-  // FONT_BODY, which fits vertically, and drop to FONT_SMALL only when BODY is
-  // still too wide (e.g. the wide "%" in "100%").
+#if defined(BOARD_IS_JC3248W535)
+  // JC3248W535 draws the value with an opaque background box. The box is a
+  // rectangle; its top/bottom corners must stay inside the cleared inner circle
+  // or they paint over the arc ring. Step the font down (up to the layout base)
+  // until the whole box fits - budgeting the chord width at the box edge
+  // (+ a couple px for the upward value nudge / AA fringe), not the full
+  // diameter. This is what fixes the small split gauges; large gauges where the
+  // base already fits return it on the first iteration, so they are unchanged.
+  const int16_t textR = radius - thickness - 1;
+  const FontID candidates[] = { base, FONT_LARGE, FONT_BODY, FONT_SMALL };
+  for (FontID f : candidates) {
+    if (radius < 30 && (f == FONT_LARGE || f == FONT_XLARGE)) continue;
+    setFont(gfx, f);
+    const int16_t halfH = gfx.fontHeight() / 2 + 3;
+    const int16_t usableHalfW = (textR > halfH)
+        ? (int16_t)sqrtf((float)textR * textR - (float)halfH * halfH) : 0;
+    const int16_t innerW = 2 * usableHalfW - 2;
+    if (gfx.textWidth(s) <= innerW) return;
+  }
+  setFont(gfx, FONT_SMALL);
+#else
+  // Other panels draw the value transparently (no box), so only the tiny R<30
+  // portrait 9-slot grid needs shrinking; large gauges keep the full base font.
+  // Kept byte-identical to the single-printer behaviour to avoid changing any
+  // normal-view value sizing.
+  if (radius >= 30) { setFont(gfx, base); return; }
   FontID f = (base == FONT_SMALL) ? FONT_SMALL : FONT_BODY;
   setFont(gfx, f);
   if (f != FONT_SMALL) {
     const int16_t innerW = 2 * (radius - thickness - 1) - 2;
     if (gfx.textWidth(s) > innerW) setFont(gfx, FONT_SMALL);
   }
+#endif
 }
 
 // Choose the largest humidity-number font that leaves room for a small "%"
@@ -525,7 +548,10 @@ static void setGaugeClearedTextColor(lgfx::LovyanGFX& gfx,
 // ---------------------------------------------------------------------------
 //  Text cache — only clear+redraw gauge text when displayed string changes
 // ---------------------------------------------------------------------------
-#define GAUGE_CACHE_SLOTS 12
+// 12 covers every single-printer screen (max 9 gauges). The split screen draws
+// up to 12 tiles (2 printers x 6 on 320x480); 16 leaves headroom so distinct
+// (cx,cy) tiles never evict each other mid-frame.
+#define GAUGE_CACHE_SLOTS 16
 
 struct GaugeTextCache {
   int16_t cx, cy;

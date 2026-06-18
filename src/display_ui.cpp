@@ -1,5 +1,6 @@
 #include "display_ui.h"
 #include "display_gauges.h"
+#include "display_split.h"
 #include "display_anim.h"
 #include "clock_mode.h"
 #include "clock_pong.h"
@@ -235,6 +236,24 @@ static inline int16_t uiW() { return SCREEN_W; }
 static inline int16_t uiH() { return SCREEN_H; }
 static inline bool landBottomBarFullWidth(uint8_t) { return true; }
 #endif
+
+// Split (dual-printer) screen is offered on profiles that define
+// LAYOUT_HAS_SPLIT. Portrait gives stacked top/bottom bands; layouts that also
+// define LAYOUT_HAS_SPLIT_LANDSCAPE add a side-by-side left/right variant, so
+// the split survives a landscape rotation there. Layouts without the landscape
+// variant keep the portrait-only restriction. Compiled-out boards (e.g. 480x480
+// SenseCAP) return false so the feature stays inert.
+bool displaySupportsSplit() {
+#if defined(LAYOUT_HAS_SPLIT) && defined(LAYOUT_HAS_SPLIT_LANDSCAPE)
+  return true;
+#elif defined(LAYOUT_HAS_SPLIT)
+  return !isLandscape();
+#else
+  return false;
+#endif
+}
+
+bool isDisplayForceRedraw() { return forceRedraw; }
 
 // ---------------------------------------------------------------------------
 //  Init
@@ -1744,9 +1763,12 @@ static void drawAmsTrayBar(int16_t x, int16_t y, int16_t w, int16_t h,
 // the unit's actual trayCount, so an AMS HT (single slot) shows one centered bar
 // instead of three empty ones. Centered in a square 2R x 2R region; "AMS N"
 // label below at the standard gauge-label position.
-static void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
-                             const AmsState& ams, uint8_t unitIndex,
-                             bool forceRedraw) {
+// Exported (declared in display_ui.h) so the split renderer can reuse it. The
+// helper drawAmsTrayBarRounded() it relies on stays private here because
+// drawAmsStrip()/drawAmsZone() also use it.
+void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
+                      const AmsState& ams, uint8_t unitIndex,
+                      bool forceRedraw) {
   uint16_t bg = dispSettings.bgColor;
 
   const bool unitPresent = ams.present
@@ -1948,6 +1970,13 @@ static bool useEnhancedPortraitAms(const AmsState& ams) {
 #endif
 }
 
+#else  // DISPLAY_480x480
+// 480x480 (SenseCAP) does not implement the AMS bar visualizations (the helpers
+// above are excluded). Provide a stub so the unguarded GAUGE_AMS_BARS call site
+// in drawPrinting() and the exported declaration still link; AMS-bars simply
+// isn't drawn on this profile. (This also fixes a pre-existing link break on
+// main where the static drawAmsBarsGauge was referenced but never defined here.)
+void drawAmsBarsGauge(int16_t, int16_t, int16_t, const AmsState&, uint8_t, bool) {}
 #endif // !DISPLAY_480x480 (stateless AMS helpers)
 
 #if defined(LAYOUT_HAS_AMS_STRIP)
@@ -3486,6 +3515,10 @@ void updateDisplay() {
 
     case SCREEN_PRINTING:
       drawPrinting();
+      break;
+
+    case SCREEN_SPLIT:
+      drawSplit();
       break;
 
     case SCREEN_FINISHED:

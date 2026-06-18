@@ -1042,6 +1042,16 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <label for="rotinterval">Rotation interval</label>
       <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
     </div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK%>
+      <label for="rotsplit">Split screen when two printers are printing</label>
+    </label>
+    <div class="hint">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying. Vertical screens only.</div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK%>
+      <label for="rotsplitf">Always show split screen (testing)</label>
+    </label>
+    <div class="hint">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
   </div>
 
   <div class="card">
@@ -2064,6 +2074,8 @@ function saveRotation(){
   var p = new URLSearchParams();
   p.append('rotmode', document.getElementById('rotmode').value);
   p.append('rotinterval', document.getElementById('rotinterval').value);
+  p.append('rotsplit', document.getElementById('rotsplit').checked ? '1' : '0');
+  p.append('rotsplitf', document.getElementById('rotsplitf').checked ? '1' : '0');
   p.append('btntype', document.getElementById('btntype').value);
   p.append('btnpin', document.getElementById('btnpin').value);
   p.append('buzzen', document.getElementById('buzzen').value);

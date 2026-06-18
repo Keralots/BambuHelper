@@ -18,8 +18,13 @@ enum ScreenState {
   SCREEN_FINISHED,
   SCREEN_CLOCK,
   SCREEN_OFF,
-  SCREEN_OTA_UPDATE
+  SCREEN_OTA_UPDATE,
+  SCREEN_SPLIT          // two printers side-by-side (top/bottom bands)
 };
+
+// Forward declaration so split-related declarations below can take an AmsState
+// by reference without pulling in bambu_state.h here.
+struct AmsState;
 
 extern lgfx::LovyanGFX* tft_ptr;
 // Macro (NOT a reference) so callers' `tft.method()` always dereferences the
@@ -56,5 +61,19 @@ void applyDisplaySettings();  // re-apply rotation, bg, force redraw
 void triggerDisplayTransition(); // start printer-name overlay on rotation
 void checkNightMode();        // apply scheduled brightness dimming
 uint8_t getEffectiveBrightness(); // current brightness (night or normal)
+
+// True only on portrait layout profiles that define LAYOUT_HAS_SPLIT and are not
+// currently in a landscape rotation. Gates the split (dual-printer) screen so it
+// never engages on 480x480 / landscape boards.
+bool displaySupportsSplit();
+
+// True during a frame that must fully repaint (screen change or
+// triggerDisplayTransition). The split renderer reads this to force both bands.
+bool isDisplayForceRedraw();
+
+// AMS "bars" gauge tile (one rounded bar per loaded tray, no humidity). Defined
+// in display_ui.cpp; exported so the split renderer can draw it inside a band.
+void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
+                      const AmsState& ams, uint8_t unitIndex, bool forceRedraw);
 
 #endif // DISPLAY_UI_H

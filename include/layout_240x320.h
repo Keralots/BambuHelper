@@ -47,6 +47,51 @@
 #define LY_PORT9_ROW2    134
 #define LY_PORT9_ROW3    208
 
+// --- Split dual-printer screen (top/bottom bands, 3 gauges each) ---
+// Two 160px bands; roomier than 240x240 so R grows to 34.
+#define LAYOUT_HAS_SPLIT   1
+#define LY_SPLIT_SLOTS     3
+#define LY_SPLIT_DIV_Y     160
+#define LY_SPLIT_GAUGE_R   34
+#define LY_SPLIT_GAUGE_T   LY_GAUGE_T
+#define LY_SPLIT_BAR_H     5
+#define LY_SPLIT_BAR_MARGIN 8
+// Band A (top, y 0..159). Gauge row vertically centred in the area below the
+// progress bar (R is capped at 34 by the 78px column pitch, so centring is the
+// only lever to fill the 160px band - a larger R would collide horizontally).
+// progress bar on top, name row beneath it; gauges nudged up to clear the ETA
+// line that sits just above the foot.
+#define LY_SPLIT_A_BAR_Y   10
+#define LY_SPLIT_A_HDR_CY  26
+#define LY_SPLIT_A_ROW1    82
+// Band B (bottom, y 160..319) = Band A + 160
+#define LY_SPLIT_B_BAR_Y   170
+#define LY_SPLIT_B_HDR_CY  186
+#define LY_SPLIT_B_ROW1    242
+
+// --- Landscape split (panel rotated to 320x240) -----------------------------
+// Two full-height 160-wide bands side by side, each a 2x2 gauge grid
+// (gaugeSlots[0..3]). R=28 fits the 76px column pitch in a 160px band. Gated
+// out of the single-printer low-RAM boards (cyd, tzt_2432), where split never
+// engages anyway, so they pay no extra flash. Column centres are band-relative
+// (the renderer adds the right band's x offset).
+#if !defined(BOARD_LOW_RAM)
+#define LAYOUT_HAS_SPLIT_LANDSCAPE 1
+#define LY_SPLIT_L_SLOTS    4
+#define LY_SPLIT_L_NCOLS    2
+#define LY_SPLIT_L_GAUGE_R  28
+#define LY_SPLIT_L_GAUGE_T  LY_GAUGE_T
+#define LY_SPLIT_L_BAR_H    5
+#define LY_SPLIT_L_BAR_MARGIN 8
+#define LY_SPLIT_L_BAR_Y    10
+#define LY_SPLIT_L_HDR_CY   26
+// Rows sit just below the name; the freed lower space holds a larger ETA line.
+#define LY_SPLIT_L_ROW1     64
+#define LY_SPLIT_L_ROW2     142
+#define LY_SPLIT_L_COL1     42
+#define LY_SPLIT_L_COL2     118
+#endif
+
 // --- AMS tray visualization zone (CYD portrait, between gauges and ETA) ---
 // Gauge row 2 labels extend to ~y=187, so AMS starts at 190 to avoid overlap.
 #define LY_AMS_Y          190   // top of AMS zone (below gauge row 2 labels)
