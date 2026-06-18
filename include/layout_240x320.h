@@ -59,12 +59,13 @@
 // Band A (top, y 0..159). Gauge row vertically centred in the area below the
 // progress bar (R is capped at 34 by the 78px column pitch, so centring is the
 // only lever to fill the 160px band - a larger R would collide horizontally).
-#define LY_SPLIT_A_HDR_CY  14
-#define LY_SPLIT_A_BAR_Y   28
+// progress bar on top, name row beneath it
+#define LY_SPLIT_A_BAR_Y   10
+#define LY_SPLIT_A_HDR_CY  26
 #define LY_SPLIT_A_ROW1    90
 // Band B (bottom, y 160..319) = Band A + 160
-#define LY_SPLIT_B_HDR_CY  174
-#define LY_SPLIT_B_BAR_Y   188
+#define LY_SPLIT_B_BAR_Y   170
+#define LY_SPLIT_B_HDR_CY  186
 #define LY_SPLIT_B_ROW1    250
 
 // --- AMS tray visualization zone (CYD portrait, between gauges and ETA) ---

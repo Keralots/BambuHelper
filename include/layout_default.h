@@ -43,13 +43,13 @@
 #define LY_SPLIT_GAUGE_T   LY_GAUGE_T
 #define LY_SPLIT_BAR_H     4
 #define LY_SPLIT_BAR_MARGIN 8
-// Band A (top, y 0..119)
-#define LY_SPLIT_A_HDR_CY  11
-#define LY_SPLIT_A_BAR_Y   22
+// Band A (top, y 0..119): progress bar on top, name row beneath it
+#define LY_SPLIT_A_BAR_Y   6
+#define LY_SPLIT_A_HDR_CY  20
 #define LY_SPLIT_A_ROW1    60
 // Band B (bottom, y 120..239)
-#define LY_SPLIT_B_HDR_CY  131
-#define LY_SPLIT_B_BAR_Y   142
+#define LY_SPLIT_B_BAR_Y   126
+#define LY_SPLIT_B_HDR_CY  140
 #define LY_SPLIT_B_ROW1    180
 
 // --- AMS tray visualization (replaces gauge row 2 when amsView enabled) ---

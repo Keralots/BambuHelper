@@ -68,14 +68,14 @@
 #define LY_SPLIT_GAUGE_T   LY_GAUGE_T
 #define LY_SPLIT_BAR_H     6
 #define LY_SPLIT_BAR_MARGIN 10
-// Band A (top, y 0..239) - two gauge rows
-#define LY_SPLIT_A_HDR_CY  16
-#define LY_SPLIT_A_BAR_Y   32
+// Band A (top, y 0..239) - two gauge rows; progress bar on top, name beneath
+#define LY_SPLIT_A_BAR_Y   12
+#define LY_SPLIT_A_HDR_CY  30
 #define LY_SPLIT_A_ROW1    78
 #define LY_SPLIT_A_ROW2    170
 // Band B (bottom, y 240..479)
-#define LY_SPLIT_B_HDR_CY  256
-#define LY_SPLIT_B_BAR_Y   272
+#define LY_SPLIT_B_BAR_Y   252
+#define LY_SPLIT_B_HDR_CY  270
 #define LY_SPLIT_B_ROW1    318
 #define LY_SPLIT_B_ROW2    410
 

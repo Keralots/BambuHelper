@@ -68,6 +68,19 @@ uint16_t stateColor(uint8_t gid) {
   }
 }
 
+// Short status word shown next to the state dot in each band header.
+const char* stateLabel(uint8_t gid) {
+  switch (gid) {
+    case GCODE_RUNNING: return "Printing";
+    case GCODE_PAUSE:   return "Paused";
+    case GCODE_PREPARE: return "Preparing";
+    case GCODE_FINISH:  return "Done";
+    case GCODE_FAILED:  return "Failed";
+    case GCODE_IDLE:    return "Idle";
+    default:            return "";   // UNKNOWN / OTHER: dot only, no misleading text
+  }
+}
+
 // Mirrors the per-type change detection in drawPrinting()'s slot loop so a tile
 // is only redrawn when its underlying value actually changed.
 bool tileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p) {
@@ -217,14 +230,29 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     // On a force frame the whole screen was just cleared; otherwise wipe the
     // text strip so the new name/dot does not overprint the old.
     if (!force) tft.fillRect(0, g.hdrCY - 9, LY_W, 18, CLR_BG);
+
+    // Right: state dot + status word ("Printing" / "Idle" / "Preparing" ...).
+    const uint16_t stClr = stateColor(s.gcodeStateId);
+    const int16_t dotCX = LY_W - LY_SPLIT_BAR_MARGIN - 5;
+    tft.fillCircle(dotCX, g.hdrCY, 5, stClr);
+    const char* st = stateLabel(s.gcodeStateId);
+    int16_t stLeft = dotCX - 10;   // name still clears the dot when status is empty
+    if (st[0] != '\0') {
+      setFont(tft, FONT_SMALL);
+      tft.setTextDatum(MR_DATUM);
+      tft.setTextColor(stClr, CLR_BG);
+      const int16_t stRight = dotCX - 9;   // 4px gap left of the dot
+      tft.drawString(st, stRight, g.hdrCY);
+      stLeft = stRight - tft.textWidth(st);
+    }
+
+    // Left: printer name, clipped so it stops before the status word / dot.
     setFont(tft, FONT_BODY);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(CLR_TEXT, CLR_BG);
     const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
-    // Name occupies from the left margin up to ~4px left of the state dot.
-    const int16_t nameMaxW = LY_W - 2 * LY_SPLIT_BAR_MARGIN - 14;
+    const int16_t nameMaxW = stLeft - 4 - LY_SPLIT_BAR_MARGIN;
     drawClippedName(name, LY_SPLIT_BAR_MARGIN, g.hdrCY, nameMaxW);
-    tft.fillCircle(LY_W - LY_SPLIT_BAR_MARGIN - 5, g.hdrCY, 5, stateColor(s.gcodeStateId));
     sPrevHdrState[bandIdx] = s.gcodeStateId;
   }
 
@@ -372,11 +400,8 @@ void drawSplit() {
   gb.rows[1] = LY_SPLIT_B_ROW1;
 #endif
 
-  // Divider line. The caller (updateDisplay screen-change / triggerDisplayTransition)
-  // has already cleared the screen on a force frame, so draw it only then.
-  if (force) {
-    tft.drawFastHLine(0, LY_SPLIT_DIV_Y - 1, LY_W, tft.color565(40, 40, 40));
-  }
+  // No divider line: each band's top-anchored progress bar gives enough visual
+  // separation between the two printers.
 
   drawBand(printers[a].state, printers[a].config, a, ga, 0, force);
   drawBand(printers[b].state, printers[b].config, b, gb, 1, force);
