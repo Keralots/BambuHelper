@@ -1046,7 +1046,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK%>
       <label for="rotsplit">Split screen when two printers are printing</label>
     </label>
-    <div class="hint">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying. Vertical screens only.</div>
+    <div class="hint">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
     <label class="check-row">
       <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK%>
       <label for="rotsplitf">Always show split screen (testing)</label>

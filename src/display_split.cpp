@@ -58,6 +58,22 @@ char       sPrevFootCenter[2][20] = { { 0 }, { 0 } };
 char       sPrevEta[2][24] = { { 0 }, { 0 } };
 BambuState sPrevState[2];
 
+// Drying-band state (index 0 = top/left band, 1 = bottom/right band). A band
+// renders the drying view instead of the print gauges when its printer is idle
+// but an AMS unit is actively drying. sPrevMode flips the band between the two
+// views; the rest is per-band change detection mirroring drawBand's caches.
+uint8_t       sPrevMode[2]     = { 0xFF, 0xFF };   // 0 = print view, 1 = drying view
+uint8_t       sDryIdx[2]       = { 0, 0 };         // which drying unit the band shows
+unsigned long sDryRotMs[2]     = { 0, 0 };         // last unit-rotation timestamp
+int8_t        sPrevDryUnit[2]  = { -1, -1 };
+uint8_t       sPrevDryCount[2] = { 0xFF, 0xFF };
+uint16_t      sPrevDryMin[2]   = { 0xFFFF, 0xFFFF };
+int16_t       sPrevDryTemp[2]  = { -32768, -32768 };
+uint8_t       sPrevDryHum[2]   = { 0xFF, 0xFF };
+uint8_t       sPrevDryHumRaw[2] = { 0xFF, 0xFF };
+uint8_t       sPrevDryProg[2]  = { 0xFF, 0xFF };
+const unsigned long DRY_ROT_MS = 60000;            // rotate drying units every 60s
+
 // Build the ETA / remaining string the same way the single-printer view does
 // (display_ui.cpp): wall-clock finish time when the user prefers it and NTP is
 // up, otherwise the remaining duration. Returns false when there is nothing to
@@ -274,9 +290,225 @@ void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
   }
 }
 
+// --- Drying-band helpers (mirror display_ui.cpp's idle-drying screen) --------
+
+uint16_t dryHumidityColor(uint8_t level) {
+  if (level <= 2) return CLR_GREEN;
+  if (level == 3) return CLR_YELLOW;
+  if (level == 4) return CLR_ORANGE;
+  return CLR_RED;
+}
+
+// N-th actively drying unit (dryRemainMin > 0), wrapping to the first if idx is
+// past the count. Returns -1 when nothing is drying.
+int8_t dryFindUnit(const AmsState& ams, uint8_t idx) {
+  uint8_t found = 0;
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++) {
+    if (ams.units[i].dryRemainMin > 0) {
+      if (found == idx) return (int8_t)i;
+      found++;
+    }
+  }
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++)
+    if (ams.units[i].dryRemainMin > 0) return (int8_t)i;
+  return -1;
+}
+
+uint8_t dryCountUnits(const AmsState& ams) {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++)
+    if (ams.units[i].dryRemainMin > 0) n++;
+  return n;
+}
+
+// Temperature value with a degree ring + "C", centred at (cx, cy). The VLW
+// fonts have no degree glyph, so the ring is drawn (same trick as display_ui).
+// numFont picks the digit size: FONT_7SEG on roomy bands, FONT_LARGE on tight
+// ones; the "C" tracks it (LARGE / BODY) so the unit stays proportional.
+void drawDryTempC(int16_t cx, int16_t cy, int16_t tShown, uint16_t color,
+                  FontID numFont) {
+  char b[8];
+  snprintf(b, sizeof(b), "%d", tShown);
+  const FontID unitFont = (numFont == FONT_7SEG) ? FONT_LARGE : FONT_BODY;
+  const int16_t ringDY  = (numFont == FONT_7SEG) ? 12 : 7;
+  const int16_t unitW   = (numFont == FONT_7SEG) ? 22 : 14;   // ring + "C" tail
+  setFont(tft, numFont);
+  const int16_t numW = tft.textWidth(b);
+  const int16_t startX = cx - (numW + unitW) / 2;
+  tft.setTextColor(color, CLR_BG);
+  tft.setTextDatum(ML_DATUM);
+  tft.drawString(b, startX, cy);
+  const int16_t ux = startX + numW + 3;
+  tft.drawCircle(ux + 3, cy - ringDY, 3, color);
+  tft.drawCircle(ux + 3, cy - ringDY, 2, color);
+  setFont(tft, unitFont);
+  tft.drawString("C", ux + 8, cy);
+}
+
+// Drying view for one band: orange "Drying" header, dry-progress bar, large
+// temperature, remaining time, humidity, and the AMS unit name on the foot
+// line. Reuses the band geometry so it fits every split profile.
+void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
+                    const BandGeom& g, uint8_t bandIdx, bool force) {
+  // Rotate between simultaneously-drying AMS units once a minute.
+  const uint8_t dc = dryCountUnits(s.ams);
+  bool unitForce = force;
+  if (dc > 1 && millis() - sDryRotMs[bandIdx] >= DRY_ROT_MS) {
+    sDryIdx[bandIdx] = (uint8_t)((sDryIdx[bandIdx] + 1) % dc);
+    sDryRotMs[bandIdx] = millis();
+    unitForce = true;
+  }
+  if (dc <= 1) sDryIdx[bandIdx] = 0;
+
+  const int8_t ui = dryFindUnit(s.ams, sDryIdx[bandIdx]);
+  if (ui < 0) return;                      // nothing drying (race): leave band as-is
+  const AmsUnit& u = s.ams.units[ui];
+
+  const int16_t tempShown = (int16_t)(u.temp >= 0.0f ? u.temp + 0.5f : u.temp - 0.5f);
+  const bool unitChanged = unitForce ||
+                           ui != sPrevDryUnit[bandIdx] ||
+                           dc != sPrevDryCount[bandIdx];
+  const bool bodyChanged = unitChanged ||
+                           tempShown != sPrevDryTemp[bandIdx] ||
+                           u.dryRemainMin != sPrevDryMin[bandIdx] ||
+                           u.humidity != sPrevDryHum[bandIdx] ||
+                           u.humidityRaw != sPrevDryHumRaw[bandIdx];
+
+  uint8_t dryProg = 0;
+  if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
+    dryProg = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
+  const bool progChanged = unitChanged || dryProg != sPrevDryProg[bandIdx];
+
+  // --- Header: printer name (left) + orange "Drying" + dot (right) ---
+  // Static while drying, so only repaint on a force frame (screen/band cleared).
+  if (force) {
+    markFrameDirty();
+    const int16_t dotCX = g.x + g.w - g.margin - 5;
+    tft.fillCircle(dotCX, g.hdrCY, 5, CLR_ORANGE);
+    setFont(tft, FONT_SMALL);
+    tft.setTextDatum(MR_DATUM);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    const int16_t stRight = dotCX - 9;
+    tft.drawString("Drying", stRight, g.hdrCY);
+    const int16_t stLeft = stRight - tft.textWidth("Drying");
+
+    setFont(tft, FONT_BODY);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
+    drawClippedName(name, g.x + g.margin, g.hdrCY, stLeft - 4 - (g.x + g.margin));
+  }
+
+  // --- Dry-progress bar (orange) ---
+  if (progChanged) {
+    markFrameDirty();
+    const int16_t bx = g.x + g.margin;
+    const int16_t bw = g.w - 2 * g.margin;
+    const int16_t fw = (int16_t)((int32_t)bw * dryProg / 100);
+    tft.fillRect(bx, g.barY, bw, g.barH, tft.color565(40, 40, 40));
+    if (fw > 0) tft.fillRect(bx, g.barY, fw, g.barH, CLR_ORANGE);
+    sPrevDryProg[bandIdx] = dryProg;
+  }
+
+  // --- Body: temperature, remaining time, humidity, AMS unit name ---
+  if (bodyChanged) {
+    markFrameDirty();
+    // Body starts below the header (hdrCY) - the header is painted once on a
+    // force frame, so clearing it here every value change would erase it.
+    const int16_t bodyTop = g.hdrCY + 13;
+    const int16_t nameY   = g.footCY;            // AMS unit label on the foot line
+    const int16_t bodyBot = nameY - 12;
+    const int16_t bodyH   = bodyBot - bodyTop;
+    tft.fillRect(g.x, bodyTop, g.w, bodyBot - bodyTop, CLR_BG);
+    // 7-seg temperature where the band is tall enough; LARGE on cramped bands.
+    const FontID tempFont = (bodyH >= 84) ? FONT_7SEG : FONT_LARGE;
+
+    char timeBuf[16];
+    {
+      uint16_t h = u.dryRemainMin / 60, m = u.dryRemainMin % 60;
+      if (h > 0) snprintf(timeBuf, sizeof(timeBuf), "%dh %02dm", h, m);
+      else       snprintf(timeBuf, sizeof(timeBuf), "%dm", m);
+    }
+    char humBuf[8];
+    snprintf(humBuf, sizeof(humBuf), "%d%%", u.humidityRaw);
+    const uint16_t humClr = dryHumidityColor(u.humidity);
+
+    if (g.w >= 210) {
+      // Wide band: temperature left, remaining/humidity stacked right. Row Y
+      // positions are body-relative fractions so the short 240x240 band packs
+      // the four lines without overlap and the tall 320x480 band stays balanced.
+      const int16_t leftCx  = g.x + g.w * 30 / 100;
+      const int16_t rightCx = g.x + g.w * 70 / 100;
+      drawDryTempC(leftCx, bodyTop + bodyH / 2, tempShown, CLR_ORANGE, tempFont);
+
+      tft.setTextDatum(MC_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString("Remaining", rightCx, bodyTop + bodyH * 15 / 100);
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString(timeBuf, rightCx, bodyTop + bodyH * 37 / 100);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString("Humidity", rightCx, bodyTop + bodyH * 62 / 100);
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(humClr, CLR_BG);
+      tft.drawString(humBuf, rightCx, bodyTop + bodyH * 84 / 100);
+    } else {
+      // Narrow band (landscape half-width): stack temp / time / humidity.
+      const int16_t cx = g.x + g.w / 2;
+      drawDryTempC(cx, bodyTop + bodyH * 22 / 100, tempShown, CLR_ORANGE, tempFont);
+      tft.setTextDatum(MC_DATUM);
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString(timeBuf, cx, bodyTop + bodyH * 58 / 100);
+      char humLine[12];
+      snprintf(humLine, sizeof(humLine), "Hum %s", humBuf);
+      tft.setTextColor(humClr, CLR_BG);
+      tft.drawString(humLine, cx, bodyTop + bodyH * 86 / 100);
+    }
+
+    // AMS unit name on the foot line. HT units report id >= 128.
+    const bool isHT = (u.id >= 128);
+    const uint8_t num = isHT ? (uint8_t)(u.id - 128 + 1) : (uint8_t)(u.id + 1);
+    char unitName[28];
+    if (dc > 1)
+      snprintf(unitName, sizeof(unitName), "%s %d  (%d/%d)",
+               isHT ? "AMS HT" : "AMS", num, sDryIdx[bandIdx] + 1, dc);
+    else
+      snprintf(unitName, sizeof(unitName), "%s %d", isHT ? "AMS HT" : "AMS", num);
+    tft.fillRect(g.x, nameY - 9, g.w, 18, CLR_BG);
+    tft.setTextDatum(MC_DATUM);
+    setFont(tft, FONT_SMALL);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    tft.drawString(unitName, g.x + g.w / 2, nameY);
+
+    sPrevDryTemp[bandIdx]   = tempShown;
+    sPrevDryMin[bandIdx]    = u.dryRemainMin;
+    sPrevDryHum[bandIdx]    = u.humidity;
+    sPrevDryHumRaw[bandIdx] = u.humidityRaw;
+  }
+
+  sPrevDryUnit[bandIdx]  = ui;
+  sPrevDryCount[bandIdx] = dc;
+}
+
 void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
               const BandGeom& g, uint8_t bandIdx, bool force) {
   BambuState& prev = sPrevState[bandIdx];
+
+  // A band shows the drying view when its printer is idle but an AMS unit is
+  // drying; otherwise the normal print gauges. Switching views (same pair, one
+  // printer just started/stopped drying) without a global force frame leaves the
+  // other view's pixels behind, so wipe the band and force a full repaint.
+  const uint8_t modeNow = (s.ams.anyDrying && !s.printing) ? 1 : 0;
+  if (sPrevMode[bandIdx] != modeNow && !force) {
+    markFrameDirty();
+    tft.fillRect(g.x, g.top, g.w, g.height, CLR_BG);
+    force = true;
+  }
+  sPrevMode[bandIdx] = modeNow;
+  if (modeNow == 1) { drawDryingBand(s, cfg, g, bandIdx, force); return; }
 
   // --- Header: printer name (left) + state dot (right) ---
   if (force || s.gcodeStateId != sPrevHdrState[bandIdx]) {
