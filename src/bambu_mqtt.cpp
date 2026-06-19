@@ -1515,6 +1515,10 @@ uint8_t getActiveConnCount() {
 // userId extraction uses HTTPClient (TLS) — must complete before this
 // slot's MQTT TLS session is opened.
 static void extractCloudUserIdIfNeeded(uint8_t i) {
+  // Respect the per-slot gates (low-RAM dualPrinterUnsafe / PSRAM quadPrinterBeta):
+  // a slot that is disabled by the experimental opt-in must do no cloud work,
+  // even if it still holds stored/imported cloud config from a prior session.
+  if (!isPrinterConfigured(i)) return;
   PrinterConfig& cfg = printers[i].config;
   if (!isCloudMode(cfg.mode) || strlen(cfg.serial) == 0 || strlen(cfg.cloudUserId) > 0)
     return;

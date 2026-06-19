@@ -2423,7 +2423,9 @@ function refreshHwInfo(){
 /* ============ Topbar status dots (per-slot, independent of current tab) ============ */
 function _updateTopDot(slot, dotId, txtId){
   var dot = document.getElementById(dotId);
-  if (!dot) return;
+  // Skip missing dots, and skip dots hidden by an experimental opt-in gate
+  // (low-RAM 2-printer / PSRAM 4-printer) so disabled slots are not polled.
+  if (!dot || dot.style.display === 'none') return;
   fetch('/status?slot=' + slot).then(function(r){return r.json();}).then(function(d){
     var ts = document.getElementById(txtId);
     var label;
