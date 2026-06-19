@@ -57,8 +57,9 @@
 #define BAMBU_BACKOFF_PHASE3_MS     120000  // 120s after phase 2 exhausted
 #define BAMBU_STALE_TIMEOUT         60000   // 60s no data = stale
 #define BAMBU_PRINT_STALE_TIMEOUT   120000  // cloud: 120s no core print data = stale (LAN uses BAMBU_STALE_TIMEOUT)
-#define BAMBU_PUSHALL_INTERVAL      30000   // request full status every 30s
+#define BAMBU_PUSHALL_INTERVAL      30000   // request full status every 30s (LAN)
 #define BAMBU_PUSHALL_INITIAL_DELAY 2000    // wait 2s after connect
+#define BAMBU_CLOUD_IDLE_PUSHALL_INTERVAL 300000 // cloud: poll full status every 5 min while NOT printing, to catch a cloud-dropped IDLE->RUNNING delta. Safe: stricter than the 2-min recovery throttle, far above the ~30s LAN cadence that risks access_denied, within the documented >=5-min pushall guidance.
 #define BAMBU_MIN_FREE_HEAP         40000   // min heap for TLS allocation
 #define BAMBU_KEEPALIVE             60
 #define BAMBU_CLOUD_KEEPALIVE       30      // cloud: longer than LAN to tolerate internet jitter
