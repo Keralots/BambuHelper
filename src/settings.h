@@ -211,6 +211,7 @@ extern TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT];
 extern char  tasmotaCurrency[8];      // e.g. "€", "$", "zł"
 extern float tasmotaTariffPerKwh;     // global tariff (same for all plugs)
 extern bool dualPrinterUnsafe;
+extern bool quadPrinterBeta;
 
 void loadSettings();
 void saveSettings();

@@ -1482,6 +1482,11 @@ bool isPrinterConfigured(uint8_t slot) {
   // Slot 1 only available when user opts into experimental 2-printer mode.
   if (slot > 0 && !dualPrinterUnsafe) return false;
 #endif
+#ifdef BOARD_HAS_PSRAM
+  // Slots 2-3 (printers 3-4) only when user opts into experimental 4-printer
+  // beta. PSRAM boards stay at 2 printers by default.
+  if (slot > 1 && !quadPrinterBeta) return false;
+#endif
   PrinterConfig& cfg = printers[slot].config;
   if (isCloudMode(cfg.mode))
     return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;

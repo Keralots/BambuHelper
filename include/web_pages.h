@@ -2326,6 +2326,18 @@ function toggleDualPrinterMode(on){
   if (d) d.style.display = on ? '' : 'none';
   if (!on) selectPrinterTab(0);
 }
+/* PSRAM boards: reveal/hide printer 3 + 4 tabs and topbar dots when the
+   experimental 4-printer beta is toggled, mirroring toggleDualPrinterMode. */
+function toggleQuadPrinterMode(on){
+  toggleSetting('quadp', on);
+  [2,3].forEach(function(i){
+    var t = document.getElementById('tab'+i);
+    if (t) t.style.display = on ? '' : 'none';
+    var d = document.getElementById('topStatusDot'+i);
+    if (d) d.style.display = on ? '' : 'none';
+  });
+  if (!on) selectPrinterTab(0);
+}
 /* Toggle a grid mode (l8s / p9s) and sync the matching Gauge Layout extras
    block in the Printer section. Hides the extra dropdowns when the user
    doesn't have the mode enabled so the layout card stays compact. */

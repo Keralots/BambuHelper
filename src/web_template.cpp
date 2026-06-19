@@ -149,6 +149,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
       // toggleDualPrinterMode() clears the inline style without a reload.
       if (i == 1 && !dualPrinterUnsafe) out += " style=\"display:none\"";
 #endif
+#ifdef BOARD_HAS_PSRAM
+      // Slots 2-3 stay hidden until the experimental 4-printer toggle enables
+      // them; toggleQuadPrinterMode() clears the inline style without a reload.
+      if (i >= 2 && !quadPrinterBeta) out += " style=\"display:none\"";
+#endif
       out += ">Printer " + String(i + 1) + "</button>";
     }
     return true;
@@ -159,6 +164,9 @@ static bool resolvePlaceholder(const char* name, String& out) {
              "\" title=\"Printer " + String(i + 1) + " connection\"";
 #ifdef BOARD_LOW_RAM
       if (i == 1 && !dualPrinterUnsafe) out += " style=\"display:none\"";
+#endif
+#ifdef BOARD_HAS_PSRAM
+      if (i >= 2 && !quadPrinterBeta) out += " style=\"display:none\"";
 #endif
       out += "><span id=\"topStatusText" + String(i) + "\">-</span></span>";
     }
@@ -182,6 +190,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (dualPrinterUnsafe) out += "checked";
     out += " onchange=\"toggleDualPrinterMode(this.checked)\">";
     out += "<label for=\"dualp\">Enable 2-printer mode (experimental on low-RAM boards: two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device)</label>";
+    out += "</label>";
+#elif defined(BOARD_HAS_PSRAM)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"quadp\" value=\"1\" ";
+    if (quadPrinterBeta) out += "checked";
+    out += " onchange=\"toggleQuadPrinterMode(this.checked)\">";
+    out += "<label for=\"quadp\">Enable 4-printer mode (experimental: running 3-4 printers at once is not yet validated and may exhaust the heap or cause unstable connections. The split dual-screen layout still shows only the first two printers.)</label>";
     out += "</label>";
 #else
     out = "";

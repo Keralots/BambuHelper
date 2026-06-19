@@ -175,6 +175,13 @@ static void handleSavePrinter() {
     return;
   }
 #endif
+#ifdef BOARD_HAS_PSRAM
+  if (slot > 1 && !quadPrinterBeta) {
+    server.send(200, "application/json",
+      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode in Advanced settings to configure printer 3/4.\"}");
+    return;
+  }
+#endif
 
   PrinterConfig& cfg = printers[slot].config;
   if (server.hasArg("connmode")) {
@@ -282,6 +289,13 @@ static void handleSaveGaugeLayout() {
   if (slot > 0 && !dualPrinterUnsafe) {
     server.send(200, "application/json",
       "{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode to configure printer 2.\"}");
+    return;
+  }
+#endif
+#ifdef BOARD_HAS_PSRAM
+  if (slot > 1 && !quadPrinterBeta) {
+    server.send(200, "application/json",
+      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode to configure printer 3/4.\"}");
     return;
   }
 #endif
@@ -537,6 +551,9 @@ static void handleToggleSetting() {
 #ifdef BOARD_LOW_RAM
   else if (key == "dualp")   dualPrinterUnsafe = on;
 #endif
+#ifdef BOARD_HAS_PSRAM
+  else if (key == "quadp")   quadPrinterBeta = on;
+#endif
   else {
     server.send(400, "text/plain", "Unknown key");
     return;
@@ -559,6 +576,18 @@ static void handleToggleSetting() {
     if (!on && rotState.splitIndexB == 1) rotState.splitIndexB = 0;
     // Re-evaluate slot 1 active state without reboot; slot 0 stays connected.
     initBambuMqttSlot(1);
+  }
+#endif
+#ifdef BOARD_HAS_PSRAM
+  if (key == "quadp") {
+    if (!on) {
+      // User just disabled 4-printer beta - drop slots 2/3 from rotation/display
+      if (rotState.displayIndex > 1) rotState.displayIndex = 0;
+      if (rotState.splitIndexB > 1) rotState.splitIndexB = 0;
+    }
+    // Re-evaluate slots 2/3 without reboot; slots 0/1 stay connected.
+    initBambuMqttSlot(2);
+    initBambuMqttSlot(3);
   }
 #endif
   if (key == "kps") {
