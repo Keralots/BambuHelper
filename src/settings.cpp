@@ -40,6 +40,11 @@ char tasmotaCurrency[8] = "\xE2\x82\xAC";  // "€" UTF-8 default
 // across devices via JSON backup.
 bool dualPrinterUnsafe = false;
 
+// Experimental: opt-in 4-printer mode on BOARD_HAS_PSRAM boards. Default off,
+// so PSRAM boards stay at the long-standing 2-printer behavior unless the user
+// ticks the Advanced toggle. Local-only - NOT exported (same reason as above).
+bool quadPrinterBeta = false;
+
 static Preferences prefs;
 
 // ---------------------------------------------------------------------------
@@ -585,6 +590,8 @@ void loadSettings() {
 
   // Experimental dual-printer override on BOARD_LOW_RAM (local-only, not exported)
   dualPrinterUnsafe = prefs.getBool("dualp", false);
+  // Experimental 4-printer override on BOARD_HAS_PSRAM (local-only, not exported)
+  quadPrinterBeta = prefs.getBool("quadp", false);
 
   prefs.end();
 }
@@ -703,6 +710,8 @@ void saveSettings() {
 
   // Experimental dual-printer override on BOARD_LOW_RAM (local-only, not exported)
   prefs.putBool("dualp", dualPrinterUnsafe);
+  // Experimental 4-printer override on BOARD_HAS_PSRAM (local-only, not exported)
+  prefs.putBool("quadp", quadPrinterBeta);
 
   prefs.end();
 }

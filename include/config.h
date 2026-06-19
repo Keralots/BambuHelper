@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v3.6"
+#define FW_VERSION          "v3.7"
 
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
@@ -98,7 +98,19 @@
 //  Multi-printer
 // =============================================================================
 #define MAX_PRINTERS          4       // NVS config slots
-#define MAX_ACTIVE_PRINTERS   2       // max simultaneous MQTT connections
+// Simultaneous TLS+MQTT sessions. Each session costs ~40 KB MQTT buffer +
+// ~40-50 KB mbedTLS. Beyond two, the connections only fit on PSRAM boards:
+// there the 40 KB buffers land in PSRAM, leaving internal SRAM free for the
+// handshake. On no-PSRAM S3 boards (esp32s3, ws_lcd_200, ws_lcd_154) a third
+// handshake runs out of SRAM mid-flight and the watchdog freezes the device,
+// so they stay at two - matching the long-standing 2-printer behavior.
+// PSRAM boards run up to four (= MAX_PRINTERS); hardware-confirmed that four
+// TLS sessions establish without the freeze, with ~51 KB internal heap free.
+#ifdef BOARD_HAS_PSRAM
+#define MAX_ACTIVE_PRINTERS   4       // max simultaneous MQTT connections
+#else
+#define MAX_ACTIVE_PRINTERS   2
+#endif
 
 // =============================================================================
 //  Display rotation (multi-printer)

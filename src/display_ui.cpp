@@ -153,6 +153,20 @@ static void smoothLerp(float& cur, float target) {
   else cur += diff * SMOOTH_ALPHAS[mode];
 }
 
+// One dot per configured printer, centered on cx; green = currently displayed
+// slot. For two configured printers the output is pixel-identical to the old
+// fixed cx-5 / cx+5 layout. Call sites keep their getActiveConnCount() > 1 guard.
+static void drawPrinterDots(int cx, int cy) {
+  uint8_t slots[MAX_ACTIVE_PRINTERS], n = 0;
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++)
+    if (isPrinterConfigured(i)) slots[n++] = i;
+  int x0 = cx - (n - 1) * 5;
+  for (uint8_t k = 0; k < n; k++) {
+    uint16_t clr = (slots[k] == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
+    tft.fillCircle(x0 + k * 10, cy, 3, clr);
+  }
+}
+
 // Returns true if any gauge is still animating
 static bool tickGaugeSmooth(const BambuState& s, bool snap) {
   if (snap || !smoothInited) {
@@ -983,13 +997,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.drawString(badge, scrW - LY_HDR_BADGE_RX, dryHdrCY);
 
     // Multi-printer dots
-    if (getActiveConnCount() > 1) {
-      for (uint8_t di = 0; di < MAX_ACTIVE_PRINTERS; di++) {
-        if (!isPrinterConfigured(di)) continue;
-        uint16_t dotClr = (di == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
-        tft.fillCircle(cx - 5 + di * 10, dryHdrDotCY, 3, dotClr);
-      }
-    }
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, dryHdrDotCY);
   }
 
   // === AMS unit name (below header) ===
@@ -2497,13 +2505,7 @@ static void drawPrinting() {
 
     // Printer indicator dots (multi-printer) — centered on the visible
     // header strip (excludes the right column when the AMS panel is active).
-    if (getActiveConnCount() > 1) {
-      for (uint8_t di = 0; di < MAX_ACTIVE_PRINTERS; di++) {
-        if (!isPrinterConfigured(di)) continue;
-        uint16_t dotClr = (di == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
-        tft.fillCircle(hdrClearW / 2 - 5 + di * 10, hdrDotCY, 3, dotClr);
-      }
-    }
+    if (getActiveConnCount() > 1) drawPrinterDots(hdrClearW / 2, hdrDotCY);
   }
 
   // === AMS-view toggle (240x240 only): swap gauge row 2 for AMS strip ===
@@ -3160,13 +3162,7 @@ static void drawFinished() {
     tft.drawString("FINISH", scrW - LY_HDR_BADGE_RX, finHdrCY);
 
     // Printer indicator dots (multi-printer)
-    if (getActiveConnCount() > 1) {
-      for (uint8_t di = 0; di < MAX_ACTIVE_PRINTERS; di++) {
-        if (!isPrinterConfigured(di)) continue;
-        uint16_t dotClr = (di == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
-        tft.fillCircle(cx - 5 + di * 10, finHdrDotCY, 3, dotClr);
-      }
-    }
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, finHdrDotCY);
   }
 
   // === Row 1: Nozzle | Bed (two gauges centered) ===

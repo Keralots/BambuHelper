@@ -133,30 +133,51 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (strcmp(name, "FMINS") == 0)        { out = String(fm); return true; }
   }
 
-  // --- Dual-printer slot 2 (BOARD_LOW_RAM) ---
-  // %DUALP_TAB%       - "Printer 2" tab button HTML if dualp enabled, else empty.
+  // --- Per-slot printer tabs / topbar dots (slots 1..MAX_ACTIVE_PRINTERS-1) ---
+  // Slot 0's tab and dot are hardcoded in PAGE_HTML; these emit the remainder.
+  // %PRINTER_TABS%    - "Printer N" tab buttons for slots >= 1.
+  // %TOPBAR_DOTS%     - matching topbar status pills for slots >= 1.
   // %DUALP_ADVANCED%  - Advanced disclosure card with the experimental toggle.
-  if (strcmp(name, "DUALP_TAB") == 0) {
+  // On LOW_RAM (MAX_ACTIVE_PRINTERS == 2) the loops emit only slot 1, with the
+  // experimental hide logic intact, so the page stays byte-identical to before.
+  if (strcmp(name, "PRINTER_TABS") == 0) {
+    for (uint8_t i = 1; i < MAX_ACTIVE_PRINTERS; i++) {
+      out += "<button class=\"tab-btn\" id=\"tab" + String(i) +
+             "\" type=\"button\" onclick=\"selectPrinterTab(" + String(i) + ")\"";
 #ifdef BOARD_LOW_RAM
-    // Always emit the tab so toggleDualPrinterMode() can show it without a
-    // page reload. Inline display:none when disabled - JS clears the style.
-    out  = "<button class=\"tab-btn\" id=\"tab1\" type=\"button\" onclick=\"selectPrinterTab(1)\"";
-    if (!dualPrinterUnsafe) out += " style=\"display:none\"";
-    out += ">Printer 2</button>";
-#else
-    // Full-RAM boards always show both tabs.
-    out = "<button class=\"tab-btn\" id=\"tab1\" type=\"button\" onclick=\"selectPrinterTab(1)\">Printer 2</button>";
+      // Slot 1 stays hidden until the experimental toggle enables it;
+      // toggleDualPrinterMode() clears the inline style without a reload.
+      if (i == 1 && !dualPrinterUnsafe) out += " style=\"display:none\"";
 #endif
+#ifdef BOARD_HAS_PSRAM
+      // Slots 2-3 stay hidden until the experimental 4-printer toggle enables
+      // them; toggleQuadPrinterMode() clears the inline style without a reload.
+      if (i >= 2 && !quadPrinterBeta) out += " style=\"display:none\"";
+#endif
+      out += ">Printer " + String(i + 1) + "</button>";
+    }
     return true;
   }
-  if (strcmp(name, "DUALP_TOPBAR_DOT") == 0) {
+  if (strcmp(name, "TOPBAR_DOTS") == 0) {
+    for (uint8_t i = 1; i < MAX_ACTIVE_PRINTERS; i++) {
+      out += "<span class=\"status-dot\" id=\"topStatusDot" + String(i) +
+             "\" title=\"Printer " + String(i + 1) + " connection\"";
 #ifdef BOARD_LOW_RAM
-    out  = "<span class=\"status-dot\" id=\"topStatusDot1\" title=\"Printer 2 connection\"";
-    if (!dualPrinterUnsafe) out += " style=\"display:none\"";
-    out += "><span id=\"topStatusText1\">-</span></span>";
-#else
-    out = "<span class=\"status-dot\" id=\"topStatusDot1\" title=\"Printer 2 connection\"><span id=\"topStatusText1\">-</span></span>";
+      if (i == 1 && !dualPrinterUnsafe) out += " style=\"display:none\"";
 #endif
+#ifdef BOARD_HAS_PSRAM
+      if (i >= 2 && !quadPrinterBeta) out += " style=\"display:none\"";
+#endif
+      out += "><span id=\"topStatusText" + String(i) + "\">-</span></span>";
+    }
+    return true;
+  }
+  if (strcmp(name, "MAXP") == 0) {
+    switch (MAX_ACTIVE_PRINTERS) {
+      case 4:  out = "four";  break;
+      case 3:  out = "three"; break;
+      default: out = "two";   break;
+    }
     return true;
   }
   if (strcmp(name, "DUALP_ADVANCED") == 0) {
@@ -169,6 +190,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (dualPrinterUnsafe) out += "checked";
     out += " onchange=\"toggleDualPrinterMode(this.checked)\">";
     out += "<label for=\"dualp\">Enable 2-printer mode (experimental on low-RAM boards: two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device)</label>";
+    out += "</label>";
+#elif defined(BOARD_HAS_PSRAM)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"quadp\" value=\"1\" ";
+    if (quadPrinterBeta) out += "checked";
+    out += " onchange=\"toggleQuadPrinterMode(this.checked)\">";
+    out += "<label for=\"quadp\">Enable 4-printer mode (experimental: running 3-4 printers at once is not yet validated and may exhaust the heap or cause unstable connections. The split dual-screen layout still shows only the first two printers.)</label>";
     out += "</label>";
 #else
     out = "";

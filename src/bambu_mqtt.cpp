@@ -1476,12 +1476,27 @@ static void handleConn(MqttConn& c) {
 // ---------------------------------------------------------------------------
 //  Public API
 // ---------------------------------------------------------------------------
-bool isPrinterConfigured(uint8_t slot) {
+// True if the board RAM + experimental opt-ins permit this slot to run at all.
+// This is the gate ONLY - it does NOT check whether the slot holds valid
+// printer config, so callers that need cloud-userId self-heal (which runs
+// precisely while the slot is not yet fully configured) can use it without the
+// chicken-and-egg cloudUserId requirement baked into isPrinterConfigured().
+static bool isPrinterSlotEnabled(uint8_t slot) {
   if (slot >= MAX_PRINTERS) return false;
 #ifdef BOARD_LOW_RAM
   // Slot 1 only available when user opts into experimental 2-printer mode.
   if (slot > 0 && !dualPrinterUnsafe) return false;
 #endif
+#ifdef BOARD_HAS_PSRAM
+  // Slots 2-3 (printers 3-4) only when user opts into experimental 4-printer
+  // beta. PSRAM boards stay at 2 printers by default.
+  if (slot > 1 && !quadPrinterBeta) return false;
+#endif
+  return true;
+}
+
+bool isPrinterConfigured(uint8_t slot) {
+  if (!isPrinterSlotEnabled(slot)) return false;
   PrinterConfig& cfg = printers[slot].config;
   if (isCloudMode(cfg.mode))
     return strlen(cfg.serial) > 0 && strlen(cfg.cloudUserId) > 0;
@@ -1510,6 +1525,11 @@ uint8_t getActiveConnCount() {
 // userId extraction uses HTTPClient (TLS) — must complete before this
 // slot's MQTT TLS session is opened.
 static void extractCloudUserIdIfNeeded(uint8_t i) {
+  // Respect the per-slot gates (low-RAM dualPrinterUnsafe / PSRAM quadPrinterBeta)
+  // WITHOUT the cloudUserId requirement: a slot disabled by the experimental
+  // opt-in must do no cloud work even if it holds stored/imported config, but a
+  // gate-enabled slot still missing its cloudUserId must be allowed to self-heal.
+  if (!isPrinterSlotEnabled(i)) return;
   PrinterConfig& cfg = printers[i].config;
   if (!isCloudMode(cfg.mode) || strlen(cfg.serial) == 0 || strlen(cfg.cloudUserId) > 0)
     return;
