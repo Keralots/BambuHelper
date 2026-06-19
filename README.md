@@ -34,7 +34,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | Preview | Board | Notes |
 |---|---|---|
 | ![ESP32-S3 Super Mini dashboard](img/interface1.jpg) | **ESP32-S3 Super Mini + 1.54" ST7789** | Base implementation this project started from. Uses an ESP32-S3 Super Mini with a `1.54"` TFT SPI ST7789 (`240x240`) display. Use the `esp32s3` firmware build. Supports **up to 2 printers** (no PSRAM). |
-| ![Guition JC3248W535](img/jc3248w535.jpg) | **Guition JC3248W535** | `320x480` IPS all-in-one board with **AXS15231B QSPI** display driver, ESP32-S3-N16R8 (`16MB` flash / `8MB` PSRAM), and capacitive touch (AXS15231B touch controller on I2C). Use the `jc3248w535` firmware build. Supports **up to 2 printers** (up to 4 with the experimental opt-in - see Multi-Printer Monitoring). Initial port contributed by Niels ([@theNailz](https://github.com/theNailz)). AliExpress: [pl.aliexpress.com/item/1005007566315926.html](https://pl.aliexpress.com/item/1005007566315926.html) |
+| ![Guition JC3248W535](img/jc3248w535.jpg) | **Guition JC3248W535** | `320x480` IPS all-in-one board with **AXS15231B QSPI** display driver, ESP32-S3-N16R8 (`16MB` flash / `8MB` PSRAM), and capacitive touch (AXS15231B touch controller on I2C). Use the `jc3248w535` firmware build. Supports **up to 2 printers** (up to 4 with the experimental opt-in - see Multi-Printer Monitoring). Includes an onboard **NS4168 I2S speaker** for notifications and a **battery indicator** (GPIO5 BAT divider), and supports portrait and landscape (480x320) layouts. Initial port contributed by Niels ([@theNailz](https://github.com/theNailz)). AliExpress: [pl.aliexpress.com/item/1005007566315926.html](https://pl.aliexpress.com/item/1005007566315926.html) |
 | ![Waveshare 2 inch](img/waveshare2inch.png) | **Waveshare ESP32-S3-Touch-LCD-2** | `240x320` ST7789 version with ESP32-S3, sold as a more plug-and-play option. Use the `ws_lcd_200` firmware build. Supports **up to 2 printers** (no PSRAM), like the main ESP32-S3 DIY version. Product page: [waveshare.com/esp32-s3-touch-lcd-2.htm](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm) Case (Horizontal and vertical): [MakerWorld model](https://makerworld.com/en/models/2773835) |
 | ![Waveshare 1.54 inch](img/waveshare1.54inch.png) | **Waveshare ESP32-S3-Touch-LCD-1.54** | `240x240` ST7789 with ESP32-S3, touchscreen, battery holder, and 3 built-in buttons. Use the `ws_lcd_154` firmware build. Supports **up to 2 printers** (no PSRAM). The left button (BOOT) works as a screen switcher alongside the touchscreen. **Battery power:** press and hold the center PWR button to power on. To power off, hold the left (BOOT) and right buttons simultaneously for 1.5 seconds. Product page: [waveshare.com/esp32-s3-touch-lcd-1.54.htm](https://www.waveshare.com/esp32-s3-touch-lcd-1.54.htm) |
 | ![ESP32-C3 board](img/ESP32c3Board.png) | **ESP32-C3 Super Mini** | DIY version, just like the main ESP32-S3 build, using the same `240x240` ST7789 display. Use the `esp32c3` firmware build. Due to RAM limits, this board supports **1 printer only**. |
@@ -70,11 +70,15 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Auto AP mode** - creates WiFi hotspot on first boot or when WiFi is lost
 - **Smart redraw** - only redraws changed UI elements for smooth performance
 - **Customizable gauge colors** - per-gauge arc/label/value colors with preset themes
+- **Configurable gauge behavior** - adjustable arc full-scale ranges (nozzle, bed, chamber/AMS, power), arc smoothing speed, and an optional warning color when a gauge runs hot
+- **Power gauge** - optional arc gauge showing live smart-plug wattage (W/kW) in a gauge slot
+- **Per-nozzle temperature gauges** - fixed left/right nozzle arcs for dual-nozzle printers (H2 series)
+- **Split dual-printer dashboard** - show two printers at once (stacked in portrait, side-by-side in landscape) with progress bar, status, ETA, and drying view per band
 - **Multi-printer support** - monitor 2 printers simultaneously on full-RAM ESP32-S3 boards; PSRAM-equipped boards (Guition JC3248W535, ESP32-S3-Zero, ws_lcd_350, SenseCAP Indicator) add an experimental opt-in for up to 4; CYD, TZT, and ESP32-C3 have an experimental opt-in 2-printer mode but default to 1 printer
 - **Smart rotation** - automatically shows the printing printer; cycles between both when both are printing
 - **Physical button / touchscreen** - cycle printers and wake display via optional push button or TTP223, board-built-in buttons (Waveshare 1.54"), or the built-in capacitive touchscreens on CYD / TZT / Waveshare 2" / Waveshare 1.54"
 - **Optional LED** - PWM-driven status LED on a user-configurable pin; hold the button/touch to dim
-- **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events; Waveshare 1.54" uses its built-in ES8311 audio codec instead
+- **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events; Waveshare 1.54" uses its built-in ES8311 audio codec and Guition JC3248W535 its onboard NS4168 I2S speaker instead
 - **OTA updates** - update firmware from the device's web interface (manual upload or one-click from GitHub Releases)
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
@@ -190,7 +194,7 @@ Supports the 10 most common boards (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 
 
 ### Manual: Generic ESP Web Flasher
 
-1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.3-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD** or **TZT L1435-2.4**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to both CYD-shaped boards (they use a CH340 USB-Serial chip that does not tolerate high baud rates on first contact).
 4. Connect your ESP32 via USB
@@ -214,16 +218,16 @@ The device reboots automatically once the update is written; the web page reload
 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
-| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.3-Full.bin` |
-| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.3-Full.bin` |
-| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.3-Full.bin` |
-| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.3-Full.bin` |
-| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.3-Full.bin` |
-| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.3-Full.bin` |
+| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7-Full.bin` |
+| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7-Full.bin` |
+| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7-Full.bin` |
+| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7-Full.bin` |
+| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7-Full.bin` |
 
 > Community boards (ESP32-S3-Zero with 2.0" 240x320 panel, SenseCAP Indicator) are not part of the automated release pipeline - build them locally with `pio.exe run -e <env>` and flash the resulting `.pio/build/<env>/firmware.bin`.
 
@@ -363,6 +367,15 @@ The built-in web interface (accessible at the device's IP address) provides the 
   - Aux fan
   - Chamber fan
 
+### Gauge Scales & Behavior
+- **Gauge scales** - full-scale value each arc represents; lower a scale so the arc sweeps fuller for your printer's normal range:
+  - Nozzle full-scale (default 300 degC)
+  - Bed full-scale (default 120 degC)
+  - Chamber / AMS temp full-scale (default 60 degC)
+  - Power gauge full-scale (default 1000 W)
+- **Arc smoothing** - how quickly temperature arcs animate toward the live value
+- **Warning color** - nozzle, bed, and chamber arcs (and their value text) switch to this color once the reading reaches a chosen share of the gauge's full scale
+
 ### Buzzer
 - **Buzzer (optional)** - enable or disable passive buzzer notifications
 - **GPIO Pin** - choose which ESP32 pin drives the buzzer
@@ -417,6 +430,10 @@ BambuHelper monitors 2 printers simultaneously on full-RAM ESP32-S3 boards, each
 | **Smart** (default) | Shows the printing printer. If both are printing, cycles between them. If neither is printing, shows last active. |
 | **Auto-rotate** | Cycles through all connected printers at a configurable interval (10s - 10min). |
 | **Off** | Manually switch between printers using the physical button only. |
+
+### Split-Screen Mode
+
+Instead of rotating between printers one at a time, you can show two printers at once. Enable **Split screen when two printers are printing** in the Multi-Printer section. When both configured printers are printing, the dashboard divides into two bands - stacked top/bottom in portrait, or left/right in landscape - each with its own progress bar, status label, ETA, and drying view. When only one printer is active it falls back to the normal full-screen dashboard. A **Always show split screen (testing)** toggle forces the split layout regardless of activity so you can preview it without two live prints.
 
 ### Physical Button
 
