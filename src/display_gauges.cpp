@@ -463,43 +463,14 @@ static void clearGaugeCenter(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // ---------------------------------------------------------------------------
 //  Helper: choose a center-value font that fits a gauge.
 //
-//  Picks the largest font, up to the layout's `base`, whose rendered width fits
-//  inside the clearable inner circle (clearGaugeCenter clears radius-thickness-1).
-//  On JC3248W535 the value text is drawn with an opaque background, so a glyph
-//  box wider than the inner circle paints over the arc ring. This bites where a
-//  wide reading (e.g. a 3-digit "220" / "140") meets a smaller-than-usual gauge:
-//  the R=28 portrait 9-slot grid, and the R=38 dual-printer split gauges (whose
-//  base is FONT_XLARGE on 320x480). Stepping down happens only when the base
-//  font actually overflows, so layouts where it already fits are unchanged.
+//  All panels draw the value text transparently over the cleared center disc,
+//  so no opaque box can clip the arc and the font only has to be legible, not
+//  boxed. Large gauges keep the layout base font; only the tiny R<30 portrait
+//  9-slot grid steps down when a wide reading would overflow the inner circle.
 //  Leaves the chosen font active on gfx.
 // ---------------------------------------------------------------------------
 static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
                          int16_t radius, int16_t thickness, FontID base) {
-#if defined(BOARD_IS_JC3248W535)
-  // JC3248W535 draws the value with an opaque background box. The box is a
-  // rectangle; its top/bottom corners must stay inside the cleared inner circle
-  // or they paint over the arc ring. Step the font down (up to the layout base)
-  // until the whole box fits - budgeting the chord width at the box edge
-  // (+ a couple px for the upward value nudge / AA fringe), not the full
-  // diameter. This is what fixes the small split gauges; large gauges where the
-  // base already fits return it on the first iteration, so they are unchanged.
-  const int16_t textR = radius - thickness - 1;
-  const FontID candidates[] = { base, FONT_LARGE, FONT_BODY, FONT_SMALL };
-  for (FontID f : candidates) {
-    if (radius < 30 && (f == FONT_LARGE || f == FONT_XLARGE)) continue;
-    setFont(gfx, f);
-    const int16_t halfH = gfx.fontHeight() / 2 + 3;
-    const int16_t usableHalfW = (textR > halfH)
-        ? (int16_t)sqrtf((float)textR * textR - (float)halfH * halfH) : 0;
-    const int16_t innerW = 2 * usableHalfW - 2;
-    if (gfx.textWidth(s) <= innerW) return;
-  }
-  setFont(gfx, FONT_SMALL);
-#else
-  // Other panels draw the value transparently (no box), so only the tiny R<30
-  // portrait 9-slot grid needs shrinking; large gauges keep the full base font.
-  // Kept byte-identical to the single-printer behaviour to avoid changing any
-  // normal-view value sizing.
   if (radius >= 30) { setFont(gfx, base); return; }
   FontID f = (base == FONT_SMALL) ? FONT_SMALL : FONT_BODY;
   setFont(gfx, f);
@@ -507,7 +478,6 @@ static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
     const int16_t innerW = 2 * (radius - thickness - 1) - 2;
     if (gfx.textWidth(s) > innerW) setFont(gfx, FONT_SMALL);
   }
-#endif
 }
 
 // Choose the largest humidity-number font that leaves room for a small "%"
@@ -531,18 +501,17 @@ static FontID fitHumidityValueFont(lgfx::LovyanGFX& gfx, const char* value,
   return FONT_SMALL;
 }
 
-// Keep selected gauge text transparent on direct-draw panels: the center disc
-// is already cleared before text redraw, and an opaque VLW background box can
-// clip the line above or spill across the arc. The JC3248W535 rotated sprite
-// needs an explicit background to avoid hollow-looking antialiased glyphs.
+// Draw gauge value/secondary text transparently on every panel. The center
+// disc is cleared before redraw, so glyphs blend against the bg there; where a
+// large value spills past the inner circle the arc shows through instead of an
+// opaque box. JC3248W535 renders into a readable 16bpp PSRAM frame sprite, so
+// antialiased readback blends the same as the direct-draw panels — the opaque
+// background (which was what clipped the arc on the small split gauges) is not
+// needed.
 static void setGaugeClearedTextColor(lgfx::LovyanGFX& gfx,
                                      uint16_t fg, uint16_t bg) {
-#if defined(BOARD_IS_JC3248W535)
-  gfx.setTextColor(fg, bg);
-#else
   (void)bg;
   gfx.setTextColor(fg);
-#endif
 }
 
 // ---------------------------------------------------------------------------
