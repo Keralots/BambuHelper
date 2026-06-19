@@ -530,6 +530,10 @@ static void handleToggleSetting() {
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
+  else if (key == "rotsplit")  rotState.splitEnabled = on;
+  else if (key == "rotsplitf") rotState.splitForce = on;
+  else if (key == "clkhd")     dispSettings.hideClockDate = on;
+  else if (key == "showip")    netSettings.showIPAtStartup = on;
 #ifdef BOARD_LOW_RAM
   else if (key == "dualp")   dualPrinterUnsafe = on;
 #endif
@@ -543,6 +547,8 @@ static void handleToggleSetting() {
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
+  if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
+  if (key == "rotsplit" || key == "rotsplitf") triggerDisplayTransition();  // flip split layout live
   if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {

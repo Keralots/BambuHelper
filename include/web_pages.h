@@ -961,7 +961,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         </select>
       </div>
       <label class="check-row">
-        <input type="checkbox" id="clk_hidedate" value="1" %CLK_HIDEDATE%>
+        <input type="checkbox" id="clk_hidedate" value="1" %CLK_HIDEDATE% onchange="toggleSetting('clkhd',this.checked)">
         <label for="clk_hidedate">Hide date (time only)</label>
       </label>
     </div>
@@ -1043,12 +1043,12 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
     </div>
     <label class="check-row">
-      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK%>
+      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
       <label for="rotsplit">Split screen when two printers are printing</label>
     </label>
     <div class="hint">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
     <label class="check-row">
-      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK%>
+      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
       <label for="rotsplitf">Always show split screen (testing)</label>
     </label>
     <div class="hint">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
@@ -1302,7 +1302,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     </div>
     <label class="check-row">
       <input type="hidden" name="has_showip" value="1">
-      <input type="checkbox" id="showip" value="1" %SHOWIP%>
+      <input type="checkbox" id="showip" value="1" %SHOWIP% onchange="toggleSetting('showip',this.checked)">
       <label for="showip">Show IP on startup (1.5 s)</label>
     </label>
     <label class="check-row">
