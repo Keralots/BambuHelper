@@ -22,6 +22,12 @@
 // nozzle only"); bed temp intentionally not checked.
 #define TASMOTA_AUTO_OFF_NOZZLE_MAX_C    50.0f
 
+// Watt-triggered cloud print-start nudge. Sustained mains draw above this
+// threshold means the printer is heating/moving (idle/standby is far lower).
+// Auto-enabled whenever a plug maps to a CLOUD printer slot (no UI toggle).
+#define TASMOTA_PRINT_START_WATTS        100.0f
+#define TASMOTA_PRINT_START_SUSTAIN_MS   15000UL  // require watts high this long before nudging (filters spikes)
+
 struct TasmotaPlugRuntime {
   float    watts;
   float    todayKwh;
@@ -38,6 +44,8 @@ struct TasmotaPlugRuntime {
   bool     powerOn;          // valid only when powerStateKnown
   uint32_t finishEnteredMs; // millis() when this plug's printer entered FINISH
   bool     autoOffFired;    // latch: true once Power Off has succeeded for this cycle
+  uint32_t wattHighSinceMs; // millis() when watts first crossed the print-start threshold (0 = below)
+  bool     wattRefreshFired;// latch: cloud refresh already nudged for the current rise
 };
 
 static TasmotaPlugRuntime g_rt[TASMOTA_PLUG_COUNT];
@@ -374,6 +382,49 @@ static void evaluateAutoOff(uint8_t i) {
 }
 
 // ---------------------------------------------------------------------------
+//  Watt-triggered cloud print-start nudge (auto when a plug maps to a cloud
+//  printer). The Bambu cloud broker sometimes drops the IDLE->RUNNING state
+//  delta to a subscriber, so the device sits on the clock during a live print
+//  until a manual Handy refresh. A sustained mains-power rise is a
+//  hardware-truthful "printer just started" signal — fire one pushall to pull
+//  fresh state. Cloud + non-printing only: LAN already polls fast and an active
+//  print already streams. Runs on the Tasmota task, so it defers the publish to
+//  the MQTT task via requestCloudRefreshFromTask().
+// ---------------------------------------------------------------------------
+static void maybeWattTriggerRefresh(uint8_t i) {
+  uint8_t slot = tasmotaPrinterSlotForPlug(i);
+  if (slot >= MAX_ACTIVE_PRINTERS) return;
+  if (!isPrinterConfigured(slot)) return;
+  if (!isCloudMode(printers[slot].config.mode)) return;
+
+  BambuState& ps = printers[slot].state;
+  if (ps.printing) {                  // already printing: nothing to detect, re-arm
+    g_rt[i].wattHighSinceMs = 0;
+    g_rt[i].wattRefreshFired = false;
+    return;
+  }
+
+  float w = g_rt[i].watts;
+  if (g_rt[i].plugOffline || w < 0.0f) return;   // no trustworthy reading yet
+
+  if (w < TASMOTA_PRINT_START_WATTS) {           // below threshold: re-arm
+    g_rt[i].wattHighSinceMs = 0;
+    g_rt[i].wattRefreshFired = false;
+    return;
+  }
+
+  uint32_t now = millis();
+  if (g_rt[i].wattHighSinceMs == 0) g_rt[i].wattHighSinceMs = now;
+  if (!g_rt[i].wattRefreshFired &&
+      (now - g_rt[i].wattHighSinceMs) >= TASMOTA_PRINT_START_SUSTAIN_MS) {
+    Serial.printf("[Tasmota %u] %.0fW sustained -> cloud print-start nudge (slot %u)\n",
+                  i, w, slot);
+    requestCloudRefreshFromTask(slot);
+    g_rt[i].wattRefreshFired = true;
+  }
+}
+
+// ---------------------------------------------------------------------------
 //  FreeRTOS task — per-plug scheduling
 // ---------------------------------------------------------------------------
 static void pollTask(void*) {
@@ -391,6 +442,7 @@ static void pollTask(void*) {
       if ((int32_t)(now - g_rt[i].nextPollMs) >= 0) {
         pollOne(i);
         evaluateAutoOff(i);
+        maybeWattTriggerRefresh(i);
         uint8_t pi = tasmotaSettings[i].pollInterval;
         if (pi < 10) pi = 10;
         if (pi > 60) pi = 60;

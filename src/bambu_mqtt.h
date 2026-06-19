@@ -38,7 +38,8 @@ enum PushallReason : uint8_t {
   PUSHALL_RECOVERY_IDLE_HOT,
   PUSHALL_RECOVERY_FINISH_HOT,
   PUSHALL_RECOVERY_FAILED,
-  PUSHALL_MANUAL
+  PUSHALL_MANUAL,
+  PUSHALL_PERIODIC_IDLE      // cloud: low-rate poll while not printing (catches dropped print-start delta)
 };
 
 extern bool mqttDebugLog;   // verbose Serial logging (toggled via web)
@@ -58,6 +59,7 @@ const char* pushallReasonToString(uint8_t reason);
 void resetMqttBackoff();                 // reset backoff + force immediate reconnect
 void deferMqttReconnect();               // skip reconnect attempts for one iteration
 void requestCloudRefresh(uint8_t slot);  // manual pushall for cloud non-printing states (debounced)
+void requestCloudRefreshFromTask(uint8_t slot);  // thread-safe: defers the pushall to the MQTT task (safe to call from the Tasmota poll task)
 
 // Human-readable error string for PubSubClient rc
 const char* mqttRcToString(int rc);

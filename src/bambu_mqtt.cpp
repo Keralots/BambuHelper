@@ -99,6 +99,7 @@ const char* pushallReasonToString(uint8_t reason) {
     case PUSHALL_RECOVERY_FINISH_HOT:return "Recovery (Finish/Hot)";
     case PUSHALL_RECOVERY_FAILED:    return "Recovery (Failed)";
     case PUSHALL_MANUAL:             return "Manual";
+    case PUSHALL_PERIODIC_IDLE:      return "Periodic (Idle)";
     case PUSHALL_NONE:
     default:                         return "Never";
   }
@@ -1272,6 +1273,19 @@ static void handleConn(MqttConn& c) {
         esp_task_wdt_reset();
         requestPushall(c, PUSHALL_PERIODIC);
       }
+    } else {
+      // Cloud: low-rate periodic pushall while NOT printing. The cloud broker
+      // sometimes drops the IDLE->RUNNING state delta to a subscriber, leaving
+      // us stuck on the clock screen during an already-running print (only a
+      // manual Handy refresh nudges it). A 5-min poll bounds detection latency.
+      // gotDataSinceConnect gate avoids pinging an offline printer's topic; once
+      // printing the live stream flows on its own. Spacing is measured off
+      // lastPushallRequest, so it naturally coalesces with recovery pushalls.
+      if (c.initialPushallSent && c.gotDataSinceConnect && !s.printing &&
+          millis() - c.lastPushallRequest > BAMBU_CLOUD_IDLE_PUSHALL_INTERVAL) {
+        esp_task_wdt_reset();
+        requestPushall(c, PUSHALL_PERIODIC_IDLE);
+      }
     }
   }
 
@@ -1582,6 +1596,11 @@ void initBambuMqttSlot(uint8_t slot) {
 
 static bool skipReconnectOnce = false;
 
+// Set by other tasks (e.g. the Tasmota poll task) to request a cloud refresh.
+// PubSubClient is single-threaded, so the actual publish is deferred to the
+// MQTT task, which drains this in handleBambuMqtt().
+static volatile bool g_extRefreshReq[MAX_ACTIVE_PRINTERS] = { false };
+
 void deferMqttReconnect() { skipReconnectOnce = true; }
 
 void handleBambuMqtt() {
@@ -1594,6 +1613,12 @@ void handleBambuMqtt() {
     // Already-connected sessions still get mqtt->loop().
     if (skip && !(conns[i].mqtt && conns[i].mqtt->connected())) continue;
     handleConn(conns[i]);
+    // Drain a watt-triggered refresh raised by the Tasmota poll task. Must run
+    // on this (MQTT) task because PubSubClient publish is not thread-safe.
+    if (g_extRefreshReq[i]) {
+      g_extRefreshReq[i] = false;
+      requestCloudRefresh(i);
+    }
   }
 }
 
@@ -1626,6 +1651,13 @@ void requestCloudRefresh(uint8_t slot) {
   MQTT_LOG("[%d] manual cloud refresh (pushall)", c.slotIndex);
   esp_task_wdt_reset();
   requestPushall(c, PUSHALL_MANUAL);
+}
+
+void requestCloudRefreshFromTask(uint8_t slot) {
+  // Thread-safe: only raises a flag. The MQTT task does the actual publish in
+  // handleBambuMqtt(). A single-byte volatile write is atomic on ESP32; a race
+  // with the drain just costs at most one extra refresh next loop.
+  if (slot < MAX_ACTIVE_PRINTERS) g_extRefreshReq[slot] = true;
 }
 
 void disconnectBambuMqtt() {

@@ -264,6 +264,10 @@ static void handleClearPrinter() {
   if (rotState.displayIndex == slot) {
     rotState.displayIndex = (slot == 0 && isPrinterConfigured(1)) ? 1 : 0;
   }
+  // Keep the split second-slot valid and distinct from the deleted slot.
+  if (rotState.splitIndexB == slot || rotState.splitIndexB >= MAX_ACTIVE_PRINTERS) {
+    rotState.splitIndexB = (rotState.displayIndex == 0) ? 1 : 0;
+  }
 
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -526,6 +530,10 @@ static void handleToggleSetting() {
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
+  else if (key == "rotsplit")  rotState.splitEnabled = on;
+  else if (key == "rotsplitf") rotState.splitForce = on;
+  else if (key == "clkhd")     dispSettings.hideClockDate = on;
+  else if (key == "showip")    netSettings.showIPAtStartup = on;
 #ifdef BOARD_LOW_RAM
   else if (key == "dualp")   dualPrinterUnsafe = on;
 #endif
@@ -539,6 +547,8 @@ static void handleToggleSetting() {
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
+  if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
+  if (key == "rotsplit" || key == "rotsplitf") triggerDisplayTransition();  // flip split layout live
   if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
@@ -546,6 +556,7 @@ static void handleToggleSetting() {
       // User just disabled 2-printer mode - drop slot 1 from rotation/display
       rotState.displayIndex = 0;
     }
+    if (!on && rotState.splitIndexB == 1) rotState.splitIndexB = 0;
     // Re-evaluate slot 1 active state without reboot; slot 0 stays connected.
     initBambuMqttSlot(1);
   }
@@ -719,6 +730,12 @@ static void handleSaveRotation() {
     if (ms < ROTATE_MIN_MS) ms = ROTATE_MIN_MS;
     if (ms > ROTATE_MAX_MS) ms = ROTATE_MAX_MS;
     rotState.intervalMs = ms;
+  }
+  if (server.hasArg("rotsplit")) {
+    rotState.splitEnabled = (server.arg("rotsplit") == "1");
+  }
+  if (server.hasArg("rotsplitf")) {
+    rotState.splitForce = (server.arg("rotsplitf") == "1");
   }
   saveRotationSettings();
 
@@ -1036,6 +1053,8 @@ static void handleSettingsExport() {
   JsonObject rot = doc["rotation"].to<JsonObject>();
   rot["mode"] = (uint8_t)rotState.mode;
   rot["intervalMs"] = rotState.intervalMs;
+  rot["split"] = rotState.splitEnabled;
+  rot["splitForce"] = rotState.splitForce;
 
   // Button
   JsonObject btn = doc["button"].to<JsonObject>();
@@ -1331,6 +1350,8 @@ static void handleSettingsImportFinish() {
   if (rot) {
     if (rot["mode"].is<uint8_t>())      rotState.mode = (RotateMode)rot["mode"].as<uint8_t>();
     if (rot["intervalMs"].is<uint32_t>()) rotState.intervalMs = rot["intervalMs"].as<uint32_t>();
+    if (rot["split"].is<bool>())        rotState.splitEnabled = rot["split"].as<bool>();
+    if (rot["splitForce"].is<bool>())   rotState.splitForce = rot["splitForce"].as<bool>();
   }
 
   // Button
