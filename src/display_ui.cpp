@@ -2381,14 +2381,14 @@ void drawCameraGauge(int16_t cx, int16_t cy, int16_t radius, bool forceRedraw) {
     tft.drawRect(x0, y0, box, box, dispSettings.trackColor);
     setFont(tft, FONT_SMALL);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(dispSettings.trackColor, dispSettings.bgColor);
+    tft.setTextColor(CLR_TEXT, dispSettings.bgColor);  // bright CAM label (hardcoded)
     tft.drawString(cameraActive() ? "..." : "CAM", cx, cy);
   }
 
   const bool sm = dispSettings.smallLabels;
   setFont(tft, sm ? FONT_SMALL : FONT_BODY);
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(dispSettings.trackColor, dispSettings.bgColor);
+  tft.setTextColor(CLR_TEXT, dispSettings.bgColor);  // bright CAM label (hardcoded)
   tft.drawString("CAM", cx, cy + radius + (sm ? 3 : -1));
 }
 
