@@ -337,6 +337,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
       {"AFN", &dispSettings.auxFan},   {"AFR", &dispSettings.auxFanRight},
       {"CFN", &dispSettings.chamberFan}, {"EXH", &dispSettings.exhaustFan},
       {"CHT", &dispSettings.chamberTemp}, {"HBK", &dispSettings.heatbreak},
+      {"PWR", &dispSettings.power},        {"LYR", &dispSettings.layer},
     };
     for (auto& g : gauges) {
       size_t plen = strlen(g.prefix);

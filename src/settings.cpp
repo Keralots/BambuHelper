@@ -202,6 +202,10 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.chamberTemp = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
   // Heatbreak fan: orange arc, orange label, white value
   ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  // Power: gold arc + label, white value (matches the previous hardcoded look)
+  ds.power = { CLR_GOLD, CLR_GOLD, CLR_TEXT };
+  // Layer: green arc + label, white value (matches the previous Progress reuse)
+  ds.layer = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
 }
 
 // Default standard 2x3 grid: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
@@ -389,6 +393,8 @@ void loadSettings() {
   loadGaugeColors("gc_exh", dispSettings.exhaustFan, def.exhaustFan);
   loadGaugeColors("gc_cht", dispSettings.chamberTemp, def.chamberTemp);
   loadGaugeColors("gc_hbk", dispSettings.heatbreak, def.heatbreak);
+  loadGaugeColors("gc_pwr", dispSettings.power, def.power);
+  loadGaugeColors("gc_lyr", dispSettings.layer, def.layer);
 
   // Top progress bar color. Before this setting existed the bar reused the
   // Progress gauge arc color, so migrate absent keys to that value to avoid a
@@ -650,6 +656,8 @@ void saveSettings() {
   saveGaugeColors("gc_exh", dispSettings.exhaustFan);
   saveGaugeColors("gc_cht", dispSettings.chamberTemp);
   saveGaugeColors("gc_hbk", dispSettings.heatbreak);
+  saveGaugeColors("gc_pwr", dispSettings.power);
+  saveGaugeColors("gc_lyr", dispSettings.layer);
 
   // Network settings
   prefs.putBool("net_dhcp", netSettings.useDHCP);

@@ -105,6 +105,8 @@ struct DisplaySettings {
   GaugeColors exhaustFan;   // X2D exhaust fan
   GaugeColors chamberTemp;
   GaugeColors heatbreak;
+  GaugeColors power;        // Tasmota power gauge (arc shown only when drawing power)
+  GaugeColors layer;        // layer-progress gauge
 };
 
 // Network settings

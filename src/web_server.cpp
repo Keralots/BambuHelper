@@ -97,6 +97,8 @@ static void readDisplayFromForm() {
   readGaugeColorsFromForm("exh", dispSettings.exhaustFan);
   readGaugeColorsFromForm("cht", dispSettings.chamberTemp);
   readGaugeColorsFromForm("hbk", dispSettings.heatbreak);
+  readGaugeColorsFromForm("pwr", dispSettings.power);
+  readGaugeColorsFromForm("lyr", dispSettings.layer);
 
   if (server.hasArg("fmins")) {
     dpSettings.finishDisplayMins = server.arg("fmins").toInt();
@@ -1064,6 +1066,8 @@ static void handleSettingsExport() {
   JsonObject gExh = gauges["exhaustFan"].to<JsonObject>(); gaugeColorsToJson(gExh, dispSettings.exhaustFan);
   JsonObject gCht = gauges["chamberTemp"].to<JsonObject>(); gaugeColorsToJson(gCht, dispSettings.chamberTemp);
   JsonObject gHbk = gauges["heatbreak"].to<JsonObject>(); gaugeColorsToJson(gHbk, dispSettings.heatbreak);
+  JsonObject gPwr = gauges["power"].to<JsonObject>();     gaugeColorsToJson(gPwr, dispSettings.power);
+  JsonObject gLyr = gauges["layer"].to<JsonObject>();     gaugeColorsToJson(gLyr, dispSettings.layer);
 
   // Display power
   JsonObject dp = doc["displayPower"].to<JsonObject>();
@@ -1347,6 +1351,8 @@ static void handleSettingsImportFinish() {
       if (gauges["exhaustFan"].is<JsonObject>()){ JsonObject g = gauges["exhaustFan"]; gaugeColorsFromJson(g, dispSettings.exhaustFan); }
       if (gauges["chamberTemp"].is<JsonObject>()){ JsonObject g = gauges["chamberTemp"]; gaugeColorsFromJson(g, dispSettings.chamberTemp); }
       if (gauges["heatbreak"].is<JsonObject>()){ JsonObject g = gauges["heatbreak"]; gaugeColorsFromJson(g, dispSettings.heatbreak); }
+      if (gauges["power"].is<JsonObject>())    { JsonObject g = gauges["power"];     gaugeColorsFromJson(g, dispSettings.power); }
+      if (gauges["layer"].is<JsonObject>())    { JsonObject g = gauges["layer"];     gaugeColorsFromJson(g, dispSettings.layer); }
     }
   }
 

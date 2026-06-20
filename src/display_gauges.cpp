@@ -788,7 +788,9 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   uint16_t fillEnd = startAngle + (uint16_t)(ratio * 240.0f);
   if (fillEnd > 300) fillEnd = 300;
 
-  uint16_t arcColor = (active && w > 0.5f) ? CLR_GOLD : CLR_TEXT_DIM;
+  bool hasPower = active && w > 0.5f;
+  uint16_t arcColor = hasPower ? dispSettings.power.arc : CLR_TEXT_DIM;
+  uint16_t labelColor = hasPower ? dispSettings.power.label : CLR_TEXT_DIM;
   uint16_t drawFill = (ratio > 0.01f) ? fillEnd : startAngle;
   drawArcFill(gfx, cx, cy, radius, thickness, drawFill, arcColor, forceRedraw);
 
@@ -833,12 +835,12 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       const int16_t splitX = cx - (valueW + suffixGap + suffixW) / 2 + valueW;
 
       gfx.setTextDatum(MR_DATUM);
-      setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+      setGaugeClearedTextColor(gfx, dispSettings.power.value, bg);
       gfx.drawString(valueBuf, splitX, cy);
 
       setFont(gfx, FONT_SMALL);
       gfx.setTextDatum(ML_DATUM);
-      setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+      setGaugeClearedTextColor(gfx, dispSettings.power.value, bg);
       gfx.drawString(suffix, splitX + suffixGap, cy);
     } else {
       gfx.setTextDatum(MC_DATUM);
@@ -850,7 +852,7 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
     bool sm = dispSettings.smallLabels;
     gfx.setTextDatum(MC_DATUM);
     setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(arcColor, bg);
+    gfx.setTextColor(labelColor, bg);
     gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
   }
 }
@@ -944,7 +946,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   ScopedWrite sw(gfx);
   const uint16_t startAngle = 60;
   uint16_t bg = dispSettings.bgColor;
-  uint16_t arcColor = dispSettings.progress.arc;
+  uint16_t arcColor = dispSettings.layer.arc;
 
   float ratio = (totalLayers > 0) ? ((float)layerNum / totalLayers) : 0;
   if (ratio > 1.0f) ratio = 1.0f;
@@ -975,7 +977,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
     bool useSmall = (digits > 7);
 
     fitValueFont(gfx, layerBuf, radius, thickness, useSmall ? FONT_BODY : LY_GAUGE_VALUE_FONT);
-    setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+    setGaugeClearedTextColor(gfx, dispSettings.layer.value, bg);
     gfx.drawString(layerBuf, cx, hasTot ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTot) {
@@ -990,7 +992,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 
     bool sm = dispSettings.smallLabels;
     setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(arcColor, bg);
+    gfx.setTextColor(dispSettings.layer.label, bg);
     gfx.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
   }
 }
@@ -1032,12 +1034,12 @@ void drawClockWidget(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     // Clock clears the full radius-1 disc above, so budget the wider inner
     // width (thickness=0) instead of the arc-inset radius-thickness-1.
     fitValueFont(gfx, timeBuf, radius, 0, LY_GAUGE_VALUE_FONT);
-    setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
+    setGaugeClearedTextColor(gfx, dispSettings.clockTimeColor, bg);
     gfx.drawString(timeBuf, cx, cy);
 
     bool sm = dispSettings.smallLabels;
     setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(CLR_TEXT_DIM, bg);
+    gfx.setTextColor(dispSettings.clockDateColor, bg);
     gfx.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
   }
 }
