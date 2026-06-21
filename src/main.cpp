@@ -188,7 +188,10 @@ static void doTapActions() {
     // the finished-print banner by waking — don't let the state machine
     // bounce IDLE → FINISHED → CLOCK in the next iteration. Cleared when
     // the printer moves away from GCODE_FINISH (new print starts).
-    if (isAnyPrinterConfigured() && isWiFiConnected() && !isAPMode()) {
+    // Skip when keepPrintScreen is set: that mode wants the kept print
+    // dashboard restored on wake, not the dismissed-finish idle screen.
+    if (!dpSettings.keepPrintScreen &&
+        isAnyPrinterConfigured() && isWiFiConnected() && !isAPMode()) {
       if (displayedPrinter().state.gcodeStateId == GCODE_FINISH) {
         finishDismissedByWake = true;
       }
