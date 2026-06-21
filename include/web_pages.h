@@ -82,7 +82,7 @@ function saveWifi(){
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
-//              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl + _lbl
+//              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
@@ -1026,6 +1026,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="gauge-label-row"><span class="name">AMS</span><input type="text" class="lbl" id="ams_lbl" maxlength="12" value="%AMS_LBL%" placeholder="AMS" title="Shown as 'Name 1'..'Name 4'"></div>
         <div class="gauge-label-row"><span class="name">Nozzle R</span><input type="text" class="lbl" id="nzr_lbl" maxlength="12" value="%NZR_LBL%" placeholder="Nozzle R" title="Dual-nozzle right; empty = Nozzle name + R"></div>
         <div class="gauge-label-row"><span class="name">Nozzle L</span><input type="text" class="lbl" id="nzl_lbl" maxlength="12" value="%NZL_LBL%" placeholder="Nozzle L" title="Dual-nozzle left; empty = Nozzle name + L"></div>
+        <div class="gauge-label-row"><span class="name">Door</span><input type="text" class="lbl" id="dor_lbl" maxlength="12" value="%DOR_LBL%" placeholder="empty = icon only" title="Status-bar door label. Leave empty to show just the padlock icon."></div>
       </div>
 
       <div class="action-bar">
@@ -2225,7 +2226,7 @@ function savePower(){
 /* ============ Display ============ */
 var GAUGE_KEYS = ['prg','noz','bed','pfn','afn','afr','cfn','exh','cht','hbk','pwr','lyr'];
 // Label override keys = the 12 colour gauges + Clock + AMS + Nozzle L/R (label-only rows).
-var GAUGE_LABEL_KEYS = GAUGE_KEYS.concat(['clk','ams','nzr','nzl']);
+var GAUGE_LABEL_KEYS = GAUGE_KEYS.concat(['clk','ams','nzr','nzl','dor']);
 var themes = {
   default:{bg:'#081018',track:'#182028',clkt:'#FFFFFF',clkd:'#C0C0C0',prg:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},noz:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},afn:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},afr:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},cfn:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},exh:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},pwr:{a:'#FFD600',l:'#FFD600',v:'#FFFFFF'},lyr:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'}},
   mono_green:{bg:'#000800',track:'#0A1A0A',clkt:'#00FF41',clkd:'#00CC33',prg:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},noz:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},bed:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},exh:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cht:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},hbk:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pwr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},lyr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'}},

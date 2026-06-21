@@ -1602,7 +1602,7 @@ static void drawIdle() {
       uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(clr, CLR_BG);
-      tft.drawString("Door", scrW - 20, botCY);
+      if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, scrW - 20, botCY);
       drawIcon16(tft, scrW - 18, botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     }
@@ -3176,7 +3176,7 @@ static void drawPrinting() {
       uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(clr, CLR_BG);
-      tft.drawString("Door", botW - 20, eff_botCY);
+      if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, botW - 20, eff_botCY);
       drawIcon16(tft, botW - 18, eff_botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     } else {
@@ -3457,7 +3457,7 @@ static void drawFinished() {
       tft.setTextDatum(MR_DATUM);
       setFont(tft, FONT_SMALL);
       tft.setTextColor(clr, CLR_BG);
-      tft.drawString("Door", scrW - 20, eff_finWifiY);
+      if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, scrW - 20, eff_finWifiY);
       drawIcon16(tft, scrW - 18, eff_finWifiY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     }

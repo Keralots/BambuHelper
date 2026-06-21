@@ -446,6 +446,10 @@ void loadSettings() {
   loadGaugeLabel("gl_lyr", gaugeLabels.layer,       sizeof(gaugeLabels.layer));
   loadGaugeLabel("gl_clk", gaugeLabels.clock,       sizeof(gaugeLabels.clock));
   loadGaugeLabel("gl_ams", gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase));
+  // Door: default "Door" only on first run (key absent). An explicit empty value
+  // means "hide the text, show just the padlock icon" - not "use default".
+  if (prefs.isKey("gl_dor")) loadGaugeLabel("gl_dor", gaugeLabels.door, sizeof(gaugeLabels.door));
+  else strlcpy(gaugeLabels.door, "Door", sizeof(gaugeLabels.door));
 
   // Top progress bar color. Before this setting existed the bar reused the
   // Progress gauge arc color, so migrate absent keys to that value to avoid a
@@ -727,6 +731,7 @@ void saveSettings() {
   saveGaugeLabel("gl_lyr", gaugeLabels.layer);
   saveGaugeLabel("gl_clk", gaugeLabels.clock);
   saveGaugeLabel("gl_ams", gaugeLabels.amsBase);
+  saveGaugeLabel("gl_dor", gaugeLabels.door);
 
   // Network settings
   prefs.putBool("net_dhcp", netSettings.useDHCP);

@@ -133,6 +133,7 @@ struct GaugeLabels {
   char layer[GAUGE_LABEL_LEN];
   char clock[GAUGE_LABEL_LEN];
   char amsBase[GAUGE_LABEL_LEN];    // "AMS" word; rendered as "<base> 1".."<base> HT"
+  char door[GAUGE_LABEL_LEN];       // status-bar "Door" indicator
 };
 
 // Return the override if non-empty, else the default. Single decision point used

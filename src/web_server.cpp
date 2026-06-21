@@ -123,6 +123,7 @@ static void readDisplayFromForm() {
   readGaugeLabelFromForm("lyr_lbl", gaugeLabels.layer,       sizeof(gaugeLabels.layer));
   readGaugeLabelFromForm("clk_lbl", gaugeLabels.clock,       sizeof(gaugeLabels.clock));
   readGaugeLabelFromForm("ams_lbl", gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase));
+  readGaugeLabelFromForm("dor_lbl", gaugeLabels.door,        sizeof(gaugeLabels.door));
 
   if (server.hasArg("fmins")) {
     dpSettings.finishDisplayMins = server.arg("fmins").toInt();
@@ -1111,6 +1112,7 @@ static void handleSettingsExport() {
   glbl["layer"]       = gaugeLabels.layer;
   glbl["clock"]       = gaugeLabels.clock;
   glbl["amsBase"]     = gaugeLabels.amsBase;
+  glbl["door"]        = gaugeLabels.door;
 
   // Display power
   JsonObject dp = doc["displayPower"].to<JsonObject>();
@@ -1417,6 +1419,7 @@ static void handleSettingsImportFinish() {
         {"layer",       gaugeLabels.layer,       sizeof(gaugeLabels.layer)},
         {"clock",       gaugeLabels.clock,       sizeof(gaugeLabels.clock)},
         {"amsBase",     gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase)},
+        {"door",        gaugeLabels.door,        sizeof(gaugeLabels.door)},
       };
       for (auto& e : LB)
         if (glbl[e.k].is<const char*>()) sanitizeGaugeLabel(glbl[e.k].as<const char*>(), e.dst, e.len);

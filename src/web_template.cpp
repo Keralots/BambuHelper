@@ -364,6 +364,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
       {"PWR_LBL", gaugeLabels.power},      {"LYR_LBL", gaugeLabels.layer},
       {"CLK_LBL", gaugeLabels.clock},      {"AMS_LBL", gaugeLabels.amsBase},
       {"NZR_LBL", gaugeLabels.nozzleRight},{"NZL_LBL", gaugeLabels.nozzleLeft},
+      {"DOR_LBL", gaugeLabels.door},
     };
     for (auto& l : labels) {
       if (strcmp(name, l.tok) == 0) { out = l.val; return true; }

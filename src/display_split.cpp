@@ -671,7 +671,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
           uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
           tft.setTextDatum(MR_DATUM);
           tft.setTextColor(clr, CLR_BG);
-          tft.drawString("Door", g.x + g.w - g.margin - 18, fy);
+          if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, g.x + g.w - g.margin - 18, fy);
           drawIcon16(tft, g.x + g.w - g.margin - 16, fy - 8,
                      s.doorOpen ? icon_unlock : icon_lock, clr);
         }
