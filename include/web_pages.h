@@ -263,6 +263,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--sp-4); gap: var(--sp-4); }
 .card-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
 .card-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--text-dim); }
+/* Reusable greyed helper text under a control, styled like .card-head p. */
+.help-text { margin: 4px 0 14px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
 .section-intro { margin: 0 0 var(--sp-5); }
 .section-intro h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
 .section-intro p { margin: 0; color: var(--text-dim); font-size: 13.5px; }
@@ -852,10 +854,6 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <label for="abar">Animated progress bar (shimmer effect)</label>
     </label>
     <label class="check-row">
-      <input type="checkbox" id="slbl" value="1" %SLBL% onchange="toggleSetting('slbl',this.checked)">
-      <label for="slbl">Smaller gauge labels</label>
-    </label>
-    <label class="check-row">
       <input type="checkbox" id="shtire" value="1" %SHTIRE% onchange="toggleSetting('shtire',this.checked)">
       <label for="shtire">Show remaining time instead of ETA</label>
     </label>
@@ -1012,6 +1010,12 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <label for="clr_track"><span>Track</span><input type="color" id="clr_track" value="%CLR_TRACK%"></label>
         <label for="clr_pbar"><span>Progress Bar</span><input type="color" id="clr_pbar" value="%CLR_PBAR%"></label>
       </div>
+
+      <label class="check-row">
+        <input type="checkbox" id="slbl" value="1" %SLBL% onchange="toggleSetting('slbl',this.checked);applyLabelMaxlen()">
+        <label for="slbl">Smaller gauge labels (allows longer custom labels)</label>
+      </label>
+      <div class="help-text" style="padding-left:28px">Smaller font for every gauge label; raises the name limit to 12 characters (8 when off). Longer names only fully show on larger displays - small screens trim what doesn't fit.</div>
 
       <div class="gauge-color-list">
         <div class="subhead">Per-gauge fine tuning</div>
@@ -2133,6 +2137,16 @@ function saveRotation(){
     .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
 }
 
+/* Cap custom gauge label inputs: 8 chars with the normal (big) font, 12 when
+   "Smaller gauge labels" is on. Non-destructive - only limits new typing; any
+   already-stored longer label is kept and just trimmed on the device display. */
+function applyLabelMaxlen(){
+  var slbl = document.getElementById('slbl');
+  var max = (slbl && slbl.checked) ? 12 : 8;
+  var inputs = document.querySelectorAll('input.lbl');
+  for (var i = 0; i < inputs.length; i++) inputs[i].maxLength = max;
+}
+
 /* ============ Power monitoring ============ */
 var currentPowerPlug = 0;
 var powerPlugCount = (document.getElementById('ptab1') ? 2 : 1);
@@ -2723,6 +2737,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
     try { var saved = localStorage.getItem('bambu_section'); if (saved && ['printer','display','hardware','wifi','power','diag'].indexOf(saved) >= 0) initId = saved; } catch(e){}
   }
   loadSection(initId);
+  applyLabelMaxlen();
   setTimeout(function(){ selectPrinterTab(0); }, 80);
   setTimeout(function(){ selectPowerTab(0); }, 140);
   refreshHwInfo();

@@ -496,27 +496,40 @@ const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
   return out;
 }
 
-// Draw a centered gauge label below the arc. Honors the global smallLabels
-// preference, auto-shrinks an over-wide (custom) label to FONT_SMALL, then
-// ellipsizes so it can't bleed into neighboring slots. Exported so AMS tiles in
+// Draw a centered gauge label below the arc. Font follows the global smallLabels
+// preference only (uniform size across a screen); an over-long label (> 8 chars)
+// is trimmed to the slot width without "..". Exported so AMS tiles in
 // display_ui.cpp render labels identically.
 void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                     const char* label, uint16_t lblColor, uint16_t bg) {
-  // maxW matches the per-slot clear band (gR*2+4) so a fitted label never bleeds
-  // into a neighbor or leaves residue outside the cleared region.
+  // maxW matches the per-slot clear band (gR*2+4).
   const int16_t maxW = radius * 2 + 4;
-  bool sm = dispSettings.smallLabels;
+  // Font is purely the global "Smaller gauge labels" toggle - never per-label, so
+  // every gauge label on a screen is the same size. That toggle also raises the
+  // web input cap (8 -> 12 chars), so longer custom labels are only entered when
+  // the small font is on and they can actually fit.
+  const bool sm = dispSettings.smallLabels;
   setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-  if (!sm && gfx.textWidth(label) > maxW) { sm = true; setFont(gfx, FONT_SMALL); }
 
+  // Safety trim (no "..") so a long label can't bleed into a neighbor. Only long
+  // labels (> 8) are trimmed; short ones (incl. the dynamic "Nozzle R/L") draw in
+  // full even if a hair wider than the slot, matching pre-#124 behavior.
   char buf[48];
-  const char* draw = ellipsizeToWidth(gfx, label, maxW, buf, sizeof(buf));
+  const char* draw = label;
+  if (strlen(label) > 8 && gfx.textWidth(label) > maxW) {
+    strlcpy(buf, label, sizeof(buf));
+    size_t n = strlen(buf);
+    while (n > 0 && gfx.textWidth(buf) > maxW) buf[--n] = '\0';
+    draw = buf;
+  }
 
   const int16_t ly = cy + radius + (sm ? 3 : -1);
-  // Clear the full label band first so a previous, wider label (e.g. "Prawa" ->
-  // "Lewa" on a nozzle-side flip) leaves no ghost. All labels fit within maxW.
+  // Clear the actual drawn extent so a previous, wider label leaves no ghost
+  // (e.g. "Nozzle R" -> "Nozzle L" on a side flip, or a full label > maxW).
   const int16_t fh = gfx.fontHeight();
-  gfx.fillRect(cx - maxW / 2, ly - fh / 2 - 1, maxW, fh + 2, bg);
+  const int16_t tw = gfx.textWidth(draw);
+  const int16_t clearW = (tw + 4 > maxW) ? (int16_t)(tw + 4) : maxW;
+  gfx.fillRect(cx - clearW / 2, ly - fh / 2 - 1, clearW, fh + 2, bg);
 
   gfx.setTextDatum(MC_DATUM);
   gfx.setTextColor(lblColor, bg);
