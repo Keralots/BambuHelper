@@ -8,6 +8,8 @@ Additional supported boards include Guition JC3248W535 320x480, CYD 240x320, Wav
 
 > **One-click setup:** as of v3.2, you can flash your board and configure WiFi entirely from the browser at **[keralots.github.io/BambuHelper](https://keralots.github.io/BambuHelper/)** - no PlatformIO, no esptool, no captive portal hopping.
 
+> **Project status:** BambuHelper is stable and feature-rich. Development continues, but new features will land at a more relaxed pace from here on rather than the near-weekly cadence of the last stretch. Bug fixes and occasional features will keep coming - contributions are welcome.
+
 ### Supported Printers
 
 | Connection Mode | Printers | How it connects |
@@ -70,8 +72,10 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Auto AP mode** - creates WiFi hotspot on first boot or when WiFi is lost
 - **Smart redraw** - only redraws changed UI elements for smooth performance
 - **Customizable gauge colors** - per-gauge arc/label/value colors with preset themes
+- **Customizable gauge labels** - rename any gauge label (Nozzle, Bed, Power, Layer, Door, AMS, dual-nozzle L/R) from the web UI; leave a field blank to keep the built-in default, with an optional smaller-label font for fitting longer names
 - **Configurable gauge behavior** - adjustable arc full-scale ranges (nozzle, bed, chamber/AMS, power), arc smoothing speed, and an optional warning color when a gauge runs hot
 - **Power gauge** - optional arc gauge showing live smart-plug wattage (W/kW) in a gauge slot
+- **Configurable status bar** - alternate layer count / watts, always show watts, or always show the layer count; or hide the readout entirely to give the filament name more room
 - **Per-nozzle temperature gauges** - fixed left/right nozzle arcs for dual-nozzle printers (H2 series)
 - **Split dual-printer dashboard** - show two printers at once (stacked in portrait, side-by-side in landscape) with progress bar, status, ETA, and drying view per band
 - **Multi-printer support** - monitor 2 printers simultaneously on full-RAM ESP32-S3 boards; PSRAM-equipped boards (Guition JC3248W535, ESP32-S3-Zero, ws_lcd_350, SenseCAP Indicator) add an experimental opt-in for up to 4; CYD, TZT, and ESP32-C3 have an experimental opt-in 2-printer mode but default to 1 printer
@@ -194,7 +198,7 @@ Supports the 10 most common boards (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 
 
 ### Manual: Generic ESP Web Flasher
 
-1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.1-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD** or **TZT L1435-2.4**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to both CYD-shaped boards (they use a CH340 USB-Serial chip that does not tolerate high baud rates on first contact).
 4. Connect your ESP32 via USB
@@ -218,16 +222,16 @@ The device reboots automatically once the update is written; the web page reload
 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
-| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7-Full.bin` |
-| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7-Full.bin` |
-| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7-Full.bin` |
-| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7-Full.bin` |
-| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7-Full.bin` |
-| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7-Full.bin` |
+| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.1-Full.bin` |
+| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.1-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.1-Full.bin` |
+| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.1-Full.bin` |
+| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.1-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.1-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.1-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.1-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.1-Full.bin` |
+| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.1-Full.bin` |
 
 > Community boards (ESP32-S3-Zero with 2.0" 240x320 panel, SenseCAP Indicator) are not part of the automated release pipeline - build them locally with `pio.exe run -e <env>` and flash the resulting `.pio/build/<env>/firmware.bin`.
 
@@ -354,18 +358,13 @@ The built-in web interface (accessible at the device's IP address) provides the 
 - **Display off after print complete** - minutes to show the finish screen before turning off the display (0 = never turn off, default: 3 minutes)
 - **Keep display always on** - override the timeout and never turn off
 - **Show clock after print** - display a digital clock with date instead of turning off the screen (enabled by default)
+- **Hide layer/power line in status bar** - drop the center layer/power readout on the print screen to free width for the filament name
 
-### Gauge Colors
+### Gauge Appearance
 - **Theme presets** - Default, Mono Green, Neon, Warm, Ocean
-- **Background color** - display background
-- **Track color** - inactive arc background
-- **Per-gauge colors** (arc, label, value) for:
-  - Progress
-  - Nozzle temperature
-  - Bed temperature
-  - Part fan
-  - Aux fan
-  - Chamber fan
+- **Background, track, and progress-bar colors**
+- **Per-gauge colors** (arc, label, value) and a **custom label** for every gauge - Progress, Nozzle (including the dual-nozzle L/R sides), Bed, Part / Aux / Chamber / Exhaust / Heatbreak fans, Chamber temp, Power, Layer, Clock, AMS, and the Door status indicator
+- **Smaller gauge labels** - global smaller font that also raises the custom-label length limit (8 -> 12 characters)
 
 ### Gauge Scales & Behavior
 - **Gauge scales** - full-scale value each arc represents; lower a scale so the arc sweeps fuller for your printer's normal range:
@@ -462,7 +461,7 @@ When the printer comes back online, the backoff resets to normal immediately.
 
 | | |
 |---|---|
-| ![Power Monitoring](img/PowerMonitoring.png) | BambuHelper can display live power consumption from a **[Tasmota](https://tasmota.github.io/docs/)-flashed smart plug** or a **Shelly Gen2/Gen3 plug** connected to your printer. Both expose a local HTTP API - no cloud required.<br><br>**What it shows:**<br>- Live wattage in the bottom status bar on the idle and printing screens<br>- Total kWh used during the print job, shown on the "Print Complete" screen<br><br>**Setup:** open the web interface, go to **Power Monitoring**, pick the plug type (Tasmota or Shelly Gen2/Gen3), enter the plug's local IP address, set your preferred poll interval (10-30s), and choose whether to alternate the watts display with the layer counter or always show watts.<br><br>**Requirements:** any Tasmota-flashed smart plug with energy monitoring (e.g. Sonoff S31, BlitzWolf BW-SHP6, Nous A1), or a Shelly Gen2/Gen3 plug (Plus Plug S, Plug S Gen3, etc.). The plug must be on your local network and reachable from the ESP32. No MQTT broker needed - BambuHelper polls the HTTP API directly. **Shelly notes:** Gen2 and Gen3 share the same RPC API and both work; the plug must not be password-protected (digest auth is not supported), and Shelly does not report Today's/Yesterday's energy so those stay blank.<br><br>**Auto power-off:** each plug can power itself off N minutes (1-240) after the print finishes, with a 50&nbsp;°C nozzle gate so it never triggers while the hot end is hot. Configure under **Power Monitoring -> Auto-off**. |
+| <img src="img/PowerMonitoring.png" width="360" alt="Power Monitoring"> | BambuHelper can display live power consumption from a **[Tasmota](https://tasmota.github.io/docs/)-flashed smart plug** or a **Shelly Gen2/Gen3 plug** connected to your printer. Both expose a local HTTP API - no cloud required.<br><br>**What it shows:**<br>- Live wattage in the bottom status bar on the idle and printing screens<br>- Total kWh used during the print job, shown on the "Print Complete" screen<br><br>**Setup:** open the web interface, go to **Power Monitoring**, pick the plug type (Tasmota or Shelly Gen2/Gen3), enter the plug's local IP address, set your preferred poll interval (10-30s), and choose how the status bar shows it - alternate watts with the layer counter, always show watts, or always show the layer count (when power has its own gauge).<br><br>**Requirements:** any Tasmota-flashed smart plug with energy monitoring (e.g. Sonoff S31, BlitzWolf BW-SHP6, Nous A1), or a Shelly Gen2/Gen3 plug (Plus Plug S, Plug S Gen3, etc.). The plug must be on your local network and reachable from the ESP32. No MQTT broker needed - BambuHelper polls the HTTP API directly. **Shelly notes:** Gen2 and Gen3 share the same RPC API and both work; the plug must not be password-protected (digest auth is not supported), and Shelly does not report Today's/Yesterday's energy so those stay blank.<br><br>**Auto power-off:** each plug can power itself off N minutes (1-240) after the print finishes, with a 50&nbsp;°C nozzle gate so it never triggers while the hot end is hot. Configure under **Power Monitoring -> Auto-off**. |
 
 ## Troubleshooting
 
