@@ -58,6 +58,12 @@ static void readGaugeColorsFromForm(const char* prefix, GaugeColors& gc) {
   if (server.hasArg(key)) gc.value = htmlToRgb565(server.arg(key).c_str());
 }
 
+// Read one custom gauge label from the form, sanitizing while copying (so an
+// overlong raw value can't drop valid chars after truncation).
+static void readGaugeLabelFromForm(const char* arg, char* dst, size_t len) {
+  if (server.hasArg(arg)) sanitizeGaugeLabel(server.arg(arg).c_str(), dst, len);
+}
+
 // ---------------------------------------------------------------------------
 //  Read display settings from form args
 // ---------------------------------------------------------------------------
@@ -99,6 +105,24 @@ static void readDisplayFromForm() {
   readGaugeColorsFromForm("hbk", dispSettings.heatbreak);
   readGaugeColorsFromForm("pwr", dispSettings.power);
   readGaugeColorsFromForm("lyr", dispSettings.layer);
+
+  // Custom gauge labels (empty = keep built-in default)
+  readGaugeLabelFromForm("prg_lbl", gaugeLabels.progress,    sizeof(gaugeLabels.progress));
+  readGaugeLabelFromForm("noz_lbl", gaugeLabels.nozzle,      sizeof(gaugeLabels.nozzle));
+  readGaugeLabelFromForm("nzr_lbl", gaugeLabels.nozzleRight, sizeof(gaugeLabels.nozzleRight));
+  readGaugeLabelFromForm("nzl_lbl", gaugeLabels.nozzleLeft,  sizeof(gaugeLabels.nozzleLeft));
+  readGaugeLabelFromForm("bed_lbl", gaugeLabels.bed,         sizeof(gaugeLabels.bed));
+  readGaugeLabelFromForm("pfn_lbl", gaugeLabels.partFan,     sizeof(gaugeLabels.partFan));
+  readGaugeLabelFromForm("afn_lbl", gaugeLabels.auxFan,      sizeof(gaugeLabels.auxFan));
+  readGaugeLabelFromForm("afr_lbl", gaugeLabels.auxFanRight, sizeof(gaugeLabels.auxFanRight));
+  readGaugeLabelFromForm("cfn_lbl", gaugeLabels.chamberFan,  sizeof(gaugeLabels.chamberFan));
+  readGaugeLabelFromForm("exh_lbl", gaugeLabels.exhaustFan,  sizeof(gaugeLabels.exhaustFan));
+  readGaugeLabelFromForm("cht_lbl", gaugeLabels.chamberTemp, sizeof(gaugeLabels.chamberTemp));
+  readGaugeLabelFromForm("hbk_lbl", gaugeLabels.heatbreak,   sizeof(gaugeLabels.heatbreak));
+  readGaugeLabelFromForm("pwr_lbl", gaugeLabels.power,       sizeof(gaugeLabels.power));
+  readGaugeLabelFromForm("lyr_lbl", gaugeLabels.layer,       sizeof(gaugeLabels.layer));
+  readGaugeLabelFromForm("clk_lbl", gaugeLabels.clock,       sizeof(gaugeLabels.clock));
+  readGaugeLabelFromForm("ams_lbl", gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase));
 
   if (server.hasArg("fmins")) {
     dpSettings.finishDisplayMins = server.arg("fmins").toInt();
@@ -1069,6 +1093,25 @@ static void handleSettingsExport() {
   JsonObject gPwr = gauges["power"].to<JsonObject>();     gaugeColorsToJson(gPwr, dispSettings.power);
   JsonObject gLyr = gauges["layer"].to<JsonObject>();     gaugeColorsToJson(gLyr, dispSettings.layer);
 
+  // Custom gauge labels
+  JsonObject glbl = disp["gaugeLabels"].to<JsonObject>();
+  glbl["progress"]    = gaugeLabels.progress;
+  glbl["nozzle"]      = gaugeLabels.nozzle;
+  glbl["nozzleRight"] = gaugeLabels.nozzleRight;
+  glbl["nozzleLeft"]  = gaugeLabels.nozzleLeft;
+  glbl["bed"]         = gaugeLabels.bed;
+  glbl["partFan"]     = gaugeLabels.partFan;
+  glbl["auxFan"]      = gaugeLabels.auxFan;
+  glbl["auxFanRight"] = gaugeLabels.auxFanRight;
+  glbl["chamberFan"]  = gaugeLabels.chamberFan;
+  glbl["exhaustFan"]  = gaugeLabels.exhaustFan;
+  glbl["chamberTemp"] = gaugeLabels.chamberTemp;
+  glbl["heatbreak"]   = gaugeLabels.heatbreak;
+  glbl["power"]       = gaugeLabels.power;
+  glbl["layer"]       = gaugeLabels.layer;
+  glbl["clock"]       = gaugeLabels.clock;
+  glbl["amsBase"]     = gaugeLabels.amsBase;
+
   // Display power
   JsonObject dp = doc["displayPower"].to<JsonObject>();
   dp["finishDisplayMins"] = dpSettings.finishDisplayMins;
@@ -1210,7 +1253,7 @@ static void handleSettingsImportUpload() {
     settingsImportOverflow = false;
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (settingsImportOverflow) return;
-    if (settingsImportBuf.length() + upload.currentSize > 8192) {
+    if (settingsImportBuf.length() + upload.currentSize > 12288) {
       settingsImportOverflow = true;
       settingsImportBuf = "";  // free memory, rest of upload is ignored
       return;
@@ -1224,7 +1267,7 @@ static void handleSettingsImportFinish() {
   if (settingsImportOverflow) {
     settingsImportOverflow = false;
     server.send(400, "application/json",
-      "{\"status\":\"error\",\"message\":\"Settings file too large (max 8 KB)\"}");
+      "{\"status\":\"error\",\"message\":\"Settings file too large (max 12 KB)\"}");
     return;
   }
 
@@ -1353,6 +1396,30 @@ static void handleSettingsImportFinish() {
       if (gauges["heatbreak"].is<JsonObject>()){ JsonObject g = gauges["heatbreak"]; gaugeColorsFromJson(g, dispSettings.heatbreak); }
       if (gauges["power"].is<JsonObject>())    { JsonObject g = gauges["power"];     gaugeColorsFromJson(g, dispSettings.power); }
       if (gauges["layer"].is<JsonObject>())    { JsonObject g = gauges["layer"];     gaugeColorsFromJson(g, dispSettings.layer); }
+    }
+
+    JsonObject glbl = disp["gaugeLabels"];
+    if (glbl) {
+      struct { const char* k; char* dst; size_t len; } LB[] = {
+        {"progress",    gaugeLabels.progress,    sizeof(gaugeLabels.progress)},
+        {"nozzle",      gaugeLabels.nozzle,      sizeof(gaugeLabels.nozzle)},
+        {"nozzleRight", gaugeLabels.nozzleRight, sizeof(gaugeLabels.nozzleRight)},
+        {"nozzleLeft",  gaugeLabels.nozzleLeft,  sizeof(gaugeLabels.nozzleLeft)},
+        {"bed",         gaugeLabels.bed,         sizeof(gaugeLabels.bed)},
+        {"partFan",     gaugeLabels.partFan,     sizeof(gaugeLabels.partFan)},
+        {"auxFan",      gaugeLabels.auxFan,      sizeof(gaugeLabels.auxFan)},
+        {"auxFanRight", gaugeLabels.auxFanRight, sizeof(gaugeLabels.auxFanRight)},
+        {"chamberFan",  gaugeLabels.chamberFan,  sizeof(gaugeLabels.chamberFan)},
+        {"exhaustFan",  gaugeLabels.exhaustFan,  sizeof(gaugeLabels.exhaustFan)},
+        {"chamberTemp", gaugeLabels.chamberTemp, sizeof(gaugeLabels.chamberTemp)},
+        {"heatbreak",   gaugeLabels.heatbreak,   sizeof(gaugeLabels.heatbreak)},
+        {"power",       gaugeLabels.power,       sizeof(gaugeLabels.power)},
+        {"layer",       gaugeLabels.layer,       sizeof(gaugeLabels.layer)},
+        {"clock",       gaugeLabels.clock,       sizeof(gaugeLabels.clock)},
+        {"amsBase",     gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase)},
+      };
+      for (auto& e : LB)
+        if (glbl[e.k].is<const char*>()) sanitizeGaugeLabel(glbl[e.k].as<const char*>(), e.dst, e.len);
     }
   }
 

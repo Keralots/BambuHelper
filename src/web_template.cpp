@@ -353,6 +353,23 @@ static bool resolvePlaceholder(const char* name, String& out) {
     }
   }
 
+  // --- Custom gauge labels (*_LBL). Stored already sanitized, so emit raw. ---
+  {
+    static const struct { const char* tok; const char* val; } labels[] = {
+      {"PRG_LBL", gaugeLabels.progress},   {"NOZ_LBL", gaugeLabels.nozzle},
+      {"BED_LBL", gaugeLabels.bed},        {"PFN_LBL", gaugeLabels.partFan},
+      {"AFN_LBL", gaugeLabels.auxFan},     {"AFR_LBL", gaugeLabels.auxFanRight},
+      {"CFN_LBL", gaugeLabels.chamberFan}, {"EXH_LBL", gaugeLabels.exhaustFan},
+      {"CHT_LBL", gaugeLabels.chamberTemp},{"HBK_LBL", gaugeLabels.heatbreak},
+      {"PWR_LBL", gaugeLabels.power},      {"LYR_LBL", gaugeLabels.layer},
+      {"CLK_LBL", gaugeLabels.clock},      {"AMS_LBL", gaugeLabels.amsBase},
+      {"NZR_LBL", gaugeLabels.nozzleRight},{"NZL_LBL", gaugeLabels.nozzleLeft},
+    };
+    for (auto& l : labels) {
+      if (strcmp(name, l.tok) == 0) { out = l.val; return true; }
+    }
+  }
+
   // --- Status / version / board ---
   if (strcmp(name, "DBGLOG") == 0)       { out = mqttDebugLog ? "checked" : ""; return true; }
   if (strcmp(name, "FW_VER") == 0)       { out = FW_VERSION; return true; }

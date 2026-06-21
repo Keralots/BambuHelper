@@ -109,6 +109,44 @@ struct DisplaySettings {
   GaugeColors layer;        // layer-progress gauge
 };
 
+// Per-gauge custom label overrides. Empty string = keep the built-in default
+// (including dynamic defaults like "L.Aux"/"Exhaust"). ASCII-only for now: the
+// bundled VLW fonts carry only 0x20-0x7F glyphs. To support accented labels
+// later, bump GAUGE_LABEL_LEN, relax the >127 strip in sanitizeGaugeLabel(),
+// and regenerate the fonts with an extended CHARSET.
+static const uint8_t GAUGE_LABEL_LEN = 13;  // 12 visible ASCII chars + NUL
+
+struct GaugeLabels {
+  char progress[GAUGE_LABEL_LEN];
+  char nozzle[GAUGE_LABEL_LEN];     // single nozzle, or base for L/R when those are unset
+  char nozzleRight[GAUGE_LABEL_LEN];// dual-nozzle right; empty = "<nozzle> R"
+  char nozzleLeft[GAUGE_LABEL_LEN]; // dual-nozzle left;  empty = "<nozzle> L"
+  char bed[GAUGE_LABEL_LEN];
+  char partFan[GAUGE_LABEL_LEN];
+  char auxFan[GAUGE_LABEL_LEN];
+  char auxFanRight[GAUGE_LABEL_LEN];
+  char chamberFan[GAUGE_LABEL_LEN];
+  char exhaustFan[GAUGE_LABEL_LEN];
+  char chamberTemp[GAUGE_LABEL_LEN];
+  char heatbreak[GAUGE_LABEL_LEN];
+  char power[GAUGE_LABEL_LEN];
+  char layer[GAUGE_LABEL_LEN];
+  char clock[GAUGE_LABEL_LEN];
+  char amsBase[GAUGE_LABEL_LEN];    // "AMS" word; rendered as "<base> 1".."<base> HT"
+};
+
+// Return the override if non-empty, else the default. Single decision point used
+// at every gauge draw site.
+inline const char* gaugeLabelOr(const char* override_, const char* def) {
+  return (override_ && override_[0]) ? override_ : def;
+}
+
+// Copy a user-supplied label into a fixed buffer, stripping anything unsafe to
+// emit raw into HTML (control chars, " < > &) and, for now, non-ASCII bytes.
+// Trims leading/trailing spaces. The single sanitize point - used by the web
+// form, JSON import, and after NVS load.
+void sanitizeGaugeLabel(const char* in, char* out, size_t outLen);
+
 // Network settings
 struct NetworkSettings {
   bool useDHCP;           // true = DHCP, false = static
@@ -204,6 +242,7 @@ extern char wifiSSID[33];
 extern char wifiPass[65];
 extern uint8_t brightness;
 extern DisplaySettings dispSettings;
+extern GaugeLabels gaugeLabels;
 extern NetworkSettings netSettings;
 extern DisplayPowerSettings dpSettings;
 extern ButtonType buttonType;

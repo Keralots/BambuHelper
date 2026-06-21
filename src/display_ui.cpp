@@ -21,6 +21,27 @@
 #endif
 #include <new>   // placement new for CYD panel variant selection
 
+// --- AMS label formatters (honor gaugeLabels.amsBase override) --------------
+// Centralized so every AMS draw site (grid, bars, sidebar captions, drying,
+// split bands) renders the same custom base with a consistent suffix.
+void formatAmsNumberLabel(char* out, size_t len, uint8_t unitIndex) {
+  snprintf(out, len, "%s %u", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), unitIndex + 1);
+}
+void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex) {
+  snprintf(out, len, "%s %c", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), 'A' + unitIndex);
+}
+void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
+                      uint8_t dryDisplayIdx, uint8_t dryCount) {
+  const char* base = gaugeLabelOr(gaugeLabels.amsBase, "AMS");
+  char pfx[GAUGE_LABEL_LEN + 4];
+  if (isHT) snprintf(pfx, sizeof(pfx), "%s HT", base);
+  else      strlcpy(pfx, base, sizeof(pfx));
+  if (dryCount > 1)
+    snprintf(out, len, "%s %u  (%u/%u)", pfx, displayNum, dryDisplayIdx + 1, dryCount);
+  else
+    snprintf(out, len, "%s %u", pfx, displayNum);
+}
+
 // LovyanGFX board-specific configurations - the 12 LGFX device classes and the
 // per-board `_tft_instance` - live in their own header to keep this file
 // focused on UI logic. Included exactly once, here. See src/lgfx_boards.h.
@@ -518,9 +539,27 @@ ScreenState getScreenState() {
 // ---------------------------------------------------------------------------
 //  Nozzle label helper (dual nozzle H2D/H2C)
 // ---------------------------------------------------------------------------
+// Nozzle label honoring custom overrides. side: 'R', 'L', or 0 (single/combined).
+// Per-side override wins; else the combined "Nozzle" override (or default) plus
+// the R/L suffix. Returns a static buffer (synchronous draw, one label at a time).
+const char* nozzleSideLabel(char side) {
+  static char buf[GAUGE_LABEL_LEN + 4];
+  const char* base = gaugeLabelOr(gaugeLabels.nozzle, "Nozzle");
+  if (side == 'R') {
+    if (gaugeLabels.nozzleRight[0]) { strlcpy(buf, gaugeLabels.nozzleRight, sizeof(buf)); return buf; }
+    snprintf(buf, sizeof(buf), "%s R", base); return buf;
+  }
+  if (side == 'L') {
+    if (gaugeLabels.nozzleLeft[0]) { strlcpy(buf, gaugeLabels.nozzleLeft, sizeof(buf)); return buf; }
+    snprintf(buf, sizeof(buf), "%s L", base); return buf;
+  }
+  strlcpy(buf, base, sizeof(buf));
+  return buf;
+}
+
 static const char* nozzleLabel(const BambuState& s) {
-  if (!s.dualNozzle) return "Nozzle";
-  return s.activeNozzle == 0 ? "Nozzle R" : "Nozzle L";
+  if (!s.dualNozzle) return nozzleSideLabel(0);
+  return nozzleSideLabel(s.activeNozzle == 0 ? 'R' : 'L');
 }
 
 // ---------------------------------------------------------------------------
@@ -998,18 +1037,16 @@ static void drawIdleDrying(PrinterSlot& p) {
   if (unitChanged) {
     bool isHT = (u.id >= 128);
     uint8_t displayNum = isHT ? (u.id - 128 + 1) : (u.id + 1);
-    const char* prefix = isHT ? "AMS HT" : "AMS";
-    char unitName[24];
-    if (dryCount > 1)
-      snprintf(unitName, sizeof(unitName), "%s %d  (%d/%d)", prefix, displayNum, dryDisplayIdx + 1, dryCount);
-    else
-      snprintf(unitName, sizeof(unitName), "%s %d", prefix, displayNum);
+    char unitName[32];
+    formatAmsDryName(unitName, sizeof(unitName), isHT, displayNum, dryDisplayIdx, dryCount);
 
     tft.fillRect(0, 30, scrW, 20, CLR_BG);
     tft.setTextDatum(MC_DATUM);
     setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
-    tft.drawString(unitName, cx, 40);
+    char eb[40];
+    ellipsizeToWidth(tft, unitName, scrW - 4, eb, sizeof(eb));
+    tft.drawString(eb, cx, 40);
   }
 
 #if defined(LAYOUT_HAS_LANDSCAPE)
@@ -1448,7 +1485,7 @@ static void drawIdle() {
     // Bed temp gauge
     drawTempGauge(tft, cx + lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
                   s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, "Bed", nullptr, forceRedraw,
+                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
                   &dispSettings.bed, smoothBedTemp);
   }
 
@@ -1830,13 +1867,9 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
     drawAmsTrayBarRounded(bx, startY, barW, barH, tray, active);
   }
 
-  static const char* amsLabel[AMS_MAX_UNITS] = { "AMS 1", "AMS 2", "AMS 3", "AMS 4" };
-  bool sm = dispSettings.smallLabels;
-  int16_t labelY = cy + radius + (sm ? 3 : -1);
-  tft.setTextDatum(MC_DATUM);
-  setFont(tft, sm ? FONT_SMALL : FONT_BODY);
-  tft.setTextColor(CLR_TEXT_DIM, bg);
-  tft.drawString(amsLabel[unitIndex], cx, labelY);
+  char amsLabel[16];
+  formatAmsNumberLabel(amsLabel, sizeof(amsLabel), unitIndex);
+  drawGaugeLabel(tft, cx, cy, radius, amsLabel, CLR_TEXT_DIM, bg);
 }
 
 // Portrait AMS strip: horizontal row of tray bars, usable from printing/idle/finished.
@@ -1941,13 +1974,15 @@ static void drawAmsStrip(const AmsState& ams,
     }
 
     if (!singleAms) {
-      char label[6];
-      snprintf(label, sizeof(label), "AMS %c", 'A' + u);
+      char label[16];
+      formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       setFont(tft, sm ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(label, groupX + groupW / 2, labelY + (showFilamentTypes ? 0 : 2));
+      char eb[20];
+      ellipsizeToWidth(tft, label, groupW - 2, eb, sizeof(eb));
+      tft.drawString(eb, groupX + groupW / 2, labelY + (showFilamentTypes ? 0 : 2));
     }
   }
 }
@@ -2139,13 +2174,15 @@ static void drawAmsZone(const BambuState& s, bool force) {
       }
 
       // AMS label below bars
-      char label[6];
-      snprintf(label, sizeof(label), "AMS %c", 'A' + u);
+      char label[16];
+      formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       setFont(tft, sm ? FONT_SMALL : FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(label, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 1);
+      char eb[20];
+      ellipsizeToWidth(tft, label, LY_LAND_AMS_W - 2, eb, sizeof(eb));
+      tft.drawString(eb, LY_LAND_AMS_X + LY_LAND_AMS_W / 2, gy + barH + 1);
     }
 
   } else if (enhanced) {
@@ -2761,32 +2798,34 @@ static void drawPrinting() {
           break;
         case GAUGE_NOZZLE_RIGHT:
           drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[0], s.nozzleTargetN[0], (float)dispSettings.nozzleScaleMax,
-                        dispSettings.nozzle.arc, "Nozzle R", nullptr, fr,
+                        dispSettings.nozzle.arc, nozzleSideLabel('R'), nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTempN[0]);
           break;
         case GAUGE_NOZZLE_LEFT:
           drawTempGauge(tft, cx, cy, gR, s.nozzleTempN[1], s.nozzleTargetN[1], (float)dispSettings.nozzleScaleMax,
-                        dispSettings.nozzle.arc, "Nozzle L", nullptr, fr,
+                        dispSettings.nozzle.arc, nozzleSideLabel('L'), nullptr, fr,
                         &dispSettings.nozzle, smoothNozzleTempN[1]);
           break;
         case GAUGE_BED:
           drawTempGauge(tft, cx, cy, gR, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                        dispSettings.bed.arc, "Bed", nullptr, fr,
+                        dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, fr,
                         &dispSettings.bed, smoothBedTemp);
           break;
         case GAUGE_PART_FAN:
-          drawFanGauge(tft, cx, cy, gR, s.coolingFanPct, dispSettings.partFan.arc, "Part", fr,
+          drawFanGauge(tft, cx, cy, gR, s.coolingFanPct, dispSettings.partFan.arc,
+                       gaugeLabelOr(gaugeLabels.partFan, "Part"), fr,
                        &dispSettings.partFan, smoothPartFan);
           break;
         case GAUGE_AUX_FAN:
           // Re-label to "L.Aux" only when the printer actually has a right-aux
           // counterpart (func=6). Otherwise it's the only aux fan, so keep "Aux".
           drawFanGauge(tft, cx, cy, gR, s.auxFanPct, dispSettings.auxFan.arc,
-                       (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux", fr,
+                       gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux"), fr,
                        &dispSettings.auxFan, smoothAuxFan);
           break;
         case GAUGE_AUX_FAN_RIGHT:
-          drawFanGauge(tft, cx, cy, gR, s.auxFanRightPct, dispSettings.auxFanRight.arc, "R.Aux", fr,
+          drawFanGauge(tft, cx, cy, gR, s.auxFanRightPct, dispSettings.auxFanRight.arc,
+                       gaugeLabelOr(gaugeLabels.auxFanRight, "R.Aux"), fr,
                        &dispSettings.auxFanRight, smoothAuxRightFan);
           break;
         case GAUGE_CHAMBER_FAN:
@@ -2796,20 +2835,22 @@ static void drawPrinting() {
           // displayed name matches reality on those models. X1C/P/A and other non-airduct
           // models keep the "Chamber" label that matches Bambu's own UI terminology.
           drawFanGauge(tft, cx, cy, gR, s.chamberFanPct, dispSettings.chamberFan.arc,
-                       (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber", fr,
+                       gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber"), fr,
                        &dispSettings.chamberFan, smoothChamberFan);
           break;
         case GAUGE_EXHAUST_FAN:
-          drawFanGauge(tft, cx, cy, gR, s.exhaustFanPct, dispSettings.exhaustFan.arc, "Exhaust", fr,
+          drawFanGauge(tft, cx, cy, gR, s.exhaustFanPct, dispSettings.exhaustFan.arc,
+                       gaugeLabelOr(gaugeLabels.exhaustFan, "Exhaust"), fr,
                        &dispSettings.exhaustFan, smoothExhaustFan);
           break;
         case GAUGE_CHAMBER_TEMP:
           drawTempGauge(tft, cx, cy, gR, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
-                        dispSettings.chamberTemp.arc, "Chamber", nullptr, fr,
+                        dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, "Chamber"), nullptr, fr,
                         &dispSettings.chamberTemp, smoothChamberTemp);
           break;
         case GAUGE_HEATBREAK:
-          drawFanGauge(tft, cx, cy, gR, s.heatbreakFanPct, dispSettings.heatbreak.arc, "HBreak", fr,
+          drawFanGauge(tft, cx, cy, gR, s.heatbreakFanPct, dispSettings.heatbreak.arc,
+                       gaugeLabelOr(gaugeLabels.heatbreak, "HBreak"), fr,
                        &dispSettings.heatbreak, smoothHeatbreakFan);
           break;
         case GAUGE_CLOCK:
@@ -2821,7 +2862,8 @@ static void drawPrinting() {
         case GAUGE_POWER:
           drawPowerGauge(tft, cx, cy, gR,
                          tasmotaGetWattsForSlot(rotState.displayIndex),
-                         tasmotaIsActiveForSlot(rotState.displayIndex), "Power", fr);
+                         tasmotaIsActiveForSlot(rotState.displayIndex),
+                         gaugeLabelOr(gaugeLabels.power, "Power"), fr);
           break;
         case GAUGE_CAMERA:
           drawCameraGauge(cx, cy, gR, fr);
@@ -2831,16 +2873,18 @@ static void drawPrinting() {
           break;
         default: {
           // AMS humidity / temperature / filament gauges — index derived from enum value
-          static const char* amsLabel[AMS_MAX_UNITS] = { "AMS 1", "AMS 2", "AMS 3", "AMS 4" };
+          char amsLbl[16];
           if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
             uint8_t ui = gt - GAUGE_AMS_HUM_1;
             const AmsUnit& u = s.ams.units[ui];
-            drawHumidityGauge(tft, cx, cy, gR, u.humidityRaw, u.humidity, u.present, amsLabel[ui], fr);
+            formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
+            drawHumidityGauge(tft, cx, cy, gR, u.humidityRaw, u.humidity, u.present, amsLbl, fr);
           } else if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
             uint8_t ui = gt - GAUGE_AMS_TEMP_1;
             const AmsUnit& u = s.ams.units[ui];
+            formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
             drawTempGauge(tft, cx, cy, gR, u.present ? u.temp : 0, 0, (float)dispSettings.chamberScaleMax,
-                          dispSettings.chamberTemp.arc, amsLabel[ui], nullptr, fr, &dispSettings.chamberTemp);
+                          dispSettings.chamberTemp.arc, amsLbl, nullptr, fr, &dispSettings.chamberTemp);
           } else if (gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) {
             uint8_t ui = gt - GAUGE_AMS_FILAMENT_1;
             drawAmsFilamentAllGauge(tft, cx, cy, gR, gT, s.ams, ui, fr);
@@ -3243,7 +3287,7 @@ static void drawFinished() {
 
     drawTempGauge(tft, gaugeRight, gaugeY, gR,
                   s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, "Bed", nullptr, forceRedraw,
+                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
                   &dispSettings.bed, smoothBedTemp);
   }
 

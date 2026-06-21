@@ -480,6 +480,43 @@ static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
   }
 }
 
+// Truncate s to fit maxW px at the CURRENT font, appending ".." when cut (VLW
+// fonts are ASCII-only, no real ellipsis glyph). Writes into out; returns out.
+const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
+                             char* out, size_t outLen) {
+  strlcpy(out, s, outLen);
+  if (gfx.textWidth(out) <= maxW) return out;
+  size_t n = strlen(out);
+  while (n > 1) {
+    n--;
+    if (n + 2 >= outLen) continue;
+    out[n] = '.'; out[n + 1] = '.'; out[n + 2] = '\0';
+    if (gfx.textWidth(out) <= maxW) break;
+  }
+  return out;
+}
+
+// Draw a centered gauge label below the arc. Honors the global smallLabels
+// preference, auto-shrinks an over-wide (custom) label to FONT_SMALL, then
+// ellipsizes so it can't bleed into neighboring slots. Exported so AMS tiles in
+// display_ui.cpp render labels identically.
+void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
+                    const char* label, uint16_t lblColor, uint16_t bg) {
+  // maxW matches the per-slot clear band (gR*2+4) so a fitted label never bleeds
+  // into a neighbor or leaves residue outside the cleared region.
+  const int16_t maxW = radius * 2 + 4;
+  bool sm = dispSettings.smallLabels;
+  setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+  if (!sm && gfx.textWidth(label) > maxW) { sm = true; setFont(gfx, FONT_SMALL); }
+
+  char buf[48];
+  const char* draw = ellipsizeToWidth(gfx, label, maxW, buf, sizeof(buf));
+
+  gfx.setTextDatum(MC_DATUM);
+  gfx.setTextColor(lblColor, bg);
+  gfx.drawString(draw, cx, cy + radius + (sm ? 3 : -1));
+}
+
 // Choose the largest humidity-number font that leaves room for a small "%"
 // suffix inside the clearable center disc. Compact R=28 gauges start at BODY
 // for vertical fit; larger layouts retain their normal value font when it fits.
@@ -629,10 +666,7 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     gfx.drawString(timeBuf, cx, cy + (compact ? 10 : 18));
 
     if (compact) {
-      bool sm = dispSettings.smallLabels;
-      setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-      gfx.setTextColor(gc.label, bg);
-      gfx.drawString("Progress", cx, cy + radius + (sm ? 3 : -1));
+      drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.progress, "Progress"), gc.label, bg);
     }
   }
 }
@@ -707,10 +741,7 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
       gfx.drawString(targetBuf, cx, cy + 10);
     }
 
-    bool sm = dispSettings.smallLabels;
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(lblColor, bg);
-    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, label, lblColor, bg);
   }
 }
 
@@ -758,10 +789,7 @@ void drawFanGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
     setGaugeClearedTextColor(gfx, valColor, bg);
     gfx.drawString(buf, cx, cy);
 
-    bool sm = dispSettings.smallLabels;
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(lblColor, bg);
-    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, label, lblColor, bg);
   }
 }
 
@@ -849,11 +877,7 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       gfx.drawString(buf, cx, cy);
     }
 
-    bool sm = dispSettings.smallLabels;
-    gfx.setTextDatum(MC_DATUM);
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(labelColor, bg);
-    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, label, labelColor, bg);
   }
 }
 
@@ -936,11 +960,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t rad
       gfx.drawString(buf, cx, cy);
     }
 
-    bool sm = dispSettings.smallLabels;
-    gfx.setTextDatum(MC_DATUM);
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(arcColor, bg);
-    gfx.drawString(label, cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, label, arcColor, bg);
   }
 }
 
@@ -997,10 +1017,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       gfx.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
     }
 
-    bool sm = dispSettings.smallLabels;
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(dispSettings.layer.label, bg);
-    gfx.drawString("Layer", cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.layer, "Layer"), dispSettings.layer.label, bg);
   }
 }
 
@@ -1044,10 +1061,7 @@ void drawClockWidget(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     setGaugeClearedTextColor(gfx, dispSettings.clockTimeColor, bg);
     gfx.drawString(timeBuf, cx, cy);
 
-    bool sm = dispSettings.smallLabels;
-    setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
-    gfx.setTextColor(dispSettings.clockDateColor, bg);
-    gfx.drawString("Clock", cx, cy + radius + (sm ? 3 : -1));
+    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.clock, "Clock"), dispSettings.clockDateColor, bg);
   }
 }
 

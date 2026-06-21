@@ -11,6 +11,14 @@ void drawLedProgressBar(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress);
 // Shimmer animation tick — call from loop(), runs at its own cadence
 void tickProgressShimmer(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress, bool printing);
 
+// Truncate s to fit maxW px at the current font, appending ".." when cut.
+const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
+                             char* out, size_t outLen);
+
+// Draw a centered gauge label below the arc (auto-shrinks over-wide labels).
+void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
+                    const char* label, uint16_t lblColor, uint16_t bg);
+
 // Draw progress arc with percentage and time in center
 void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,

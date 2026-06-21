@@ -81,7 +81,8 @@ function saveWifi(){
 //              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
-//              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk + _a/_l/_v
+//              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
+//              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl + _lbl
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
@@ -519,11 +520,21 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .row-divider::before, .row-divider::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
 
 /* ============ Gauge color sub-rows ============ */
-.gauge-color-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+/* name | custom-label input (fills the gap) | Arc | Label | Value */
+.gauge-color-row { display: grid; grid-template-columns: auto minmax(90px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
 .gauge-color-row:last-child { border-bottom: none; }
-.gauge-color-row .name { color: var(--text); font-weight: 500; }
+.gauge-color-row .name { color: var(--text); font-weight: 500; white-space: nowrap; }
 .gauge-color-row .alv { display: flex; align-items: center; gap: 4px; }
 .gauge-color-row .alv span { font-size: 11px; color: var(--text-dim); }
+/* Custom-label input sits next to the gauge name. Fixed ~12-char width
+   (justify-self:start) so it doesn't stretch; the 1fr column absorbs the slack
+   and keeps the colour pickers right-aligned. */
+.gauge-color-row .lbl { grid-column: 2; grid-row: 1; max-width: 14ch; justify-self: start; font-size: 12.5px; padding: 6px 10px; }
+/* Label-only rows (Clock, AMS, Nozzle L/R): name + text input, no colour pickers. */
+.gauge-label-row { display: grid; grid-template-columns: auto minmax(90px, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+.gauge-label-row:last-child { border-bottom: none; }
+.gauge-label-row .name { color: var(--text); font-weight: 500; white-space: nowrap; }
+.gauge-label-row .lbl { max-width: 14ch; justify-self: start; font-size: 12.5px; padding: 6px 10px; }
 
 /* ============ Bulk color picker row (Gauge Colors) ============ */
 .bulk-color-row { display: flex; flex-wrap: wrap; gap: var(--sp-5); align-items: center; margin-bottom: var(--sp-3); }
@@ -572,6 +583,11 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .main { padding: var(--sp-5); }
   .section-title { display: none; }
   .row, .row-3 { grid-template-columns: 1fr; }
+  /* Gauge rows: name + colours on line 1, label input full-width on line 2. */
+  .gauge-color-row { grid-template-columns: minmax(110px, 1fr) auto auto auto; }
+  .gauge-color-row .lbl { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-self: stretch; margin-top: 4px; }
+  .gauge-label-row { grid-template-columns: minmax(110px, 1fr) 1.4fr; }
+  .gauge-label-row .lbl { max-width: none; justify-self: stretch; }
 }
 
 /* ============ Utility ============ */
@@ -969,7 +985,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 
   <details class="card card-collapsible">
     <summary>
-      <div><h3>Gauge Colors</h3><p>Pick a preset or paint individual gauges. Bulk pickers update the form only - click Apply to save.</p></div>
+      <div><h3>Gauge Appearance</h3><p>Pick a preset or paint individual gauges, and rename any gauge label. Bulk pickers update the form only - click Apply to save.</p></div>
     </summary>
     <div class="card-body">
       <div class="swatch-row">
@@ -994,23 +1010,28 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 
       <div class="gauge-color-list">
         <div class="subhead">Per-gauge fine tuning</div>
-        <div class="gauge-color-row"><span class="name">Progress</span><div class="alv"><span>Arc</span><input type="color" id="prg_a" value="%PRG_A%"></div><div class="alv"><span>Label</span><input type="color" id="prg_l" value="%PRG_L%"></div><div class="alv"><span>Value</span><input type="color" id="prg_v" value="%PRG_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Nozzle</span><div class="alv"><span>Arc</span><input type="color" id="noz_a" value="%NOZ_A%"></div><div class="alv"><span>Label</span><input type="color" id="noz_l" value="%NOZ_L%"></div><div class="alv"><span>Value</span><input type="color" id="noz_v" value="%NOZ_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Bed</span><div class="alv"><span>Arc</span><input type="color" id="bed_a" value="%BED_A%"></div><div class="alv"><span>Label</span><input type="color" id="bed_l" value="%BED_L%"></div><div class="alv"><span>Value</span><input type="color" id="bed_v" value="%BED_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Part Fan</span><div class="alv"><span>Arc</span><input type="color" id="pfn_a" value="%PFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="pfn_l" value="%PFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="pfn_v" value="%PFN_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Aux Fan</span><div class="alv"><span>Arc</span><input type="color" id="afn_a" value="%AFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="afn_l" value="%AFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="afn_v" value="%AFN_V%"></div></div>
-        <div class="gauge-color-row gauge-x2d"><span class="name">Aux Fan Right (X2D)</span><div class="alv"><span>Arc</span><input type="color" id="afr_a" value="%AFR_A%"></div><div class="alv"><span>Label</span><input type="color" id="afr_l" value="%AFR_L%"></div><div class="alv"><span>Value</span><input type="color" id="afr_v" value="%AFR_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Chamber Fan</span><div class="alv"><span>Arc</span><input type="color" id="cfn_a" value="%CFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="cfn_l" value="%CFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="cfn_v" value="%CFN_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Exhaust Fan</span><div class="alv"><span>Arc</span><input type="color" id="exh_a" value="%EXH_A%"></div><div class="alv"><span>Label</span><input type="color" id="exh_l" value="%EXH_L%"></div><div class="alv"><span>Value</span><input type="color" id="exh_v" value="%EXH_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Chamber Temp</span><div class="alv"><span>Arc</span><input type="color" id="cht_a" value="%CHT_A%"></div><div class="alv"><span>Label</span><input type="color" id="cht_l" value="%CHT_L%"></div><div class="alv"><span>Value</span><input type="color" id="cht_v" value="%CHT_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Heatbreak Fan</span><div class="alv"><span>Arc</span><input type="color" id="hbk_a" value="%HBK_A%"></div><div class="alv"><span>Label</span><input type="color" id="hbk_l" value="%HBK_L%"></div><div class="alv"><span>Value</span><input type="color" id="hbk_v" value="%HBK_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Power</span><div class="alv"><span>Arc</span><input type="color" id="pwr_a" value="%PWR_A%"></div><div class="alv"><span>Label</span><input type="color" id="pwr_l" value="%PWR_L%"></div><div class="alv"><span>Value</span><input type="color" id="pwr_v" value="%PWR_V%"></div></div>
-        <div class="gauge-color-row"><span class="name">Layer</span><div class="alv"><span>Arc</span><input type="color" id="lyr_a" value="%LYR_A%"></div><div class="alv"><span>Label</span><input type="color" id="lyr_l" value="%LYR_L%"></div><div class="alv"><span>Value</span><input type="color" id="lyr_v" value="%LYR_V%"></div></div>
+        <div class="gauge-color-row"><span class="name">Progress</span><div class="alv"><span>Arc</span><input type="color" id="prg_a" value="%PRG_A%"></div><div class="alv"><span>Label</span><input type="color" id="prg_l" value="%PRG_L%"></div><div class="alv"><span>Value</span><input type="color" id="prg_v" value="%PRG_V%"></div><input type="text" class="lbl" id="prg_lbl" maxlength="12" value="%PRG_LBL%" placeholder="Progress"></div>
+        <div class="gauge-color-row"><span class="name">Nozzle</span><div class="alv"><span>Arc</span><input type="color" id="noz_a" value="%NOZ_A%"></div><div class="alv"><span>Label</span><input type="color" id="noz_l" value="%NOZ_L%"></div><div class="alv"><span>Value</span><input type="color" id="noz_v" value="%NOZ_V%"></div><input type="text" class="lbl" id="noz_lbl" maxlength="12" value="%NOZ_LBL%" placeholder="Nozzle"></div>
+        <div class="gauge-color-row"><span class="name">Bed</span><div class="alv"><span>Arc</span><input type="color" id="bed_a" value="%BED_A%"></div><div class="alv"><span>Label</span><input type="color" id="bed_l" value="%BED_L%"></div><div class="alv"><span>Value</span><input type="color" id="bed_v" value="%BED_V%"></div><input type="text" class="lbl" id="bed_lbl" maxlength="12" value="%BED_LBL%" placeholder="Bed"></div>
+        <div class="gauge-color-row"><span class="name">Part Fan</span><div class="alv"><span>Arc</span><input type="color" id="pfn_a" value="%PFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="pfn_l" value="%PFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="pfn_v" value="%PFN_V%"></div><input type="text" class="lbl" id="pfn_lbl" maxlength="12" value="%PFN_LBL%" placeholder="Part"></div>
+        <div class="gauge-color-row"><span class="name">Aux Fan</span><div class="alv"><span>Arc</span><input type="color" id="afn_a" value="%AFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="afn_l" value="%AFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="afn_v" value="%AFN_V%"></div><input type="text" class="lbl" id="afn_lbl" maxlength="12" value="%AFN_LBL%" placeholder="Aux"></div>
+        <div class="gauge-color-row gauge-x2d"><span class="name">Aux Fan Right (X2D)</span><div class="alv"><span>Arc</span><input type="color" id="afr_a" value="%AFR_A%"></div><div class="alv"><span>Label</span><input type="color" id="afr_l" value="%AFR_L%"></div><div class="alv"><span>Value</span><input type="color" id="afr_v" value="%AFR_V%"></div><input type="text" class="lbl" id="afr_lbl" maxlength="12" value="%AFR_LBL%" placeholder="R.Aux"></div>
+        <div class="gauge-color-row"><span class="name">Chamber Fan</span><div class="alv"><span>Arc</span><input type="color" id="cfn_a" value="%CFN_A%"></div><div class="alv"><span>Label</span><input type="color" id="cfn_l" value="%CFN_L%"></div><div class="alv"><span>Value</span><input type="color" id="cfn_v" value="%CFN_V%"></div><input type="text" class="lbl" id="cfn_lbl" maxlength="12" value="%CFN_LBL%" placeholder="Chamber"></div>
+        <div class="gauge-color-row"><span class="name">Exhaust Fan</span><div class="alv"><span>Arc</span><input type="color" id="exh_a" value="%EXH_A%"></div><div class="alv"><span>Label</span><input type="color" id="exh_l" value="%EXH_L%"></div><div class="alv"><span>Value</span><input type="color" id="exh_v" value="%EXH_V%"></div><input type="text" class="lbl" id="exh_lbl" maxlength="12" value="%EXH_LBL%" placeholder="Exhaust"></div>
+        <div class="gauge-color-row"><span class="name">Chamber Temp</span><div class="alv"><span>Arc</span><input type="color" id="cht_a" value="%CHT_A%"></div><div class="alv"><span>Label</span><input type="color" id="cht_l" value="%CHT_L%"></div><div class="alv"><span>Value</span><input type="color" id="cht_v" value="%CHT_V%"></div><input type="text" class="lbl" id="cht_lbl" maxlength="12" value="%CHT_LBL%" placeholder="Chamber"></div>
+        <div class="gauge-color-row"><span class="name">Heatbreak Fan</span><div class="alv"><span>Arc</span><input type="color" id="hbk_a" value="%HBK_A%"></div><div class="alv"><span>Label</span><input type="color" id="hbk_l" value="%HBK_L%"></div><div class="alv"><span>Value</span><input type="color" id="hbk_v" value="%HBK_V%"></div><input type="text" class="lbl" id="hbk_lbl" maxlength="12" value="%HBK_LBL%" placeholder="HBreak"></div>
+        <div class="gauge-color-row"><span class="name">Power</span><div class="alv"><span>Arc</span><input type="color" id="pwr_a" value="%PWR_A%"></div><div class="alv"><span>Label</span><input type="color" id="pwr_l" value="%PWR_L%"></div><div class="alv"><span>Value</span><input type="color" id="pwr_v" value="%PWR_V%"></div><input type="text" class="lbl" id="pwr_lbl" maxlength="12" value="%PWR_LBL%" placeholder="Power"></div>
+        <div class="gauge-color-row"><span class="name">Layer</span><div class="alv"><span>Arc</span><input type="color" id="lyr_a" value="%LYR_A%"></div><div class="alv"><span>Label</span><input type="color" id="lyr_l" value="%LYR_L%"></div><div class="alv"><span>Value</span><input type="color" id="lyr_v" value="%LYR_V%"></div><input type="text" class="lbl" id="lyr_lbl" maxlength="12" value="%LYR_LBL%" placeholder="Layer"></div>
+        <div class="gauge-label-row"><span class="name">Clock</span><input type="text" class="lbl" id="clk_lbl" maxlength="12" value="%CLK_LBL%" placeholder="Clock"></div>
+        <div class="gauge-label-row"><span class="name">AMS</span><input type="text" class="lbl" id="ams_lbl" maxlength="12" value="%AMS_LBL%" placeholder="AMS" title="Shown as 'Name 1'..'Name 4'"></div>
+        <div class="gauge-label-row"><span class="name">Nozzle R</span><input type="text" class="lbl" id="nzr_lbl" maxlength="12" value="%NZR_LBL%" placeholder="Nozzle R" title="Dual-nozzle right; empty = Nozzle name + R"></div>
+        <div class="gauge-label-row"><span class="name">Nozzle L</span><input type="text" class="lbl" id="nzl_lbl" maxlength="12" value="%NZL_LBL%" placeholder="Nozzle L" title="Dual-nozzle left; empty = Nozzle name + L"></div>
       </div>
 
       <div class="action-bar">
         <button type="button" class="btn btn-ghost btn-sm" onclick="randomGaugeColors()">Random</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeColors()">Reset to defaults</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="clearGaugeLabels()">Clear labels</button>
       </div>
     </div>
   </details>
@@ -2203,6 +2224,8 @@ function savePower(){
 
 /* ============ Display ============ */
 var GAUGE_KEYS = ['prg','noz','bed','pfn','afn','afr','cfn','exh','cht','hbk','pwr','lyr'];
+// Label override keys = the 12 colour gauges + Clock + AMS + Nozzle L/R (label-only rows).
+var GAUGE_LABEL_KEYS = GAUGE_KEYS.concat(['clk','ams','nzr','nzl']);
 var themes = {
   default:{bg:'#081018',track:'#182028',clkt:'#FFFFFF',clkd:'#C0C0C0',prg:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},noz:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},afn:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},afr:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},cfn:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},exh:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},pwr:{a:'#FFD600',l:'#FFD600',v:'#FFFFFF'},lyr:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'}},
   mono_green:{bg:'#000800',track:'#0A1A0A',clkt:'#00FF41',clkd:'#00CC33',prg:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},noz:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},bed:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},exh:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cht:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},hbk:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pwr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},lyr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'}},
@@ -2240,6 +2263,12 @@ function resetGaugeColors(){
     document.getElementById(k + '_v').value = c.v;
   }
   document.getElementById('clr_pbar').value = document.getElementById('prg_a').value;
+  applyDisplay();
+}
+function clearGaugeLabels(){
+  for (var i = 0; i < GAUGE_LABEL_KEYS.length; i++){
+    document.getElementById(GAUGE_LABEL_KEYS[i] + '_lbl').value = '';
+  }
   applyDisplay();
 }
 function randomGaugeColors(){
@@ -2308,6 +2337,10 @@ function applyDisplay(){
     p.append(k + '_a', document.getElementById(k + '_a').value);
     p.append(k + '_l', document.getElementById(k + '_l').value);
     p.append(k + '_v', document.getElementById(k + '_v').value);
+  }
+  for (var j = 0; j < GAUGE_LABEL_KEYS.length; j++){
+    var lk = GAUGE_LABEL_KEYS[j];
+    p.append(lk + '_lbl', document.getElementById(lk + '_lbl').value);
   }
   fetch('/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){ if (r.ok) showToast('Applied!'); else showToast('Error'); })

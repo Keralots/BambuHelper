@@ -215,44 +215,48 @@ void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
     case GAUGE_NOZZLE:
       drawTempGauge(tft, cx, cy, r, s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
                     dispSettings.nozzle.arc,
-                    s.dualNozzle ? (s.activeNozzle == 0 ? "Nozzle R" : "Nozzle L") : "Nozzle",
+                    nozzleSideLabel(s.dualNozzle ? (s.activeNozzle == 0 ? 'R' : 'L') : 0),
                     nullptr, fr, &dispSettings.nozzle);
       break;
     case GAUGE_NOZZLE_RIGHT:
       drawTempGauge(tft, cx, cy, r, s.nozzleTempN[0], s.nozzleTargetN[0], (float)dispSettings.nozzleScaleMax,
-                    dispSettings.nozzle.arc, "Nozzle R", nullptr, fr, &dispSettings.nozzle);
+                    dispSettings.nozzle.arc, nozzleSideLabel('R'), nullptr, fr, &dispSettings.nozzle);
       break;
     case GAUGE_NOZZLE_LEFT:
       drawTempGauge(tft, cx, cy, r, s.nozzleTempN[1], s.nozzleTargetN[1], (float)dispSettings.nozzleScaleMax,
-                    dispSettings.nozzle.arc, "Nozzle L", nullptr, fr, &dispSettings.nozzle);
+                    dispSettings.nozzle.arc, nozzleSideLabel('L'), nullptr, fr, &dispSettings.nozzle);
       break;
     case GAUGE_BED:
       drawTempGauge(tft, cx, cy, r, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                    dispSettings.bed.arc, "Bed", nullptr, fr, &dispSettings.bed);
+                    dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, fr, &dispSettings.bed);
       break;
     case GAUGE_PART_FAN:
-      drawFanGauge(tft, cx, cy, r, s.coolingFanPct, dispSettings.partFan.arc, "Part", fr, &dispSettings.partFan);
+      drawFanGauge(tft, cx, cy, r, s.coolingFanPct, dispSettings.partFan.arc,
+                   gaugeLabelOr(gaugeLabels.partFan, "Part"), fr, &dispSettings.partFan);
       break;
     case GAUGE_AUX_FAN:
       drawFanGauge(tft, cx, cy, r, s.auxFanPct, dispSettings.auxFan.arc,
-                   (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux", fr, &dispSettings.auxFan);
+                   gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux"), fr, &dispSettings.auxFan);
       break;
     case GAUGE_AUX_FAN_RIGHT:
-      drawFanGauge(tft, cx, cy, r, s.auxFanRightPct, dispSettings.auxFanRight.arc, "R.Aux", fr, &dispSettings.auxFanRight);
+      drawFanGauge(tft, cx, cy, r, s.auxFanRightPct, dispSettings.auxFanRight.arc,
+                   gaugeLabelOr(gaugeLabels.auxFanRight, "R.Aux"), fr, &dispSettings.auxFanRight);
       break;
     case GAUGE_CHAMBER_FAN:
       drawFanGauge(tft, cx, cy, r, s.chamberFanPct, dispSettings.chamberFan.arc,
-                   (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber", fr, &dispSettings.chamberFan);
+                   gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber"), fr, &dispSettings.chamberFan);
       break;
     case GAUGE_EXHAUST_FAN:
-      drawFanGauge(tft, cx, cy, r, s.exhaustFanPct, dispSettings.exhaustFan.arc, "Exhaust", fr, &dispSettings.exhaustFan);
+      drawFanGauge(tft, cx, cy, r, s.exhaustFanPct, dispSettings.exhaustFan.arc,
+                   gaugeLabelOr(gaugeLabels.exhaustFan, "Exhaust"), fr, &dispSettings.exhaustFan);
       break;
     case GAUGE_CHAMBER_TEMP:
       drawTempGauge(tft, cx, cy, r, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
-                    dispSettings.chamberTemp.arc, "Chamber", nullptr, fr, &dispSettings.chamberTemp);
+                    dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, "Chamber"), nullptr, fr, &dispSettings.chamberTemp);
       break;
     case GAUGE_HEATBREAK:
-      drawFanGauge(tft, cx, cy, r, s.heatbreakFanPct, dispSettings.heatbreak.arc, "HBreak", fr, &dispSettings.heatbreak);
+      drawFanGauge(tft, cx, cy, r, s.heatbreakFanPct, dispSettings.heatbreak.arc,
+                   gaugeLabelOr(gaugeLabels.heatbreak, "HBreak"), fr, &dispSettings.heatbreak);
       break;
     case GAUGE_CLOCK:
       drawClockWidget(tft, cx, cy, r, t, fr);
@@ -262,7 +266,7 @@ void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       break;
     case GAUGE_POWER:
       drawPowerGauge(tft, cx, cy, r, tasmotaGetWattsForSlot(slotIndex),
-                     tasmotaIsActiveForSlot(slotIndex), "Power", fr);
+                     tasmotaIsActiveForSlot(slotIndex), gaugeLabelOr(gaugeLabels.power, "Power"), fr);
       break;
     case GAUGE_CAMERA:
       drawCameraGauge(cx, cy, r, fr);  // inert placeholder in split (camera disabled with 2+ printers)
@@ -271,16 +275,18 @@ void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       if (fr) tft.fillCircle(cx, cy, r + 2, CLR_BG);
       break;
     default: {
-      static const char* amsLabel[AMS_MAX_UNITS] = { "AMS 1", "AMS 2", "AMS 3", "AMS 4" };
+      char amsLbl[16];
       if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
         uint8_t ui = gt - GAUGE_AMS_HUM_1;
         const AmsUnit& u = s.ams.units[ui];
-        drawHumidityGauge(tft, cx, cy, r, u.humidityRaw, u.humidity, u.present, amsLabel[ui], fr);
+        formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
+        drawHumidityGauge(tft, cx, cy, r, u.humidityRaw, u.humidity, u.present, amsLbl, fr);
       } else if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
         uint8_t ui = gt - GAUGE_AMS_TEMP_1;
         const AmsUnit& u = s.ams.units[ui];
+        formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
         drawTempGauge(tft, cx, cy, r, u.present ? u.temp : 0, 0, (float)dispSettings.chamberScaleMax,
-                      dispSettings.chamberTemp.arc, amsLabel[ui], nullptr, fr, &dispSettings.chamberTemp);
+                      dispSettings.chamberTemp.arc, amsLbl, nullptr, fr, &dispSettings.chamberTemp);
       } else if (gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) {
         uint8_t ui = gt - GAUGE_AMS_FILAMENT_1;
         drawAmsFilamentAllGauge(tft, cx, cy, r, t, s.ams, ui, fr);
@@ -475,17 +481,15 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
     // AMS unit name on the foot line. HT units report id >= 128.
     const bool isHT = (u.id >= 128);
     const uint8_t num = isHT ? (uint8_t)(u.id - 128 + 1) : (uint8_t)(u.id + 1);
-    char unitName[28];
-    if (dc > 1)
-      snprintf(unitName, sizeof(unitName), "%s %d  (%d/%d)",
-               isHT ? "AMS HT" : "AMS", num, sDryIdx[bandIdx] + 1, dc);
-    else
-      snprintf(unitName, sizeof(unitName), "%s %d", isHT ? "AMS HT" : "AMS", num);
+    char unitName[32];
+    formatAmsDryName(unitName, sizeof(unitName), isHT, num, sDryIdx[bandIdx], dc);
     tft.fillRect(g.x, nameY - 9, g.w, 18, CLR_BG);
     tft.setTextDatum(MC_DATUM);
     setFont(tft, FONT_SMALL);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
-    tft.drawString(unitName, g.x + g.w / 2, nameY);
+    char eb[40];
+    ellipsizeToWidth(tft, unitName, g.w - 4, eb, sizeof(eb));
+    tft.drawString(eb, g.x + g.w / 2, nameY);
 
     sPrevDryTemp[bandIdx]   = tempShown;
     sPrevDryMin[bandIdx]    = u.dryRemainMin;

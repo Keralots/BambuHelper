@@ -82,4 +82,16 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
 // draw the inert placeholder inside a band. No-op visual on non-camera boards.
 void drawCameraGauge(int16_t cx, int16_t cy, int16_t radius, bool forceRedraw);
 
+// Nozzle label honoring custom overrides + R/L side ('R'/'L'/0). Exported so the
+// split renderer formats nozzle labels identically. Returns a static buffer.
+const char* nozzleSideLabel(char side);
+
+// AMS label formatters. All honor the custom gaugeLabels.amsBase override
+// (default "AMS"), keeping the numeric/letter/HT suffix. Exported so the split
+// renderer formats AMS labels identically. Each writes a NUL-terminated string.
+void formatAmsNumberLabel(char* out, size_t len, uint8_t unitIndex);   // "<base> 1".."4"
+void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex);   // "<base> A".."D"
+void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
+                      uint8_t dryDisplayIdx, uint8_t dryCount);        // "<base>[ HT] N  (x/y)"
+
 #endif // DISPLAY_UI_H

@@ -14,6 +14,7 @@ char wifiSSID[33] = {0};
 char wifiPass[65] = {0};
 uint8_t brightness = 200;
 DisplaySettings dispSettings;
+GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
 DisplayPowerSettings dpSettings;
 char cloudEmail[64] = {0};
@@ -242,6 +243,38 @@ static void loadGaugeColors(const char* prefix, GaugeColors& gc, const GaugeColo
 }
 
 // ---------------------------------------------------------------------------
+//  Custom gauge labels
+// ---------------------------------------------------------------------------
+// Copy a user label into a fixed buffer, dropping anything unsafe to emit raw
+// into an HTML value="..." attribute, plus (for now) non-ASCII bytes that the
+// VLW fonts can't render. Leading/trailing spaces are trimmed so an all-spaces
+// field doesn't become an invisible override. The ONE place the >127 rule lives.
+void sanitizeGaugeLabel(const char* in, char* out, size_t outLen) {
+  if (!out || outLen == 0) return;
+  size_t w = 0;
+  if (in) {
+    for (const char* p = in; *p && w < outLen - 1; ++p) {
+      uint8_t c = (uint8_t)*p;
+      if (c < 0x20 || c > 0x7E) continue;   // control chars + non-ASCII (UTF-8 toggle)
+      if (c == '"' || c == '<' || c == '>' || c == '&') continue;  // HTML-unsafe
+      if (c == ' ' && w == 0) continue;     // drop leading spaces (even after dropped chars)
+      out[w++] = (char)c;
+    }
+  }
+  while (w > 0 && out[w - 1] == ' ') w--;   // trim trailing spaces
+  out[w] = '\0';
+}
+
+static void saveGaugeLabel(const char* key, const char* label) {
+  prefs.putString(key, label);
+}
+
+static void loadGaugeLabel(const char* key, char* out, size_t outLen) {
+  String raw = prefs.getString(key, "");
+  sanitizeGaugeLabel(raw.c_str(), out, outLen);  // defend against corrupt NVS
+}
+
+// ---------------------------------------------------------------------------
 //  Load settings
 // ---------------------------------------------------------------------------
 void loadSettings() {
@@ -395,6 +428,24 @@ void loadSettings() {
   loadGaugeColors("gc_hbk", dispSettings.heatbreak, def.heatbreak);
   loadGaugeColors("gc_pwr", dispSettings.power, def.power);
   loadGaugeColors("gc_lyr", dispSettings.layer, def.layer);
+
+  // Custom gauge labels (empty default = use built-in label)
+  loadGaugeLabel("gl_prg", gaugeLabels.progress,    sizeof(gaugeLabels.progress));
+  loadGaugeLabel("gl_noz", gaugeLabels.nozzle,      sizeof(gaugeLabels.nozzle));
+  loadGaugeLabel("gl_nzr", gaugeLabels.nozzleRight, sizeof(gaugeLabels.nozzleRight));
+  loadGaugeLabel("gl_nzl", gaugeLabels.nozzleLeft,  sizeof(gaugeLabels.nozzleLeft));
+  loadGaugeLabel("gl_bed", gaugeLabels.bed,         sizeof(gaugeLabels.bed));
+  loadGaugeLabel("gl_pfn", gaugeLabels.partFan,     sizeof(gaugeLabels.partFan));
+  loadGaugeLabel("gl_afn", gaugeLabels.auxFan,      sizeof(gaugeLabels.auxFan));
+  loadGaugeLabel("gl_afr", gaugeLabels.auxFanRight, sizeof(gaugeLabels.auxFanRight));
+  loadGaugeLabel("gl_cfn", gaugeLabels.chamberFan,  sizeof(gaugeLabels.chamberFan));
+  loadGaugeLabel("gl_exh", gaugeLabels.exhaustFan,  sizeof(gaugeLabels.exhaustFan));
+  loadGaugeLabel("gl_cht", gaugeLabels.chamberTemp, sizeof(gaugeLabels.chamberTemp));
+  loadGaugeLabel("gl_hbk", gaugeLabels.heatbreak,   sizeof(gaugeLabels.heatbreak));
+  loadGaugeLabel("gl_pwr", gaugeLabels.power,       sizeof(gaugeLabels.power));
+  loadGaugeLabel("gl_lyr", gaugeLabels.layer,       sizeof(gaugeLabels.layer));
+  loadGaugeLabel("gl_clk", gaugeLabels.clock,       sizeof(gaugeLabels.clock));
+  loadGaugeLabel("gl_ams", gaugeLabels.amsBase,     sizeof(gaugeLabels.amsBase));
 
   // Top progress bar color. Before this setting existed the bar reused the
   // Progress gauge arc color, so migrate absent keys to that value to avoid a
@@ -658,6 +709,24 @@ void saveSettings() {
   saveGaugeColors("gc_hbk", dispSettings.heatbreak);
   saveGaugeColors("gc_pwr", dispSettings.power);
   saveGaugeColors("gc_lyr", dispSettings.layer);
+
+  // Custom gauge labels
+  saveGaugeLabel("gl_prg", gaugeLabels.progress);
+  saveGaugeLabel("gl_noz", gaugeLabels.nozzle);
+  saveGaugeLabel("gl_nzr", gaugeLabels.nozzleRight);
+  saveGaugeLabel("gl_nzl", gaugeLabels.nozzleLeft);
+  saveGaugeLabel("gl_bed", gaugeLabels.bed);
+  saveGaugeLabel("gl_pfn", gaugeLabels.partFan);
+  saveGaugeLabel("gl_afn", gaugeLabels.auxFan);
+  saveGaugeLabel("gl_afr", gaugeLabels.auxFanRight);
+  saveGaugeLabel("gl_cfn", gaugeLabels.chamberFan);
+  saveGaugeLabel("gl_exh", gaugeLabels.exhaustFan);
+  saveGaugeLabel("gl_cht", gaugeLabels.chamberTemp);
+  saveGaugeLabel("gl_hbk", gaugeLabels.heatbreak);
+  saveGaugeLabel("gl_pwr", gaugeLabels.power);
+  saveGaugeLabel("gl_lyr", gaugeLabels.layer);
+  saveGaugeLabel("gl_clk", gaugeLabels.clock);
+  saveGaugeLabel("gl_ams", gaugeLabels.amsBase);
 
   // Network settings
   prefs.putBool("net_dhcp", netSettings.useDHCP);
