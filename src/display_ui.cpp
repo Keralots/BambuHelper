@@ -3069,7 +3069,11 @@ static void drawPrinting() {
   uint8_t tasmotaDM  = tasmotaDisplayModeForSlot(rotState.displayIndex);
   float curWatts     = tasmotaGetWattsForSlot(rotState.displayIndex);
 
-  if (tasmotaOnline && tasmotaDM == 0) {
+  // Hide the center layer/power readout entirely (user shows them as gauges).
+  // The filament name then runs across to the right indicator for more room.
+  bool hideReadout = dispSettings.hideStatusReadout;
+
+  if (!hideReadout && tasmotaOnline && tasmotaDM == 0) {
     if (millis() - altFlipMs > 4000) {
       altShowPower = !altShowPower;
       altFlipMs    = millis();
@@ -3086,13 +3090,13 @@ static void drawPrinting() {
                        (s.speedLevel != prevState.speedLevel) ||
                        (s.doorOpen != prevState.doorOpen) ||
                        (s.doorSensorPresent != prevState.doorSensorPresent) ||
-                       (s.layerNum != prevState.layerNum) ||
-                       (s.totalLayers != prevState.totalLayers) ||
+                       (!hideReadout && s.layerNum != prevState.layerNum) ||
+                       (!hideReadout && s.totalLayers != prevState.totalLayers) ||
                        (s.ams.activeTray != prevState.ams.activeTray) ||
                        (showingWifi && s.wifiSignal != prevState.wifiSignal) ||
-                       (altShowPower != prevAltShowPower) ||
-                       (tasmotaOnline != prevTasmotaOnline) ||
-                       (tasmotaOnline && curWatts != prevWatts);
+                       (!hideReadout && altShowPower != prevAltShowPower) ||
+                       (!hideReadout && tasmotaOnline != prevTasmotaOnline) ||
+                       (!hideReadout && tasmotaOnline && curWatts != prevWatts);
   prevAltShowPower  = altShowPower;
   prevTasmotaOnline = tasmotaOnline;
   prevWatts         = curWatts;
@@ -3120,13 +3124,26 @@ static void drawPrinting() {
     tft.fillRect(0, eff_botY, botW, eff_botH, CLR_BG);
     setFont(tft, FONT_BODY);
 
+    // Right indicator geometry (door status or speed mode), computed once so the
+    // filament-name clamp and the actual draw below stay in sync.
+    const bool rightIsDoor = s.doorSensorPresent;
+    const int16_t rightLabelW = rightIsDoor
+        ? (gaugeLabels.door[0] ? tft.textWidth(gaugeLabels.door) : 0)
+        : tft.textWidth(speedLevelName(s.speedLevel));
+    const int16_t rightAnchorX = rightIsDoor ? (botW - 20) : (botW - 4);  // MR datum
+    const int16_t rightLeftX   = rightAnchorX - rightLabelW;              // left edge
+
     // Predict center text so we can clamp the filament name's right edge
     // and avoid overlap with the layer/power readout (smooth fonts in v2.8
     // are slightly wider than the previous bitmap font).
-    bool showPowerNow = tasmotaOnline && (tasmotaDM == 1 || altShowPower);
+    bool showPowerNow = !hideReadout && tasmotaOnline && (tasmotaDM == 1 || altShowPower);
     char centerBuf[20];
+    centerBuf[0] = '\0';
     int16_t centerLeftX;
-    if (showPowerNow) {
+    if (hideReadout) {
+      // No center readout: clamp the filament name up to the right indicator.
+      centerLeftX = rightLeftX - 2;
+    } else if (showPowerNow) {
       snprintf(centerBuf, sizeof(centerBuf), "%.0fW", curWatts);
       centerLeftX = botCx - 20;  // icon starts here (icon_lightning is 16px)
     } else {
@@ -3159,8 +3176,11 @@ static void drawPrinting() {
       drawWifiSignalIndicator(s, eff_botCY);
     }
 
-    // Center: power (if Tasmota active) or layer count (centerBuf preformatted above)
-    if (showPowerNow) {
+    // Center: power (if Tasmota active) or layer count (centerBuf preformatted
+    // above). Skipped entirely when the readout is hidden.
+    if (hideReadout) {
+      // nothing in the center — filament name already used the freed width
+    } else if (showPowerNow) {
       drawIcon16(tft, botCx - 20, eff_botCY - 8, icon_lightning, CLR_YELLOW);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
@@ -3171,18 +3191,19 @@ static void drawPrinting() {
       tft.drawString(centerBuf, botCx, eff_botCY);
     }
 
-    // Right: door status (if sensor present) or speed mode
-    if (s.doorSensorPresent) {
+    // Right: door status (if sensor present) or speed mode. Anchored on the
+    // shared rightAnchorX used by the filament-name clamp above.
+    if (rightIsDoor) {
       uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(clr, CLR_BG);
-      if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, botW - 20, eff_botCY);
-      drawIcon16(tft, botW - 18, eff_botCY - 8,
+      if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, rightAnchorX, eff_botCY);
+      drawIcon16(tft, rightAnchorX + 2, eff_botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     } else {
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(speedLevelColor(s.speedLevel), CLR_BG);
-      tft.drawString(speedLevelName(s.speedLevel), botW - 4, eff_botCY);
+      tft.drawString(speedLevelName(s.speedLevel), rightAnchorX, eff_botCY);
     }
   }
 }

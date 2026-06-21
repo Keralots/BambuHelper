@@ -76,7 +76,7 @@ function saveWifi(){
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
 //              cl_pname, dualp, gs0..gs5, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
-//              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, invcol,
+//              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, hidelp, invcol,
 //              cydcls, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -863,6 +863,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
+      <label for="hidelp">Hide layer/power line in status bar</label>
+    </label>
+    <div class="hint" style="padding-left:28px;margin-top:-4px">Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
 %AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
@@ -1477,7 +1482,10 @@ R"rawliteral(
       <div class="vstack" style="gap:8px;margin-top:4px">
         <label class="hstack" style="gap:8px;cursor:pointer"><input type="radio" name="tsm_dm" value="0"><span>Alternate: layer count / watts (every 4 s)</span></label>
         <label class="hstack" style="gap:8px;cursor:pointer"><input type="radio" name="tsm_dm" value="1"><span>Always show watts</span></label>
+        <label class="hstack" style="gap:8px;cursor:pointer"><input type="radio" name="tsm_dm" value="2"><span>Always show layer count</span></label>
       </div>
+      <div class="hint" style="margin-top:6px">Keeps the layer count in the status bar and never swaps to watts - use this when power already has its own gauge.</div>
+      <div id="dmHiddenNote" class="hint" style="margin-top:6px;display:none">Disabled because <b>Hide layer/power line in status bar</b> is on (Display tab). The whole status-bar readout is hidden, so this has no effect.</div>
     </div>
   </div>
 
@@ -2128,6 +2136,16 @@ function saveRotation(){
 /* ============ Power monitoring ============ */
 var currentPowerPlug = 0;
 var powerPlugCount = (document.getElementById('ptab1') ? 2 : 1);
+/* Grey out the display-mode radios when the status-bar readout is hidden
+   (Display tab) - the whole readout is gone, so the choice does nothing. */
+function applyHideReadoutToPowerDM(){
+  var hp = document.getElementById('hidelp');
+  var hidden = !!(hp && hp.checked);
+  var dm = document.querySelectorAll('input[name="tsm_dm"]');
+  for (var i = 0; i < dm.length; i++) dm[i].disabled = hidden;
+  var note = document.getElementById('dmHiddenNote');
+  if (note) note.style.display = hidden ? 'block' : 'none';
+}
 function selectPowerTab(plug){
   if (plug >= powerPlugCount) return;
   currentPowerPlug = plug;
@@ -2144,6 +2162,7 @@ function selectPowerTab(plug){
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
     for (var j = 0; j < dm.length; j++) dm[j].checked = (parseInt(dm[j].value) === (d.displayMode || 0));
+    applyHideReadoutToPowerDM();
     var slotSel = document.getElementById('tsm_slot');
     if (slotSel && typeof d.assignedSlot !== 'undefined') slotSel.value = d.assignedSlot;
     document.getElementById('tsm_pi').value = d.pollInterval || 10;

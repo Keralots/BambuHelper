@@ -629,12 +629,18 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
       }
 
       // Foot bar: filament swatch + type (left), layers/power (centre), door (right).
+      // The centre readout can be hidden (shown as gauges) to free width for the
+      // filament name - matches the single-printer status bar in drawPrinting().
+      const bool hideReadout = dispSettings.hideStatusReadout;
       char cbuf[20];
-      const float w = tasmotaGetWattsForSlot(slotIndex);
-      if (tasmotaIsActiveForSlot(slotIndex) && w > 0.5f) {
-        snprintf(cbuf, sizeof(cbuf), "%.0fW", w);
-      } else {
-        snprintf(cbuf, sizeof(cbuf), "%d/%d", s.layerNum, s.totalLayers);
+      cbuf[0] = '\0';
+      if (!hideReadout) {
+        const float w = tasmotaGetWattsForSlot(slotIndex);
+        if (tasmotaIsActiveForSlot(slotIndex) && w > 0.5f) {
+          snprintf(cbuf, sizeof(cbuf), "%.0fW", w);
+        } else {
+          snprintf(cbuf, sizeof(cbuf), "%d/%d", s.layerNum, s.totalLayers);
+        }
       }
       bool footChanged = force
         || s.doorOpen != prev.doorOpen
@@ -649,11 +655,23 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
         tft.fillRect(g.x, fy - 8, g.w, 16, CLR_BG);
         setFont(tft, FONT_SMALL);
 
-        // Centre string drawn first so the left filament label can clamp to it.
-        const int16_t centerLeft = fcx - tft.textWidth(cbuf) / 2;
-        tft.setTextDatum(MC_DATUM);
-        tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-        tft.drawString(cbuf, fcx, fy);
+        // Left edge the filament name clamps to: the centre readout when shown,
+        // otherwise the right indicator (door) or the band edge.
+        int16_t centerLeft;
+        if (hideReadout) {
+          if (s.doorSensorPresent) {
+            const int16_t lbl = gaugeLabels.door[0] ? tft.textWidth(gaugeLabels.door) : 0;
+            centerLeft = g.x + g.w - g.margin - 18 - lbl;  // door label + icon
+          } else {
+            centerLeft = g.x + g.w - g.margin;             // band right edge
+          }
+        } else {
+          // Centre string drawn first so the left filament label can clamp to it.
+          centerLeft = fcx - tft.textWidth(cbuf) / 2;
+          tft.setTextDatum(MC_DATUM);
+          tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+          tft.drawString(cbuf, fcx, fy);
+        }
 
         const int16_t lx = g.x + g.margin;
         if (swType) {

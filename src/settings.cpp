@@ -175,6 +175,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.showBatteryIndicator = true;
+  ds.hideStatusReadout = false; // default ON-screen readout stays visible
   ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
   ds.bedScaleMax     = GAUGE_BED_SCALE_DEFAULT;
   ds.chamberScaleMax = GAUGE_CHAMBER_SCALE_DEFAULT;
@@ -401,6 +402,7 @@ void loadSettings() {
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
+  dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
   dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
                                            GAUGE_NOZZLE_SCALE_MIN, GAUGE_NOZZLE_SCALE_MAX);
   dispSettings.bedScaleMax     = constrain((int)prefs.getUShort("dsp_bedmx", def.bedScaleMax),
@@ -693,6 +695,7 @@ void saveSettings() {
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
+  prefs.putBool("dsp_hidlp", dispSettings.hideStatusReadout);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);

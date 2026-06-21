@@ -563,6 +563,7 @@ static void handleToggleSetting() {
   else if (key == "slbl")    dispSettings.smallLabels = on;
   else if (key == "shtire")  dispSettings.showTimeRemaining = on;
   else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
+  else if (key == "hidelp")  dispSettings.hideStatusReadout = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
@@ -592,6 +593,7 @@ static void handleToggleSetting() {
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
+  if (key == "hidelp") triggerDisplayTransition();  // repaint status bar with/without readout
   if (key == "rotsplit" || key == "rotsplitf") triggerDisplayTransition();  // flip split layout live
   if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
@@ -970,7 +972,10 @@ static void handleSavePower() {
   if (server.hasArg("tsm_en"))  s.enabled = (server.arg("tsm_en").toInt() != 0);
   if (server.hasArg("tsm_pt"))  s.plugType = (server.arg("tsm_pt").toInt() == 1) ? 1 : 0;
   if (server.hasArg("tsm_ip"))  strlcpy(s.ip, server.arg("tsm_ip").c_str(), sizeof(s.ip));
-  if (server.hasArg("tsm_dm"))  s.displayMode = server.arg("tsm_dm").toInt() ? 1 : 0;
+  if (server.hasArg("tsm_dm")) {
+    int dm = server.arg("tsm_dm").toInt();
+    s.displayMode = (dm >= 0 && dm <= 2) ? (uint8_t)dm : 0;  // 0=alt 1=watts 2=layer
+  }
   if (server.hasArg("tsm_pi")) {
     int pi = server.arg("tsm_pi").toInt();
     s.pollInterval = (pi >= 10 && pi <= 60) ? (uint8_t)pi : 10;
@@ -1071,6 +1076,7 @@ static void handleSettingsExport() {
   disp["smallLabels"] = dispSettings.smallLabels;
   disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
   disp["fanMatchPrinter"] = dispSettings.fanMatchPrinter;
+  disp["hideStatusReadout"] = dispSettings.hideStatusReadout;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
   disp["nozzleScaleMax"]  = dispSettings.nozzleScaleMax;
   disp["bedScaleMax"]     = dispSettings.bedScaleMax;
@@ -1371,6 +1377,7 @@ static void handleSettingsImportFinish() {
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
     if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
     if (disp["fanMatchPrinter"].is<bool>())     dispSettings.fanMatchPrinter = disp["fanMatchPrinter"].as<bool>();
+    if (disp["hideStatusReadout"].is<bool>())   dispSettings.hideStatusReadout = disp["hideStatusReadout"].as<bool>();
     if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();
     // Gauge full-scale ranges: accept any JSON number and clamp (so crafted
     // out-of-range values are corrected, not silently ignored).
@@ -1559,7 +1566,7 @@ static void handleSettingsImportFinish() {
       if (p["enabled"].is<bool>())          s.enabled = p["enabled"].as<bool>();
       if (p["plugType"].is<uint8_t>())      s.plugType = (p["plugType"].as<uint8_t>() == 1) ? 1 : 0;
       if (p["ip"].is<const char*>())        strlcpy(s.ip, p["ip"], sizeof(s.ip));
-      if (p["displayMode"].is<uint8_t>())   s.displayMode = p["displayMode"].as<uint8_t>() ? 1 : 0;
+      if (p["displayMode"].is<uint8_t>())   { uint8_t dm = p["displayMode"].as<uint8_t>(); s.displayMode = (dm <= 2) ? dm : 0; }
       if (p["pollInterval"].is<uint8_t>()) {
         uint8_t pi = p["pollInterval"].as<uint8_t>();
         if (pi < 10 || pi > 60) pi = 10;
