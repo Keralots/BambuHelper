@@ -635,8 +635,11 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
       char cbuf[20];
       cbuf[0] = '\0';
       if (!hideReadout) {
+        // displayMode 2 = "Always show layer count" (power lives on a gauge):
+        // never swap to watts even when the plug is active.
         const float w = tasmotaGetWattsForSlot(slotIndex);
-        if (tasmotaIsActiveForSlot(slotIndex) && w > 0.5f) {
+        if (tasmotaDisplayModeForSlot(slotIndex) != 2 &&
+            tasmotaIsActiveForSlot(slotIndex) && w > 0.5f) {
           snprintf(cbuf, sizeof(cbuf), "%.0fW", w);
         } else {
           snprintf(cbuf, sizeof(cbuf), "%d/%d", s.layerNum, s.totalLayers);
