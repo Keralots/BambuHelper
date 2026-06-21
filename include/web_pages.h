@@ -865,7 +865,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
       <label for="hidelp">Hide layer/power line in status bar</label>
     </label>
-    <div class="hint" style="padding-left:28px;margin-top:-4px">Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
+    <div class="help-text" style="padding-left:28px">Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
 %AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
@@ -922,7 +922,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="kps" value="1" %KPS% onchange="toggleSetting('kps',this.checked)">
       <label for="kps">Keep print status screen after completion</label>
     </label>
-    <div class="hint" style="padding-left:28px;margin-top:-4px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
+    <div class="help-text" style="padding-left:28px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
     <div class="field" style="margin-top:var(--sp-4)">
       <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
       <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
@@ -933,7 +933,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
       <label for="pong">Breakout clock (animated game as screensaver)</label>
     </label>
-    <div class="hint" style="padding-left:28px;margin-top:-4px">Without a physical button, clock is always shown instead of turning the display off.</div>
+    <div class="help-text" style="padding-left:28px">Without a physical button, clock is always shown instead of turning the display off.</div>
   </div>
 
   <details class="card card-collapsible">
@@ -1077,12 +1077,12 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
       <label for="rotsplit">Split screen when two printers are printing</label>
     </label>
-    <div class="hint">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
+    <div class="help-text" style="padding-left:28px">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
     <label class="check-row">
       <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
       <label for="rotsplitf">Always show split screen (testing)</label>
     </label>
-    <div class="hint">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
+    <div class="help-text" style="padding-left:28px">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
   </div>
 
   <div class="card">
@@ -1116,7 +1116,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <label for="buzpin">Buzzer GPIO pin</label>
         <input type="number" id="buzpin" class="mono" min="1" max="48" value="%BUZ_PIN%" style="max-width:120px">
       </div>
-      <div id="buzEs8311Info" class="hint" style="display:none">Built-in I2S speaker. No GPIO configuration needed.</div>
+      <div id="buzEs8311Info" class="help-text" style="display:none">Built-in I2S speaker. No GPIO configuration needed.</div>
       <div class="field">
         <label>Quiet hours (optional)</label>
         <div class="hstack" style="gap:var(--sp-2)">
@@ -1475,7 +1475,7 @@ R"rawliteral(
       <label for="tsm_pt">Power plug type</label>
       <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option></select>
     </div>
-    <div class="hint" id="tsm_shelly_hint" style="margin-top:-4px;display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
+    <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
     <div class="row" style="margin-top:var(--sp-3)">
       <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
@@ -1488,8 +1488,8 @@ R"rawliteral(
         <label class="hstack" style="gap:8px;cursor:pointer"><input type="radio" name="tsm_dm" value="1"><span>Always show watts</span></label>
         <label class="hstack" style="gap:8px;cursor:pointer"><input type="radio" name="tsm_dm" value="2"><span>Always show layer count</span></label>
       </div>
-      <div class="hint" style="margin-top:6px">Keeps the layer count in the status bar and never swaps to watts - use this when power already has its own gauge.</div>
-      <div id="dmHiddenNote" class="hint" style="margin-top:6px;display:none">Disabled because <b>Hide layer/power line in status bar</b> is on (Display tab). The whole status-bar readout is hidden, so this has no effect.</div>
+      <div class="help-text" style="margin-top:6px">Keeps the layer count in the status bar and never swaps to watts - use this when power already has its own gauge.</div>
+      <div id="dmHiddenNote" class="help-text" style="margin-top:6px;display:none">Disabled because <b>Hide layer/power line in status bar</b> is on (Display tab). The whole status-bar readout is hidden, so this has no effect.</div>
     </div>
   </div>
 
@@ -1499,7 +1499,7 @@ R"rawliteral(
       <input type="checkbox" id="tsm_ao" value="1">
       <label for="tsm_ao">Auto power-off after print</label>
     </label>
-    <div class="hint" style="padding-left:28px;margin-top:-4px">Powers off the plug after the print finishes <strong>and</strong> the nozzle drops below 50 &deg;C. New prints reset the timer.</div>
+    <div class="help-text" style="padding-left:28px">Powers off the plug after the print finishes <strong>and</strong> the nozzle drops below 50 &deg;C. New prints reset the timer.</div>
     <div class="field" style="margin-top:var(--sp-3)">
       <label for="tsm_ad">Auto-off delay</label>
       <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="tsm_ad" min="1" max="240" value="10" style="max-width:100px"><span class="text-dim small">minutes</span></div>
@@ -1508,7 +1508,7 @@ R"rawliteral(
       <input type="checkbox" id="tsm_aod" value="1">
       <label for="tsm_aod">Cancel auto-off if door is opened</label>
     </label>
-    <div class="hint" style="padding-left:28px;margin-top:-4px">If the printer door opens during the delay, the auto-off is cancelled for this print (you are at the printer). A new print re-arms it. Ignored on printers without a door sensor (P1/A1).</div>
+    <div class="help-text" style="padding-left:28px">If the printer door opens during the delay, the auto-off is cancelled for this print (you are at the printer). A new print re-arms it. Ignored on printers without a door sensor (P1/A1).</div>
   </div>
 
   <div class="card">
@@ -1553,7 +1553,7 @@ R"rawliteral(
       <input type="checkbox" id="dbglog" onchange="toggleDebug(this.checked)" %DBGLOG%>
       <label for="dbglog">Enable verbose serial logging</label>
     </label>
-    <div class="hint" style="padding-left:28px">Use USB serial monitor (115200 baud) for live logs.</div>
+    <div class="help-text" style="padding-left:28px">Use USB serial monitor (115200 baud) for live logs.</div>
   </div>
 </div>
 
