@@ -512,9 +512,15 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   char buf[48];
   const char* draw = ellipsizeToWidth(gfx, label, maxW, buf, sizeof(buf));
 
+  const int16_t ly = cy + radius + (sm ? 3 : -1);
+  // Clear the full label band first so a previous, wider label (e.g. "Prawa" ->
+  // "Lewa" on a nozzle-side flip) leaves no ghost. All labels fit within maxW.
+  const int16_t fh = gfx.fontHeight();
+  gfx.fillRect(cx - maxW / 2, ly - fh / 2 - 1, maxW, fh + 2, bg);
+
   gfx.setTextDatum(MC_DATUM);
   gfx.setTextColor(lblColor, bg);
-  gfx.drawString(draw, cx, cy + radius + (sm ? 3 : -1));
+  gfx.drawString(draw, cx, ly);
 }
 
 // Choose the largest humidity-number font that leaves room for a small "%"
