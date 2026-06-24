@@ -893,6 +893,11 @@ static void handleSaveRotation() {
   if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
   if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
   if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
+  if (server.hasArg("lederrsec")) {
+    int v = server.arg("lederrsec").toInt();
+    if (v != 0 && v < 5) v = 5; if (v > 600) v = 600;
+    ledSettings.errorStrobeSeconds = (uint16_t)v;
+  }
   saveLedSettings();
   initLed();
 
@@ -1180,6 +1185,7 @@ static void handleSettingsExport() {
   led["autoOnWhilePrinting"] = ledSettings.autoOnWhilePrinting;
   led["pauseBreathing"]      = ledSettings.pauseBreathing;
   led["errorStrobe"]         = ledSettings.errorStrobe;
+  led["errorStrobeSeconds"]  = ledSettings.errorStrobeSeconds;
 
   // Tasmota power monitoring
   JsonObject tsm = doc["tasmota"].to<JsonObject>();
@@ -1529,6 +1535,11 @@ static void handleSettingsImportFinish() {
     if (led["autoOnWhilePrinting"].is<bool>()) ledSettings.autoOnWhilePrinting = led["autoOnWhilePrinting"].as<bool>();
     if (led["pauseBreathing"].is<bool>())      ledSettings.pauseBreathing      = led["pauseBreathing"].as<bool>();
     if (led["errorStrobe"].is<bool>())         ledSettings.errorStrobe         = led["errorStrobe"].as<bool>();
+    if (led["errorStrobeSeconds"].is<uint16_t>()) {
+      uint16_t s = led["errorStrobeSeconds"].as<uint16_t>();
+      if (s != 0 && s < 5) s = 5; if (s > 600) s = 600;
+      ledSettings.errorStrobeSeconds = s;
+    }
   }
 
   // Tasmota power monitoring

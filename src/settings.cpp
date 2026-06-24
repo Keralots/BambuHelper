@@ -31,6 +31,7 @@ LedSettings ledSettings = {
   /*autoOnWhilePrinting*/ false,
   /*pauseBreathing*/      false,
   /*errorStrobe*/         false,
+  /*errorStrobeSeconds*/  LED_ERROR_STROBE_DEFAULT_S,
 };
 TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT] = {};
 float tasmotaTariffPerKwh = 0.0f;
@@ -573,6 +574,7 @@ void loadSettings() {
   ledSettings.autoOnWhilePrinting = prefs.getBool("led_auto_pr", false);
   ledSettings.pauseBreathing      = prefs.getBool("led_pause",   false);
   ledSettings.errorStrobe         = prefs.getBool("led_err",     false);
+  ledSettings.errorStrobeSeconds  = prefs.getUShort("led_err_sec", LED_ERROR_STROBE_DEFAULT_S);
 
   // Cloud email (display only)
   strlcpy(cloudEmail, prefs.getString("cl_email", "").c_str(), sizeof(cloudEmail));
@@ -904,6 +906,7 @@ void saveLedSettings() {
   prefs.putBool("led_auto_pr", ledSettings.autoOnWhilePrinting);
   prefs.putBool("led_pause",   ledSettings.pauseBreathing);
   prefs.putBool("led_err",     ledSettings.errorStrobe);
+  prefs.putUShort("led_err_sec", ledSettings.errorStrobeSeconds);
   prefs.end();
 }
 

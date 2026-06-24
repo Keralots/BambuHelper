@@ -450,6 +450,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "LED_AUTO")      == 0) { out = ledSettings.autoOnWhilePrinting ? "checked" : ""; return true; }
   if (strcmp(name, "LED_PAUSE")     == 0) { out = ledSettings.pauseBreathing ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR")       == 0) { out = ledSettings.errorStrobe ? "checked" : ""; return true; }
+  if (strcmp(name, "LED_ERR_SEC")   == 0) { out = String(ledSettings.errorStrobeSeconds); return true; }
 
   // --- Battery indicator (Waveshare boards only) ---
   if (strcmp(name, "BAT_TOGGLE_ROW") == 0) {

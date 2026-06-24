@@ -211,6 +211,7 @@
 #define LED_HEARTBEAT_PERIOD_MS   1500   // pyk-pyk-pause cycle
 #define LED_PAUSE_PERIOD_MS       3500   // slow breath while printer paused
 #define LED_ERROR_STROBE_MS        180   // strobe half-period (180 on / 180 off)
+#define LED_ERROR_STROBE_DEFAULT_S  60   // error strobe auto-off after N s (0 = never)
 #define LED_TICK_MIN_INTERVAL_MS    16   // throttle ledTick() to ~60Hz
 #define LED_TEST_DURATION_S          8   // /led/test runs the chosen effect for 8s
 

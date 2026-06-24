@@ -86,7 +86,7 @@ function saveWifi(){
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
-//              lederr, batshow
+//              lederr, lederrsec, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
 //    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_ip, tsm_dm (radio), tsm_pi,
@@ -1197,9 +1197,13 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <label for="ledpause">Slow pulse during pause</label>
       </label>
       <label class="check-row">
-        <input type="checkbox" id="lederr" %LED_ERR%>
+        <input type="checkbox" id="lederr" %LED_ERR% onchange="toggleLedErr()">
         <label for="lederr">Fast strobe on error</label>
       </label>
+      <div class="field" id="ledErrParams" style="margin-top:var(--sp-2)">
+        <label for="lederrsec">Strobe auto-off (0 = never, else 5-600 seconds)</label>
+        <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="lederrsec" min="0" max="600" value="%LED_ERR_SEC%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
+      </div>
     </div>
   </div>
 
@@ -2071,11 +2075,17 @@ function toggleBuzPin(){
 function toggleLed(){
   document.getElementById('ledFields').style.display = document.getElementById('leden').value !== '0' ? 'block' : 'none';
   toggleLedFx();
+  toggleLedErr();
 }
 function toggleLedFx(){
   var fx = document.getElementById('ledfxmd');
   if (!fx) return;
   document.getElementById('ledFxParams').style.display = fx.value !== '0' ? 'block' : 'none';
+}
+function toggleLedErr(){
+  var c = document.getElementById('lederr');
+  if (!c) return;
+  document.getElementById('ledErrParams').style.display = c.checked ? 'block' : 'none';
 }
 function ledPreviewSend(){
   var p = new URLSearchParams();
@@ -2129,6 +2139,7 @@ function saveRotation(){
   p.append('ledauto', document.getElementById('ledauto').checked ? '1' : '0');
   p.append('ledpause', document.getElementById('ledpause').checked ? '1' : '0');
   p.append('lederr', document.getElementById('lederr').checked ? '1' : '0');
+  p.append('lederrsec', document.getElementById('lederrsec').value);
   var bs = document.getElementById('batshow');
   if (bs) p.append('batshow', bs.checked ? '1' : '0');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})

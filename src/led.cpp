@@ -21,6 +21,14 @@ static uint8_t       finishEffectMode     = LED_FINISH_OFF;
 static uint8_t       finishEffectPeak     = 255;
 static unsigned long lastTickMs           = 0;
 
+// Error-strobe episode state. Armed on the first tick of a GCODE_FAILED episode
+// (not in ledSetActivity - main.cpp re-asserts IDLE then FAILED every loop, which
+// would reset the timer). Auto-stops after errorStrobeSeconds (0 = never), or when
+// dismissed by a user interaction. Re-arms once the activity leaves FAILED.
+static bool          errorStrobeArmed     = false;
+static unsigned long errorStrobeEndMs     = 0;
+static bool          errorStrobeDismissed = false;
+
 // Live-preview override. While set, ledTick() uses previewBrightness as the
 // resting/peak duty instead of ledSettings.brightness, so the 60Hz tick stops
 // fighting rapid slider previews with the stale saved value. Cleared on
@@ -159,6 +167,10 @@ void sanitizeLedPin() {
   if (ledSettings.finishMode > LED_FINISH_HEARTBEAT) ledSettings.finishMode = LED_FINISH_OFF;
   if (ledSettings.finishSeconds < 5)   ledSettings.finishSeconds = 5;
   if (ledSettings.finishSeconds > 600) ledSettings.finishSeconds = 600;
+  // errorStrobeSeconds: 0 = never time out; otherwise clamp to 5..600.
+  if (ledSettings.errorStrobeSeconds != 0 && ledSettings.errorStrobeSeconds < 5)
+    ledSettings.errorStrobeSeconds = 5;
+  if (ledSettings.errorStrobeSeconds > 600) ledSettings.errorStrobeSeconds = 600;
 
   // Default unset state (disabled + pin=0) is valid - skip pin validation.
   if (!ledSettings.enabled && ledSettings.pin == 0) return;
@@ -198,6 +210,8 @@ void initLed() {
   finishEffectActive = false;
   currentActivity = LED_ACT_IDLE;
   previewActive = false;
+  errorStrobeArmed = false;
+  errorStrobeDismissed = false;
 
   detachAndForceLow();
   // Disabled with a saved pin: drive it LOW instead of leaving it high-Z, so the
@@ -311,6 +325,13 @@ bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness
 
 void ledOnUserInteraction() {
   if (finishEffectActive) ledStopFinishEffect();
+  // Button / touch / wake also silences an active error strobe - user has seen
+  // the fault. Stays dismissed until the activity leaves FAILED and a new fault
+  // re-arms it.
+  if (errorStrobeArmed && !errorStrobeDismissed) {
+    errorStrobeDismissed = true;
+    lastWrittenDuty = -1;  // force resting duty recompute on next tick
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -379,8 +400,26 @@ void ledTick() {
   // 4) Pause breathing (continuous while paused)
   // 5) Auto on/off based on activity
   // 6) Idle: configured brightness
+  // Error-strobe arming / auto-off. Arm on the first FAILED tick of an episode;
+  // re-arm only after the activity has left FAILED. errorStrobeSeconds == 0 means
+  // strobe until dismissed (button) or the fault clears.
+  if (currentActivity == LED_ACT_FAILED) {
+    if (!errorStrobeArmed) {
+      errorStrobeArmed = true;
+      errorStrobeDismissed = false;
+      errorStrobeEndMs = now + (unsigned long)ledSettings.errorStrobeSeconds * 1000UL;
+    }
+    if (!errorStrobeDismissed && ledSettings.errorStrobeSeconds > 0 &&
+        (long)(now - errorStrobeEndMs) >= 0) {
+      errorStrobeDismissed = true;
+      lastWrittenDuty = -1;  // force resting duty on this tick
+    }
+  } else {
+    errorStrobeArmed = false;
+  }
+
   uint8_t baseBrightness = restingBrightness();
-  if (ledSettings.errorStrobe && currentActivity == LED_ACT_FAILED) {
+  if (ledSettings.errorStrobe && currentActivity == LED_ACT_FAILED && !errorStrobeDismissed) {
     duty = patternStrobe(now, LED_ERROR_STROBE_MS, baseBrightness);
   } else if (finishEffectActive) {
     unsigned long phase = now - finishEffectStartMs;
