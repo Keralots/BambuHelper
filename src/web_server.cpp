@@ -432,6 +432,7 @@ static void handleStatus() {
   doc["layers"] = st.totalLayers;
   doc["display_off"] = (getScreenState() == SCREEN_OFF);
   doc["name"] = printers[slot].config.name;
+  doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;
@@ -709,10 +710,42 @@ static void handlePrinterConfig() {
   JsonArray pext = doc["portraitExtras"].to<JsonArray>();
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
   doc["amsView"] = cfg.amsView;
+  doc["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
+  doc["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
+  doc["lightState"] = st.lightState;        // -1 unknown / 0 off / 1 on
 
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// Save chamber-light automation settings (no MQTT reinit - mirrors gauge layout)
+static void handleLightConfig() {
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+
+  PrinterConfig& cfg = printers[slot].config;
+  uint8_t flags = 0;
+  if (server.hasArg("loff_fin"))  flags |= LIGHT_OFF_ON_FINISH;
+  if (server.hasArg("loff_fail")) flags |= LIGHT_OFF_ON_FAILED;
+  if (server.hasArg("lon_start")) flags |= LIGHT_ON_AT_START;
+  cfg.lightFlags = flags;
+  if (server.hasArg("ldelay"))
+    cfg.lightOffDelayMin = constrain(server.arg("ldelay").toInt(), 0, 60);
+
+  savePrinterConfig(slot);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+// Turn chamber light on/off now from the web UI
+static void handleLightSet() {
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+  bool on = server.hasArg("mode") && server.arg("mode") == "on";
+  requestLightCommand(slot, on);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 // Test buzzer from web UI
@@ -1865,6 +1898,8 @@ void initWebServer() {
   server.on("/led/test",    HTTP_POST, handleLedTest);
   server.on("/printer/config", HTTP_GET, handlePrinterConfig);
   server.on("/printer/clear", HTTP_POST, handleClearPrinter);
+  server.on("/light/config", HTTP_POST, handleLightConfig);
+  server.on("/light/set", HTTP_POST, handleLightSet);
   server.on("/apply", HTTP_POST, handleApply);
   server.on("/brightness", HTTP_GET, handleBrightnessPreview);
   server.on("/status", HTTP_GET, handleStatus);

@@ -829,6 +829,37 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <button type="button" class="btn btn-primary" onclick="saveGaugeLayout()">Save Gauge Layout</button>
     </div>
   </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h3>Chamber light</h3>
+        <p>Control this printer's chamber light. Automation runs per-printer; manual buttons toggle it now. Works in both LAN and Cloud mode (X1, P-series, H2 with a <em>chamber_light</em>).</p>
+      </div>
+      <span id="lightStateLbl" class="status-pill status-na">Light: -</span>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" id="loff_fin" value="1">
+      <label for="loff_fin">Turn off after a successful print</label>
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="loff_fail" value="1">
+      <label for="loff_fail">Turn off after a failed or cancelled print</label>
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="lon_start" value="1">
+      <label for="lon_start">Turn on when a print starts</label>
+    </label>
+    <div class="field"><label for="ldelay">Off delay (applies to both off rules)</label>
+      <div class="hstack"><input type="number" id="ldelay" min="0" max="60" value="5">
+      <span class="text-dim small">min &middot; 0 = immediate</span></div>
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="setLight('on')">Light On</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="setLight('off')">Light Off</button>
+      <button type="button" class="btn btn-primary" onclick="saveLightConfig()">Save Light Settings</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Section 2: Display ===== -->
@@ -1798,6 +1829,45 @@ function saveGaugeLayout(){
     .catch(function(){showToast('Save failed');});
 }
 
+/* ============ Chamber light ============ */
+function renderLightState(v){
+  var el = document.getElementById('lightStateLbl');
+  if (!el) return;
+  if (v === 1) { el.className = 'status-pill status-ok'; el.textContent = 'Light: On'; }
+  else if (v === 0) { el.className = 'status-pill status-off'; el.textContent = 'Light: Off'; }
+  else { el.className = 'status-pill status-na'; el.textContent = 'Light: -'; }
+}
+function refreshLightState(){
+  fetch('/printer/config?slot=' + currentSlot).then(function(r){return r.json();})
+    .then(function(d){ renderLightState(d.lightState); }).catch(function(){});
+}
+function saveLightConfig(){
+  var p = new URLSearchParams();
+  p.append('slot', currentSlot);
+  if (document.getElementById('loff_fin').checked)  p.append('loff_fin', '1');
+  if (document.getElementById('loff_fail').checked) p.append('loff_fail', '1');
+  if (document.getElementById('lon_start').checked) p.append('lon_start', '1');
+  p.append('ldelay', document.getElementById('ldelay').value);
+  fetch('/light/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.status==='ok')showToast('Light settings saved!');else showToast('Error');})
+    .catch(function(){showToast('Save failed');});
+}
+function setLight(mode){
+  var p = new URLSearchParams();
+  p.append('slot', currentSlot);
+  p.append('mode', mode);
+  fetch('/light/set',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if (d.status === 'ok'){
+        showToast(mode === 'on' ? 'Light on sent' : 'Light off sent');
+        setTimeout(refreshLightState, 1500);  // confirm from next lights_report
+      } else showToast('Error');
+    })
+    .catch(function(){showToast('Command failed');});
+}
+
 /* ============ Printer tabs ============ */
 var currentSlot = 0;
 function selectPrinterTab(slot){
@@ -1832,6 +1902,12 @@ function selectPrinterTab(slot){
     if (d.portraitExtras)  { for (var g = 0; g < 3; g++) { var sel = document.getElementById('px' + g); if (sel) sel.value = d.portraitExtras[g] || 0; } }
     var av = document.getElementById('amsv');
     if (av) { av.checked = !!d.amsView; syncAmsView(); }
+    var lf = d.lightFlags || 0;
+    document.getElementById('loff_fin').checked  = !!(lf & 1);
+    document.getElementById('loff_fail').checked = !!(lf & 2);
+    document.getElementById('lon_start').checked = !!(lf & 4);
+    if (typeof d.lightDelay === 'number') document.getElementById('ldelay').value = d.lightDelay;
+    renderLightState(d.lightState);
     toggleConnMode();
     var ps = document.getElementById('printerStatus');
     if (d.connected) { ps.className = 'status-pill status-ok'; ps.textContent = 'Connected'; }
