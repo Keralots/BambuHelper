@@ -508,6 +508,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   border-left: 3px solid var(--line);
   background: var(--bg-sub);
   color: var(--text-mid);
+  white-space: nowrap;
 }
 .status-pill.status-ok { border-left-color: var(--success); color: var(--success); }
 .status-pill.status-off { border-left-color: var(--danger); color: var(--danger); }
