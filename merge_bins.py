@@ -122,6 +122,14 @@ BOARDS = {
         'build_env': 'jc3248w535',
         'board_id': 'jc3248w535',
     },
+    'wt32_sc01_plus': {                  # community / experimental (issue #123)
+        'build_dir': '.pio/build/wt32_sc01_plus',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'wt32_sc01_plus',
+        'board_id': 'wt32_sc01_plus',
+    },
     'esp32c3': {
         'build_dir': '.pio/build/esp32c3',
         'bootloader_offset': 0x0,       # ESP32-C3 starts at 0x0
@@ -154,6 +162,9 @@ BOARD_ALIASES = {
     'ws_lcd_350': 'ws_lcd_350',
     'jc': 'jc3248w535',
     'jc3248w535': 'jc3248w535',
+    'sc01': 'wt32_sc01_plus',
+    'sc01plus': 'wt32_sc01_plus',
+    'wt32_sc01_plus': 'wt32_sc01_plus',
     'c3': 'esp32c3',
     'esp32c3': 'esp32c3',
 }
