@@ -222,6 +222,39 @@ static bool requestPushall(MqttConn& c, PushallReason reason) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+//  Chamber light control: publish a ledctrl command (LAN + Cloud, same topic)
+// ---------------------------------------------------------------------------
+static bool sendLightCtrlNode(MqttConn& c, const char* topic, const char* node, bool on) {
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"system\":{\"sequence_id\":\"%u\",\"command\":\"ledctrl\","
+           "\"led_node\":\"%s\",\"led_mode\":\"%s\","
+           "\"led_on_time\":500,\"led_off_time\":500,"
+           "\"loop_times\":0,\"interval_time\":0}}",
+           c.pushallSeqId++, node, on ? "on" : "off");
+  if (!c.mqtt->publish(topic, payload)) {
+    MQTT_LOG("[%d] ledctrl %s publish FAILED", c.slotIndex, node);
+    return false;
+  }
+  return true;
+}
+
+static bool sendLightCtrl(MqttConn& c, bool on) {
+  if (!c.mqtt) return false;
+
+  PrinterConfig& cfg = printers[c.slotIndex].config;
+  char topic[64];
+  snprintf(topic, sizeof(topic), "device/%s/request", cfg.serial);
+
+  MQTT_LOG("[%d] light %s -> %s", c.slotIndex, on ? "on" : "off", topic);
+  bool ok = sendLightCtrlNode(c, topic, "chamber_light", on);
+  // H2C/H2D have a second bar (chamber_light2) the app keeps in sync; control both.
+  if (printers[c.slotIndex].state.hasSecondLight)
+    ok &= sendLightCtrlNode(c, topic, "chamber_light2", on);
+  return ok;
+}
+
 static void clearLiveMetrics(BambuState& s) {
   s.nozzleTemp = 0;    s.nozzleTarget = 0;
   s.nozzleTempN[0] = 0; s.nozzleTargetN[0] = 0;
@@ -306,6 +339,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   pf["spd_lvl"] = true;
   pf["stat"] = true;       // H2/P2S door sensor (hex string, bit 0x00800000 = door open)
   pf["home_flag"] = true;  // X1 series door sensor (int, bit 23 = door open)
+  pf["lights_report"][0]["node"] = true;  // chamber_light on/off/flashing state
+  pf["lights_report"][0]["mode"] = true;
   // Note: H2D/H2C extruder data is parsed separately from raw payload (see below)
 
   JsonDocument doc;
@@ -689,6 +724,20 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     const char* state = print["gcode_state"];
     setPrinterGcodeStateRaw(s, state);
     s.printing = isPrintingGcodeState(s.gcodeStateId);
+  }
+
+  // Chamber light: track real on/off state for the web UI (treat flashing as on)
+  if (print["lights_report"].is<JsonArray>()) {
+    for (JsonObject lr : print["lights_report"].as<JsonArray>()) {
+      const char* node = lr["node"];
+      if (!node) continue;
+      if (strcmp(node, "chamber_light") == 0) {
+        const char* mode = lr["mode"];
+        s.lightState = (mode && strcmp(mode, "off") == 0) ? 0 : 1;
+      } else if (strcmp(node, "chamber_light2") == 0) {
+        s.hasSecondLight = true;  // H2C/H2D second bar - control it alongside chamber_light
+      }
+    }
   }
 
   if (print["mc_percent"].is<int>()) {
@@ -1566,6 +1615,7 @@ static void initConnSlot(uint8_t i) {
 
   BambuState& s = printers[i].state;
   memset(&s, 0, sizeof(BambuState));
+  s.lightState = -1;  // unknown until lights_report arrives (memset would read as "off")
   setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
 
   if (isPrinterConfigured(i)) {
@@ -1581,6 +1631,12 @@ static void initConnSlot(uint8_t i) {
   }
 }
 
+// Pending chamber-light command per slot: -1 none, 0 off, 1 on. Set by the web
+// handler / automation hooks (main loop context) and drained in handleBambuMqtt()
+// so the actual PubSubClient publish always runs on the MQTT context.
+// Initialized to all -1 in initBambuMqtt() (static zero-init would mean "off").
+static volatile int8_t g_lightCmdReq[MAX_ACTIVE_PRINTERS];
+
 void initBambuMqtt() {
   Serial.println("MQTT: initBambuMqtt() — multi-printer");
 
@@ -1591,6 +1647,7 @@ void initBambuMqtt() {
     }
     releaseClients(conns[i]);
     conns[i].active = false;
+    g_lightCmdReq[i] = -1;  // no pending light command
   }
 
   // First: do all cloud API work (userId extraction) before any MQTT connects.
@@ -1639,6 +1696,13 @@ void handleBambuMqtt() {
       g_extRefreshReq[i] = false;
       requestCloudRefresh(i);
     }
+    // Drain a pending chamber-light command. Only publish on a live connection;
+    // otherwise keep the request so it fires once the slot reconnects.
+    if (g_lightCmdReq[i] >= 0 && conns[i].mqtt && conns[i].mqtt->connected()) {
+      bool on = (g_lightCmdReq[i] == 1);
+      g_lightCmdReq[i] = -1;
+      sendLightCtrl(conns[i], on);
+    }
   }
 }
 
@@ -1678,6 +1742,13 @@ void requestCloudRefreshFromTask(uint8_t slot) {
   // handleBambuMqtt(). A single-byte volatile write is atomic on ESP32; a race
   // with the drain just costs at most one extra refresh next loop.
   if (slot < MAX_ACTIVE_PRINTERS) g_extRefreshReq[slot] = true;
+}
+
+void requestLightCommand(uint8_t slot, bool on) {
+  if (slot >= MAX_ACTIVE_PRINTERS) return;
+  g_lightCmdReq[slot] = on ? 1 : 0;
+  // Turning the light on (manual or print-start) cancels any pending auto-off.
+  if (on) printers[slot].state.lightOffDueMs = 0;
 }
 
 void disconnectBambuMqtt() {

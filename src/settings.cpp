@@ -31,6 +31,7 @@ LedSettings ledSettings = {
   /*autoOnWhilePrinting*/ false,
   /*pauseBreathing*/      false,
   /*errorStrobe*/         false,
+  /*errorStrobeSeconds*/  LED_ERROR_STROBE_DEFAULT_S,
 };
 TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT] = {};
 float tasmotaTariffPerKwh = 0.0f;
@@ -356,8 +357,15 @@ void loadSettings() {
     snprintf(key, sizeof(key), "p%d_amsv", i);
     cfg.amsView = prefs.getBool(key, false);
 
+    // Chamber-light automation (per-printer): flag bitmask + off delay (minutes)
+    snprintf(key, sizeof(key), "p%d_lflag", i);
+    cfg.lightFlags = prefs.getUChar(key, 0);
+    snprintf(key, sizeof(key), "p%d_ldly", i);
+    cfg.lightOffDelayMin = prefs.getUChar(key, 5);
+
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
+    printers[i].state.lightState = -1;  // unknown until lights_report arrives
     setPrinterGcodeStateCanonical(printers[i].state, GCODE_UNKNOWN);
   }
 
@@ -573,6 +581,7 @@ void loadSettings() {
   ledSettings.autoOnWhilePrinting = prefs.getBool("led_auto_pr", false);
   ledSettings.pauseBreathing      = prefs.getBool("led_pause",   false);
   ledSettings.errorStrobe         = prefs.getBool("led_err",     false);
+  ledSettings.errorStrobeSeconds  = prefs.getUShort("led_err_sec", LED_ERROR_STROBE_DEFAULT_S);
 
   // Cloud email (display only)
   strlcpy(cloudEmail, prefs.getString("cl_email", "").c_str(), sizeof(cloudEmail));
@@ -842,6 +851,11 @@ void savePrinterConfig(uint8_t index) {
   snprintf(key, sizeof(key), "p%d_amsv", index);
   prefs.putBool(key, cfg.amsView);
 
+  snprintf(key, sizeof(key), "p%d_lflag", index);
+  prefs.putUChar(key, cfg.lightFlags);
+  snprintf(key, sizeof(key), "p%d_ldly", index);
+  prefs.putUChar(key, cfg.lightOffDelayMin);
+
   if (needOpen) prefs.end();
 }
 
@@ -851,6 +865,7 @@ void clearPrinterConfig(uint8_t index) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.mode   = CONN_LOCAL;
   cfg.region = REGION_US;
+  cfg.lightOffDelayMin = 5;  // sensible default after a slot is cleared
   defaultGaugeSlots(cfg.gaugeSlots);
   memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
   memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
@@ -904,6 +919,7 @@ void saveLedSettings() {
   prefs.putBool("led_auto_pr", ledSettings.autoOnWhilePrinting);
   prefs.putBool("led_pause",   ledSettings.pauseBreathing);
   prefs.putBool("led_err",     ledSettings.errorStrobe);
+  prefs.putUShort("led_err_sec", ledSettings.errorStrobeSeconds);
   prefs.end();
 }
 

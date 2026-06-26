@@ -216,6 +216,7 @@ struct LedSettings {
   bool autoOnWhilePrinting;    // LED on only while printer is printing
   bool pauseBreathing;         // slow breath during GCODE_PAUSE
   bool errorStrobe;            // fast strobe during GCODE_FAILED
+  uint16_t errorStrobeSeconds; // error strobe auto-off after N s (0 = never)
 };
 
 // Tasmota smart plug power monitoring

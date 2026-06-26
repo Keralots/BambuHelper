@@ -432,6 +432,7 @@ static void handleStatus() {
   doc["layers"] = st.totalLayers;
   doc["display_off"] = (getScreenState() == SCREEN_OFF);
   doc["name"] = printers[slot].config.name;
+  doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;
@@ -709,10 +710,55 @@ static void handlePrinterConfig() {
   JsonArray pext = doc["portraitExtras"].to<JsonArray>();
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
   doc["amsView"] = cfg.amsView;
+  doc["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
+  doc["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
+  doc["lightState"] = st.lightState;        // -1 unknown / 0 off / 1 on
 
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// Save chamber-light automation settings (no MQTT reinit - mirrors gauge layout)
+static void handleLightConfig() {
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+
+  PrinterConfig& cfg = printers[slot].config;
+  uint8_t flags = 0;
+  if (server.hasArg("loff_fin"))  flags |= LIGHT_OFF_ON_FINISH;
+  if (server.hasArg("loff_fail")) flags |= LIGHT_OFF_ON_FAILED;
+  if (server.hasArg("lon_start")) flags |= LIGHT_ON_AT_START;
+  cfg.lightFlags = flags;
+  if (server.hasArg("ldelay"))
+    cfg.lightOffDelayMin = constrain(server.arg("ldelay").toInt(), 0, 60);
+
+  // If both off-rules are now disabled, cancel any pending off timer so a stale
+  // deadline scheduled under the old rules doesn't still turn the light off later.
+  if (!(flags & (LIGHT_OFF_ON_FINISH | LIGHT_OFF_ON_FAILED)))
+    printers[slot].state.lightOffDueMs = 0;
+
+  savePrinterConfig(slot);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+// Turn chamber light on/off now from the web UI
+static void handleLightSet() {
+  uint8_t slot = 0;
+  if (server.hasArg("slot")) slot = server.arg("slot").toInt();
+  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+  if (!isPrinterConfigured(slot)) {
+    server.send(409, "application/json", "{\"status\":\"error\",\"message\":\"printer not configured\"}");
+    return;
+  }
+  String mode = server.hasArg("mode") ? server.arg("mode") : String();
+  if (mode != "on" && mode != "off") {
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"mode must be on or off\"}");
+    return;
+  }
+  requestLightCommand(slot, mode == "on");
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 // Test buzzer from web UI
@@ -893,6 +939,11 @@ static void handleSaveRotation() {
   if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
   if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
   if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
+  if (server.hasArg("lederrsec")) {
+    int v = server.arg("lederrsec").toInt();
+    if (v != 0 && v < 5) v = 5; if (v > 600) v = 600;
+    ledSettings.errorStrobeSeconds = (uint16_t)v;
+  }
   saveLedSettings();
   initLed();
 
@@ -1055,6 +1106,8 @@ static void handleSettingsExport() {
     JsonArray pext = p["portraitExtras"].to<JsonArray>();
     for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
     p["amsView"] = cfg.amsView;
+    p["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
+    p["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
   }
 
   // Display
@@ -1180,6 +1233,7 @@ static void handleSettingsExport() {
   led["autoOnWhilePrinting"] = ledSettings.autoOnWhilePrinting;
   led["pauseBreathing"]      = ledSettings.pauseBreathing;
   led["errorStrobe"]         = ledSettings.errorStrobe;
+  led["errorStrobeSeconds"]  = ledSettings.errorStrobeSeconds;
 
   // Tasmota power monitoring
   JsonObject tsm = doc["tasmota"].to<JsonObject>();
@@ -1352,6 +1406,8 @@ static void handleSettingsImportFinish() {
       } else if (legacyAmsViewPresent) {
         cfg.amsView = legacyAmsView;
       }
+      if (p["lightFlags"].is<uint8_t>()) cfg.lightFlags = p["lightFlags"].as<uint8_t>();
+      if (p["lightDelay"].is<uint8_t>()) cfg.lightOffDelayMin = constrain(p["lightDelay"].as<int>(), 0, 60);
     }
   }
 
@@ -1529,6 +1585,11 @@ static void handleSettingsImportFinish() {
     if (led["autoOnWhilePrinting"].is<bool>()) ledSettings.autoOnWhilePrinting = led["autoOnWhilePrinting"].as<bool>();
     if (led["pauseBreathing"].is<bool>())      ledSettings.pauseBreathing      = led["pauseBreathing"].as<bool>();
     if (led["errorStrobe"].is<bool>())         ledSettings.errorStrobe         = led["errorStrobe"].as<bool>();
+    if (led["errorStrobeSeconds"].is<uint16_t>()) {
+      uint16_t s = led["errorStrobeSeconds"].as<uint16_t>();
+      if (s != 0 && s < 5) s = 5; if (s > 600) s = 600;
+      ledSettings.errorStrobeSeconds = s;
+    }
   }
 
   // Tasmota power monitoring
@@ -1854,6 +1915,8 @@ void initWebServer() {
   server.on("/led/test",    HTTP_POST, handleLedTest);
   server.on("/printer/config", HTTP_GET, handlePrinterConfig);
   server.on("/printer/clear", HTTP_POST, handleClearPrinter);
+  server.on("/light/config", HTTP_POST, handleLightConfig);
+  server.on("/light/set", HTTP_POST, handleLightSet);
   server.on("/apply", HTTP_POST, handleApply);
   server.on("/brightness", HTTP_GET, handleBrightnessPreview);
   server.on("/status", HTTP_GET, handleStatus);

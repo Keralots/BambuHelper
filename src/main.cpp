@@ -594,6 +594,30 @@ static void handleConnectingScreenRecovery() {
   }
 }
 
+// Schedule a chamber-light-off for a slot if the given automation flag is set.
+// The off is published later by processLightTimers() once the delay elapses.
+// A delay of 0 fires on the next loop (due = now, but never the 0 sentinel).
+static void scheduleLightOff(uint8_t slot, uint8_t flag) {
+  PrinterConfig& cfg = printers[slot].config;
+  if (!(cfg.lightFlags & flag)) return;
+  unsigned long due = millis() + (unsigned long)cfg.lightOffDelayMin * 60000UL;
+  if (due == 0) due = 1;  // 0 means "none pending"
+  printers[slot].state.lightOffDueMs = due;
+}
+
+// Fire any chamber-light-off whose delay has elapsed. Called once per loop.
+static void processLightTimers() {
+  unsigned long now = millis();
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+    if (!isPrinterConfigured(i)) continue;
+    BambuState& ps = printers[i].state;
+    if (ps.lightOffDueMs != 0 && (long)(now - ps.lightOffDueMs) >= 0) {
+      ps.lightOffDueMs = 0;
+      requestLightCommand(i, false);
+    }
+  }
+}
+
 static void handleGcodeStateTransitions() {
   // Per-slot transition tracking. All transition checks must happen BEFORE
   // updating prevGcodeStateId[i] at the end - so a single combined helper
@@ -605,6 +629,7 @@ static void handleGcodeStateTransitions() {
     if (prevGcodeStateSeen[i]) {
       if (ps.gcodeStateId == GCODE_FAILED && prevGcodeStateId[i] != GCODE_FAILED) {
         buzzerPlay(BUZZ_ERROR);
+        scheduleLightOff(i, LIGHT_OFF_ON_FAILED);
       }
       if (ps.gcodeStateId == GCODE_FINISH && prevGcodeStateId[i] != GCODE_FINISH) {
         if (buzzerSettings.bedCooldownAlert) {
@@ -625,11 +650,14 @@ static void handleGcodeStateTransitions() {
         }
         setBacklight(getEffectiveBrightness());
         rotState.displayHoldUntilMs = millis() + rotState.intervalMs;
+        scheduleLightOff(i, LIGHT_OFF_ON_FINISH);
       }
       if (isPrintingGcodeState(ps.gcodeStateId) &&
           !isPrintingGcodeState(prevGcodeStateId[i])) {
         ps.bedCooldownAlertArmed = false;
         ps.finishBuzzerPlayed = false;  // per-slot reset so a hidden printer's next finish still beeps
+        if (printers[i].config.lightFlags & LIGHT_ON_AT_START)
+          requestLightCommand(i, true);  // also cancels any pending auto-off
       }
 
       // Per-slot Tasmota print start/end edges — independent of which printer
@@ -829,6 +857,7 @@ void loop() {
   handleDisplaySleepTimeouts();
   handleConnectingScreenRecovery();
   handleGcodeStateTransitions();
+  processLightTimers();
   handleBedCooldownBuzzers();
 
   buzzerTick();

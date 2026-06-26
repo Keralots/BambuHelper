@@ -60,6 +60,7 @@ void resetMqttBackoff();                 // reset backoff + force immediate reco
 void deferMqttReconnect();               // skip reconnect attempts for one iteration
 void requestCloudRefresh(uint8_t slot);  // manual pushall for cloud non-printing states (debounced)
 void requestCloudRefreshFromTask(uint8_t slot);  // thread-safe: defers the pushall to the MQTT task (safe to call from the Tasmota poll task)
+void requestLightCommand(uint8_t slot, bool on);  // chamber light on/off; deferred + published on the MQTT context
 
 // Human-readable error string for PubSubClient rc
 const char* mqttRcToString(int rc);

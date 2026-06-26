@@ -54,6 +54,11 @@ struct AmsState {
   char     vtType[16];
 };
 
+// Chamber-light automation flags (PrinterConfig.lightFlags bitmask)
+#define LIGHT_OFF_ON_FINISH 0x01  // turn light off after a successful print
+#define LIGHT_OFF_ON_FAILED 0x02  // turn light off after a failed/cancelled print
+#define LIGHT_ON_AT_START   0x04  // turn light on when a print starts
+
 struct BambuState {
   bool connected;
   bool printing;
@@ -94,6 +99,9 @@ struct BambuState {
   bool finishBuzzerPlayed;    // true after FINISH buzzer played (reset on next print)
   bool doorAcknowledged;      // true after door opened on FINISH screen (print removed)
   bool bedCooldownAlertArmed; // armed on FINISH transition, fired when bedTemp <= threshold
+  int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
+  bool hasSecondLight;        // true if printer reports chamber_light2 (H2C/H2D dual bar)
+  unsigned long lightOffDueMs; // millis() deadline for a scheduled light-off, 0 = none pending
   AmsState ams;               // AMS tray data
 };
 
@@ -167,6 +175,8 @@ struct PrinterConfig {
   uint8_t landscapeExtras[2];  // Col 4 (top, bot) - landscape 8-slot mode only.
   uint8_t portraitExtras[3];   // Row 3 (left, mid, right) - portrait 9-slot mode only.
   bool    amsView;             // 240x240: replace gauge row 2 with AMS strip (per-printer)
+  uint8_t lightFlags;          // chamber-light automation bitmask (LIGHT_* flags), 0 = all off
+  uint8_t lightOffDelayMin;    // minutes to wait before turning light off (0-60), default 5
 };
 
 struct PrinterSlot {
