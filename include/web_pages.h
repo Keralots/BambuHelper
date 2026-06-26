@@ -834,7 +834,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Chamber light</h3>
-        <p>Control this printer's chamber light. Automation runs per-printer; manual buttons toggle it now. Works in both LAN and Cloud mode (X1, P-series, H2 with a <em>chamber_light</em>).</p>
+        <p>Control this printer's chamber light. Automation runs per-printer; manual buttons toggle it now. Works in both LAN and Cloud mode (X1, P-series, H2). Dual-bar printers (H2C/H2D) switch both bars together.</p>
       </div>
       <span id="lightStateLbl" class="status-pill status-na">Light: -</span>
     </div>

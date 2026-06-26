@@ -734,6 +734,11 @@ static void handleLightConfig() {
   if (server.hasArg("ldelay"))
     cfg.lightOffDelayMin = constrain(server.arg("ldelay").toInt(), 0, 60);
 
+  // If both off-rules are now disabled, cancel any pending off timer so a stale
+  // deadline scheduled under the old rules doesn't still turn the light off later.
+  if (!(flags & (LIGHT_OFF_ON_FINISH | LIGHT_OFF_ON_FAILED)))
+    printers[slot].state.lightOffDueMs = 0;
+
   savePrinterConfig(slot);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -743,8 +748,16 @@ static void handleLightSet() {
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
-  bool on = server.hasArg("mode") && server.arg("mode") == "on";
-  requestLightCommand(slot, on);
+  if (!isPrinterConfigured(slot)) {
+    server.send(409, "application/json", "{\"status\":\"error\",\"message\":\"printer not configured\"}");
+    return;
+  }
+  String mode = server.hasArg("mode") ? server.arg("mode") : String();
+  if (mode != "on" && mode != "off") {
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"mode must be on or off\"}");
+    return;
+  }
+  requestLightCommand(slot, mode == "on");
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1093,6 +1106,8 @@ static void handleSettingsExport() {
     JsonArray pext = p["portraitExtras"].to<JsonArray>();
     for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
     p["amsView"] = cfg.amsView;
+    p["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
+    p["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
   }
 
   // Display
@@ -1391,6 +1406,8 @@ static void handleSettingsImportFinish() {
       } else if (legacyAmsViewPresent) {
         cfg.amsView = legacyAmsView;
       }
+      if (p["lightFlags"].is<uint8_t>()) cfg.lightFlags = p["lightFlags"].as<uint8_t>();
+      if (p["lightDelay"].is<uint8_t>()) cfg.lightOffDelayMin = constrain(p["lightDelay"].as<int>(), 0, 60);
     }
   }
 

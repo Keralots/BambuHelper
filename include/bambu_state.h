@@ -100,6 +100,7 @@ struct BambuState {
   bool doorAcknowledged;      // true after door opened on FINISH screen (print removed)
   bool bedCooldownAlertArmed; // armed on FINISH transition, fired when bedTemp <= threshold
   int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
+  bool hasSecondLight;        // true if printer reports chamber_light2 (H2C/H2D dual bar)
   unsigned long lightOffDueMs; // millis() deadline for a scheduled light-off, 0 = none pending
   AmsState ams;               // AMS tray data
 };

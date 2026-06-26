@@ -225,6 +225,21 @@ static bool requestPushall(MqttConn& c, PushallReason reason) {
 // ---------------------------------------------------------------------------
 //  Chamber light control: publish a ledctrl command (LAN + Cloud, same topic)
 // ---------------------------------------------------------------------------
+static bool sendLightCtrlNode(MqttConn& c, const char* topic, const char* node, bool on) {
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"system\":{\"sequence_id\":\"%u\",\"command\":\"ledctrl\","
+           "\"led_node\":\"%s\",\"led_mode\":\"%s\","
+           "\"led_on_time\":500,\"led_off_time\":500,"
+           "\"loop_times\":0,\"interval_time\":0}}",
+           c.pushallSeqId++, node, on ? "on" : "off");
+  if (!c.mqtt->publish(topic, payload)) {
+    MQTT_LOG("[%d] ledctrl %s publish FAILED", c.slotIndex, node);
+    return false;
+  }
+  return true;
+}
+
 static bool sendLightCtrl(MqttConn& c, bool on) {
   if (!c.mqtt) return false;
 
@@ -232,20 +247,12 @@ static bool sendLightCtrl(MqttConn& c, bool on) {
   char topic[64];
   snprintf(topic, sizeof(topic), "device/%s/request", cfg.serial);
 
-  char payload[192];
-  snprintf(payload, sizeof(payload),
-           "{\"system\":{\"sequence_id\":\"%u\",\"command\":\"ledctrl\","
-           "\"led_node\":\"chamber_light\",\"led_mode\":\"%s\","
-           "\"led_on_time\":500,\"led_off_time\":500,"
-           "\"loop_times\":0,\"interval_time\":0}}",
-           c.pushallSeqId++, on ? "on" : "off");
-
   MQTT_LOG("[%d] light %s -> %s", c.slotIndex, on ? "on" : "off", topic);
-  if (!c.mqtt->publish(topic, payload)) {
-    MQTT_LOG("[%d] ledctrl publish FAILED", c.slotIndex);
-    return false;
-  }
-  return true;
+  bool ok = sendLightCtrlNode(c, topic, "chamber_light", on);
+  // H2C/H2D have a second bar (chamber_light2) the app keeps in sync; control both.
+  if (printers[c.slotIndex].state.hasSecondLight)
+    ok &= sendLightCtrlNode(c, topic, "chamber_light2", on);
+  return ok;
 }
 
 static void clearLiveMetrics(BambuState& s) {
@@ -723,10 +730,12 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   if (print["lights_report"].is<JsonArray>()) {
     for (JsonObject lr : print["lights_report"].as<JsonArray>()) {
       const char* node = lr["node"];
-      if (node && strcmp(node, "chamber_light") == 0) {
+      if (!node) continue;
+      if (strcmp(node, "chamber_light") == 0) {
         const char* mode = lr["mode"];
         s.lightState = (mode && strcmp(mode, "off") == 0) ? 0 : 1;
-        break;
+      } else if (strcmp(node, "chamber_light2") == 0) {
+        s.hasSecondLight = true;  // H2C/H2D second bar - control it alongside chamber_light
       }
     }
   }
@@ -1606,6 +1615,7 @@ static void initConnSlot(uint8_t i) {
 
   BambuState& s = printers[i].state;
   memset(&s, 0, sizeof(BambuState));
+  s.lightState = -1;  // unknown until lights_report arrives (memset would read as "off")
   setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
 
   if (isPrinterConfigured(i)) {
