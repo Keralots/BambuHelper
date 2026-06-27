@@ -36,7 +36,7 @@ const BOARDS = {
   },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',
-    label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community, untested (not owned by maintainer)',
+    label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community (not owned by maintainer)',
   },
   wt32_sc01_plus: {
     chipFamily: 'ESP32-S3',
@@ -52,7 +52,7 @@ const BOARDS = {
   },
   tzt_2432: {
     chipFamily: 'ESP32',
-    label: 'CYD / TZT L1435-2.4 (ST7789, 240x320)',
+    label: 'CYD / TZT L1435-2.4 (ST7789, 240x320) - community (not owned by maintainer)',
   },
 };
 
