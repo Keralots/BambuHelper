@@ -388,6 +388,62 @@ public:
 };
 static LGFX_WS350 _tft_instance;
 
+#elif defined(BOARD_IS_SC01PLUS)
+// --- Panlee WT32-SC01 Plus (3.5" ST7796 320x480 IPS, 8-bit 8080 parallel) -----
+// First parallel-bus board in the tree: ST7796 over lgfx::Bus_Parallel8 (ESP32-S3
+// LCD_CAM). Pin map is dual-source confirmed - sukesh-ak's LovyanGFX config and
+// the official Panlee "WT32-SC01 PLUS" datasheet (Tab.5 LCD Interface) agree on
+// every pin. Two notes vs ws_lcd_350:
+//   - LCD reset is a real GPIO (4, multiplexed with touch reset), so pin_rst = 4
+//     and NO initDisplay() reset block is needed (ws_lcd_350 pulses a TCA9554).
+//   - CS is hardwired on the board (the datasheet exposes no LCD_CS), so pin_cs = -1.
+// invert = true: ST7796 IPS, same assumption as ws_lcd_350 (UNTESTED on hardware -
+// flip if colors come out inverted). freq_write can be dropped to 20MHz for first
+// bring-up if the parallel bus is unstable, then raised.
+class LGFX_SC01PLUS : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7796   _panel;
+  lgfx::Bus_Parallel8  _bus;
+public:
+  LGFX_SC01PLUS() {
+    {
+      auto cfg = _bus.config();
+      cfg.port       = 0;          // LCD_CAM (only 0 on ESP32-S3)
+      cfg.freq_write = 40000000;
+      cfg.pin_wr     = 47;         // LCD_WR
+      cfg.pin_rd     = -1;
+      cfg.pin_rs     = 0;          // LCD_RS (D/C)
+      cfg.pin_d0     = 9;
+      cfg.pin_d1     = 46;
+      cfg.pin_d2     = 3;
+      cfg.pin_d3     = 8;
+      cfg.pin_d4     = 18;
+      cfg.pin_d5     = 17;
+      cfg.pin_d6     = 16;
+      cfg.pin_d7     = 15;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = -1;   // hardwired on-board (no LCD_CS in datasheet)
+      cfg.pin_rst  = 4;    // LCD_RESET (multiplexed with touch reset)
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 320;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 320;
+      cfg.panel_height  = 480;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      cfg.invert        = true;   // IPS panel (UNTESTED - flip if inverted)
+      cfg.rgb_order     = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_SC01PLUS _tft_instance;
+
 #elif defined(BOARD_IS_JC3248W535)
 // --- Guition JC3248W535 + AXS15231B 320x480 ---------------------------------
 // Panel_AXS15231B_AGFX wraps moononournation/Arduino_GFX's Arduino_AXS15231B

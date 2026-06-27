@@ -190,6 +190,19 @@ void sanitizeButtonPin() {
   if (buttonPin == 3) { clash("WS350 display DC");   return; }
   if (buttonPin == 5) { clash("WS350 display SCLK"); return; }
 #endif
+#if defined(BOARD_IS_SC01PLUS)
+  // ST7796 8-bit 8080 parallel bus + control - driving any as a button GPIO
+  // disturbs the panel. (Backlight 45 and touch SDA/SCL 6/5 are already covered
+  // above / by FT6336 checks.)
+  if (buttonPin == 0)  { clash("SC01PLUS LCD_RS/DC");  return; }
+  if (buttonPin == 3 || buttonPin == 8 || buttonPin == 9 ||
+      buttonPin == 15 || buttonPin == 16 || buttonPin == 17 ||
+      buttonPin == 18 || buttonPin == 46) { clash("SC01PLUS LCD data bus"); return; }
+  if (buttonPin == 47) { clash("SC01PLUS LCD_WR");     return; }
+  if (buttonPin == 4)  { clash("SC01PLUS LCD/touch RST"); return; }
+  if (buttonPin == 7)  { clash("SC01PLUS touch INT");  return; }
+  if (buttonPin == 48) { clash("SC01PLUS LCD_TE");     return; }
+#endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
   if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }

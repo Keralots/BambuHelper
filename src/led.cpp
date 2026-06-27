@@ -121,6 +121,19 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_SC01PLUS)
+  // Panlee WT32-SC01 Plus (ST7796 8-bit 8080 parallel + FT6336 I2C)
+  if (pin == 0 || pin == 3 || pin == 8 || pin == 9 ||
+      pin == 15 || pin == 16 || pin == 17 || pin == 18 ||
+      pin == 46 || pin == 47) return false;                                        // 8080 bus: D0-D7 + WR + RS/DC
+  if (pin == 4) return false;                                                      // LCD reset (mux'd with touch reset)
+  if (pin == 45) return false;                                                     // backlight
+  if (pin == 48) return false;                                                     // LCD_TE (frame sync)
+  if (pin == 5 || pin == 6 || pin == 7) return false;                              // FT6336 I2C (SCL/SDA/INT)
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash/PSRAM (also I2S audio 35/36/37)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_JC3248W535)
   // Guition JC3248W535 (AXS15231B QSPI 320x480)
   if (pin == 21 || pin == 39 || pin == 40 || pin == 45 || pin == 47 || pin == 48) return false; // display QSPI

@@ -187,6 +187,13 @@
 // as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
 // the panel after boot. Disable (0) so the SPI clock is left alone.
 #define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_SC01PLUS)
+// Panlee WT32-SC01 Plus: the generic S3 default (GPIO 5) is this board's touch
+// I2C SCL — initBuzzer() drives the pin regardless of the enabled flag, which
+// would hijack SCL and break the FT6336 touch. Disable (0). (The board does have
+// a real I2S audio amp on LRCK=35/BCLK=36/DOUT=37; a dedicated backend could
+// drive it later, but audio is unverifiable without the hardware.)
+#define BUZZER_DEFAULT_PIN    0
 #else
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif
