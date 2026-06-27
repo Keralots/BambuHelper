@@ -32,7 +32,7 @@ const BOARDS = {
   },
   ws_lcd_280: {
     chipFamily: 'ESP32-S3',
-    label: 'Waveshare ESP32-S3-Touch-LCD-2.8 (240x320)',
+    label: 'Waveshare ESP32-S3-Touch-LCD-2.8 (240x320) - community (not owned by maintainer)',
   },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',
