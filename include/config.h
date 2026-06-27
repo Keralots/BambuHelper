@@ -179,6 +179,14 @@
 // The onboard MLT-8530 is on the RP2040 co-processor (not directly accessible).
 // Buzzer disabled (pin 0 = disabled in buzzer backend).
 #define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_ES3N28P)
+// QD ES3N28P 2.8": no GPIO buzzer hardware. This board also defines
+// DISPLAY_240x320, so without this dedicated branch it would fall through to the
+// CYD default (GPIO 26) - which on an ESP32-S3 sits inside the flash/PSRAM
+// region. The generic S3 fallback (GPIO 5) is no good either: GPIO 5 is this
+// board's I2S BCK (audio). initBuzzer() drives the pin regardless of the enabled
+// flag, so disable (0) to leave audio/PSRAM alone. (I2C SCL is GPIO 15 here.)
+#define BUZZER_DEFAULT_PIN    0
 #elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
 #elif defined(BOARD_IS_WS350)

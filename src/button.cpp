@@ -203,6 +203,25 @@ void sanitizeButtonPin() {
   if (buttonPin == 7)  { clash("SC01PLUS touch INT");  return; }
   if (buttonPin == 48) { clash("SC01PLUS LCD_TE");     return; }
 #endif
+#if defined(BOARD_IS_ES3N28P)
+  // initButton() calls pinMode() on a configured physical-button pin, so a
+  // stale/manual value pointing at a reserved peripheral must be rejected.
+  // Same reserved set as the LED deny-list (led.cpp) and buzzer sanitizer.
+  // (FT6336 SDA/SCL 16/15 and backlight 45 are already caught above.)
+  {
+    uint8_t p = buttonPin;
+    bool reserved =
+      (p == 10 || p == 11 || p == 12 || p == 13 || p == 46) ||  // display SPI
+      (p == 1 || p == 4 || p == 5 || p == 6 || p == 7 || p == 8) ||  // audio + amp
+      (p == 17 || p == 18) ||                                    // touch INT/RST
+      (p == 9) ||                                                // battery ADC
+      (p == 42) ||                                               // WS2812
+      (p == 38 || p == 39 || p == 40 || p == 41 || p == 47 || p == 48) || // microSD
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) { clash("ES3N28P reserved peripheral"); return; }
+  }
+#endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
   if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }
@@ -312,6 +331,19 @@ void initButton() {
 #elif defined(USE_FT5X06) || defined(USE_FT6336)
   if (buttonType == BTN_TOUCHSCREEN) {
 #if defined(USE_FT6336)
+#if defined(FT6336_RST)
+    // Hardware reset before bringing up I2C. The FT6336 RST line is active-LOW;
+    // the vendor demo drives HIGH -> LOW -> HIGH with a long settle. Boards that
+    // wire RST to a real GPIO (es3n28p, GPIO18) define FT6336_RST; boards that
+    // rely on POR (ws_lcd_350) leave it undefined and skip this.
+    pinMode(FT6336_RST, OUTPUT);
+    digitalWrite(FT6336_RST, HIGH);
+    delay(20);
+    digitalWrite(FT6336_RST, LOW);
+    delay(20);
+    digitalWrite(FT6336_RST, HIGH);
+    delay(200);  // controller boot after reset release
+#endif
     // ws_lcd_350: FT6336 shares the I2C bus that also carries the TCA9554
     // LCD-reset expander (SDA=8, SCL=7). Reset is handled by the board POR;
     // the retry-at-runtime path covers any startup delay.

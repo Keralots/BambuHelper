@@ -130,6 +130,14 @@ BOARDS = {
         'build_env': 'wt32_sc01_plus',
         'board_id': 'wt32_sc01_plus',
     },
+    'es3n28p': {                         # community (issue #125), hw-unconfirmed
+        'build_dir': '.pio/build/es3n28p',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'es3n28p',
+        'board_id': 'es3n28p',
+    },
     'esp32c3': {
         'build_dir': '.pio/build/esp32c3',
         'bootloader_offset': 0x0,       # ESP32-C3 starts at 0x0
@@ -165,6 +173,8 @@ BOARD_ALIASES = {
     'sc01': 'wt32_sc01_plus',
     'sc01plus': 'wt32_sc01_plus',
     'wt32_sc01_plus': 'wt32_sc01_plus',
+    'es3n28p': 'es3n28p',
+    'es3': 'es3n28p',
     'c3': 'esp32c3',
     'esp32c3': 'esp32c3',
 }
