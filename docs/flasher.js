@@ -38,6 +38,10 @@ const BOARDS = {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community, untested (not owned by maintainer)',
   },
+  wt32_sc01_plus: {
+    chipFamily: 'ESP32-S3',
+    label: 'Panlee WT32-SC01 Plus 3.5" (320x480) - community (not owned by maintainer)',
+  },
   jc3248w535: {
     chipFamily: 'ESP32-S3',
     label: 'Guition JC3248W535 (320x480, AXS15231B QSPI)',
