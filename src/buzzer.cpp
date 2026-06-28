@@ -26,6 +26,33 @@ void sanitizeBuzzerPin() {
     return;
   }
 #endif
+#if defined(BOARD_IS_ES3N28P)
+  // QD ES3N28P has no GPIO buzzer; the GPIO backend drives the pin LOW on
+  // init/stop even when disabled. The default pin is 0, but a stale/manual NVS
+  // value can still land here. Reject the full reserved set (kept in sync with
+  // the ES3N28P LED deny-list in led.cpp and the button guard in button.cpp):
+  // display SPI 10/11/12/13/46, audio+amp 1/4/5/6/7/8, touch 15/16/17/18,
+  // battery 9, WS2812 42, microSD 38/39/40/41/47/48, USB CDC 19/20, and the
+  // octal flash/PSRAM range 26-37 (driving USB or PSRAM pins can wedge CDC or
+  // corrupt PSRAM). Backlight 45 is caught by the BACKLIGHT_PIN check below.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p == 10 || p == 11 || p == 12 || p == 13 || p == 46) ||  // display SPI
+      (p == 1 || p == 4 || p == 5 || p == 6 || p == 7 || p == 8) ||  // audio + amp
+      (p == 15 || p == 16 || p == 17 || p == 18) ||             // touch I2C/INT/RST
+      (p == 9) ||                                                // battery ADC
+      (p == 42) ||                                               // WS2812
+      (p == 38 || p == 39 || p == 40 || p == 41 || p == 47 || p == 48) || // microSD
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on ES3N28P, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
 #if defined(BACKLIGHT_PIN)
   if (buzzerSettings.pin == BACKLIGHT_PIN) {
     Serial.printf("Buzzer: pin %d conflicts with backlight, disabling\n", buzzerSettings.pin);

@@ -640,6 +640,58 @@ public:
 };
 static LGFX_SenseCAP _tft_instance;
 
+#elif defined(BOARD_IS_ES3N28P)
+// --- QD electronic 2.8" IPS ESP32-S3 (ILI9341V 240x320 + FT6336) ------------
+// Issue #125. ILI9341V over plain 4-wire SPI -> native LovyanGFX Panel_ILI9341.
+// Pins from the vendor Arduino demo (spi_dev.h): CS=10 DC=46 BL=45 MOSI=11
+// SCLK=12 MISO=13, RST=-1 (the demo never toggles a reset GPIO; relies on POR,
+// same as tzt_2432 / ws_lcd_200). IPS panel: the vendor init sends 0x21 (INVON)
+// and MADCTL 0x08 (BGR), so invert=true / rgb_order=false here.
+// freq_write 40MHz is conservative for first bring-up (the demo runs the bus at
+// 80MHz - raise once hardware confirms a stable panel).
+// UNTESTED: if colors come out inverted, flip `invert`; if the image is
+// mirrored/wrong, try lgfx::Panel_ILI9341_2 (the CYD-V2 variant).
+class LGFX_ES3N28P : public lgfx::LGFX_Device {
+  lgfx::Panel_ILI9341 _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_ES3N28P() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 12;
+      cfg.pin_mosi   = 11;
+      cfg.pin_miso   = 13;
+      cfg.pin_dc     = 46;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 10;
+      cfg.pin_rst  = -1;   // no reset GPIO on this board - relies on POR
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 320;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 320;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = 0;
+      cfg.invert        = true;   // IPS panel (vendor init sends 0x21 INVON)
+      cfg.rgb_order     = false;  // BGR (vendor MADCTL 0x08)
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_ES3N28P _tft_instance;
+
 #else
   #error "No board variant defined. Set BOARD_IS_<NAME> in your env's build_flags - see platformio.ini / boards/*.ini for the list of supported boards."
 #endif

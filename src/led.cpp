@@ -100,6 +100,19 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_ES3N28P)
+  // QD ES3N28P 2.8" (ILI9341V SPI + FT6336 I2C + ES8311 audio)
+  if (pin == 10 || pin == 11 || pin == 12 || pin == 13 || pin == 46) return false; // display SPI (CS/MOSI/SCLK/MISO/DC)
+  if (pin == 45) return false;                                                     // backlight
+  if (pin == 15 || pin == 16 || pin == 17 || pin == 18) return false;             // FT6336 touch I2C + INT/RST
+  if (pin == 1 || pin == 4 || pin == 5 || pin == 6 || pin == 7 || pin == 8) return false; // ES8311 audio (AP_EN/MCK/BCK/DIN/WS/DOUT)
+  if (pin == 9) return false;                                                      // battery ADC (ADC1_CH8)
+  if (pin == 42) return false;                                                     // onboard WS2812 RGB
+  if (pin == 38 || pin == 39 || pin == 40 || pin == 41 || pin == 47 || pin == 48) return false; // microSD (SDIO)
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_WS154)
   // Waveshare ESP32-S3-Touch-LCD-1.54"
   if (pin == 21 || pin == 38 || pin == 39 || pin == 40 || pin == 45) return false; // display SPI
