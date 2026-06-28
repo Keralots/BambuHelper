@@ -34,6 +34,10 @@ const BOARDS = {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-2.8 (240x320) - community (not owned by maintainer)',
   },
+  es3n28p: {
+    chipFamily: 'ESP32-S3',
+    label: 'QD ES3N28P 2.8" (240x320, ILI9341V) - community (not owned by maintainer)',
+  },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community (not owned by maintainer)',
