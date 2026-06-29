@@ -1,5 +1,5 @@
-# Partition table for 16 MB flash (Guition JC3248W535 — ESP32-S3-N16R8)
-# Dual OTA app slots of 6.25 MB each — large headroom for future features.
+# Partition table for 16 MB flash (Guition JC3248W535 -- ESP32-S3-N16R8)
+# Dual OTA app slots of 6.25 MB each -- large headroom for future features.
 # SPIFFS reserved at end but unused (settings stored in NVS).
 # NOTE: changing the partition table requires a full USB flash; OTA cannot update it.
 #
