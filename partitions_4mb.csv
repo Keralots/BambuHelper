@@ -1,5 +1,5 @@
 # Partition table for 4 MB flash (ESP32-S3 Super Mini, CYD, ESP32-C3)
-# app partitions are 1.75 MB each — 568 KB headroom over current firmware size.
+# app partitions are 1.75 MB each -- 568 KB headroom over current firmware size.
 # SPIFFS is not used by BambuHelper (settings stored in NVS).
 # NOTE: changing the partition table requires a full USB flash; OTA cannot update it.
 #
