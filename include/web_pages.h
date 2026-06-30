@@ -1407,7 +1407,10 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
   <div class="card">
     <div class="card-head">
       <div><h3>Firmware update</h3></div>
-      <span class="mono small text-dim">current: %FW_VER%</span>
+      <div class="hstack" style="gap:var(--sp-3);align-items:center">
+        <a href="https://github.com/Keralots/BambuHelper/releases" target="_blank" class="small" style="color:var(--accent)">Release notes</a>
+        <span class="mono small text-dim">current: %FW_VER%</span>
+      </div>
     </div>
 )rawliteral"
 #ifdef ENABLE_OTA_AUTO
@@ -2690,12 +2693,43 @@ function startOta(){
   xhr.onload = function(){
     try {
       var d = JSON.parse(xhr.responseText);
-      if (d.status === 'ok'){ bar.style.width = '100%'; pct.textContent = '100%'; stat.style.color = 'var(--success)'; stat.textContent = d.message; }
+      if (d.status === 'ok'){ bar.style.width = '100%'; pct.textContent = '100%'; stat.style.color = 'var(--success)'; stat.textContent = d.message; waitForReboot(stat); }
       else { var msg = d.message || 'Firmware update failed'; if (msg === 'Invalid firmware file') msg = 'Invalid firmware file or wrong board build'; stat.style.color = 'var(--danger)'; stat.textContent = 'Update failed: ' + msg; }
     } catch(e) { stat.style.color = 'var(--danger)'; stat.textContent = 'Update failed: unexpected response'; }
   };
   xhr.onerror = function(){ stat.style.color = 'var(--danger)'; stat.textContent = 'Update failed: upload interrupted or connection lost'; };
   xhr.send(fd);
+}
+
+// Poll the device until it reboots and serves again, then reload the page.
+// Used by both the manual (.bin upload) and online-update paths. Poll one
+// request at a time: setInterval would stack up probes that each hang for the
+// full TCP timeout while the device is offline, and a fresh success could
+// resolve before those pending catches flip wentOffline - leaving the gate
+// false so we never reload. A 3s AbortController makes a hang count as offline
+// quickly; no-store + a cache-buster stop the browser serving a cached 200. We
+// reload only after seeing the device drop AND return, never into the old fw.
+function waitForReboot(st){
+  st.textContent = 'Waiting for device to restart...';
+  var wentOffline = false, elapsed = 0;
+  (function poll(){
+    if (elapsed >= 90){ st.textContent = 'Reboot timeout - please refresh manually.'; return; }
+    var ctrl = new AbortController();
+    var to = setTimeout(function(){ ctrl.abort(); }, 3000);
+    fetch('/?_=' + Date.now(), {cache:'no-store', signal:ctrl.signal})
+      .then(function(r){
+        clearTimeout(to);
+        if (!r.ok) throw 0;
+        if (wentOffline){ location.reload(); return; }
+        elapsed += 2; setTimeout(poll, 2000);
+      })
+      .catch(function(){
+        clearTimeout(to);
+        wentOffline = true; elapsed += 2;
+        st.textContent = 'Restarting... (' + elapsed + 's)';
+        setTimeout(poll, 2000);
+      });
+  })();
 }
 
 )rawliteral"
@@ -2751,22 +2785,13 @@ function pollOtaStatus(){
       var bar = document.getElementById('autoOtaBar'), st = document.getElementById('autoOtaStatus');
       _autoOtaProgress = d.progress || 0;
       bar.style.width = d.progress + '%';
-      if (d.status === 'done'){ clearInterval(_otaPoller); _otaPoller = null; bar.style.width = '100%'; st.style.color = 'var(--success)'; st.textContent = 'Done! Restarting device...'; waitForReboot(); }
+      if (d.status === 'done'){ clearInterval(_otaPoller); _otaPoller = null; bar.style.width = '100%'; st.style.color = 'var(--success)'; st.textContent = 'Done! Restarting device...'; waitForReboot(st); }
       else if (d.status && d.status.indexOf('failed') === 0){ clearInterval(_otaPoller); _otaPoller = null; st.style.color = 'var(--danger)'; st.textContent = d.status; var btn = document.getElementById('installBtn'); btn.disabled = false; btn.textContent = 'Retry'; }
       else { st.textContent = d.status + ' (' + d.progress + '%)'; }
     }).catch(function(){
-      if (_autoOtaProgress >= 90){ clearInterval(_otaPoller); _otaPoller = null; var bar = document.getElementById('autoOtaBar'), st = document.getElementById('autoOtaStatus'); bar.style.width = '100%'; st.style.color = 'var(--success)'; st.textContent = 'Done! Restarting device...'; waitForReboot(); }
+      if (_autoOtaProgress >= 90){ clearInterval(_otaPoller); _otaPoller = null; var bar = document.getElementById('autoOtaBar'), st = document.getElementById('autoOtaStatus'); bar.style.width = '100%'; st.style.color = 'var(--success)'; st.textContent = 'Done! Restarting device...'; waitForReboot(st); }
     });
   }, 1000);
-}
-function waitForReboot(){
-  var st = document.getElementById('autoOtaStatus');
-  st.textContent = 'Waiting for device to restart...';
-  var wentOffline = false, tries = 0;
-  var check = setInterval(function(){
-    fetch('/').then(function(){ if (wentOffline){ clearInterval(check); location.reload(); } })
-      .catch(function(){ wentOffline = true; tries++; st.textContent = 'Restarting... (' + tries + 's)'; if (tries > 60){ clearInterval(check); st.textContent = 'Reboot timeout - please refresh manually.'; } });
-  }, 2000);
 }
 )rawliteral"
 #endif
