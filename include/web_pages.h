@@ -2763,6 +2763,14 @@ function checkForUpdates(){
       if (!isNewer(latest, current)){ res.style.color = 'var(--success)'; res.textContent = latest === current ? 'You are up to date (' + current + ')' : 'Running newer version (' + current + ')'; return; }
       var board = '%BOARD%', expectedPrefix = 'BambuHelper-' + board + '-', otaBin = null;
       for (var i = 0; i < d.assets.length; i++){ var n = d.assets[i].name; if (n.startsWith(expectedPrefix) && n.endsWith('-ota.bin')){ otaBin = d.assets[i]; break; } }
+      var slotB = parseInt('%OTASLOT%', 10) || 0, flashMb = parseInt('%FLASHMB%', 10) || 0;
+      if (otaBin && slotB > 0 && otaBin.size > slotB){
+        res.style.color = 'var(--danger)';
+        res.textContent = 'Update ' + latest + ' (' + Math.round(otaBin.size/1024) + ' KB) does not fit the ' + Math.round(slotB/1024) + ' KB update slot on this device.' +
+          (flashMb >= 16 ? ' Back up settings (Export), then reflash once via the web flasher to repartition the ' + flashMb + ' MB chip - OTA works normally afterwards.'
+                         : ' This board cannot hold this update - stay on the current version.');
+        return;
+      }
       res.style.color = 'var(--warn)'; res.textContent = 'Update available!';
       document.getElementById('updateVer').textContent = latest;
       document.getElementById('updateDate').textContent = new Date(d.published_at).toLocaleDateString();
