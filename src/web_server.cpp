@@ -227,7 +227,7 @@ static void handleSavePrinter() {
 
   if (isCloudMode(cfg.mode)) {
     if (server.hasArg("serial")) strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
-    if (server.hasArg("pname"))  strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
+    if (server.hasArg("pname")) { strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name)); utf8TrimPartial(cfg.name); }
     // Save token if provided
     if (server.hasArg("token") && server.arg("token").length() > 0) {
       saveCloudToken(server.arg("token").c_str());
@@ -240,7 +240,7 @@ static void handleSavePrinter() {
       }
     }
   } else {
-    if (server.hasArg("pname"))  strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name));
+    if (server.hasArg("pname")) { strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name)); utf8TrimPartial(cfg.name); }
     if (server.hasArg("ip"))     strlcpy(cfg.ip, server.arg("ip").c_str(), sizeof(cfg.ip));
     if (server.hasArg("serial")) strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
     if (server.hasArg("code") && server.arg("code").length() > 0) strlcpy(cfg.accessCode, server.arg("code").c_str(), sizeof(cfg.accessCode));
@@ -1004,6 +1004,7 @@ static void handleSavePower() {
   // Currency and tariff are global - update if present regardless of plug index
   if (server.hasArg("tsm_cur")) {
     strlcpy(tasmotaCurrency, server.arg("tsm_cur").c_str(), sizeof(tasmotaCurrency));
+    utf8TrimPartial(tasmotaCurrency);  // 8B buffer can slice a multi-byte symbol
   }
   if (server.hasArg("tsm_tar")) {
     float t = server.arg("tsm_tar").toFloat();
@@ -1368,7 +1369,7 @@ static void handleSettingsImportFinish() {
       JsonObject p = pArr[i];
       PrinterConfig& cfg = printers[i].config;
       if (p["mode"].is<uint8_t>())            cfg.mode = (ConnMode)p["mode"].as<uint8_t>();
-      if (p["name"].is<const char*>())        strlcpy(cfg.name, p["name"], sizeof(cfg.name));
+      if (p["name"].is<const char*>())      { strlcpy(cfg.name, p["name"], sizeof(cfg.name)); utf8TrimPartial(cfg.name); }
       if (p["ip"].is<const char*>())          strlcpy(cfg.ip, p["ip"], sizeof(cfg.ip));
       if (p["serial"].is<const char*>())      strlcpy(cfg.serial, p["serial"], sizeof(cfg.serial));
       if (p["accessCode"].is<const char*>())  strlcpy(cfg.accessCode, p["accessCode"], sizeof(cfg.accessCode));
@@ -1603,6 +1604,7 @@ static void handleSettingsImportFinish() {
       plugs = tsmObj["plugs"];
       if (tsmObj["currency"].is<const char*>()) {
         strlcpy(tasmotaCurrency, tsmObj["currency"], sizeof(tasmotaCurrency));
+        utf8TrimPartial(tasmotaCurrency);
       }
       if (tsmObj["tariff"].is<float>() || tsmObj["tariff"].is<double>() || tsmObj["tariff"].is<int>()) {
         float t = tsmObj["tariff"].as<float>();

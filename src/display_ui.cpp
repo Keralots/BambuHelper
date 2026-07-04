@@ -24,11 +24,17 @@
 // --- AMS label formatters (honor gaugeLabels.amsBase override) --------------
 // Centralized so every AMS draw site (grid, bars, sidebar captions, drying,
 // split bands) renders the same custom base with a consistent suffix.
+// The AMS base label is user-supplied UTF-8 (up to GAUGE_LABEL_LEN-1 bytes), so
+// callers must pass a buffer large enough to hold "<base> HT N  (i/c)" without
+// snprintf slicing a multi-byte char; utf8TrimPartial() is a final guard in
+// case a caller's buffer is still tight.
 void formatAmsNumberLabel(char* out, size_t len, uint8_t unitIndex) {
   snprintf(out, len, "%s %u", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), unitIndex + 1);
+  utf8TrimPartial(out);
 }
 void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex) {
   snprintf(out, len, "%s %c", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), 'A' + unitIndex);
+  utf8TrimPartial(out);
 }
 void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
                       uint8_t dryDisplayIdx, uint8_t dryCount) {
@@ -40,6 +46,7 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
     snprintf(out, len, "%s %u  (%u/%u)", pfx, displayNum, dryDisplayIdx + 1, dryCount);
   else
     snprintf(out, len, "%s %u", pfx, displayNum);
+  utf8TrimPartial(out);
 }
 
 // LovyanGFX board-specific configurations - the 12 LGFX device classes and the
@@ -904,13 +911,18 @@ static void drawStringClipped(const char* s, int16_t x, int16_t y, int16_t maxW)
     tft.drawString(s, x, y);
     return;
   }
-  char buf[40];
+  char buf[64];
   size_t n = strlen(s);
   if (n >= sizeof(buf)) n = sizeof(buf) - 1;
   memcpy(buf, s, n);
   buf[n] = '\0';
+  utf8TrimPartial(buf);          // the length cut above may have split a char
+  n = strlen(buf);
   while (n > 0 && tft.textWidth(buf) > maxW) {
-    buf[--n] = '\0';
+    // drop one whole UTF-8 char (continuation bytes, then the lead)
+    uint8_t removed;
+    do { removed = (uint8_t)buf[n - 1]; buf[--n] = '\0'; }
+    while (n > 0 && (removed & 0xC0) == 0x80);
   }
   if (n > 0) tft.drawString(buf, x, y);
 }
@@ -1037,7 +1049,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   if (unitChanged) {
     bool isHT = (u.id >= 128);
     uint8_t displayNum = isHT ? (u.id - 128 + 1) : (u.id + 1);
-    char unitName[32];
+    char unitName[64];
     formatAmsDryName(unitName, sizeof(unitName), isHT, displayNum, dryDisplayIdx, dryCount);
 
     tft.fillRect(0, 30, scrW, 20, CLR_BG);
@@ -1867,7 +1879,7 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
     drawAmsTrayBarRounded(bx, startY, barW, barH, tray, active);
   }
 
-  char amsLabel[16];
+  char amsLabel[64];  // holds "<UTF-8 base> N" without slicing a multi-byte char
   formatAmsNumberLabel(amsLabel, sizeof(amsLabel), unitIndex);
   drawGaugeLabel(tft, cx, cy, radius, amsLabel, CLR_TEXT_DIM, bg);
 }
@@ -1974,7 +1986,7 @@ static void drawAmsStrip(const AmsState& ams,
     }
 
     if (!singleAms) {
-      char label[16];
+      char label[64];
       formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
@@ -2174,7 +2186,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
       }
 
       // AMS label below bars
-      char label[16];
+      char label[64];
       formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
@@ -2872,7 +2884,7 @@ static void drawPrinting() {
           break;
         default: {
           // AMS humidity / temperature / filament gauges — index derived from enum value
-          char amsLbl[16];
+          char amsLbl[64];
           if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
             uint8_t ui = gt - GAUGE_AMS_HUM_1;
             const AmsUnit& u = s.ams.units[ui];
@@ -3333,11 +3345,15 @@ static void drawFinished() {
       char truncName[64];
       strncpy(truncName, s.subtaskName, sizeof(truncName) - 1);
       truncName[sizeof(truncName) - 1] = '\0';
+      utf8TrimPartial(truncName);
       const int16_t maxW = scrW - 16;
       while (tft.textWidth(truncName) > maxW) {
         size_t n = strlen(truncName);
         if (n <= 1) break;
-        truncName[n - 1] = '\0';
+        // remove one whole UTF-8 char from the end
+        uint8_t removed;
+        do { removed = (uint8_t)truncName[n - 1]; truncName[--n] = '\0'; }
+        while (n > 0 && (removed & 0xC0) == 0x80);
       }
       tft.drawString(truncName, cx, finFileY);
     }

@@ -8,7 +8,7 @@
 #include "fonts/inter_14.h"
 #include "fonts/inter_19.h"
 #if defined(DISPLAY_320x480)
-// jc3248w535 carries an extra ~26 KB font blob so the gauge primary value
+// jc3248w535 carries an extra ~105 KB font blob so the gauge primary value
 // can render larger on the bigger canvas. Excluded from other boards to
 // keep the C3 / S3 Mini flash footprints unchanged.
 #include "fonts/inter_22.h"

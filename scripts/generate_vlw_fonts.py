@@ -23,8 +23,18 @@ except ImportError:
     print("Install freetype-py:  pip install freetype-py")
     sys.exit(1)
 
-# Character set: printable ASCII + degree symbol
-CHARSET = list(range(0x20, 0x7F)) + [0xB0]
+# Character set: printable ASCII + Latin-1 Supplement + Latin Extended-A
+# + Romanian comma-below S/T + Euro sign. Covers DE, PL, CZ/SK, HU, TR, RO,
+# FR, ES, PT, Nordic, HR/SI. CJK/emoji are out of scope (flash size).
+# MUST stay sorted ascending: the VLW glyph table is looked up with a binary
+# search (std::lower_bound) that assumes ascending unicode order in file order.
+CHARSET = (
+    list(range(0x20, 0x7F))          # printable ASCII
+    + list(range(0xA0, 0x100))       # Latin-1 Supplement (umlauts, ss, degree, ...)
+    + list(range(0x100, 0x180))      # Latin Extended-A (Polish, Czech, Turkish, Hungarian, ...)
+    + [0x218, 0x219, 0x21A, 0x21B]   # Romanian S,s,T,t with comma below
+    + [0x20AC]                       # Euro sign
+)
 
 # Font sizes to generate: (name, ttf_filename, pixel_size)
 # Mixed weights match TFT_eSPI bitmap fonts: Font 1/2 were medium, Font 4 was bold.
@@ -49,6 +59,13 @@ def generate_vlw(ttf_path: str, pixel_size: int) -> bytes:
 
     glyphs = []
     for codepoint in CHARSET:
+        # Skip codepoints the TTF has no glyph for (e.g. U+00AD, U+0149 in
+        # Inter). Emitting a .notdef box would waste flash and confuse the
+        # reader; the header glyph_count below is len(glyphs), so skipping
+        # keeps the count honest.
+        if face.get_char_index(codepoint) == 0:
+            print(f"  (skip U+{codepoint:04X}: no glyph in TTF)")
+            continue
         face.load_char(chr(codepoint), freetype.FT_LOAD_RENDER)
         g = face.glyph
         bmp = g.bitmap

@@ -118,9 +118,13 @@ void drawClippedName(const char* name, int16_t x, int16_t cy, int16_t maxW) {
   if (tft.textWidth(name) <= maxW) { tft.drawString(name, x, cy); return; }
   char buf[28];
   strlcpy(buf, name, sizeof(buf));
+  utf8TrimPartial(buf);
   int n = (int)strlen(buf);
   while (n > 1) {
-    buf[--n] = '\0';
+    // step back over one whole UTF-8 char before appending ".."
+    uint8_t removed;
+    do { removed = (uint8_t)buf[n - 1]; buf[--n] = '\0'; }
+    while (n > 1 && (removed & 0xC0) == 0x80);
     char tmp[30];
     snprintf(tmp, sizeof(tmp), "%s..", buf);
     if (tft.textWidth(tmp) <= maxW) { tft.drawString(tmp, x, cy); return; }
@@ -275,7 +279,7 @@ void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       if (fr) tft.fillCircle(cx, cy, r + 2, CLR_BG);
       break;
     default: {
-      char amsLbl[16];
+      char amsLbl[64];
       if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
         uint8_t ui = gt - GAUGE_AMS_HUM_1;
         const AmsUnit& u = s.ams.units[ui];
@@ -481,7 +485,7 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
     // AMS unit name on the foot line. HT units report id >= 128.
     const bool isHT = (u.id >= 128);
     const uint8_t num = isHT ? (uint8_t)(u.id - 128 + 1) : (uint8_t)(u.id + 1);
-    char unitName[32];
+    char unitName[64];
     formatAmsDryName(unitName, sizeof(unitName), isHT, num, sDryIdx[bandIdx], dc);
     tft.fillRect(g.x, nameY - 9, g.w, 18, CLR_BG);
     tft.setTextDatum(MC_DATUM);

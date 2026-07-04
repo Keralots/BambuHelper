@@ -480,15 +480,19 @@ static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
   }
 }
 
-// Truncate s to fit maxW px at the CURRENT font, appending ".." when cut (VLW
-// fonts are ASCII-only, no real ellipsis glyph). Writes into out; returns out.
+// Truncate s to fit maxW px at the CURRENT font, appending ".." when cut (the
+// fonts have no real ellipsis glyph). UTF-8-aware: the copy and every cut land
+// on a character boundary so a multi-byte glyph is never split. Writes into
+// out; returns out.
 const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
                              char* out, size_t outLen) {
   strlcpy(out, s, outLen);
+  utf8TrimPartial(out);          // strlcpy may have sliced a char at outLen
   if (gfx.textWidth(out) <= maxW) return out;
   size_t n = strlen(out);
   while (n > 1) {
     n--;
+    while (n > 1 && ((uint8_t)out[n] & 0xC0) == 0x80) n--;  // back to a char boundary
     if (n + 2 >= outLen) continue;
     out[n] = '.'; out[n + 1] = '.'; out[n + 2] = '\0';
     if (gfx.textWidth(out) <= maxW) break;
@@ -518,8 +522,14 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   const char* draw = label;
   if (strlen(label) > 8 && gfx.textWidth(label) > maxW) {
     strlcpy(buf, label, sizeof(buf));
+    utf8TrimPartial(buf);
     size_t n = strlen(buf);
-    while (n > 0 && gfx.textWidth(buf) > maxW) buf[--n] = '\0';
+    while (n > 0 && gfx.textWidth(buf) > maxW) {
+      // drop one whole UTF-8 char (continuation bytes, then the lead)
+      uint8_t removed;
+      do { removed = (uint8_t)buf[n - 1]; buf[--n] = '\0'; }
+      while (n > 0 && (removed & 0xC0) == 0x80);
+    }
     draw = buf;
   }
 

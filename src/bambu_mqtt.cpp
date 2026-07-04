@@ -835,6 +835,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     corePrintData = true;
     const char* name = print["subtask_name"];
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
+    utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the 48B buffer
   }
 
   if (print["layer_num"].is<int>()) {
