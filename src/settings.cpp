@@ -5,6 +5,7 @@
 #include "led.h"
 #include "timezones.h"
 #include <Preferences.h>
+#include <cstring>   // memcpy/memmove/strlcpy used by the UTF-8 sanitizer helpers
 
 // Global state
 PrinterSlot printers[MAX_PRINTERS];
@@ -247,24 +248,81 @@ static void loadGaugeColors(const char* prefix, GaugeColors& gc, const GaugeColo
 // ---------------------------------------------------------------------------
 //  Custom gauge labels
 // ---------------------------------------------------------------------------
-// Copy a user label into a fixed buffer, dropping anything unsafe to emit raw
-// into an HTML value="..." attribute, plus (for now) non-ASCII bytes that the
-// VLW fonts can't render. Leading/trailing spaces are trimmed so an all-spaces
-// field doesn't become an invisible override. The ONE place the >127 rule lives.
+// Copy a user label into a fixed buffer, keeping valid UTF-8 that the bundled
+// VLW fonts can render (ASCII + Latin-1 Supplement + Latin Extended-A + euro)
+// and dropping anything unsafe to emit raw into an HTML value="..." attribute.
+// Control chars, the HTML-special set (" < > &), 4-byte sequences (emoji - no
+// glyphs anyway) and malformed/overlong UTF-8 are stripped; a multi-byte
+// sequence is only kept if it fully fits, so `out` never ends mid-character.
+// Leading/trailing spaces are trimmed. The ONE place label sanitizing lives -
+// used by the web form, JSON import, and after every NVS load.
 void sanitizeGaugeLabel(const char* in, char* out, size_t outLen) {
   if (!out || outLen == 0) return;
   size_t w = 0;
   if (in) {
-    for (const char* p = in; *p && w < outLen - 1; ++p) {
-      uint8_t c = (uint8_t)*p;
-      if (c < 0x20 || c > 0x7E) continue;   // control chars + non-ASCII (UTF-8 toggle)
-      if (c == '"' || c == '<' || c == '>' || c == '&') continue;  // HTML-unsafe
-      if (c == ' ' && w == 0) continue;     // drop leading spaces (even after dropped chars)
-      out[w++] = (char)c;
+    const uint8_t* p = (const uint8_t*)in;
+    while (*p && w < outLen - 1) {
+      uint8_t c = *p;
+      if (c < 0x80) {                       // ASCII fast path
+        p++;
+        if (c < 0x20 || c == 0x7F) continue;                          // control
+        if (c == '"' || c == '<' || c == '>' || c == '&') continue;   // HTML-unsafe
+        if (c == ' ' && w == 0) continue;                             // leading spaces
+        out[w++] = (char)c;
+        continue;
+      }
+      // Multi-byte lead. 0xC0/0xC1 are overlong 2-byte leads (rejected below).
+      size_t len = (c >= 0xC2 && c <= 0xDF) ? 2
+                 : (c >= 0xE0 && c <= 0xEF) ? 3
+                 : (c >= 0xF0 && c <= 0xF4) ? 4 : 0;
+      if (len == 0) { p++; continue; }      // stray continuation / invalid lead
+      // Strict continuation-byte bounds so overlong forms and UTF-16 surrogate
+      // code units are rejected (defense-in-depth against an overlong '<' etc.):
+      //   E0: 2nd byte A0-BF (else overlong)   ED: 2nd byte 80-9F (else surrogate)
+      //   F0: 2nd byte 90-BF (else overlong)   F4: 2nd byte 80-8F (else > U+10FFFF)
+      uint8_t lo = 0x80, hi = 0xBF;
+      if (c == 0xE0)      lo = 0xA0;
+      else if (c == 0xED) hi = 0x9F;
+      else if (c == 0xF0) lo = 0x90;
+      else if (c == 0xF4) hi = 0x8F;
+      bool valid = (p[1] >= lo && p[1] <= hi);
+      for (size_t i = 2; i < len && valid; i++)
+        if ((p[i] & 0xC0) != 0x80) valid = false;
+      if (!valid) { p++; continue; }        // malformed: drop lead byte, resync
+      p += len;
+      if (len == 4) continue;               // emoji / astral - no glyphs, drop
+      if (w + len > outLen - 1) break;      // whole sequence must fit or nothing
+      memcpy(out + w, p - len, len);
+      w += len;
     }
   }
   while (w > 0 && out[w - 1] == ' ') w--;   // trim trailing spaces
   out[w] = '\0';
+}
+
+// Strip an incomplete trailing UTF-8 sequence left behind by byte-wise
+// truncation (strlcpy/strncpy/snprintf into a fixed buffer). No-op on strings
+// that already end on a character boundary. Fixed-buffer copies elsewhere feed
+// this so a multi-byte char sliced by the buffer limit never reaches the
+// display or the HTML output.
+void utf8TrimPartial(char* s) {
+  if (!s) return;
+  size_t n = strlen(s);
+  if (n == 0) return;
+  // Walk back over continuation bytes (10xxxxxx) to the lead byte.
+  size_t cont = 0;
+  while (cont < n && cont < 3 && ((uint8_t)s[n - 1 - cont] & 0xC0) == 0x80) cont++;
+  size_t leadPos = (cont < n) ? (n - 1 - cont) : n;  // index of the lead byte
+  if (cont >= 3 && ((uint8_t)s[leadPos] & 0xC0) == 0x80) {
+    // More than 3 trailing continuation bytes => malformed; cut them all.
+    s[n - cont] = '\0';
+    return;
+  }
+  uint8_t lead = (uint8_t)s[leadPos];
+  if (lead < 0x80) return;                  // last char is ASCII - nothing partial
+  size_t need = (lead >= 0xF0) ? 4 : (lead >= 0xE0) ? 3 : (lead >= 0xC0) ? 2 : 1;
+  size_t have = n - leadPos;                // bytes present for this char
+  if (have < need) s[leadPos] = '\0';       // incomplete tail char - drop it
 }
 
 static void saveGaugeLabel(const char* key, const char* label) {
@@ -308,6 +366,7 @@ void loadSettings() {
 
     snprintf(key, sizeof(key), "p%d_name", i);
     strlcpy(cfg.name, prefs.getString(key, "").c_str(), sizeof(cfg.name));
+    utf8TrimPartial(cfg.name);  // defend against a UTF-8 name sliced in old NVS
 
     snprintf(key, sizeof(key), "p%d_mode", i);
     cfg.mode = (ConnMode)prefs.getUChar(key, CONN_LOCAL);
@@ -653,6 +712,7 @@ void loadSettings() {
 #endif
   }
   strlcpy(tasmotaCurrency, prefs.getString("tsm_cur", "\xE2\x82\xAC").c_str(), sizeof(tasmotaCurrency));
+  utf8TrimPartial(tasmotaCurrency);
   {
     float t = prefs.getFloat("tsm_tariff", 0.0f);
     if (t < 0.0f) t = 0.0f;

@@ -111,11 +111,11 @@ struct DisplaySettings {
 };
 
 // Per-gauge custom label overrides. Empty string = keep the built-in default
-// (including dynamic defaults like "L.Aux"/"Exhaust"). ASCII-only for now: the
-// bundled VLW fonts carry only 0x20-0x7F glyphs. To support accented labels
-// later, bump GAUGE_LABEL_LEN, relax the >127 strip in sanitizeGaugeLabel(),
-// and regenerate the fonts with an extended CHARSET.
-static const uint8_t GAUGE_LABEL_LEN = 13;  // 12 visible ASCII chars + NUL
+// (including dynamic defaults like "L.Aux"/"Exhaust"). Labels are UTF-8: the
+// bundled VLW fonts carry ASCII + Latin-1 Supplement + Latin Extended-A + euro,
+// so European diacritics render. The length below is in BYTES, sized so 12
+// visible characters fit even when each is a 3-byte sequence.
+static const uint8_t GAUGE_LABEL_LEN = 37;  // 12 visible chars x 3 UTF-8 bytes + NUL
 
 struct GaugeLabels {
   char progress[GAUGE_LABEL_LEN];
@@ -143,11 +143,19 @@ inline const char* gaugeLabelOr(const char* override_, const char* def) {
   return (override_ && override_[0]) ? override_ : def;
 }
 
-// Copy a user-supplied label into a fixed buffer, stripping anything unsafe to
-// emit raw into HTML (control chars, " < > &) and, for now, non-ASCII bytes.
-// Trims leading/trailing spaces. The single sanitize point - used by the web
-// form, JSON import, and after NVS load.
+// Copy a user-supplied label into a fixed buffer, keeping valid UTF-8 the fonts
+// can render and stripping HTML-unsafe bytes (control chars, " < > &), 4-byte
+// sequences, and malformed/overlong UTF-8. A multi-byte char is only kept if it
+// fully fits, so the result never ends mid-character. Trims leading/trailing
+// spaces. The single sanitize point - used by the web form, JSON import, and
+// after NVS load.
 void sanitizeGaugeLabel(const char* in, char* out, size_t outLen);
+
+// Strip an incomplete trailing UTF-8 sequence left by a byte-wise copy
+// (strlcpy/strncpy/snprintf into a fixed buffer). No-op if the string already
+// ends on a character boundary. Call after any such copy of text that may now
+// hold multi-byte UTF-8 (printer/file names, currency).
+void utf8TrimPartial(char* s);
 
 // Network settings
 struct NetworkSettings {
