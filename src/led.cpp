@@ -210,11 +210,25 @@ void sanitizeLedPin() {
 // ---------------------------------------------------------------------------
 //  Low-level duty write (with change-detection to skip redundant SPI traffic)
 // ---------------------------------------------------------------------------
+static bool suspendedForSleep = false;
+
 static void writeDuty(uint8_t duty) {
   if (attachedPin < 0) return;
+  if (suspendedForSleep) duty = 0;  // display asleep: every write stays dark
   if ((int16_t)duty == lastWrittenDuty) return;
   ledcWrite(LED_PWM_CH, duty);
   lastWrittenDuty = duty;
+}
+
+// Display-sleep coupling: while the panel is in SCREEN_OFF the status LED goes
+// dark too, and the clamp in writeDuty() keeps a mid-sleep effect from
+// relighting it. On wake the resting brightness comes back immediately (a
+// running effect overwrites it on its next tick).
+void ledSetSuspended(bool suspended) {
+  if (suspended == suspendedForSleep) return;
+  suspendedForSleep = suspended;
+  if (attachedPin < 0) return;
+  writeDuty(suspended ? 0 : restingBrightness());
 }
 
 static void detachAndForceLow() {

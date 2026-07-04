@@ -1062,6 +1062,17 @@ void loop() {
 
   buzzerTick();
   Battery::tick();
+  // LED follows the panel into sleep: any path into SCREEN_OFF (after-finish
+  // "turn display off", printer powered off) suspends the status LED; any wake
+  // restores it. Synced on the boundary crossing only.
+  {
+    static bool ledSleepSynced = false;
+    bool screenOff = (getScreenState() == SCREEN_OFF);
+    if (screenOff != ledSleepSynced) {
+      ledSleepSynced = screenOff;
+      ledSetSuspended(screenOff);
+    }
+  }
   ledTick();
   checkNightMode();
 

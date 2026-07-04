@@ -946,6 +946,14 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <label for="fmins">Custom minutes</label>
       <input type="number" id="fmins" min="1" max="999" value="%FMINS%" style="max-width:120px">
     </div>
+    <div id="afterFinWrap" class="field">
+      <label for="afterfin">After the finish screen</label>
+      <select id="afterfin" onchange="toggleAfterPrint()">
+        <option value="clock" %AF_CLOCK%>Show clock / screensaver</option>
+        <option value="off" %AF_OFF%>Turn display and LED off</option>
+      </select>
+      <div class="hint">Turning the display off needs a button or touchscreen to wake the device. A new print wakes it automatically.</div>
+    </div>
     <label class="check-row">
       <input type="checkbox" id="dack" value="1" %DACK% onchange="toggleSetting('dack',this.checked)">
       <label for="dack">Wait for door open before timeout</label>
@@ -2442,9 +2450,10 @@ function applyDisplay(){
   p.append('ssbright', document.getElementById('ssbright').value);
   p.append('rotation', document.getElementById('rotation').value);
   var ap = document.getElementById('afterprint').value;
+  var afClock = document.getElementById('afterfin').value !== 'off';
   if (ap === 'keepon') { p.append('keepon', '1'); p.append('fmins', '0'); }
-  else if (ap === 'custom') { p.append('fmins', document.getElementById('fmins').value); p.append('clock', '1'); }
-  else { p.append('fmins', ap); p.append('clock', '1'); }
+  else if (ap === 'custom') { p.append('fmins', document.getElementById('fmins').value); if (afClock) p.append('clock', '1'); }
+  else { p.append('fmins', ap); if (afClock) p.append('clock', '1'); }
   if (document.getElementById('dack').checked) p.append('dack', '1');
   if (document.getElementById('kps').checked) p.append('kps', '1');
   if (document.getElementById('abar').checked) p.append('abar', '1');
@@ -2831,9 +2840,11 @@ function factoryReset(){
 function toggleAfterPrint(){
   var v = document.getElementById('afterprint').value;
   document.getElementById('customMinsWrap').style.display = (v === 'custom') ? 'block' : 'none';
+  // Destination select is meaningless when the finish screen never times out.
+  document.getElementById('afterFinWrap').style.display = (v === 'keepon') ? 'none' : 'block';
   var pong = document.getElementById('pong');
   var row = document.getElementById('pong-row');
-  var showClock = (v !== 'keepon');
+  var showClock = (v !== 'keepon') && document.getElementById('afterfin').value !== 'off';
   pong.disabled = !showClock;
   if (row) row.style.opacity = showClock ? '1' : '0.4';
 }

@@ -132,6 +132,9 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (strcmp(name, "AP_KEEPON") == 0)    { out = keepon ? "selected" : ""; return true; }
     if (strcmp(name, "CUSTOM_DISP") == 0)  { out = (!keepon && !isPreset && fm > 0) ? "block" : "none"; return true; }
     if (strcmp(name, "FMINS") == 0)        { out = String(fm); return true; }
+    // Destination after the finish screen: clock (default) or display+LED off.
+    if (strcmp(name, "AF_CLOCK") == 0)     { out = dpSettings.showClockAfterFinish ? "selected" : ""; return true; }
+    if (strcmp(name, "AF_OFF") == 0)       { out = dpSettings.showClockAfterFinish ? "" : "selected"; return true; }
   }
 
   // --- Per-slot printer tabs / topbar dots (slots 1..MAX_ACTIVE_PRINTERS-1) ---

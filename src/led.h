@@ -48,6 +48,11 @@ bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness
 // User interaction (button/touch) hook - aborts any active finish effect.
 void ledOnUserInteraction();
 
+// Display-sleep coupling: true while the panel is in SCREEN_OFF - the status
+// LED goes dark and stays dark until resumed. Driven from the main loop when
+// the screen state crosses the OFF boundary.
+void ledSetSuspended(bool suspended);
+
 // Hold-to-dim. Must be called every loop iteration regardless of hold state -
 // it owns the 2 s NVS save debounce. Returns true while this press should be
 // treated as a hold and tap actions suppressed (throughout DIM_ACTIVE including
