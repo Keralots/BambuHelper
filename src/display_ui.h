@@ -20,8 +20,27 @@ enum ScreenState {
   SCREEN_OFF,
   SCREEN_OTA_UPDATE,
   SCREEN_SPLIT,         // two printers side-by-side (top/bottom bands)
-  SCREEN_CAMERA         // fullscreen P1/A1 chamber image (#120); tap to exit
+  SCREEN_CAMERA,        // fullscreen P1/A1 chamber image (#120); tap to exit
+  SCREEN_POWER_CONFIRM  // fullscreen plug on/off confirmation (#136); hold to confirm
 };
+
+// Read-only snapshot of the plug power-confirm modal, filled by main.cpp so the
+// renderer (display_ui.cpp) never reaches into main's statics. phase mirrors the
+// PowerConfirmPhase enum in main.cpp: 0=wait-release, 1=armed, 2=sending, 3=result.
+struct PowerConfirmView {
+  const char* name;    // target printer name
+  bool  desiredOn;     // true = turning plug ON, false = OFF
+  bool  warn;          // printer is currently printing -> red screen
+  bool  offline;       // plug reading is stale/offline (live)
+  float progress;      // 0..1 hold-to-confirm ring fill
+  int   phase;         // see above
+  bool  resultOk;      // valid in phase 3: command succeeded
+};
+// Returns false when the modal is not active. Defined in main.cpp.
+bool powerConfirmGetView(PowerConfirmView* out);
+// Called by the renderer once it has drawn the "Sending..." frame, so main.cpp
+// only fires the (blocking) relay command after that frame is on screen.
+void powerConfirmMarkSendingDrawn();
 
 // Forward declaration so split-related declarations below can take an AmsState
 // by reference without pulling in bambu_state.h here.

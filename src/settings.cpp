@@ -176,6 +176,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.hideClockDate = false;
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
+  ds.buttonPowerControl = false;  // #136: default OFF (opt-in per device)
   ds.showBatteryIndicator = false;  // default OFF on all boards; enable per device
   ds.hideStatusReadout = false; // default ON-screen readout stays visible
   ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
@@ -468,6 +469,7 @@ void loadSettings() {
   dispSettings.hideClockDate = prefs.getBool("dsp_clkhd", def.hideClockDate);
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
+  dispSettings.buttonPowerControl = prefs.getBool("dsp_btpw", def.buttonPowerControl);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
   dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
@@ -763,6 +765,7 @@ void saveSettings() {
   prefs.putBool("dsp_clkhd", dispSettings.hideClockDate);
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
+  prefs.putBool("dsp_btpw", dispSettings.buttonPowerControl);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
   prefs.putBool("dsp_hidlp", dispSettings.hideStatusReadout);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);

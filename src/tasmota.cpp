@@ -110,6 +110,12 @@ static uint8_t visiblePlugForSlot(uint8_t slot) {
 #endif
 }
 
+// Public wrapper around the (static) loose mapping, for the button power-control
+// feature in main.cpp. Kept here so all plug-mapping policy stays in tasmota.cpp.
+uint8_t tasmotaControlPlugForSlot(uint8_t slot) {
+  return visiblePlugForSlot(slot);
+}
+
 // ---------------------------------------------------------------------------
 //  Polling + Status 10 parser
 // ---------------------------------------------------------------------------

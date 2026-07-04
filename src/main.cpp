@@ -35,6 +35,34 @@ static unsigned long boardBtnChangeMs = 0;
 static unsigned long boardBtnPressStartMs = 0;
 #endif
 
+// --- Button-driven plug power control (#136) --------------------------------
+static const uint32_t POWER_MULTICLICK_MS         = 450;   // double/triple-click window
+static const uint32_t POWER_CONFIRM_HOLD_MS       = 1500;  // hold-to-confirm duration
+static const uint32_t POWER_CONFIRM_INACTIVITY_MS = 10000; // auto-cancel on no input
+static const uint32_t POWER_RESULT_MS             = 1200;  // success/fail flash duration
+
+enum PowerConfirmPhase { PC_WAIT_RELEASE = 0, PC_ARMED = 1, PC_SENDING = 2, PC_RESULT = 3 };
+
+// Multi-click buffer (only armed when a plug is mapped to the shown printer).
+static uint8_t  pcPendingClicks = 0;
+static uint8_t  pcPendingSlot   = 0;
+static uint32_t pcLastTapMs     = 0;
+
+// Confirm-modal snapshot (frozen at open, never recomputed per frame).
+static PowerConfirmPhase pcPhase = PC_WAIT_RELEASE;
+static uint8_t     pcSlot            = 0;
+static uint8_t     pcPlug            = 0xFF;
+static bool        pcDesiredOn       = false;
+static bool        pcWasPrinting     = false;
+static bool        pcResultOk        = false;
+static ScreenState pcPriorScreen     = SCREEN_IDLE;
+static uint32_t    pcPressStartMs    = 0;
+static uint32_t    pcLastActivityMs  = 0;
+static uint32_t    pcResultUntilMs   = 0;
+static float       pcProgress        = 0.0f;
+static bool        pcPrevHeld        = false;
+static volatile bool pcSendingDrawn  = false;
+
 static bool isPrinterActivityStateFresh(uint8_t slot) {
   if (slot >= MAX_ACTIVE_PRINTERS || !isPrinterConfigured(slot)) return false;
   BambuState& s = printers[slot].state;
@@ -227,6 +255,108 @@ static void doTapActions() {
   }
 }
 
+// --- Button-driven plug power control (#136) --------------------------------
+// The multi-click watcher is armed only when the setting is on, a plug is mapped
+// to the shown printer, and the screen is a single-printer browseable one. When
+// disarmed the tap path stays bit-for-bit unchanged (zero latency).
+static bool powerControlAvailableForSlot(uint8_t slot) {
+  if (!dispSettings.buttonPowerControl) return false;
+  if (tasmotaControlPlugForSlot(slot) == 0xFF) return false;
+  ScreenState s = getScreenState();
+  // SCREEN_CONNECTING_MQTT is the screen shown for a powered-OFF local printer -
+  // the primary "turn the plug on" case (#136), so it must be armed there too.
+  return (s == SCREEN_IDLE || s == SCREEN_PRINTING || s == SCREEN_FINISHED ||
+          s == SCREEN_CONNECTING_MQTT);
+}
+
+static void openPowerConfirm(uint8_t slot) {
+  pcSlot = slot;
+  pcPlug = tasmotaControlPlugForSlot(slot);
+  TasmotaPlugStatsView v;
+  tasmotaGetStats(pcPlug, &v);
+  // Mirror the web-UI inference: Shelly reports relay state, Tasmota infers from watts.
+  bool currentOn = v.powerStateKnown ? v.powerOn : (v.online && v.watts > 0.5f);
+  pcDesiredOn      = !currentOn;
+  pcWasPrinting    = isPrintingGcodeState(printers[slot].state.gcodeStateId);
+  pcPriorScreen    = getScreenState();
+  pcPhase          = PC_WAIT_RELEASE;   // require a finger release before arming
+  pcPrevHeld       = true;
+  pcProgress       = 0.0f;
+  pcLastActivityMs = millis();
+  pcSendingDrawn   = false;
+  setScreenState(SCREEN_POWER_CONFIRM);
+}
+
+// Replaces the direct doTapActions() call at both tap dispatch sites. Buffers
+// clicks only when power control is armed for the shown printer; otherwise the
+// tap is dispatched immediately with no pending state and no rotation-hold.
+static void registerTap() {
+  uint8_t slot = rotState.displayIndex;
+  if (!powerControlAvailableForSlot(slot)) {
+    doTapActions();
+    return;
+  }
+  uint32_t now = millis();
+  if (pcPendingClicks == 0) {
+    pcPendingSlot = slot;   // frozen at click 1
+    // Hold the shown printer for the window so rotation/snap can't drift the target.
+    rotState.displayHoldUntilMs = now + POWER_MULTICLICK_MS + 200;
+  }
+  if (pcPendingClicks < 255) pcPendingClicks++;
+  pcLastTapMs = now;
+}
+
+// Modal input state machine. Called every loop while SCREEN_POWER_CONFIRM is up.
+static void handlePowerConfirmInput(bool held) {
+  uint32_t now = millis();
+  switch (pcPhase) {
+    case PC_WAIT_RELEASE:
+      pcProgress = 0.0f;
+      if (!held) {                  // consume the opening release, then arm
+        pcPhase          = PC_ARMED;
+        pcPrevHeld       = false;
+        pcLastActivityMs = now;
+      }
+      return;
+
+    case PC_ARMED: {
+      bool pressEdge   = (held && !pcPrevHeld);
+      bool releaseEdge = (!held && pcPrevHeld);
+      pcPrevHeld = held;
+      if (pressEdge) {
+        pcPressStartMs   = now;
+        pcLastActivityMs = now;
+      }
+      if (held) {
+        uint32_t hm = now - pcPressStartMs;
+        pcProgress = (float)hm / (float)POWER_CONFIRM_HOLD_MS;
+        if (pcProgress > 1.0f) pcProgress = 1.0f;
+        if (hm >= POWER_CONFIRM_HOLD_MS) {     // hold-to-confirm: fire while held
+          pcProgress     = 1.0f;
+          pcSendingDrawn = false;
+          pcPhase        = PC_SENDING;
+        }
+      } else {
+        pcProgress = 0.0f;
+        if (releaseEdge) {                      // short tap -> cancel
+          setScreenState(pcPriorScreen);
+          pcPhase = PC_WAIT_RELEASE;
+          return;
+        }
+        if (now - pcLastActivityMs > POWER_CONFIRM_INACTIVITY_MS) {
+          setScreenState(pcPriorScreen);        // inactivity timeout -> cancel
+          pcPhase = PC_WAIT_RELEASE;
+        }
+      }
+      return;
+    }
+
+    case PC_SENDING:
+    case PC_RESULT:
+      return;   // driven by handlePowerConfirmService() after the frame flush
+  }
+}
+
 static void handleWakeButton() {
   // Both edge pollers MUST be called every loop unconditionally - each owns its
   // own debounce + held-state machine, and skipping a call would freeze it.
@@ -248,25 +378,48 @@ static void handleWakeButton() {
   if (isSleepStickyScreen(getScreenState())) suppressDim = true;
 #endif
 
+  // Tap/hold disambiguation state (LED-enabled path). Hoisted so the power-confirm
+  // intercept can keep them in sync and avoid a stray release-edge tap on close.
+  static bool wasHeldPrev = false;
+  static bool holdConsumedThisPress = false;
+
+  // Plug power-confirm modal (#136) owns all input while up. Still tick the dimmer
+  // (suppressed) so its 2 s save-debounce keeps draining and no dim session starts,
+  // then hand off and return before the normal tap/hold logic.
+  if (getScreenState() == SCREEN_POWER_CONFIRM) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (touchPress || boardPress) { buzzerPlayClick(); ledOnUserInteraction(); }
+    handlePowerConfirmInput(held);
+    wasHeldPrev = held;
+    holdConsumedThisPress = false;
+    return;
+  }
+
+  // Flush a buffered multi-click once the window closes: 1 click = the normal tap
+  // action, 2+ = open the power-confirm modal for the frozen target slot.
+  if (pcPendingClicks > 0 && (millis() - pcLastTapMs) > POWER_MULTICLICK_MS) {
+    uint8_t n = pcPendingClicks;
+    pcPendingClicks = 0;
+    if (n >= 2) { openPowerConfirm(pcPendingSlot); return; }
+    doTapActions();
+  }
+
   // Tick the dimmer every loop regardless of state - it owns the 2 s save debounce.
   bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim);
 
-  // LED disabled or unconfigured: take the ORIGINAL press-edge path, bit-for-bit
-  // identical to pre-feature behavior. The dimmer's entry guard prevents any
-  // new dim session from starting, so holdConsumed is always false here.
+  // LED disabled or unconfigured: take the ORIGINAL press-edge path (with the new
+  // multi-click shim). The dimmer's entry guard prevents any dim session, so
+  // holdConsumed is always false here.
   if (!ledSettings.enabled) {
     if (touchPress || boardPress) {
       buzzerPlayClick();
       ledOnUserInteraction();
-      doTapActions();
+      registerTap();
     }
     return;
   }
 
   // LED enabled: tap/hold disambiguation.
-  static bool wasHeldPrev = false;
-  static bool holdConsumedThisPress = false;
-
   if (touchPress || boardPress) {
     // Press edge - immediate feedback (preserves today's snappy feel).
     buzzerPlayClick();
@@ -281,7 +434,44 @@ static void handleWakeButton() {
 
   if (releaseEdge && !holdConsumedThisPress) {
     // Was a tap - fire deferred actions (sub-100 ms perceived delay).
-    doTapActions();
+    registerTap();
+  }
+}
+
+// Accessor for the renderer (display_ui.cpp). Read-only snapshot; never mutates
+// the confirm state. offline is read live for the badge only.
+bool powerConfirmGetView(PowerConfirmView* out) {
+  if (!out || getScreenState() != SCREEN_POWER_CONFIRM) return false;
+  out->name      = printers[pcSlot].config.name;
+  out->desiredOn = pcDesiredOn;
+  out->warn      = pcWasPrinting;
+  out->progress  = pcProgress;
+  out->phase     = (int)pcPhase;
+  out->resultOk  = pcResultOk;
+  TasmotaPlugStatsView v;
+  tasmotaGetStats(pcPlug, &v);
+  out->offline = !v.online;
+  return true;
+}
+
+void powerConfirmMarkSendingDrawn() { pcSendingDrawn = true; }
+
+// Runs after updateDisplay()+flushFrame() so the "Sending..." frame is committed
+// before the blocking relay command, and the result flash shows before close.
+static void handlePowerConfirmService() {
+  if (getScreenState() != SCREEN_POWER_CONFIRM) return;
+  uint32_t now = millis();
+  if (pcPhase == PC_SENDING) {
+    if (!pcSendingDrawn) return;   // wait until the frame is on screen
+    pcResultOk = tasmotaSetPower(pcPlug, pcDesiredOn);
+    buzzerPlay(pcResultOk ? BUZZ_CONNECTED : BUZZ_ERROR);
+    pcPhase         = PC_RESULT;
+    pcResultUntilMs = now + POWER_RESULT_MS;
+  } else if (pcPhase == PC_RESULT) {
+    if ((long)(now - pcResultUntilMs) >= 0) {
+      setScreenState(pcPriorScreen);
+      pcPhase = PC_WAIT_RELEASE;
+    }
   }
 }
 
@@ -426,6 +616,11 @@ static void updateDisplayedPrinterScreenState() {
     }
     return;
   }
+
+  // Plug power-confirm modal (#136) is sticky: hold it against the auto state
+  // machine (dismissed only by the modal's own input / timeout). Placed after OTA
+  // so an auto-OTA still preempts it.
+  if (current == SCREEN_POWER_CONFIRM) return;
 
 #if defined(BOARD_HAS_CAMERA)
   // Camera fullscreen (#120) is sticky: entered/exited only by tap. Hold it
@@ -644,12 +839,17 @@ static void handleGcodeStateTransitions() {
           ledStartFinishEffect();
           ps.finishBuzzerPlayed = true;
         }
-        if (rotState.displayIndex != i) {
-          rotState.displayIndex = i;
-          triggerDisplayTransition();
+        // Suppress the display-snap side effects while the power-confirm modal is
+        // up (they would steal the frozen target / drop the modal). The one-shot
+        // alert + light + Tasmota bookkeeping below still run unconditionally.
+        if (getScreenState() != SCREEN_POWER_CONFIRM) {
+          if (rotState.displayIndex != i) {
+            rotState.displayIndex = i;
+            triggerDisplayTransition();
+          }
+          setBacklight(getEffectiveBrightness());
+          rotState.displayHoldUntilMs = millis() + rotState.intervalMs;
         }
-        setBacklight(getEffectiveBrightness());
-        rotState.displayHoldUntilMs = millis() + rotState.intervalMs;
         scheduleLightOff(i, LIGHT_OFF_ON_FINISH);
       }
       if (isPrintingGcodeState(ps.gcodeStateId) &&
@@ -888,15 +1088,21 @@ void loop() {
   // and a concurrent second TLS session to Bambu Cloud is unsupported.
   if (isWiFiConnected() && !isAPMode() && isAnyPrinterConfigured() && !isOtaAutoInProgress()) {
     handleBambuMqtt();
-    // Freeze auto-rotation while the camera fullscreen is up so the displayed
-    // printer (and its stream) does not drift out from under the view.
-    if (getScreenState() != SCREEN_CAMERA) handleRotation();
+    // Freeze auto-rotation while the camera fullscreen or the power-confirm modal
+    // is up so the displayed printer (and its stream / target) does not drift.
+    if (getScreenState() != SCREEN_CAMERA &&
+        getScreenState() != SCREEN_POWER_CONFIRM) handleRotation();
   }
 
   // Commit the framebuffer sprite to the panel. On JC3248W535 this is a
   // ~20ms QSPI push (300 KB @ 32MHz QIO); on all other boards it's a no-op
   // since draws go directly to the panel.
   flushFrame();
+
+  // Plug power-confirm (#136): fire the blocking relay command only after the
+  // "Sending..." frame is committed, and time out the result flash. Runs after
+  // flushFrame() for the same reason cameraService() does.
+  handlePowerConfirmService();
 
 #if defined(BOARD_HAS_CAMERA)
   // Blocking camera socket work (connect can stall up to the TLS timeout) runs

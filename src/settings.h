@@ -86,6 +86,7 @@ struct DisplaySettings {
   bool     hideClockDate;  // minimalist mode: time only, no date line
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
+  bool     buttonPowerControl; // #136: double/triple-click device button opens plug on/off confirm
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
   // Gauge full-scale ranges (arc maxima). Lowering a scale makes the arc sweep
   // fuller for a printer's normal range. Defaults suit any Bambu printer.

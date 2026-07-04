@@ -3554,6 +3554,98 @@ void checkNightMode() {
 }
 
 // ---------------------------------------------------------------------------
+//  Screen: plug power on/off confirmation (#136)
+// ---------------------------------------------------------------------------
+// Fullscreen modal reached by double/triple-clicking the device button when a
+// plug is mapped to the shown printer. Static text (question + name) is painted
+// once on entry / phase change; the hold-to-confirm ring redraws every frame.
+static void drawPowerConfirm() {
+  PowerConfirmView v;
+  if (!powerConfirmGetView(&v)) return;
+
+  const int16_t cx = uiW() / 2;
+  const int16_t cy = uiH() / 2;
+  const uint16_t bg = v.warn ? TFT_RED : CLR_BG;
+
+  static int8_t prevPhase = -1;
+  static int8_t prevWarn  = -1;
+  bool full = forceRedraw || prevPhase != (int8_t)v.phase || prevWarn != (int8_t)v.warn;
+  prevPhase = (int8_t)v.phase;
+  prevWarn  = (int8_t)v.warn;
+
+  tft.setTextDatum(MC_DATUM);
+
+  if (full) {
+    tft.fillScreen(bg);
+    markFrameDirty();
+  }
+
+  // Sending: relay command in flight (blocking). Draw once, then tell main it is
+  // safe to fire the command (the frame is now committed by flushFrame()).
+  if (v.phase == 2) {
+    if (full) {
+      setFont(tft, FONT_LARGE);
+      tft.setTextColor(CLR_TEXT, bg);
+      tft.drawString("Sending...", cx, cy);
+      markFrameDirty();
+    }
+    powerConfirmMarkSendingDrawn();
+    return;
+  }
+
+  // Result: success / failure flash before returning to the prior screen.
+  if (v.phase == 3) {
+    if (full) {
+      setFont(tft, FONT_LARGE);
+      tft.setTextColor(v.resultOk ? CLR_GREEN : CLR_ORANGE, bg);
+      const char* msg = v.resultOk ? (v.desiredOn ? "Turned ON" : "Turned OFF")
+                                   : "Plug offline";
+      tft.drawString(msg, cx, cy);
+      markFrameDirty();
+    }
+    return;
+  }
+
+  // Wait-release / armed: question + name + hold ring.
+  if (full) {
+    setFont(tft, FONT_BODY);
+    tft.setTextColor(CLR_TEXT, bg);
+    tft.drawString(v.desiredOn ? "Turn ON printer" : "Turn OFF printer", cx, cy - 70);
+
+    setFont(tft, FONT_LARGE);
+    char nameBuf[28];
+    snprintf(nameBuf, sizeof(nameBuf), "\"%s\"", (v.name && v.name[0]) ? v.name : "printer");
+    tft.drawString(nameBuf, cx, cy - 44);
+
+    if (v.warn) {
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(CLR_TEXT, bg);
+      tft.drawString("PRINTING", cx, cy - 16);
+    }
+
+    setFont(tft, FONT_SMALL);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString("hold to confirm", cx, cy + 74);
+    tft.drawString("tap to cancel",   cx, cy + 92);
+    if (v.offline) {
+      tft.setTextColor(CLR_ORANGE, bg);
+      tft.drawString("plug offline", cx, cy + 110);
+    }
+  }
+
+  // Hold-to-confirm ring (redraw the full track every frame, then the fill, so a
+  // cancelled/restarted hold leaves no stale progress pixels).
+  const int16_t ry = cy + 24;
+  const int16_t rr = 34, rt = 8;
+  tft.drawArc(cx, ry, rr, rr - rt, 0, 360, CLR_TRACK);
+  float p = v.progress;
+  if (p < 0.0f) p = 0.0f;
+  if (p > 1.0f) p = 1.0f;
+  if (p > 0.003f) tft.drawArc(cx, ry, rr, rr - rt, 0, 360.0f * p, CLR_GREEN);
+  markFrameDirty();
+}
+
+// ---------------------------------------------------------------------------
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
@@ -3669,6 +3761,10 @@ void updateDisplay() {
 #if defined(BOARD_HAS_CAMERA)
       drawCameraFullscreen();
 #endif
+      break;
+
+    case SCREEN_POWER_CONFIRM:
+      drawPowerConfirm();
       break;
 
     case SCREEN_FINISHED:

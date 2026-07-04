@@ -13,6 +13,12 @@ void  tasmotaInit();
 uint8_t tasmotaPlugForPrinterSlot(uint8_t slot);
 uint8_t tasmotaPrinterSlotForPlug(uint8_t plug);
 
+// LOOSE control mapping: the plug a printer `slot` should power-control from the
+// device button. Matches the visibility mapping used by the watts gauge, so
+// "gauge visible" and "can power-control" stay coherent on single-plug ("Any")
+// builds where the strict mapping returns 0xFF on slots 1-3. 0xFF if none.
+uint8_t tasmotaControlPlugForSlot(uint8_t slot);
+
 // Display-side accessors. These keep all plug-mapping policy inside tasmota.cpp.
 //   tasmotaIsActiveForSlot - LOOSE visibility + strict freshness gate
 //   tasmotaGetWattsForSlot - LOOSE mapping; 0 when not active
