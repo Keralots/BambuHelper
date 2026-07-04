@@ -1273,6 +1273,19 @@ static bool   settingsImportOverflow = false;
 static bool   otaInProgress  = false;
 static bool   otaFirstChunk  = false;
 static String otaError       = "";
+
+// A >=16 MB flash chip still running the 4 MB partition table (1.75 MB OTA
+// slots). Such a board can be repartitioned with a one-time full web-flasher
+// flash, so "firmware too large" OTA failures get actionable guidance appended
+// instead of dead-ending the user on a generic error.
+static bool isUnderPartitioned() {
+  const esp_partition_t* p = esp_ota_get_next_update_partition(NULL);
+  return p && p->size <= 0x1C0000 && ESP.getFlashChipSize() >= 16 * 1024 * 1024;
+}
+static const char REPARTITION_HINT[] =
+  " This board has a 16 MB flash chip on the old 4 MB layout: back up settings"
+  " (Export), then reflash once via the web flasher to repartition. OTA works"
+  " normally afterwards.";
 // Every OTA entry point calls disconnectBambuMqtt() up front, and only a
 // reboot (success path) re-arms the connections. When an OTA attempt fails
 // or is aborted, this flag requests initBambuMqtt() from handleWebServer()
@@ -1720,10 +1733,14 @@ static void otaAutoTaskFn(void* param) {
       break;
     case HTTP_UPDATE_FAILED:
     default: {
+      int lastErr = httpUpdate.getLastError();
       String err = httpUpdate.getLastErrorString();
-      Serial.printf("OTA auto: failed (%d) %s\n", httpUpdate.getLastError(), err.c_str());
-      // Retry once with setInsecure() in case CA bundle fails
-      if (httpUpdate.getLastError() != -107) {  // -107 = firmware too large, don't retry
+      Serial.printf("OTA auto: failed (%d) %s\n", lastErr, err.c_str());
+      // Retry once with setInsecure() in case CA bundle fails. Deterministic
+      // failures are excluded: HTTP_UE_TOO_LESS_SPACE (firmware exceeds the
+      // OTA slot) and HTTP_UE_BIN_FOR_WRONG_FLASH (image header mismatch)
+      // fail identically on any transport.
+      if (lastErr != HTTP_UE_TOO_LESS_SPACE && lastErr != HTTP_UE_BIN_FOR_WRONG_FLASH) {
         client.setInsecure();
         ret = httpUpdate.update(client, url);
         if (ret == HTTP_UPDATE_OK) {
@@ -1734,6 +1751,8 @@ static void otaAutoTaskFn(void* param) {
         }
       }
       otaAutoStatus = "failed: " + err;
+      if (lastErr == HTTP_UE_TOO_LESS_SPACE && isUnderPartitioned())
+        otaAutoStatus += REPARTITION_HINT;
       otaMqttReinitPending = true;  // no reboot coming - restore MQTT
       break;
     }
@@ -1837,6 +1856,8 @@ static void handleOtaUpload() {
 
     if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       otaError = Update.errorString();
+      if (Update.getError() == UPDATE_ERROR_SPACE && isUnderPartitioned())
+        otaError += REPARTITION_HINT;
       Update.abort();
       otaInProgress = false;
     }
@@ -1848,6 +1869,8 @@ static void handleOtaUpload() {
       Serial.printf("OTA: success, %u bytes\n", upload.totalSize);
     } else {
       otaError = Update.errorString();
+      if (Update.getError() == UPDATE_ERROR_SPACE && isUnderPartitioned())
+        otaError += REPARTITION_HINT;
       Serial.printf("OTA: end failed: %s\n", otaError.c_str());
     }
     otaInProgress = false;

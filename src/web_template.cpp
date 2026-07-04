@@ -25,6 +25,7 @@
 #include "buzzer.h"
 #include "led.h"
 #include "timezones.h"
+#include "esp_ota_ops.h"   // OTASLOT token: next update partition size
 #include "tasmota.h"
 #include <Arduino.h>
 
@@ -376,6 +377,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // --- Status / version / board ---
   if (strcmp(name, "DBGLOG") == 0)       { out = mqttDebugLog ? "checked" : ""; return true; }
   if (strcmp(name, "FW_VER") == 0)       { out = FW_VERSION; return true; }
+  // Update-size gate for the release check JS: OTA slot size in bytes and
+  // physical flash chip size in MB (16 MB chip on a small slot => the fix is a
+  // one-time web-flasher repartition, and the warning says so).
+  if (strcmp(name, "OTASLOT") == 0) {
+    const esp_partition_t* p = esp_ota_get_next_update_partition(NULL);
+    out = String(p ? p->size : 0);
+    return true;
+  }
+  if (strcmp(name, "FLASHMB") == 0)      { out = String(ESP.getFlashChipSize() >> 20); return true; }
   if (strcmp(name, "BOARD") == 0)        { out = BOARD_VARIANT; return true; }
   if (strcmp(name, "BOARD_NAME") == 0)   { out = BOARD_NAME; return true; }
   if (strcmp(name, "BOARD_PANEL") == 0)  { out = BOARD_PANEL; return true; }
