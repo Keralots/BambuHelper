@@ -2687,7 +2687,8 @@ function startOta(){
   if (!f) { showToast('Select a .bin file first'); return; }
   if (!f.name.toLowerCase().endsWith('.bin')) { showToast('Firmware file must end with .bin'); return; }
   if (f.size < 32768) { showToast('File too small'); return; }
-  if (f.size > 1835008) { showToast('File too large (max 1.75MB)'); return; }
+  var slotMax = parseInt('%OTASLOT%', 10) || 1835008;
+  if (f.size > slotMax) { showToast('File too large (max ' + (slotMax/1048576).toFixed(2).replace(/\.?0+$/,'') + 'MB)'); return; }
   var lowerName = f.name.toLowerCase();
   var board = '%BOARD%'.toLowerCase();
   if (lowerName.indexOf('bambuhelper-') === 0 && lowerName.indexOf('-' + board + '-') === -1){ showToast('Selected firmware looks like a different board variant'); return; }
