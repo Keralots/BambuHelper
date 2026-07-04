@@ -66,6 +66,8 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Anti-aliased arc gauges** - smooth nozzle and bed temperature arcs with color zones
 - **AMS visualization** - per-tray colors, drying status, plus an optional bottom-row strip view on 240x240 screens, configurable per printer
 - **Smart-plug power monitoring** - per-printer Tasmota or Shelly Gen2 plug with live wattage, per-print kWh + cost, and optional auto-off after print finishes (with hot-end gate)
+- **Button plug power control** - double-click the device button (or touchscreen) to switch the shown printer's smart plug on or off, with a hold-to-confirm safety screen - power a switched-off printer back on without opening a browser
+- **Chamber light control** - manual on/off buttons in the web UI plus per-printer automation: light off after a successful or failed print (with delay), on when a print starts; dual-bar printers (H2C/H2D) switch both bars
 - **Animations** - loading spinner, progress pulse, completion celebration
 - **Web config portal** - dark-themed settings page for WiFi, network, printer, display, power, buzzer, and LED settings
 - **Network configuration** - DHCP or static IP, with optional IP display at startup
@@ -75,6 +77,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **Smart redraw** - only redraws changed UI elements for smooth performance
 - **Customizable gauge colors** - per-gauge arc/label/value colors with preset themes
 - **Customizable gauge labels** - rename any gauge label (Nozzle, Bed, Power, Layer, Door, AMS, dual-nozzle L/R) from the web UI; leave a field blank to keep the built-in default, with an optional smaller-label font for fitting longer names
+- **European characters** - print file names, printer names, gauge labels, and the currency symbol render accented text (German, Polish, Czech, Hungarian, Turkish, Romanian, French, Spanish, Nordic, and more) plus the euro sign
 - **Configurable gauge behavior** - adjustable arc full-scale ranges (nozzle, bed, chamber/AMS, power), arc smoothing speed, and an optional warning color when a gauge runs hot
 - **Power gauge** - optional arc gauge showing live smart-plug wattage (W/kW) in a gauge slot
 - **Configurable status bar** - alternate layer count / watts, always show watts, or always show the layer count; or hide the readout entirely to give the filament name more room
@@ -88,6 +91,62 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 - **OTA updates** - update firmware from the device's web interface (manual upload or one-click from GitHub Releases)
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
+
+## Multi-Printer Monitoring
+
+BambuHelper monitors 2 printers simultaneously on full-RAM ESP32-S3 boards, each over an independent MQTT connection. PSRAM-equipped boards can opt in to a third and fourth printer.
+
+> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, jc3248w535, ws_lcd_350, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **Advanced > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. No-PSRAM S3 boards (esp32s3, ws_lcd_200, ws_lcd_154, ws_lcd_280) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3**) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
+
+### Rotation Modes
+
+| Mode | Behavior |
+|---|---|
+| **Smart** (default) | Shows the printing printer. If both are printing, cycles between them. If neither is printing, shows last active. |
+| **Auto-rotate** | Cycles through all connected printers at a configurable interval (10s - 10min). |
+| **Off** | Manually switch between printers using the physical button only. |
+
+### Split-Screen Mode
+
+Instead of rotating between printers one at a time, you can show two printers at once. Enable **Split screen when two printers are printing** in the Multi-Printer section. When both configured printers are printing, the dashboard divides into two bands - stacked top/bottom in portrait, or left/right in landscape - each with its own progress bar, status label, ETA, and drying view. When only one printer is active it falls back to the normal full-screen dashboard. A **Always show split screen (testing)** toggle forces the split layout regardless of activity so you can preview it without two live prints.
+
+### Physical Button
+
+An optional physical button can be connected to cycle between printers and wake the display from sleep.
+
+| Type | Wiring | How it works |
+|---|---|---|
+| **Push button** | One pin to configured GPIO, other pin to GND | Active LOW with internal pull-up |
+| **TTP223 touch sensor** | VCC->3.3V, GND->GND, SIG->configured GPIO | Active HIGH |
+
+The button type and GPIO pin are configurable in the web interface (Multi-Printer section) - no recompilation needed.
+
+The same button (or the built-in touchscreen) can also switch the printer's smart plug on and off - see **Power Monitoring -> Button power control** below.
+
+### MQTT Reconnect Backoff
+
+When a printer is physically powered off, BambuHelper uses exponential backoff to avoid wasting resources on repeated connection attempts:
+
+| Phase | Attempts | Interval |
+|---|---|---|
+| Normal | First 5 | Every 10 seconds (LAN) / 30 seconds (Cloud) |
+| Phase 2 | Next 10 | Every 60 seconds |
+| Phase 3 | Beyond 15 | Every 120 seconds |
+
+When the printer comes back online, the backoff resets once the connection has held for 30 seconds. A connection that drops again within 30 seconds keeps the slower pace - this protects against a broker that accepts and immediately rejects the session (e.g. an expired cloud token or a duplicate client), which would otherwise hammer the server at full speed forever.
+
+## Power Monitoring
+
+| | |
+|---|---|
+| <img src="img/PowerMonitoring.png" width="360" alt="Power Monitoring"> | BambuHelper can display live power consumption from a **[Tasmota](https://tasmota.github.io/docs/)-flashed smart plug** or a **Shelly Gen2/Gen3 plug** connected to your printer. Both expose a local HTTP API - no cloud required.<br><br>**What it shows:**<br>- Live wattage in the bottom status bar on the idle and printing screens<br>- Total kWh used during the print job, shown on the "Print Complete" screen<br><br>**Setup:** open the web interface, go to **Power Monitoring**, pick the plug type (Tasmota or Shelly Gen2/Gen3), enter the plug's local IP address, set your preferred poll interval (10-30s), and choose how the status bar shows it - alternate watts with the layer counter, always show watts, or always show the layer count (when power has its own gauge).<br><br>**Requirements:** any Tasmota-flashed smart plug with energy monitoring (e.g. Sonoff S31, BlitzWolf BW-SHP6, Nous A1), or a Shelly Gen2/Gen3 plug (Plus Plug S, Plug S Gen3, etc.). The plug must be on your local network and reachable from the ESP32. No MQTT broker needed - BambuHelper polls the HTTP API directly. **Shelly notes:** Gen2 and Gen3 share the same RPC API and both work; the plug must not be password-protected (digest auth is not supported), and Shelly does not report Today's/Yesterday's energy so those stay blank.<br><br>**Auto power-off:** each plug can power itself off N minutes (1-240) after the print finishes, with a 50&nbsp;°C nozzle gate so it never triggers while the hot end is hot. Configure under **Power Monitoring -> Auto-off**.<br><br>If you like to harden your tasmota plug you can use the following rule. <br><i>Rule1 on Energy#Power>=30 do Backlog Powerlock 1 endon on Energy#Power<30 do Backlog Powerlock 0 endon</i><br><br>Threshold is 30w. Change according to the idle consumption of your setup. Every action is blocked if there is a consumption above this threshold (powerbutton, MQTT, Webinterface,...).
+| <img src="img/ButtonPowerControl.png" width="360" alt="Button power control"> | **Button power control (on-device plug switch):** switch the plug on or off straight from the device - no browser needed. Enable **Button power control** under **Power Monitoring** (off by default), then **double- or triple-click** the device button or touchscreen while the printer is on screen. A full-screen confirmation opens: **hold ~1.5 s** until the ring fills to toggle the plug; a short tap (or 10 s without input) cancels. The screen turns **red** when that printer is currently printing, since confirming would cut power to a live print. It also works from the "Connecting to printer" screen, so a switched-off printer can be powered back on - the main use case. Only active when a plug is mapped to the shown printer; while armed, single-tap printer switching waits ~0.5 s for a possible second click. |
+
+## Chamber Light Control
+
+| | |
+|---|---|
+| <img src="img/ChamberLight.png" width="360" alt="Chamber light"> | BambuHelper can control the printer's **chamber light** over LAN and Cloud connections (X1, P-series, H2 series). Each printer card in the web UI has a **Chamber light** section with manual **Light On / Light Off** buttons and per-printer automation:<br><br>- **Turn off after a successful print**<br>- **Turn off after a failed or cancelled print**<br>- **Turn on when a print starts**<br><br>The off rules share a configurable **delay** (0 = immediate), so the light stays on long enough to eyeball the finished print. If a new print starts during the delay, the pending off is cancelled. On dual-bar printers (H2C/H2D) both light bars switch together. |
 
 ## Hardware Assembly for the DIY Version (ESP32-S3 Super Mini)
 
@@ -188,6 +247,12 @@ Things to know:
 
 [![Assembly Video](https://img.youtube.com/vi/hsyamsU5UZE/maxresdefault.jpg)](https://youtu.be/hsyamsU5UZE)
 
+## Requirements
+
+- For flashing: a desktop browser (Chrome or Edge) is enough - use the [web flasher](https://keralots.github.io/BambuHelper/). [PlatformIO](https://platformio.org/) is only needed if you want to modify the firmware yourself.
+- **LAN mode:** Bambu Lab printer with LAN mode enabled, printer and ESP32 on the same local network
+- **Cloud mode:** Bambu Lab account, ESP32 with internet access
+
 ## Flashing
 
 ### Easy: BambuHelper Web Flasher (recommended for first-time setup)
@@ -196,11 +261,11 @@ Open **[keralots.github.io/BambuHelper](https://keralots.github.io/BambuHelper/)
 
 After the flash, the install dialog runs a 3-minute **Configure WiFi** step right in the browser using Improv-Serial - type your home SSID/password and the device joins your network without you ever having to connect to the captive portal. The device still falls back to AP mode (showing the SSID and password on its screen) if you dismiss the dialog or run out of time.
 
-Supports the 12 most common boards (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 SuperMini, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-LCD-1.54, Waveshare ESP32-S3-Touch-LCD-2.8, QD ES3N28P 2.8", Waveshare ESP32-S3-Touch-LCD-3.5, Panlee WT32-SC01 Plus, Guition JC3248W535, CYD / ESP32-2432S028, TZT L1435-2.4). For the community-maintained SenseCAP Indicator use the manual flow below.
+Supports the 13 most common boards (ESP32-S3 SuperMini, ESP32-S3-Zero with 1.54" or 2.0" panel, ESP32-C3 SuperMini, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-LCD-1.54, Waveshare ESP32-S3-Touch-LCD-2.8, QD ES3N28P 2.8", Waveshare ESP32-S3-Touch-LCD-3.5, Panlee WT32-SC01 Plus, Guition JC3248W535, CYD / ESP32-2432S028, TZT L1435-2.4). For the community-maintained SenseCAP Indicator use the manual flow below.
 
 ### Manual: Generic ESP Web Flasher
 
-1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.2-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.3-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD** or **TZT L1435-2.4**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to both CYD-shaped boards (they use a CH340 USB-Serial chip that does not tolerate high baud rates on first contact).
 4. Connect your ESP32 via USB
@@ -224,20 +289,21 @@ The device reboots automatically once the update is written; the web page reload
 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
-| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.2-Full.bin` |
-| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.2-Full.bin` |
-| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.2-Full.bin` |
-| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.2-Full.bin` |
-| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.2-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.2-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.2-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.2-Full.bin` |
-| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.2-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.2-Full.bin` |
-| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.2-Full.bin` |
-| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.2-Full.bin` |
+| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.3-Full.bin` |
+| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Zero + 2.0" 240x320 panel | `BambuHelper-esp32s3_zero_320-v3.7.3-Full.bin` |
+| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.3-Full.bin` |
+| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.3-Full.bin` |
+| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.3-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.3-Full.bin` |
+| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.3-Full.bin` |
+| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.3-Full.bin` |
 
-> Community boards (ESP32-S3-Zero with 2.0" 240x320 panel, SenseCAP Indicator) are not part of the automated release pipeline - build them locally with `pio.exe run -e <env>` and flash the resulting `.pio/build/<env>/firmware.bin`.
+> The SenseCAP Indicator is not part of the automated release pipeline - build it locally with `pio.exe run -e sensecap_indicator` and flash the resulting `.pio/build/sensecap_indicator/firmware.bin`.
 
 ## Setup
 
@@ -306,88 +372,21 @@ If you'd rather skip the copy-paste flow entirely, the [Companion Tool](tools/DI
 
 > **Browser cookie token expires very quickly (after one session, on next reboot, etc.)?** Try the Companion Tool instead - tokens obtained that way tend to be more stable than browser cookies that get invalidated unexpectedly soon after extraction.
 
-### Custom Smooth Fonts
-
-BambuHelper embeds smooth fonts directly in the firmware as VLW tables in `PROGMEM`. The default font is **Inter** (Regular for small/body, Bold for large headings), shipped as TTF in `fonts/` and pre-converted to C headers in `include/fonts/`. Swapping the font means regenerating those headers and reflashing - there is no runtime upload, because the font lives in flash next to the code.
-
-Steps:
-
-1. Drop your `.ttf` files into `fonts/` (e.g. `MyFont-Regular.ttf`, `MyFont-Bold.ttf`).
-2. Edit the `FONTS` list in [`scripts/generate_vlw_fonts.py`](scripts/generate_vlw_fonts.py) - each entry is `(output_name, ttf_filename, pixel_size)`. Keep the three names `inter_10`, `inter_14`, `inter_19` unless you also rename the includes in `src/fonts.cpp`.
-3. Install the converter dependency once: `pip install freetype-py`.
-4. Regenerate the headers:
-   ```bash
-   python scripts/generate_vlw_fonts.py
-   ```
-5. Rebuild the firmware for your target:
-   ```bash
-   pio.exe run -e cyd
-   ```
-6. Flash the new `.pio/build/<env>/firmware.bin` over USB or push it OTA via the web UI's firmware update page.
-
-Tips:
-
-- Pick a font that renders well at small pixel sizes - thin or highly stylised faces will look smudged at 10-14 px. Sans-serif faces designed for UI work best.
-- Each VLW table grows roughly linearly with pixel size; the default Inter set is ~37 KiB total. Watch the flash usage line at the end of the build if you push to bigger sizes.
-- Only printable ASCII (0x20-0x7E) and the degree symbol (0xB0) are baked in. Add codepoints by editing `CHARSET` in the generator.
-
 ## Web Interface
 
-The built-in web interface (accessible at the device's IP address) provides the following settings:
+The built-in configuration portal (open the device's IP in any browser) covers everything - no recompiling, no config files. Every setting has inline help text, so the summary below only maps out where things live:
 
-### WiFi Settings
-- **SSID** - your home WiFi network name
-- **Password** - WiFi password
+<img src="img/WebInterface.png" width="760" alt="Web interface">
 
-### Network
-- **IP Assignment** - choose between DHCP (automatic) or Static IP
-- **Static IP fields** (when static is selected):
-  - IP Address
-  - Gateway
-  - Subnet Mask
-  - DNS Server
-- **Show IP at startup** - display the assigned IP on screen for 1.5 seconds after WiFi connects (on by default)
-
-### Printer Settings
-- **Connection Mode** - LAN Direct or Bambu Cloud (All printers)
-- **LAN mode fields:**
-  - Printer Name, Printer IP Address, Serial Number, LAN Access Code
-- **Cloud mode fields:**
-  - Server Region (US/EU/CN), Access Token, Printer Serial Number, Printer Name
-- **Live Stats** - real-time nozzle/bed temp, progress, fan speed, and connection status
-
-### Display
-- **Brightness** - backlight level (10-255)
-- **Screen Rotation** - 0, 90, 180, 270 degrees
-- **Display off after print complete** - minutes to show the finish screen before turning off the display (0 = never turn off, default: 3 minutes)
-- **Keep display always on** - override the timeout and never turn off
-- **Show clock after print** - display a digital clock with date instead of turning off the screen (enabled by default)
-- **Hide layer/power line in status bar** - drop the center layer/power readout on the print screen to free width for the filament name
-
-### Gauge Appearance
-- **Theme presets** - Default, Mono Green, Neon, Warm, Ocean
-- **Background, track, and progress-bar colors**
-- **Per-gauge colors** (arc, label, value) and a **custom label** for every gauge - Progress, Nozzle (including the dual-nozzle L/R sides), Bed, Part / Aux / Chamber / Exhaust / Heatbreak fans, Chamber temp, Power, Layer, Clock, AMS, and the Door status indicator
-- **Smaller gauge labels** - global smaller font that also raises the custom-label length limit (8 -> 12 characters)
-
-### Gauge Scales & Behavior
-- **Gauge scales** - full-scale value each arc represents; lower a scale so the arc sweeps fuller for your printer's normal range:
-  - Nozzle full-scale (default 300 degC)
-  - Bed full-scale (default 120 degC)
-  - Chamber / AMS temp full-scale (default 60 degC)
-  - Power gauge full-scale (default 1000 W)
-- **Arc smoothing** - how quickly temperature arcs animate toward the live value
-- **Warning color** - nozzle, bed, and chamber arcs (and their value text) switch to this color once the reading reaches a chosen share of the gauge's full scale
-
-### Buzzer
-- **Buzzer (optional)** - enable or disable passive buzzer notifications
-- **GPIO Pin** - choose which ESP32 pin drives the buzzer
-- **Quiet Hours** - disable buzzer sounds during selected hours
-- **Test Buttons** - quickly test available buzzer sounds from the web interface
-
-### Other
-- **Factory Reset** - erases all settings and restarts
-- **OTA Update** - update firmware directly from the web interface
+| Sidebar section | What's inside |
+|---|---|
+| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code / cloud token), live status readout, per-printer gauge layout and AMS view, chamber light control |
+| **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, custom labels (accented European characters supported) |
+| **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
+| **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
+| **WiFi & System** | WiFi credentials, DHCP / static IP, mDNS hostname, settings backup (JSON export / import), firmware update - one-click install from GitHub Releases or manual `.bin` upload |
+| **Power** | Smart-plug power monitoring: Tasmota / Shelly plug slots, tariff and currency, auto power-off, button power control, live plug stats |
+| **Diagnostics** | Live connection state per printer and a verbose serial-logging toggle |
 
 ## Dashboard Screens
 
@@ -408,65 +407,36 @@ The built-in web interface (accessible at the device's IP address) provides the 
 
 The display is managed from the **Display** section of the web interface (see above for the full list of fields). In short:
 
-- After a print completes, the finish screen is shown for the configured number of minutes (default 3), then either a digital clock takes over or the display turns off.
+- After a print completes, the finish screen is shown for the configured number of minutes (default 3), then the **After the finish screen** setting decides what happens next: the digital clock / screensaver (default), or **display and status LED fully off**. The off choice needs a button or touchscreen configured so the device can be woken; without one the clock is shown regardless.
 - When the printer goes offline (powered off or disconnected), the display stays in whatever state it was in - it does not flicker back to the connecting screen.
-- When the printer comes back online or starts a new print, the display wakes automatically.
+- When the printer comes back online or starts a new print, the display wakes automatically (including from the full-off state).
 - **Keep display always on** overrides the auto-off behaviour.
-- **Show clock after print** (default on) chooses clock-over-off when the finish timer expires.
+- For a dark-but-alive alternative to full off, set **Screensaver brightness** to 0 - the clock keeps running with the backlight dark.
 
-## Requirements
+## Custom Smooth Fonts
 
-- For flashing: a desktop browser (Chrome or Edge) is enough - use the [web flasher](https://keralots.github.io/BambuHelper/). [PlatformIO](https://platformio.org/) is only needed if you want to modify the firmware yourself.
-- **LAN mode:** Bambu Lab printer with LAN mode enabled, printer and ESP32 on the same local network
-- **Cloud mode:** Bambu Lab account, ESP32 with internet access
+BambuHelper embeds smooth fonts directly in the firmware as VLW tables in `PROGMEM`. The default font is **Inter** (Regular for small/body, Bold for large headings), shipped as TTF in `fonts/` and pre-converted to C headers in `include/fonts/`. Swapping the font means regenerating those headers and reflashing - there is no runtime upload, because the font lives in flash next to the code.
 
-## Multi-Printer Monitoring
+Steps:
 
-BambuHelper monitors 2 printers simultaneously on full-RAM ESP32-S3 boards, each over an independent MQTT connection. PSRAM-equipped boards can opt in to a third and fourth printer.
+1. Drop your `.ttf` files into `fonts/` (e.g. `MyFont-Regular.ttf`, `MyFont-Bold.ttf`).
+2. Edit the `FONTS` list in [`scripts/generate_vlw_fonts.py`](scripts/generate_vlw_fonts.py) - each entry is `(output_name, ttf_filename, pixel_size)`. Keep the names `inter_10`, `inter_14`, `inter_19`, `inter_22` unless you also rename the includes in `src/fonts.cpp`.
+3. Install the converter dependency once: `pip install freetype-py`.
+4. Regenerate the headers:
+   ```bash
+   python scripts/generate_vlw_fonts.py
+   ```
+5. Rebuild the firmware for your target:
+   ```bash
+   pio.exe run -e cyd
+   ```
+6. Flash the new `.pio/build/<env>/firmware.bin` over USB or push it OTA via the web UI's firmware update page.
 
-> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, jc3248w535, ws_lcd_350, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **Advanced > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. No-PSRAM S3 boards (esp32s3, ws_lcd_200, ws_lcd_154, ws_lcd_280) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3**) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
+Tips:
 
-### Rotation Modes
-
-| Mode | Behavior |
-|---|---|
-| **Smart** (default) | Shows the printing printer. If both are printing, cycles between them. If neither is printing, shows last active. |
-| **Auto-rotate** | Cycles through all connected printers at a configurable interval (10s - 10min). |
-| **Off** | Manually switch between printers using the physical button only. |
-
-### Split-Screen Mode
-
-Instead of rotating between printers one at a time, you can show two printers at once. Enable **Split screen when two printers are printing** in the Multi-Printer section. When both configured printers are printing, the dashboard divides into two bands - stacked top/bottom in portrait, or left/right in landscape - each with its own progress bar, status label, ETA, and drying view. When only one printer is active it falls back to the normal full-screen dashboard. A **Always show split screen (testing)** toggle forces the split layout regardless of activity so you can preview it without two live prints.
-
-### Physical Button
-
-An optional physical button can be connected to cycle between printers and wake the display from sleep.
-
-| Type | Wiring | How it works |
-|---|---|---|
-| **Push button** | One pin to configured GPIO, other pin to GND | Active LOW with internal pull-up |
-| **TTP223 touch sensor** | VCC->3.3V, GND->GND, SIG->configured GPIO | Active HIGH |
-
-The button type and GPIO pin are configurable in the web interface (Multi-Printer section) - no recompilation needed.
-
-### MQTT Reconnect Backoff
-
-When a printer is physically powered off, BambuHelper uses exponential backoff to avoid wasting resources on repeated connection attempts:
-
-| Phase | Attempts | Interval |
-|---|---|---|
-| Normal | First 5 | Every 10 seconds |
-| Phase 2 | Next 10 | Every 60 seconds |
-| Phase 3 | Beyond 15 | Every 120 seconds |
-
-When the printer comes back online, the backoff resets to normal immediately.
-
-## Power Monitoring
-
-| | |
-|---|---|
-| <img src="img/PowerMonitoring.png" width="360" alt="Power Monitoring"> | BambuHelper can display live power consumption from a **[Tasmota](https://tasmota.github.io/docs/)-flashed smart plug** or a **Shelly Gen2/Gen3 plug** connected to your printer. Both expose a local HTTP API - no cloud required.<br><br>**What it shows:**<br>- Live wattage in the bottom status bar on the idle and printing screens<br>- Total kWh used during the print job, shown on the "Print Complete" screen<br><br>**Setup:** open the web interface, go to **Power Monitoring**, pick the plug type (Tasmota or Shelly Gen2/Gen3), enter the plug's local IP address, set your preferred poll interval (10-30s), and choose how the status bar shows it - alternate watts with the layer counter, always show watts, or always show the layer count (when power has its own gauge).<br><br>**Requirements:** any Tasmota-flashed smart plug with energy monitoring (e.g. Sonoff S31, BlitzWolf BW-SHP6, Nous A1), or a Shelly Gen2/Gen3 plug (Plus Plug S, Plug S Gen3, etc.). The plug must be on your local network and reachable from the ESP32. No MQTT broker needed - BambuHelper polls the HTTP API directly. **Shelly notes:** Gen2 and Gen3 share the same RPC API and both work; the plug must not be password-protected (digest auth is not supported), and Shelly does not report Today's/Yesterday's energy so those stay blank.<br><br>**Auto power-off:** each plug can power itself off N minutes (1-240) after the print finishes, with a 50&nbsp;°C nozzle gate so it never triggers while the hot end is hot. Configure under **Power Monitoring -> Auto-off**.<br><br>If you like to harden your tasmota plug you can use the following rule. <br><i>Rule1 on Energy#Power>=30 do Backlog Powerlock 1 endon on Energy#Power<30 do Backlog Powerlock 0 endon</i><br><br>Threshold is 30w. Change according to the idle consumption of your setup. Every action is blocked if there is a consumption above this threshold (powerbutton, MQTT, Webinterface,...).
-|
+- Pick a font that renders well at small pixel sizes - thin or highly stylised faces will look smudged at 10-14 px. Sans-serif faces designed for UI work best.
+- Each VLW table grows roughly linearly with pixel size and glyph count; the default Inter set is ~150 KiB total (three sizes; 320x480 boards add a fourth). Watch the flash usage line at the end of the build if you push to bigger sizes.
+- The baked-in character set covers printable ASCII, Latin-1 Supplement, Latin Extended-A, and the euro sign (322 glyphs) - enough for most European languages. Add codepoints by editing `CHARSET` in the generator; keep it sorted ascending (the glyph lookup is a binary search). CJK and emoji are out of scope - they would need megabytes of glyphs.
 
 ## Troubleshooting
 
