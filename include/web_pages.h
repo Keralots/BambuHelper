@@ -1551,6 +1551,15 @@ R"rawliteral(
   </div>
 
   <div class="card">
+    <div class="card-head"><div><h3>Button power control</h3></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="btnpwr" value="1" %BTN_PWR% onchange="toggleSetting('btnpwr',this.checked)">
+      <label for="btnpwr">Double-click device button to turn the plug on/off</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Double- or triple-click the device button (or touchscreen) to open a full-screen confirmation for the printer on screen, then hold to toggle its plug (red warning if it is printing). Only active when a plug is configured for the shown printer; while armed it adds a short delay to single-tap printer switching.</div>
+  </div>
+
+  <div class="card">
     <div class="card-head"><div><h3>Live stats</h3></div><span class="mono small text-dim">updates 5 s</span></div>
     <dl class="kv">
       <dt>Status</dt><dd><span id="ptStatusDot" class="text-dim">(offline)</span></dd>
