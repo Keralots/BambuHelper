@@ -24,6 +24,12 @@ inline bool isCloudMode(ConnMode m) { return m == CONN_CLOUD || m == CONN_CLOUD_
 #define AMS_TRAYS_PER_UNIT 4
 #define AMS_MAX_TRAYS      (AMS_MAX_UNITS * AMS_TRAYS_PER_UNIT)
 
+// activeTray sentinel: the feeding tray belongs to an AMS unit that didn't
+// fit in units[] (5+ units, e.g. a 2nd AMS HT on H2 series). Tray data is
+// captured out-of-band in AmsState.ovTray so the filament swatch stays
+// correct even though the unit itself isn't displayed.
+#define AMS_TRAY_OVERFLOW  253
+
 struct AmsTray {
   bool     present;        // tray physically present
   uint16_t colorRgb565;    // pre-converted for TFT
@@ -45,9 +51,12 @@ struct AmsUnit {
 struct AmsState {
   bool     present;               // any AMS data received
   uint8_t  unitCount;             // detected AMS units (0-4)
-  uint8_t  activeTray;            // tray_now (0-15), 255 = none
+  uint8_t  activeTray;            // 0-15, 253 = overflow unit (see ovTray), 254 = external spool, 255 = none
   AmsTray  trays[AMS_MAX_TRAYS];  // indexed by unit*4 + trayId
   AmsUnit  units[AMS_MAX_UNITS];  // unit-level data (indexed sequentially)
+  AmsTray  ovTray;                // feeding tray when activeTray == AMS_TRAY_OVERFLOW
+  uint8_t  ovUnitId;              // raw AMS unit id ovTray was captured from (255 = none)
+  uint8_t  ovTrayId;              // tray id within that unit
   bool     anyDrying;             // true if any unit has dryRemainMin > 0
   bool     vtPresent;             // external spool configured
   uint16_t vtColorRgb565;

@@ -1586,6 +1586,13 @@ static void drawIdle() {
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
       tft.drawString(t.type, 19 + bx, botCY);
+    } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
+      int16_t bx = drawBatteryPrefix(botCY);
+      tft.drawCircle(10 + bx, botCY, 5, CLR_TEXT_DARK);
+      tft.fillCircle(10 + bx, botCY, 4, s.ams.ovTray.colorRgb565);
+      tft.setTextDatum(ML_DATUM);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString(s.ams.ovTray.type, 19 + bx, botCY);
     } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
       int16_t bx = drawBatteryPrefix(botCY);
       tft.drawCircle(10 + bx, botCY, 5, CLR_TEXT_DARK);
@@ -3095,6 +3102,7 @@ static void drawPrinting() {
   }
 
   bool showingWifi = !(s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS && s.ams.trays[s.ams.activeTray].present)
+                  && !(s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present)
                   && !(s.ams.vtPresent && s.ams.activeTray == 254);
   bool batChanged320 = batteryStateChanged();
   bool bottomChanged = batChanged320 || forceRedraw || unitsZoneChanged ||
@@ -3176,6 +3184,13 @@ static void drawPrinting() {
       } else {
         drawWifiSignalIndicator(s, eff_botCY);
       }
+    } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
+      int16_t bx = drawBatteryPrefix(eff_botCY);
+      tft.drawCircle(10 + bx, eff_botCY, 5, CLR_TEXT_DARK);
+      tft.fillCircle(10 + bx, eff_botCY, 4, s.ams.ovTray.colorRgb565);
+      tft.setTextDatum(ML_DATUM);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      drawStringClipped(s.ams.ovTray.type, 19 + bx, eff_botCY, centerLeftX - 3 - (19 + bx));
     } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
       int16_t bx = drawBatteryPrefix(eff_botCY);
       tft.drawCircle(10 + bx, eff_botCY, 5, CLR_TEXT_DARK);

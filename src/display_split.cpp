@@ -609,6 +609,9 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
         s.ams.trays[s.ams.activeTray].present) {
       swColor = s.ams.trays[s.ams.activeTray].colorRgb565;
       swType  = s.ams.trays[s.ams.activeTray].type;
+    } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
+      swColor = s.ams.ovTray.colorRgb565;
+      swType  = s.ams.ovTray.type;
     } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
       swColor = s.ams.vtColorRgb565;
       swType  = s.ams.vtType;

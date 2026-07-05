@@ -293,6 +293,50 @@ static MqttConn* findConnBySerial(const char* serial, size_t serialLen) {
   return nullptr;
 }
 
+// Fill one AmsTray from a tray JSON object (full-snapshot fields).
+// logIdx is only used for the color debug log.
+static void parseTrayFields(JsonObject tray, AmsTray& t, uint8_t logIdx) {
+  if (tray["tray_type"].is<const char*>()) {
+    t.present = true;
+    const char* colorStr = nullptr;
+    if (tray["tray_color"].is<const char*>())
+      colorStr = tray["tray_color"].as<const char*>();
+    // Fallback to cols[0] when tray_color is missing or too short.
+    // A1 AMS Lite is reported to populate cols even when tray_color
+    // is absent on some firmware revisions.
+    if ((!colorStr || strlen(colorStr) < 6) &&
+        tray["cols"].is<JsonArray>() &&
+        tray["cols"].size() > 0 &&
+        tray["cols"][0].is<const char*>()) {
+      colorStr = tray["cols"][0].as<const char*>();
+    }
+    if (colorStr) {
+      t.colorRgb565 = bambuColorToRgb565(colorStr);
+      MQTT_LOG("AMS tray %d color: \"%s\" -> 0x%04X", logIdx, colorStr, t.colorRgb565);
+    }
+    const char* name = nullptr;
+    if (tray["tray_sub_brands"].is<const char*>() &&
+        strlen(tray["tray_sub_brands"].as<const char*>()) > 0)
+      name = tray["tray_sub_brands"].as<const char*>();
+    else
+      name = tray["tray_type"].as<const char*>();
+    if (name) strlcpy(t.type, name, sizeof(t.type));
+    int8_t rawRemain = tray["remain"].is<int>() ? (int8_t)tray["remain"].as<int>() : -1;
+    // Treat remain=0 as "unknown" so the bar renders in the
+    // filament color instead of pure track color. Many models
+    // report 0 even on loaded RFID spools - X1C has no AMS
+    // weight sensor so remain stays 0 indefinitely, and A1 AMS
+    // Lite reports 0 on uncalibrated/third-party spools.
+    // A truly empty spool would have triggered a filament-out
+    // halt long before this matters cosmetically.
+    if (rawRemain == 0) rawRemain = -1;
+    t.remain = rawRemain;
+  } else {
+    t.present = false;
+    t.type[0] = '\0';
+  }
+}
+
 // Map raw (unitId, trayInUnit) to sequential flat index.
 // Raw unit ids may be non-sequential (e.g. 128 for AMS HT).
 static uint8_t normalizeTrayIndex(const AmsState& ams,
@@ -563,47 +607,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
                 if (tid >= AMS_TRAYS_PER_UNIT) continue;
 
                 uint8_t idx = seqIdx * AMS_TRAYS_PER_UNIT + tid;
-                AmsTray& t = s.ams.trays[idx];
-
-                if (tray["tray_type"].is<const char*>()) {
-                  t.present = true;
-                  const char* colorStr = nullptr;
-                  if (tray["tray_color"].is<const char*>())
-                    colorStr = tray["tray_color"].as<const char*>();
-                  // Fallback to cols[0] when tray_color is missing or too short.
-                  // A1 AMS Lite is reported to populate cols even when tray_color
-                  // is absent on some firmware revisions.
-                  if ((!colorStr || strlen(colorStr) < 6) &&
-                      tray["cols"].is<JsonArray>() &&
-                      tray["cols"].size() > 0 &&
-                      tray["cols"][0].is<const char*>()) {
-                    colorStr = tray["cols"][0].as<const char*>();
-                  }
-                  if (colorStr) {
-                    t.colorRgb565 = bambuColorToRgb565(colorStr);
-                    MQTT_LOG("AMS tray %d color: \"%s\" -> 0x%04X", idx, colorStr, t.colorRgb565);
-                  }
-                  const char* name = nullptr;
-                  if (tray["tray_sub_brands"].is<const char*>() &&
-                      strlen(tray["tray_sub_brands"].as<const char*>()) > 0)
-                    name = tray["tray_sub_brands"].as<const char*>();
-                  else
-                    name = tray["tray_type"].as<const char*>();
-                  if (name) strlcpy(t.type, name, sizeof(t.type));
-                  int8_t rawRemain = tray["remain"].is<int>() ? (int8_t)tray["remain"].as<int>() : -1;
-                  // Treat remain=0 as "unknown" so the bar renders in the
-                  // filament color instead of pure track color. Many models
-                  // report 0 even on loaded RFID spools - X1C has no AMS
-                  // weight sensor so remain stays 0 indefinitely, and A1 AMS
-                  // Lite reports 0 on uncalibrated/third-party spools.
-                  // A truly empty spool would have triggered a filament-out
-                  // halt long before this matters cosmetically.
-                  if (rawRemain == 0) rawRemain = -1;
-                  t.remain = rawRemain;
-                } else {
-                  t.present = false;
-                  t.type[0] = '\0';
-                }
+                parseTrayFields(tray, s.ams.trays[idx], idx);
                 parsedTrays++;
               }
               s.ams.units[seqIdx].trayCount = parsedTrays;
@@ -635,11 +639,46 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
                 MQTT_LOG("activeTray: snow ams=%d tray=%d -> normalized=%d",
                          pendingSnowAmsId, pendingSnowTrayIdx, s.ams.activeTray);
               } else {
-                MQTT_LOG("activeTray: snow ams=%d tray=%d unresolved - keeping cached=%d",
-                         pendingSnowAmsId, pendingSnowTrayIdx, s.ams.activeTray);
+                // Feeding unit doesn't fit in units[] (5+ AMS, e.g. a 2nd
+                // AMS HT on H2 series). Capture the tray straight from this
+                // message's unit list so the filament swatch stays correct
+                // even though the unit itself isn't displayed.
+                bool captured = false;
+                if (hasTraySnapshot) {
+                  for (JsonObject unit : units) {
+                    if (!unit["id"].is<const char*>()) continue;
+                    if ((uint8_t)atoi(unit["id"].as<const char*>()) != pendingSnowAmsId) continue;
+                    for (JsonObject tray : unit["tray"].as<JsonArray>()) {
+                      if (!tray["id"].is<const char*>()) continue;
+                      if ((uint8_t)atoi(tray["id"].as<const char*>()) != pendingSnowTrayIdx) continue;
+                      parseTrayFields(tray, s.ams.ovTray, AMS_TRAY_OVERFLOW);
+                      captured = true;
+                      break;
+                    }
+                    break;
+                  }
+                }
+                if (captured) {
+                  s.ams.ovUnitId = pendingSnowAmsId;
+                  s.ams.ovTrayId = pendingSnowTrayIdx;
+                  s.ams.activeTray = AMS_TRAY_OVERFLOW;
+                  MQTT_LOG("activeTray: snow ams=%d tray=%d -> overflow capture (%s)",
+                           pendingSnowAmsId, pendingSnowTrayIdx, s.ams.ovTray.type);
+                } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW &&
+                           s.ams.ovUnitId == pendingSnowAmsId &&
+                           s.ams.ovTrayId == pendingSnowTrayIdx) {
+                  // Partial update without tray data - cached overflow tray
+                  // still matches the feeding tray, keep it.
+                } else {
+                  MQTT_LOG("activeTray: snow ams=%d tray=%d unresolved - keeping cached=%d",
+                           pendingSnowAmsId, pendingSnowTrayIdx, s.ams.activeTray);
+                }
               }
             }
-          } else if (hasExplicitTrayNow) {
+          } else if (hasExplicitTrayNow && !s.dualNozzle) {
+            // Dual nozzle (H2C/H2D): tray_now is unreliable - it can report
+            // tray 0 while an AMS HT is feeding (seen on H2C with 5 units).
+            // snow is the only trustworthy source there, so never fall back.
             if (rawTrayNow == 254) {
               s.ams.activeTray = 254;  // external spool sentinel
             } else if (rawTrayNow == 255) {
