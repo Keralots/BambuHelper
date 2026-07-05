@@ -168,6 +168,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.fanMatchPrinter = true;
   ds.invertColors = false;
   ds.cydPanelClassic = false;
+  ds.cyd32eVariant = false;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT;
@@ -458,6 +459,7 @@ void loadSettings() {
   dispSettings.fanMatchPrinter = prefs.getBool("dsp_fanmp", def.fanMatchPrinter);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
+  dispSettings.cyd32eVariant = prefs.getBool("dsp_cyd32e", def.cyd32eVariant);
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
@@ -757,6 +759,7 @@ void saveSettings() {
   prefs.putBool("dsp_fanmp", dispSettings.fanMatchPrinter);
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
+  prefs.putBool("dsp_cyd32e", dispSettings.cyd32eVariant);
   prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
   prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);

@@ -76,6 +76,11 @@ struct DisplaySettings {
   bool     cydPanelClassic; // CYD only: use plain Panel_ILI9341 (no inversion)
                             // instead of Panel_ILI9341_2 — for the other
                             // hardware revision that shows mirrored image.
+  bool     cyd32eVariant;   // CYD only: 2.8" ESP32-32E clone (lcdwiki) with a
+                            // shuffled pinout - speaker amp enable on GPIO4
+                            // (classic: red LED) and red LED on GPIO22. Enables
+                            // the amp while the buzzer is on and parks the
+                            // moved RGB LED off at boot.
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip

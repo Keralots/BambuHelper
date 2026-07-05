@@ -70,8 +70,11 @@ bool isLedPinAllowed(uint8_t pin) {
   // CYD (ESP32-2432S028) and TZT L1435-2.4 - same ESP32 pinout, both esp32dev
   if (pin == 2 || pin == 12 || pin == 13 || pin == 14 || pin == 15) return false;  // display SPI
   if (pin == 25 || pin == 32 || pin == 33 || pin == 36 || pin == 39) return false; // XPT2046 touch
-  if (pin == 4 || pin == 16 || pin == 17) return false;                            // onboard RGB
+  if (pin == 4 || pin == 16 || pin == 17) return false;                            // onboard RGB (32E clone: amp EN + G/B)
   if (pin == 26) return false;                                                     // onboard speaker amp
+#if defined(DISPLAY_CYD)
+  if (dispSettings.cyd32eVariant && pin == CYD32E_LED_R_PIN) return false;         // 32E clone: red LED moved to GPIO22
+#endif
   if (pin >= 6 && pin <= 11) return false;                                         // SPI flash
   if (pin >= 34 && pin <= 39) return false;                                        // input-only
   if (pin > 39) return false;
@@ -252,6 +255,17 @@ void initLed() {
   previewActive = false;
   errorStrobeArmed = false;
   errorStrobeDismissed = false;
+
+#if defined(DISPLAY_CYD)
+  // ESP32-32E clone: onboard RGB pins (R=22, G=16, B=17, active low) float at
+  // boot, which leaves the red LED lit. Park them high (off). Runs before the
+  // external-LED attach below, so a user-configured LED pin still wins.
+  if (dispSettings.cyd32eVariant) {
+    pinMode(CYD32E_LED_R_PIN, OUTPUT); digitalWrite(CYD32E_LED_R_PIN, HIGH);
+    pinMode(CYD32E_LED_G_PIN, OUTPUT); digitalWrite(CYD32E_LED_G_PIN, HIGH);
+    pinMode(CYD32E_LED_B_PIN, OUTPUT); digitalWrite(CYD32E_LED_B_PIN, HIGH);
+  }
+#endif
 
   detachAndForceLow();
   // Disabled with a saved pin: drive it LOW instead of leaving it high-Z, so the

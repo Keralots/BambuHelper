@@ -258,6 +258,12 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += " onchange=\"toggleSetting('cydcls',this.checked)\">";
     out += "<label for=\"cydcls\">Use Classic CYD panel fallback (older units only - device will reboot)</label>";
     out += "</label>";
+    out += "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"cyd32e\" value=\"1\" ";
+    out += dispSettings.cyd32eVariant ? "checked" : "";
+    out += " onchange=\"toggleSetting('cyd32e',this.checked)\">";
+    out += "<label for=\"cyd32e\">ESP32-32E clone board (fixes silent speaker + stuck red LED - device will reboot)</label>";
+    out += "</label>";
 #else
     out = "";
 #endif

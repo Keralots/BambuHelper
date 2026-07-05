@@ -53,6 +53,15 @@ void sanitizeBuzzerPin() {
     }
   }
 #endif
+#if defined(DISPLAY_CYD)
+  // ESP32-32E clone variant: GPIO4 is the speaker amp enable, not a tone
+  // output - the GPIO backend would hijack it and mute the amp.
+  if (dispSettings.cyd32eVariant && buzzerSettings.pin == CYD32E_AMP_EN_PIN) {
+    Serial.printf("Buzzer: pin %d is the 32E amp enable, disabling\n", buzzerSettings.pin);
+    buzzerSettings.pin = 0;
+    return;
+  }
+#endif
 #if defined(BACKLIGHT_PIN)
   if (buzzerSettings.pin == BACKLIGHT_PIN) {
     Serial.printf("Buzzer: pin %d conflicts with backlight, disabling\n", buzzerSettings.pin);

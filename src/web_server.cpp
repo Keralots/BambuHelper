@@ -570,6 +570,7 @@ static void handleToggleSetting() {
   else if (key == "hidelp")  dispSettings.hideStatusReadout = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
+  else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
@@ -595,6 +596,7 @@ static void handleToggleSetting() {
   saveSettings();
   if (key == "invcol" || key == "slbl" || key == "abar" || key == "shtire") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
+  if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }

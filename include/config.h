@@ -206,6 +206,18 @@
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif
 
+#if defined(DISPLAY_CYD)
+// 2.8" ESP32-32E CYD clone (lcdwiki.com/2.8inch_ESP32-32E_Display): same
+// display/touch/backlight pinout as the classic ESP32-2432S028, but the
+// speaker amp has an enable pin on GPIO4 (classic: red LED, amp hardwired on)
+// and the RGB LED red channel moves to GPIO22. Audio out stays on GPIO26.
+// Selected at runtime via dispSettings.cyd32eVariant (Settings checkbox).
+#define CYD32E_AMP_EN_PIN     4
+#define CYD32E_LED_R_PIN      22
+#define CYD32E_LED_G_PIN      16
+#define CYD32E_LED_B_PIN      17
+#endif
+
 // =============================================================================
 //  External LED (optional, PWM dimmable via NPN/MOSFET)
 // =============================================================================
