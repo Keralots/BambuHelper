@@ -2592,11 +2592,269 @@ void drawCameraGauge(int16_t, int16_t, int16_t, bool) {}
 
 #if defined(DISPLAY_ROUND_240)
 // ===========================================================================
-//  Round display (GC9A01): printing screen, fixed layout.
-//  Rim progress ring + centered % / layer / ETA stack + three mini gauges
-//  (nozzle / bed / part fan). No header, LED bar, AMS strip, bottom bar or
-//  configurable slot grid — those all live outside the inscribed circle.
+//  Round display (GC9A01): printing screen. Three skins selectable from the
+//  web UI (dispSettings.roundSkin): Rim (default), Speedo, Rings. All are
+//  fixed layouts — no header, LED bar, AMS strip, bottom bar or configurable
+//  slot grid; those all live outside the inscribed circle.
 // ===========================================================================
+
+// Compose the ETA / Remaining / alert line shared by the round skins.
+// Returns the text color. Logic matches the square printing screen's ETA zone.
+static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen) {
+  if (s.gcodeStateId == GCODE_PAUSE)  { strlcpy(buf, "PAUSED", bufLen); return CLR_YELLOW; }
+  if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
+  if (s.remainingMinutes == 0) { strlcpy(buf, "ETA: ---", bufLen); return CLR_TEXT_DIM; }
+
+  static bool ntpSynced = false;
+  time_t nowEpoch = time(nullptr);
+  struct tm now;
+  localtime_r(&nowEpoch, &now);
+  if (now.tm_year > (2020 - 1900)) ntpSynced = true;
+
+  if (!dispSettings.showTimeRemaining && ntpSynced) {
+    time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
+    struct tm etaTm;
+    localtime_r(&etaEpoch, &etaTm);
+
+    int etaH = etaTm.tm_hour;
+    const char* ampm = "";
+    if (!netSettings.use24h) {
+      ampm = etaH < 12 ? "AM" : "PM";
+      etaH = etaH % 12;
+      if (etaH == 0) etaH = 12;
+    }
+    if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
+      if (netSettings.use24h)
+        snprintf(buf, bufLen, "ETA: %02d.%02d. %02d:%02d",
+                 etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
+      else
+        snprintf(buf, bufLen, "ETA: %02d/%02d %d:%02d%s",
+                 etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
+    } else {
+      if (netSettings.use24h)
+        snprintf(buf, bufLen, "ETA: %02d:%02d", etaH, etaTm.tm_min);
+      else
+        snprintf(buf, bufLen, "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
+    }
+    return CLR_GREEN;
+  }
+
+  snprintf(buf, bufLen, "Remaining: %dh %02dm",
+           s.remainingMinutes / 60, s.remainingMinutes % 60);
+  return CLR_TEXT;
+}
+
+// Compact temperature readout for the Speedo / Rings skins: colored marker
+// (dot = nozzle, square = bed), the value in FONT_BODY, and a degree mark.
+static void drawTempReadout(int16_t x, int16_t y, float temp, uint16_t color,
+                            bool squareMarker) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", (int)(temp + 0.5f));
+  setFont(tft, FONT_BODY);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(color, CLR_BG);
+  tft.drawString(buf, x, y);
+  const int16_t tw = (int16_t)tft.textWidth(buf);
+  if (squareMarker) tft.fillRect(x - tw / 2 - 15, y - 4, 8, 8, color);
+  else              tft.fillCircle(x - tw / 2 - 11, y, 4, color);
+  tft.drawCircle(x + tw / 2 + 5, y - 5, 2, color);
+}
+
+// ---------------------------------------------------------------------------
+//  Skin 1 "Speedo": the classic 240-degree gauge arc scaled up to the whole
+//  screen; the arc's bottom gap holds the temperature readouts, the ETA line
+//  curves along the bottom rim inside the gap.
+// ---------------------------------------------------------------------------
+static void drawPrintingSpeedo() {
+  PrinterSlot& p = displayedPrinter();
+  BambuState& s = p.state;
+
+  tickGaugeSmooth(s, forceRedraw);
+  gaugesAnimating = false;  // no smoothed arcs on this skin
+  bool progChanged  = forceRedraw || (s.progress != prevState.progress);
+  bool etaChanged   = forceRedraw ||
+                      (s.remainingMinutes != prevState.remainingMinutes);
+  bool stateChanged = forceRedraw ||
+                      (s.gcodeStateId != prevState.gcodeStateId) ||
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+  bool layerChanged = forceRedraw ||
+                      (s.layerNum != prevState.layerNum) ||
+                      (s.totalLayers != prevState.totalLayers);
+  bool tempChanged  = forceRedraw ||
+                      ((int)s.nozzleTemp != (int)prevState.nozzleTemp) ||
+                      ((int)s.bedTemp != (int)prevState.bedTemp);
+
+  const int16_t cx = SCREEN_W / 2;
+  tft.setTextDatum(MC_DATUM);
+
+  // === Big progress arc (redrawn in full on color change) ===
+  if (progChanged || stateChanged) {
+    markFrameDirty();
+    uint16_t arcColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
+    if (s.gcodeStateId == GCODE_PAUSE)       arcColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED) arcColor = CLR_RED;
+    uint16_t fillEnd = 60 + (uint16_t)s.progress * 240 / 100;
+    drawArcFill(tft, cx, cx, LY_RND_SPD_R, LY_RND_SPD_T, fillEnd, arcColor,
+                forceRedraw);
+  }
+
+  // === Status line inside the arc ===
+  if (stateChanged) {
+    markFrameDirty();
+    setFont(tft, FONT_BODY);
+    uint16_t stColor = CLR_TEXT_DIM;
+    if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
+    else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    char line[48], clipped[48];
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+    snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
+    tft.fillRect(cx - 60, LY_RND_SPD_STATUS_Y - 11, 120, 22, CLR_BG);
+    tft.setTextColor(stColor, CLR_BG);
+    tft.drawString(ellipsizeToWidth(tft, line, 116, clipped, sizeof(clipped)),
+                   cx, LY_RND_SPD_STATUS_Y);
+    tft.fillRect(cx - 30, LY_RND_SPD_DOTS_Y - 5, 60, 10, CLR_BG);
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_SPD_DOTS_Y);
+  }
+
+  // === Big progress % + layer line ===
+  if (progChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 55, LY_RND_SPD_PCT_Y - 18, 110, 36, CLR_BG);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", s.progress);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString(buf, cx, LY_RND_SPD_PCT_Y);
+  }
+  if (layerChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 70, LY_RND_SPD_LAYER_Y - 9, 140, 18, CLR_BG);
+    if (s.totalLayers > 0) {
+      char buf[24];
+      snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString(buf, cx, LY_RND_SPD_LAYER_Y);
+    }
+  }
+
+  // === Nozzle / bed readouts in the arc's bottom gap ===
+  if (tempChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 66, LY_RND_SPD_TEMP_Y - 11, 132, 22, CLR_BG);
+    drawTempReadout(LY_RND_SPD_NOZ_X, LY_RND_SPD_TEMP_Y, s.nozzleTemp,
+                    dispSettings.nozzle.arc, false);
+    drawTempReadout(LY_RND_SPD_BED_X, LY_RND_SPD_TEMP_Y, s.bedTemp,
+                    dispSettings.bed.arc, true);
+    tft.setTextDatum(MC_DATUM);
+  }
+
+  // === ETA curved along the bottom rim, inside the arc gap ===
+  if (etaChanged || stateChanged) {
+    markFrameDirty();
+    char buf[32];
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    drawCurvedString(tft, buf, cx, cx, LY_RND_SPD_ETA_R, true, clr,
+                     FONT_BODY, LY_RND_SPD_ETA_HDEG);
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Skin 2 "Rings": three concentric full-circle rings — progress (outer),
+//  nozzle and bed (activity-watch style) — with a compact center stack.
+// ---------------------------------------------------------------------------
+static void drawPrintingRings() {
+  PrinterSlot& p = displayedPrinter();
+  BambuState& s = p.state;
+
+  bool animating = tickGaugeSmooth(s, forceRedraw);
+  gaugesAnimating = animating;
+  bool progChanged  = forceRedraw || (s.progress != prevState.progress);
+  bool etaChanged   = forceRedraw ||
+                      (s.remainingMinutes != prevState.remainingMinutes);
+  bool stateChanged = forceRedraw ||
+                      (s.gcodeStateId != prevState.gcodeStateId) ||
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+  bool tempChanged  = forceRedraw || animating ||
+                      (s.nozzleTemp != prevState.nozzleTemp) ||
+                      (s.bedTemp != prevState.bedTemp);
+
+  const int16_t cx = SCREEN_W / 2;
+  tft.setTextDatum(MC_DATUM);
+
+  // === Outer ring: progress ===
+  if (progChanged || stateChanged) {
+    markFrameDirty();
+    uint16_t ringColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
+    if (s.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    drawRimRing(tft, cx, cx, LY_RND_RGS_R1, LY_RND_RGS_T,
+                s.progress, ringColor, forceRedraw, 0);
+  }
+
+  // === Middle + inner rings: nozzle / bed vs their gauge full-scales ===
+  if (tempChanged) {
+    markFrameDirty();
+    float nozRatio = (dispSettings.nozzleScaleMax > 0)
+                     ? smoothNozzleTemp / (float)dispSettings.nozzleScaleMax : 0.0f;
+    float bedRatio = (dispSettings.bedScaleMax > 0)
+                     ? smoothBedTemp / (float)dispSettings.bedScaleMax : 0.0f;
+    uint8_t nozPct = (uint8_t)constrain(nozRatio * 100.0f, 0.0f, 100.0f);
+    uint8_t bedPct = (uint8_t)constrain(bedRatio * 100.0f, 0.0f, 100.0f);
+    drawRimRing(tft, cx, cx, LY_RND_RGS_R2, LY_RND_RGS_T,
+                nozPct, dispSettings.nozzle.arc, forceRedraw, 1);
+    drawRimRing(tft, cx, cx, LY_RND_RGS_R3, LY_RND_RGS_T,
+                bedPct, dispSettings.bed.arc, forceRedraw, 2);
+  }
+
+  // Temp readout text: gate on the displayed integer, not on tempChanged —
+  // that fires at the 12 Hz smoothing cadence while the rings animate and
+  // made the numbers visibly flash (erase + redraw with unchanged digits).
+  {
+    static int16_t prevNozShown = -32768, prevBedShown = -32768;
+    int16_t nozShown = (int16_t)(s.nozzleTemp + 0.5f);
+    int16_t bedShown = (int16_t)(s.bedTemp + 0.5f);
+    if (forceRedraw || nozShown != prevNozShown || bedShown != prevBedShown) {
+      markFrameDirty();
+      tft.fillRect(cx - 55, LY_RND_RGS_TEMP_Y - 11, 110, 22, CLR_BG);
+      drawTempReadout(LY_RND_RGS_NOZ_X, LY_RND_RGS_TEMP_Y, s.nozzleTemp,
+                      dispSettings.nozzle.arc, false);
+      drawTempReadout(LY_RND_RGS_BED_X, LY_RND_RGS_TEMP_Y, s.bedTemp,
+                      dispSettings.bed.arc, true);
+      tft.setTextDatum(MC_DATUM);
+      prevNozShown = nozShown;
+      prevBedShown = bedShown;
+    }
+  }
+
+  // === Big progress % ===
+  if (progChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 50, LY_RND_RGS_PCT_Y - 18, 100, 36, CLR_BG);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", s.progress);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString(buf, cx, LY_RND_RGS_PCT_Y);
+  }
+
+  // === ETA / alert line + multi-printer dots ===
+  if (etaChanged || stateChanged) {
+    markFrameDirty();
+    char buf[32];
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    tft.fillRect(cx - 58, LY_RND_RGS_ETA_Y - 11, 116, 22, CLR_BG);
+    // FONT_BODY when it fits the chord; the long date+time ETA form drops
+    // to FONT_SMALL instead of clipping.
+    setFont(tft, FONT_BODY);
+    if (tft.textWidth(buf) > 112) setFont(tft, FONT_SMALL);
+    tft.setTextColor(clr, CLR_BG);
+    tft.drawString(buf, cx, LY_RND_RGS_ETA_Y);
+    tft.fillRect(cx - 30, LY_RND_RGS_DOTS_Y - 5, 60, 10, CLR_BG);
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_RGS_DOTS_Y);
+  }
+}
 static void drawPrintingRound() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
@@ -2700,66 +2958,19 @@ static void drawPrintingRound() {
   // === ETA / remaining — or PAUSED / ERROR alert — curved along the bottom rim ===
   if (etaChanged || stateChanged) {
     markFrameDirty();
-
-    if (s.gcodeStateId == GCODE_PAUSE) {
-      drawCurvedString(tft, "PAUSED", cx, cx, LY_RND_ARC_R, true,
-                       CLR_YELLOW, FONT_BODY, LY_RND_ARC_ETA_HDEG);
-    } else if (s.gcodeStateId == GCODE_FAILED) {
-      drawCurvedString(tft, "ERROR!", cx, cx, LY_RND_ARC_R, true,
-                       CLR_RED, FONT_BODY, LY_RND_ARC_ETA_HDEG);
-    } else if (s.remainingMinutes > 0) {
-      // Same ETA logic as the square printing screen (see drawPrinting).
-      static bool ntpSynced = false;
-      time_t nowEpoch = time(nullptr);
-      struct tm now;
-      localtime_r(&nowEpoch, &now);
-      if (now.tm_year > (2020 - 1900)) ntpSynced = true;
-
-      if (!dispSettings.showTimeRemaining && ntpSynced) {
-        time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
-        struct tm etaTm;
-        localtime_r(&etaEpoch, &etaTm);
-
-        char etaBuf[32];
-        int etaH = etaTm.tm_hour;
-        const char* ampm = "";
-        if (!netSettings.use24h) {
-          ampm = etaH < 12 ? "AM" : "PM";
-          etaH = etaH % 12;
-          if (etaH == 0) etaH = 12;
-        }
-        if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
-          if (netSettings.use24h)
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
-                     etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
-          else
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
-                     etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
-        } else {
-          if (netSettings.use24h)
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
-          else
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
-        }
-        drawCurvedString(tft, etaBuf, cx, cx, LY_RND_ARC_R, true,
-                         CLR_GREEN, FONT_BODY, LY_RND_ARC_ETA_HDEG);
-      } else {
-        char remBuf[24];
-        uint16_t h = s.remainingMinutes / 60;
-        uint16_t m = s.remainingMinutes % 60;
-        snprintf(remBuf, sizeof(remBuf), "Remaining: %dh %02dm", h, m);
-        drawCurvedString(tft, remBuf, cx, cx, LY_RND_ARC_R, true,
-                         CLR_TEXT, FONT_BODY, LY_RND_ARC_ETA_HDEG);
-      }
-    } else {
-      drawCurvedString(tft, "ETA: ---", cx, cx, LY_RND_ARC_R, true,
-                       CLR_TEXT_DIM, FONT_BODY, LY_RND_ARC_ETA_HDEG);
-    }
+    char buf[32];
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    drawCurvedString(tft, buf, cx, cx, LY_RND_ARC_R, true, clr,
+                     FONT_BODY, LY_RND_ARC_ETA_HDEG);
   }
 }
 
 static void drawPrinting() {
-  drawPrintingRound();
+  switch (dispSettings.roundSkin) {
+    case 1:  drawPrintingSpeedo(); break;
+    case 2:  drawPrintingRings();  break;
+    default: drawPrintingRound();  break;
+  }
 }
 #else
 static void drawPrinting() {

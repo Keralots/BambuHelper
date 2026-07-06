@@ -81,6 +81,10 @@ struct DisplaySettings {
                             // (classic: red LED) and red LED on GPIO22. Enables
                             // the amp while the buzzer is on and parks the
                             // moved RGB LED off at boot.
+  uint8_t  roundSkin;       // round displays only: printing dashboard skin.
+                            // 0 = Rim (rim progress ring + mini gauges),
+                            // 1 = Speedo (one large 240-degree arc),
+                            // 2 = Rings (concentric progress/nozzle/bed).
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip

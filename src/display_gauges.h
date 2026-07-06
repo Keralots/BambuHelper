@@ -23,9 +23,12 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 #if defined(DISPLAY_ROUND_240)
 // Full-circle rim progress ring (round displays). Fill runs clockwise from
 // 12 o'clock; incremental redraw unless forceRedraw / regression / color change.
+// cacheSlot (0-2) selects an independent incremental-draw cache so the Rings
+// skin can keep three concentric rings on screen at once.
 void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                  int16_t radius, int16_t thickness,
-                 uint8_t pct, uint16_t fillColor, bool forceRedraw);
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw,
+                 uint8_t cacheSlot = 0);
 
 // Draw str along a circular arc of radius r around (cx,cy), centered on
 // 12 o'clock (bottom=false, glyph tops facing the rim) or 6 o'clock
@@ -37,6 +40,14 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
                       int16_t cx, int16_t cy, int16_t r, bool bottom,
                       uint16_t color, FontID font, int16_t clearHalfDeg);
 #endif
+
+// Standard 240-degree gauge arc primitive (track 60..300, gap at 6 o'clock).
+// fillEnd is the fill's end angle in that space; forceRedraw repaints the
+// track (and wipes the enclosing circle) first. Used by every arc gauge and
+// directly by the round Speedo skin.
+void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint16_t fillEnd, uint16_t fillColor, bool forceRedraw);
 
 // Draw progress arc with percentage and time in center
 void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,

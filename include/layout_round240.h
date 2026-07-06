@@ -47,6 +47,40 @@
 #define LY_RND_G_X2        120     // bed gauge center X
 #define LY_RND_G_X3        182     // fan gauge center X
 
+// --- Printing screen, "Speedo" skin (roundSkin = 1) ---
+// One large 240-degree gauge arc (start 60, sweep 240, gap at 6 o'clock);
+// the bottom gap becomes the text zone for temps, ETA stays curved.
+// Arc outer radius sits halfway between the Rim ring (118) and the original
+// conservative 96 — big arc presence without hugging the bezel.
+#define LY_RND_SPD_R        107    // big arc outer radius (inner = 95)
+#define LY_RND_SPD_T        12     // big arc thickness
+#define LY_RND_SPD_STATUS_Y 64     // printer name + state (straight, center datum)
+#define LY_RND_SPD_DOTS_Y   80     // multi-printer dots row
+#define LY_RND_SPD_PCT_Y    118    // big progress % (center datum)
+#define LY_RND_SPD_LAYER_Y  144    // layer line (center datum)
+#define LY_RND_SPD_TEMP_Y   190    // nozzle/bed readouts in the arc gap
+#define LY_RND_SPD_NOZ_X    85     // nozzle readout center X
+#define LY_RND_SPD_BED_X    155    // bed readout center X
+// Curved ETA (FONT_BODY) in the gap below the temps. Sector capped at 36 deg
+// so the band clear can't clip the temp readout corners (~39 deg off bottom).
+#define LY_RND_SPD_ETA_R    104    // curved ETA glyph-center radius
+#define LY_RND_SPD_ETA_HDEG 36     // curved ETA clear sector half-angle
+
+// --- Printing screen, "Rings" skin (roundSkin = 2) ---
+// Three concentric full-circle rings: progress / nozzle / bed.
+// Outer ring nearly flush like the Rim skin; interior disc r = 74 keeps the
+// center text clears (widest: % at cx+/-50, corner dist ~67) off the bed ring.
+#define LY_RND_RGS_R1       116    // progress ring outer radius
+#define LY_RND_RGS_R2       100    // nozzle ring outer radius
+#define LY_RND_RGS_R3       84     // bed ring outer radius
+#define LY_RND_RGS_T        10     // ring thickness (all three)
+#define LY_RND_RGS_PCT_Y    94     // big progress % (center datum)
+#define LY_RND_RGS_TEMP_Y   126    // nozzle/bed readouts (center datum)
+#define LY_RND_RGS_NOZ_X    96     // nozzle readout center X
+#define LY_RND_RGS_BED_X    144    // bed readout center X
+#define LY_RND_RGS_ETA_Y    152    // remaining line (center datum)
+#define LY_RND_RGS_DOTS_Y   170    // multi-printer dots row
+
 // --- Idle screen (printer online) ---
 #define LY_RND_IDLE_NAME_R   102   // curved printer name radius (no ring here)
 #define LY_RND_IDLE_G_Y      152   // nozzle/bed gauge row center Y

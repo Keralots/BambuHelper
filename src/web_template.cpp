@@ -269,6 +269,23 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "ROUND_SKIN_ROW") == 0) {
+#if defined(DISPLAY_ROUND_240)
+    // Round boards only: printing dashboard skin picker. Posts through the
+    // same /save/toggle endpoint as the checkboxes (val carries 0-2).
+    auto sel = [&](uint8_t v) { return dispSettings.roundSkin == v ? " selected" : ""; };
+    out  = "<div class=\"field\"><label for=\"rskin\">Print dashboard skin</label>";
+    out += "<select id=\"rskin\" onchange=\"toggleSetting('rskin',this.value)\">";
+    out += "<option value=\"0\""; out += sel(0); out += ">Rim (progress ring + mini gauges)</option>";
+    out += "<option value=\"1\""; out += sel(1); out += ">Speedo (large 240&deg; arc)</option>";
+    out += "<option value=\"2\""; out += sel(2); out += ">Rings (concentric progress/nozzle/bed)</option>";
+    out += "</select>";
+    out += "<span class=\"text-dim small\">applies immediately</span></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "EXTENDED_MODES_CARD") == 0) {
     // Card lives in the Advanced section. Only renders on layouts that
     // actually have extended grid modes, otherwise the whole card is empty.

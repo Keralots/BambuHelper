@@ -77,7 +77,7 @@ function saveWifi(){
 //              cl_pname, dualp, gs0..gs5, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
 //              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, hidelp, invcol,
-//              cydcls, rotation, tz, use24h, datefmt, clk_time, clk_date,
+//              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
@@ -901,6 +901,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 %AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
+%ROUND_SKIN_ROW%
   </div>
 
   <div class="card">
@@ -2494,9 +2495,12 @@ function applyDisplay(){
 }
 
 /* ============ Whitelisted toggle ============ */
+/* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
+   their string value through unchanged. */
 function toggleSetting(key, on){
-  fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+(on?'1':'0')})
-    .then(function(r){if(r.ok)showToast(on?key+' ON':key+' OFF');else showToast('Error');})
+  var val = (on === true) ? '1' : (on === false) ? '0' : String(on);
+  fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+encodeURIComponent(val)})
+    .then(function(r){if(r.ok)showToast(typeof on==='boolean'?(on?key+' ON':key+' OFF'):key+' saved');else showToast('Error');})
     .catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
 function toggleDualPrinterMode(on){

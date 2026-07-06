@@ -421,9 +421,9 @@ static void drawArcSegmentAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   drawArcAA(gfx, cx, cy, radius, innerRadius, a0, a1, fg_color, bg_color);
 }
 
-static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
-                        int16_t radius, int16_t thickness,
-                        uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
+void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
   const uint16_t startAngle = 60;
   const uint16_t endAngle = 300;
   const uint16_t clampedFillEnd =
@@ -463,9 +463,13 @@ static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // ---------------------------------------------------------------------------
 void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                  int16_t radius, int16_t thickness,
-                 uint8_t pct, uint16_t fillColor, bool forceRedraw) {
-  static uint16_t prevDeg   = 0xFFFF;
-  static uint16_t prevColor = 0;
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw,
+                 uint8_t cacheSlot) {
+  static uint16_t prevDegs[3]   = { 0xFFFF, 0xFFFF, 0xFFFF };
+  static uint16_t prevColors[3] = { 0, 0, 0 };
+  if (cacheSlot > 2) cacheSlot = 0;
+  uint16_t& prevDeg   = prevDegs[cacheSlot];
+  uint16_t& prevColor = prevColors[cacheSlot];
 
   if (pct > 100) pct = 100;
   const uint16_t deg   = (uint16_t)pct * 360 / 100;
