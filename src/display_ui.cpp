@@ -4303,6 +4303,33 @@ void updateDisplay() {
   }
 #endif // !DISPLAY_ROUND_240
 
+#if defined(DISPLAY_ROUND_240)
+  // Experimental progress-arc shimmer, per skin: Rim + Rings sweep the full
+  // circle (Rings on its outer progress ring), Speedo sweeps its 240-deg arc.
+  if (currentScreen == SCREEN_PRINTING) {
+    BambuState& sh = displayedPrinter().state;
+    uint16_t ringColor = (sh.progress >= 90) ? CLR_GOLD : CLR_GREEN;
+    if (sh.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
+    else if (sh.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    const int16_t cx = SCREEN_W / 2;
+    switch (dispSettings.roundSkin) {
+      case 1:  // Speedo
+        tickSpeedoShimmer(tft, cx, cx, LY_RND_SPD_R, LY_RND_SPD_T,
+                          sh.progress, ringColor, sh.printing);
+        break;
+      case 2:  // Rings (outer progress ring)
+        tickRimShimmer(tft, cx, cx, LY_RND_RGS_R1, LY_RND_RGS_T,
+                       sh.progress, ringColor, sh.printing);
+        break;
+      default: // Rim
+        tickRimShimmer(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
+                       sh.progress, ringColor, sh.printing);
+        break;
+    }
+    markFrameDirty();
+  }
+#endif
+
   unsigned long now = millis();
   unsigned long interval = gaugesAnimating ? GAUGE_ANIM_MS : DISPLAY_UPDATE_MS;
   if (now - lastDisplayUpdate < interval) return;

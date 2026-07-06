@@ -507,6 +507,149 @@ void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 }
 
 // ---------------------------------------------------------------------------
+//  Rim-ring shimmer (experimental): a white-tinted specular band sweeps
+//  clockwise around the filled portion of the progress ring, then pauses and
+//  repeats. Runs at its own ~40fps cadence from updateDisplay(), independent
+//  of the event-driven ring redraw. Incremental: each frame restores the
+//  previous band to the base fill color and paints the new one, so only about
+//  one band-width of the thin ring is touched per frame (cheap SPI, no full-
+//  ring recompose). Angles are degrees from 12 o'clock, clockwise, matching
+//  drawRimRing; the 180-offset + 360-wrap maps into drawArcAA's angle space.
+// ---------------------------------------------------------------------------
+static const int16_t RIM_SHIM_BW   = 30;   // band angular width (deg)
+static const int16_t RIM_SHIM_STEP = 6;    // deg advanced per frame (lower = slower)
+static const int16_t RIM_SHIM_EDGE = 6;    // dimmer band shoulders (deg)
+
+// Draw an arc [s0..s1] in drawArcAA angle space (0 = 6 o'clock, CW), splitting
+// at the 360 wrap so callers can pass s0/s1 up to ~720 for wrapped spans.
+static void shimSpanAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t r, int16_t ir, int16_t s0, int16_t s1,
+                       uint16_t color, uint16_t bg) {
+  if (s1 <= s0) return;
+  if (s0 >= 360) { s0 -= 360; s1 -= 360; }
+  if (s1 <= 360) {
+    drawArcAA(gfx, cx, cy, r, ir, s0, s1, color, bg);
+  } else {
+    drawArcAA(gfx, cx, cy, r, ir, s0, 360, color, bg);
+    drawArcAA(gfx, cx, cy, r, ir, 0, s1 - 360, color, bg);
+  }
+}
+
+// Paint one shimmer band [a..b] (in drawArcAA space) with a bright core and
+// dimmer shoulders, over the base fill color.
+static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                          int16_t r, int16_t ir, int16_t a, int16_t b,
+                          uint16_t fillColor, uint16_t bg) {
+  if (b <= a) return;
+  const uint16_t bright = alphaBlend565(230, CLR_TEXT, fillColor);
+  const uint16_t mid    = alphaBlend565(150, CLR_TEXT, fillColor);
+  if (b - a > 2 * RIM_SHIM_EDGE) {
+    shimSpanAA(gfx, cx, cy, r, ir, a, a + RIM_SHIM_EDGE, mid, bg);
+    shimSpanAA(gfx, cx, cy, r, ir, a + RIM_SHIM_EDGE, b - RIM_SHIM_EDGE, bright, bg);
+    shimSpanAA(gfx, cx, cy, r, ir, b - RIM_SHIM_EDGE, b, mid, bg);
+  } else {
+    shimSpanAA(gfx, cx, cy, r, ir, a, b, bright, bg);
+  }
+}
+
+// Core sweep engine shared by the full-circle (Rim/Rings) and the 240-deg arc
+// (Speedo) skins. Sweeps a band from fillStart to fillEnd (drawArcAA space),
+// restoring the trailing band to fillColor each frame, then pauses and repeats.
+// `state` holds this instance's animation cursor so different skins/geometries
+// don't share a cursor; the caller resets it when the geometry changes.
+struct ShimState {
+  int16_t       a       = 0;
+  int16_t       prevA   = 0;
+  bool          hasPrev = false;
+  unsigned long lastMs  = 0;
+  bool          paused  = false;
+  unsigned long pauseMs = 0;
+  int16_t       geom    = -1;   // geometry signature; change -> reset
+};
+
+static void shimSweep(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                      int16_t radius, int16_t thickness,
+                      int16_t fillStart, int16_t fillEnd,
+                      uint16_t fillColor, int16_t geomSig, ShimState& st) {
+  if (fillEnd - fillStart < RIM_SHIM_BW + 4) return;  // filled arc too short
+
+  if (st.geom != geomSig) {          // geometry changed (skin/radius) -> reset
+    st.geom = geomSig;
+    st.hasPrev = false;
+    st.paused  = false;
+    st.a       = fillStart;
+  }
+
+  unsigned long now = millis();
+  if (st.paused) {
+    if (now - st.pauseMs < SHIMMER_PAUSE) return;
+    st.paused  = false;
+    st.hasPrev = false;
+    st.a       = fillStart;
+  }
+  if (now - st.lastMs < SHIMMER_INTERVAL) return;
+  st.lastMs = now;
+  if (st.a < fillStart) st.a = fillStart;
+
+  const uint16_t bg = dispSettings.bgColor;
+  const int16_t  ir = radius - thickness;
+
+  ScopedWrite sw_(gfx);
+
+  if (st.hasPrev) {
+    int16_t pb = st.prevA + RIM_SHIM_BW;
+    if (pb > fillEnd) pb = fillEnd;
+    shimSpanAA(gfx, cx, cy, radius, ir, st.prevA, pb, fillColor, bg);
+  }
+
+  int16_t a = st.a;
+  int16_t b = a + RIM_SHIM_BW;
+  if (b > fillEnd) b = fillEnd;
+  shimPaintBand(gfx, cx, cy, radius, ir, a, b, fillColor, bg);
+
+  st.prevA   = a;
+  st.hasPrev = true;
+
+  st.a += RIM_SHIM_STEP;
+  if (st.a >= fillEnd) {
+    int16_t pb = st.prevA + RIM_SHIM_BW;
+    if (pb > fillEnd) pb = fillEnd;
+    shimSpanAA(gfx, cx, cy, radius, ir, st.prevA, pb, fillColor, bg);
+    st.hasPrev = false;
+    st.paused  = true;
+    st.pauseMs = now;
+    st.a       = fillStart;
+  }
+}
+
+// Full-circle rim ring (Rim skin outer ring, Rings skin outer progress ring):
+// fill runs clockwise from 12 o'clock, which is 180 in drawArcAA space.
+void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                    int16_t radius, int16_t thickness,
+                    uint8_t pct, uint16_t fillColor, bool printing) {
+  if (!dispSettings.animatedBar || !printing || pct == 0) return;
+  if (pct > 100) pct = 100;
+  const int16_t deg = (int16_t)pct * 360 / 100;
+  static ShimState st;
+  // geomSig keys on radius only (Rim 118 vs Rings outer 116) so switching skins
+  // resets the cursor; a normal progress change must NOT reset the sweep.
+  shimSweep(gfx, cx, cy, radius, thickness, 180, 180 + deg, fillColor,
+            radius, st);
+}
+
+// 240-deg gauge arc (Speedo skin): fill runs from 60 to 60+pct*240/100 in
+// drawArcAA space, gap at the bottom (6 o'clock).
+void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t radius, int16_t thickness,
+                       uint8_t pct, uint16_t fillColor, bool printing) {
+  if (!dispSettings.animatedBar || !printing || pct == 0) return;
+  if (pct > 100) pct = 100;
+  const int16_t fillEnd = 60 + (int16_t)pct * 240 / 100;
+  static ShimState st;   // own state; geomSig = radius (constant for this skin)
+  shimSweep(gfx, cx, cy, radius, thickness, 60, fillEnd, fillColor, radius, st);
+}
+
+// ---------------------------------------------------------------------------
 //  Curved rim text (round displays)
 // ---------------------------------------------------------------------------
 // Each glyph is rendered into a small 16-bit sprite and pushed rotated (with

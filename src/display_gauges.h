@@ -30,6 +30,17 @@ void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                  uint8_t pct, uint16_t fillColor, bool forceRedraw,
                  uint8_t cacheSlot = 0);
 
+// Shimmer ticks (experimental): sweep a bright specular band around the filled
+// progress arc. Call from updateDisplay() at its own cadence; gated on
+// dispSettings.animatedBar. tickRimShimmer = full circle from 12 o'clock (Rim
+// skin + Rings outer ring); tickSpeedoShimmer = 240-deg gauge arc (Speedo).
+void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                    int16_t radius, int16_t thickness,
+                    uint8_t pct, uint16_t fillColor, bool printing);
+void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t radius, int16_t thickness,
+                       uint8_t pct, uint16_t fillColor, bool printing);
+
 // Draw str along a circular arc of radius r around (cx,cy), centered on
 // 12 o'clock (bottom=false, glyph tops facing the rim) or 6 o'clock
 // (bottom=true, glyph tops facing the center — coin-style, reads left to
