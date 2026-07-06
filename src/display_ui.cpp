@@ -4250,12 +4250,26 @@ static void drawPowerConfirm() {
 
     setFont(tft, FONT_SMALL);
     tft.setTextColor(CLR_TEXT_DIM, bg);
+#if defined(DISPLAY_ROUND_240)
+    // The square stack (down to cy+110) runs off the bottom of the circle.
+    // Keep the key instruction straight and prominent; curve the secondary
+    // hint along the bottom rim (same style/constants as the printing ETA)
+    // so it stays inside the circle and can't clip on the round bezel.
+    tft.drawString("hold to confirm", cx, cy + 64);
+    if (v.offline) {
+      tft.setTextColor(CLR_ORANGE, bg);
+      tft.drawString("plug offline", cx, cy + 82);
+    }
+    drawCurvedString(tft, "tap to cancel", cx, cy, LY_RND_ARC_R, true,
+                     CLR_TEXT_DIM, FONT_SMALL, LY_RND_ARC_ETA_HDEG);
+#else
     tft.drawString("hold to confirm", cx, cy + 74);
     tft.drawString("tap to cancel",   cx, cy + 92);
     if (v.offline) {
       tft.setTextColor(CLR_ORANGE, bg);
       tft.drawString("plug offline", cx, cy + 110);
     }
+#endif
   }
 
   // Hold-to-confirm ring (redraw the full track every frame, then the fill, so a
