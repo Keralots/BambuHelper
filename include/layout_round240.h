@@ -23,28 +23,32 @@
 // =============================================================================
 
 // --- Rim progress ring (printing + finished screens) ---
-// Outer radius 114 leaves a ~5 px black margin to the physical edge: cheap
-// GC9A01 modules mask the outermost pixel rows unevenly (bezel tolerance).
-#define LY_RND_RING_R      114     // ring outer radius
+// Outer radius 118 runs nearly flush to the physical edge (2 px reserve for
+// bezel tolerance on cheap modules), maximizing the usable interior.
+#define LY_RND_RING_R      118     // ring outer radius
 #define LY_RND_RING_T      7       // ring thickness
 
+// --- Curved rim text (status line on top, ETA line on bottom) ---
+// Text arcs just inside the ring (ring inner = R - T = 111). Radius is the
+// arc through the glyph centers; the band it occupies is r +/- fontHeight/2.
+#define LY_RND_ARC_R           98  // glyph-center radius for FONT_BODY arcs
+#define LY_RND_ARC_STATUS_HDEG 55  // top clear sector: 12 o'clock +/- 55 deg
+#define LY_RND_ARC_ETA_HDEG    45  // bottom clear sector: 6 o'clock +/- 45 deg
+#define LY_RND_ARC_STATUS_MAXW 180 // ellipsize budget (px of arc length)
+
 // --- Printing screen (variant A: rim ring + 3 mini gauges) ---
-#define LY_RND_STATUS_Y    38      // printer name + state line (center datum)
-#define LY_RND_PCT_Y       88      // big progress % (center datum)
-#define LY_RND_LAYER_Y     112     // "layer n / total" line (center datum)
+#define LY_RND_DOTS_Y      42      // multi-printer dots row (below top arc)
+#define LY_RND_PCT_Y       80      // big progress % (center datum)
+#define LY_RND_LAYER_Y     104     // "layer n / total" line (center datum)
 #define LY_RND_G_R         27      // mini gauge radius
 #define LY_RND_G_T         6       // mini gauge arc thickness
-#define LY_RND_G_Y         152     // mini gauge row center Y
+#define LY_RND_G_Y         144     // mini gauge row center Y
 #define LY_RND_G_X1        58      // nozzle gauge center X
 #define LY_RND_G_X2        120     // bed gauge center X
 #define LY_RND_G_X3        182     // fan gauge center X
-#define LY_RND_ETA_Y       208     // remaining + ETA line (center datum)
 
 // --- Idle screen (printer online) ---
-#define LY_RND_IDLE_NAME_Y   64    // printer name (center datum)
-#define LY_RND_IDLE_PILL_Y   82    // state pill rect top
-#define LY_RND_IDLE_PILL_W   72
-#define LY_RND_IDLE_PILL_H   24
+#define LY_RND_IDLE_NAME_R   102   // curved printer name radius (no ring here)
 #define LY_RND_IDLE_G_Y      152   // nozzle/bed gauge row center Y
 #define LY_RND_IDLE_G_R      30
 #define LY_RND_IDLE_G_OFF    44    // gauge X offset from center (120 +/- 44)

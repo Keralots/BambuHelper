@@ -26,4 +26,10 @@ enum FontID : uint8_t {
 // included in the same translation unit.
 void setFont(lgfx::LovyanGFX& gfx, FontID id);
 
+// Load a VLW font into an arbitrary render target (e.g. an LGFX_Sprite),
+// bypassing setFont()'s last-selection cache — that cache tracks the main
+// panel only and would skip the load on a second target. Returns false when
+// the id has no VLW blob (FONT_7SEG / FONT_NONE) or the load fails.
+bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id);
+
 #endif // FONTS_H

@@ -1004,18 +1004,16 @@ static void drawIdleDryingRound(PrinterSlot& p) {
                 dryProgress, CLR_GREEN, forceRedraw || unitChanged);
   }
 
-  // Title: "Drying" (+ rotation index with several units)
+  // Title: "Drying" (+ rotation index with several units), curved on top
   if (unitChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 75, LY_RND_STATUS_Y - 10, 150, 20, CLR_BG);
-    setFont(tft, FONT_BODY);
-    tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     char title[24];
     if (dryCount > 1)
       snprintf(title, sizeof(title), "Drying  (%u/%u)", dryDisplayIdx + 1, dryCount);
     else
       snprintf(title, sizeof(title), "Drying");
-    tft.drawString(title, cx, LY_RND_STATUS_Y);
+    drawCurvedString(tft, title, cx, cx, LY_RND_ARC_R, false,
+                     CLR_TEXT_DIM, FONT_BODY, LY_RND_ARC_STATUS_HDEG);
   }
 
   // Remaining time, big and centered
@@ -1539,10 +1537,23 @@ static void drawIdle() {
 
   // Printer name (only on forceRedraw — name doesn't change)
   if (forceRedraw) {
+#if defined(DISPLAY_ROUND_240)
+    // Curved along the top rim. Drawn only after a full wipe, so no band
+    // clear is needed (clearHalfDeg 0).
+    char clipped[48];
+    setFont(tft, FONT_LARGE);
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
+    drawCurvedString(tft,
+                     ellipsizeToWidth(tft, name, 190, clipped, sizeof(clipped)),
+                     cx, SCREEN_H / 2, LY_RND_IDLE_NAME_R, false,
+                     CLR_GREEN, FONT_LARGE, 0);
+    (void)lyIdleNameY;
+#else
     tft.setTextColor(CLR_GREEN, CLR_BG);
     setFont(tft, FONT_LARGE);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, cx, lyIdleNameY);
+#endif
     markFrameDirty();
   }
 
@@ -2622,10 +2633,9 @@ static void drawPrintingRound() {
                 s.progress, ringColor, forceRedraw);
   }
 
-  // === Status line: printer name + state (replaces the header bar) ===
+  // === Status line: printer name + state, curved along the top rim ===
   if (stateChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 75, LY_RND_STATUS_Y - 10, 150, 26, CLR_BG);
     setFont(tft, FONT_BODY);
     uint16_t stColor = CLR_TEXT_DIM;
     if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
@@ -2634,10 +2644,13 @@ static void drawPrintingRound() {
     char line[48], clipped[48];
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
-    tft.setTextColor(stColor, CLR_BG);
-    tft.drawString(ellipsizeToWidth(tft, line, 148, clipped, sizeof(clipped)),
-                   cx, LY_RND_STATUS_Y);
-    if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_STATUS_Y + 13);
+    drawCurvedString(tft,
+                     ellipsizeToWidth(tft, line, LY_RND_ARC_STATUS_MAXW,
+                                      clipped, sizeof(clipped)),
+                     cx, cx, LY_RND_ARC_R, false, stColor, FONT_BODY,
+                     LY_RND_ARC_STATUS_HDEG);
+    tft.fillRect(cx - 30, LY_RND_DOTS_Y - 5, 60, 10, CLR_BG);
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_DOTS_Y);
   }
 
   // === Big progress % ===
@@ -2684,20 +2697,16 @@ static void drawPrintingRound() {
                  &dispSettings.partFan, smoothPartFan);
   }
 
-  // === ETA / remaining line — or PAUSED / ERROR alert ===
+  // === ETA / remaining — or PAUSED / ERROR alert — curved along the bottom rim ===
   if (etaChanged || stateChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 80, LY_RND_ETA_Y - 13, 160, 26, CLR_BG);
-    tft.setTextDatum(MC_DATUM);
 
     if (s.gcodeStateId == GCODE_PAUSE) {
-      setFont(tft, FONT_LARGE);
-      tft.setTextColor(CLR_YELLOW, CLR_BG);
-      tft.drawString("PAUSED", cx, LY_RND_ETA_Y);
+      drawCurvedString(tft, "PAUSED", cx, cx, LY_RND_ARC_R, true,
+                       CLR_YELLOW, FONT_BODY, LY_RND_ARC_ETA_HDEG);
     } else if (s.gcodeStateId == GCODE_FAILED) {
-      setFont(tft, FONT_LARGE);
-      tft.setTextColor(CLR_RED, CLR_BG);
-      tft.drawString("ERROR!", cx, LY_RND_ETA_Y);
+      drawCurvedString(tft, "ERROR!", cx, cx, LY_RND_ARC_R, true,
+                       CLR_RED, FONT_BODY, LY_RND_ARC_ETA_HDEG);
     } else if (s.remainingMinutes > 0) {
       // Same ETA logic as the square printing screen (see drawPrinting).
       static bool ntpSynced = false;
@@ -2732,22 +2741,19 @@ static void drawPrintingRound() {
           else
             snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
         }
-        setFont(tft, FONT_BODY);
-        tft.setTextColor(CLR_GREEN, CLR_BG);
-        tft.drawString(etaBuf, cx, LY_RND_ETA_Y);
+        drawCurvedString(tft, etaBuf, cx, cx, LY_RND_ARC_R, true,
+                         CLR_GREEN, FONT_BODY, LY_RND_ARC_ETA_HDEG);
       } else {
         char remBuf[24];
         uint16_t h = s.remainingMinutes / 60;
         uint16_t m = s.remainingMinutes % 60;
         snprintf(remBuf, sizeof(remBuf), "Remaining: %dh %02dm", h, m);
-        setFont(tft, FONT_BODY);
-        tft.setTextColor(CLR_TEXT, CLR_BG);
-        tft.drawString(remBuf, cx, LY_RND_ETA_Y);
+        drawCurvedString(tft, remBuf, cx, cx, LY_RND_ARC_R, true,
+                         CLR_TEXT, FONT_BODY, LY_RND_ARC_ETA_HDEG);
       }
     } else {
-      setFont(tft, FONT_BODY);
-      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString("ETA: ---", cx, LY_RND_ETA_Y);
+      drawCurvedString(tft, "ETA: ---", cx, cx, LY_RND_ARC_R, true,
+                       CLR_TEXT_DIM, FONT_BODY, LY_RND_ARC_ETA_HDEG);
     }
   }
 }

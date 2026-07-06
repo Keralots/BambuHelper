@@ -60,3 +60,18 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
 
     currentFont = id;
 }
+
+bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
+    switch (id) {
+        case FONT_SMALL:  return gfx.loadFont(inter_10);
+        case FONT_BODY:   return gfx.loadFont(inter_14);
+        case FONT_LARGE:  return gfx.loadFont(inter_19);
+        case FONT_XLARGE:
+#if defined(DISPLAY_320x480)
+            return gfx.loadFont(inter_22);
+#else
+            return gfx.loadFont(inter_19);
+#endif
+        default:          return false;
+    }
+}

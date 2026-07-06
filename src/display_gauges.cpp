@@ -501,6 +501,121 @@ void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   prevDeg   = deg;
   prevColor = fillColor;
 }
+
+// ---------------------------------------------------------------------------
+//  Curved rim text (round displays)
+// ---------------------------------------------------------------------------
+// Each glyph is rendered into a small 16-bit sprite and pushed rotated (with
+// AA resampling) tangent to the arc. The sprite is pre-filled with the screen
+// background color, which doubles as the transparency key: only glyph pixels
+// land on screen, so neighboring glyph cells can't erase each other's AA edges.
+// Angle math below uses screen convention: 0 deg = 3 o'clock, clockwise
+// positive (y grows downward). drawArcAA's own space (0 = 6 o'clock) applies
+// only to the band-clear call.
+void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
+                      int16_t cx, int16_t cy, int16_t r, bool bottom,
+                      uint16_t color, FontID font, int16_t clearHalfDeg) {
+  ScopedWrite sw(gfx);
+  const uint16_t bg = dispSettings.bgColor;
+  setFont(gfx, font);
+  const int16_t fh = gfx.fontHeight();
+
+  if (clearHalfDeg > 0) {
+    // drawArcAA space: 0 = 6 o'clock, clockwise. It handles end < start by
+    // splitting at the 360 wrap, so the bottom sector needs no special case.
+    uint32_t mid = bottom ? 0 : 180;
+    uint32_t a0 = (mid + 360 - (uint32_t)clearHalfDeg) % 360;
+    uint32_t a1 = (mid + (uint32_t)clearHalfDeg) % 360;
+    drawArcAA(gfx, cx, cy, r + fh / 2 + 2, r - fh / 2 - 2, a0, a1, bg, bg);
+  }
+  if (!str || !str[0]) return;
+
+  // Split into UTF-8 code points and measure each advance at the target font.
+  struct GlyphRef { const char* p; uint8_t len; int16_t w; };
+  GlyphRef glyphs[48];
+  int   n = 0;
+  int   totalW = 0;
+  int16_t maxW = 1;
+  for (const char* p = str; *p && n < 48;) {
+    uint8_t c = (uint8_t)*p;
+    uint8_t len = (c < 0x80) ? 1 : (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : 2;
+    char tmp[5];
+    uint8_t i = 0;
+    for (; i < len && p[i]; i++) tmp[i] = p[i];
+    tmp[i] = '\0';
+    int16_t w = gfx.textWidth(tmp);
+    glyphs[n].p = p;
+    glyphs[n].len = i;
+    glyphs[n].w = w;
+    if (w > maxW) maxW = w;
+    totalW += w;
+    n++;
+    p += i;
+  }
+  if (n == 0 || totalW <= 0) return;
+
+  lgfx::LGFX_Sprite spr(&gfx);
+  spr.setColorDepth(16);
+  const int16_t sprW = maxW + 2, sprH = fh + 2;
+  if (!spr.createSprite(sprW, sprH) || !loadFontInto(spr, font)) {
+    // Heap-starved fallback: straight line at the arc's chord.
+    spr.deleteSprite();
+    gfx.setTextDatum(MC_DATUM);
+    gfx.setTextColor(color, bg);
+    gfx.drawString(str, cx, bottom ? (cy + r - fh / 2) : (cy - r + fh / 2));
+    return;
+  }
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextColor(color, bg);
+  spr.setPivot(sprW * 0.5f, sprH * 0.5f);
+
+  // Rotation happens sprite-to-sprite: the AA affine push blends its edge
+  // pixels by reading the destination, and this panel is write-only (7-pin
+  // GC9A01, no MISO) — pushing rotated glyphs straight at the panel blends
+  // against floating-bus garbage and shatters the text. A RAM destination
+  // blends correctly; the composed square then goes out with a plain
+  // transparent (non-reading) push.
+  const int16_t side = (int16_t)ceilf(sqrtf((float)(sprW * sprW + sprH * sprH))) + 2;
+  lgfx::LGFX_Sprite rotspr(&gfx);
+  rotspr.setColorDepth(16);
+  if (!rotspr.createSprite(side, side)) {
+    spr.unloadFont();
+    spr.deleteSprite();
+    gfx.setTextDatum(MC_DATUM);
+    gfx.setTextColor(color, bg);
+    gfx.drawString(str, cx, bottom ? (cy + r - fh / 2) : (cy - r + fh / 2));
+    return;
+  }
+
+  constexpr float d2r = 3.14159265f / 180.0f;
+  const float degPerPx = 180.0f / (3.14159265f * (float)r);
+  const float totalDeg = totalW * degPerPx;
+  // Top text runs clockwise through 270 deg; bottom text runs counter-
+  // clockwise through 90 deg so it still reads left to right.
+  float a = bottom ? (90.0f + totalDeg * 0.5f) : (270.0f - totalDeg * 0.5f);
+  for (int i = 0; i < n; i++) {
+    const float half = glyphs[i].w * degPerPx * 0.5f;
+    const float ac = bottom ? (a - half) : (a + half);  // glyph center angle
+    char tmp[5];
+    memcpy(tmp, glyphs[i].p, glyphs[i].len);
+    tmp[glyphs[i].len] = '\0';
+    spr.fillSprite(bg);
+    spr.drawString(tmp, sprW / 2, sprH / 2);
+    const float px = cx + r * cosf(ac * d2r);
+    const float py = cy + r * sinf(ac * d2r);
+    // Tangent rotation: upright at the sector midpoint, tilting with the arc.
+    const float rot = bottom ? (ac - 90.0f) : (ac - 270.0f);
+    rotspr.fillSprite(bg);
+    spr.pushRotateZoomWithAA(&rotspr, side * 0.5f, side * 0.5f, rot,
+                             1.0f, 1.0f, bg);
+    rotspr.pushSprite(&gfx, (int32_t)lroundf(px) - side / 2,
+                      (int32_t)lroundf(py) - side / 2, bg);
+    a = bottom ? (a - 2.0f * half) : (a + 2.0f * half);
+  }
+  rotspr.deleteSprite();
+  spr.unloadFont();
+  spr.deleteSprite();
+}
 #endif // DISPLAY_ROUND_240
 
 // ---------------------------------------------------------------------------
@@ -589,8 +704,15 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   // Clear the actual drawn extent so a previous, wider label leaves no ghost
   // (e.g. "Nozzle R" -> "Nozzle L" on a side flip, or a full label > maxW).
   const int16_t fh = gfx.fontHeight();
+#if defined(DISPLAY_ROUND_240)
+  // Side-gauge labels sit close to the rim ring; a wider-than-slot clear band
+  // would cut a rectangular notch into it. Cap at the slot width — ghosts are
+  // impossible in practice (labels here only flip between short strings).
+  const int16_t clearW = maxW;
+#else
   const int16_t tw = gfx.textWidth(draw);
   const int16_t clearW = (tw + 4 > maxW) ? (int16_t)(tw + 4) : maxW;
+#endif
   gfx.fillRect(cx - clearW / 2, ly - fh / 2 - 1, clearW, fh + 2, bg);
 
   gfx.setTextDatum(MC_DATUM);

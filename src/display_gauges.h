@@ -2,6 +2,7 @@
 #define DISPLAY_GAUGES_H
 
 #include <LovyanGFX.hpp>
+#include "fonts.h"
 
 struct GaugeColors;  // forward declaration from settings.h
 
@@ -25,6 +26,16 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                  int16_t radius, int16_t thickness,
                  uint8_t pct, uint16_t fillColor, bool forceRedraw);
+
+// Draw str along a circular arc of radius r around (cx,cy), centered on
+// 12 o'clock (bottom=false, glyph tops facing the rim) or 6 o'clock
+// (bottom=true, glyph tops facing the center — coin-style, reads left to
+// right). clearHalfDeg > 0 first wipes the annulus band r +/- fontHeight/2
+// over the sector midpoint +/- clearHalfDeg; the caller must keep the string
+// short enough to stay inside that sector.
+void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
+                      int16_t cx, int16_t cy, int16_t r, bool bottom,
+                      uint16_t color, FontID font, int16_t clearHalfDeg);
 #endif
 
 // Draw progress arc with percentage and time in center
