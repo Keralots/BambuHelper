@@ -451,6 +451,58 @@ static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   }
 }
 
+#if defined(DISPLAY_ROUND_240)
+// ---------------------------------------------------------------------------
+//  Full-circle rim ring (round displays): progress fill runs clockwise from
+//  12 o'clock. drawArcAA's angle space has 0 at 6 o'clock increasing
+//  clockwise, so the fill starts at 180 and wraps through 360 -> 0.
+//  Incremental: only the newly filled span is drawn, unless the value moved
+//  backwards, the fill color changed, or forceRedraw is set (every screen
+//  wipe passes forceRedraw, which is what keeps the single static cache
+//  valid across the printing / finished / drying screens that share it).
+// ---------------------------------------------------------------------------
+void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw) {
+  static uint16_t prevDeg   = 0xFFFF;
+  static uint16_t prevColor = 0;
+
+  if (pct > 100) pct = 100;
+  const uint16_t deg   = (uint16_t)pct * 360 / 100;
+  const uint16_t bg    = dispSettings.bgColor;
+  const uint16_t track = dispSettings.trackColor;
+  const int16_t  ir    = radius - thickness;
+
+  const bool full = forceRedraw || prevDeg == 0xFFFF || deg < prevDeg ||
+                    (deg > 0 && fillColor != prevColor);
+  if (!full && deg == prevDeg) return;
+
+  // Draw the span [a..b] (degrees from 12 o'clock, clockwise) in `color`,
+  // splitting at the 360 wrap of drawArcAA's angle space.
+  auto spanDraw = [&](uint16_t a, uint16_t b, uint16_t color) {
+    if (b <= a) return;
+    uint16_t s0 = 180 + a, s1 = 180 + b;
+    if (s0 >= 360) { s0 -= 360; s1 -= 360; }
+    if (s1 <= 360) {
+      drawArcAA(gfx, cx, cy, radius, ir, s0, s1, color, bg);
+    } else {
+      drawArcAA(gfx, cx, cy, radius, ir, s0, 360, color, bg);
+      drawArcAA(gfx, cx, cy, radius, ir, 0, s1 - 360, color, bg);
+    }
+  };
+
+  if (full) {
+    if (deg < 360) spanDraw(deg, 360, track);
+    if (deg > 0)   spanDraw(0, deg, fillColor);
+  } else {
+    spanDraw(prevDeg, deg, fillColor);
+  }
+
+  prevDeg   = deg;
+  prevColor = fillColor;
+}
+#endif // DISPLAY_ROUND_240
+
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
 // ---------------------------------------------------------------------------

@@ -19,6 +19,14 @@ const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
 void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                     const char* label, uint16_t lblColor, uint16_t bg);
 
+#if defined(DISPLAY_ROUND_240)
+// Full-circle rim progress ring (round displays). Fill runs clockwise from
+// 12 o'clock; incremental redraw unless forceRedraw / regression / color change.
+void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw);
+#endif
+
 // Draw progress arc with percentage and time in center
 void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,

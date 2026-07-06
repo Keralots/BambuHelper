@@ -467,6 +467,51 @@ public:
   lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
 };
 static LGFX_JC3248W535 _tft_instance;
+#elif defined(BOARD_IS_C3_ROUND)
+// --- ESP32-C3 Super Mini + GC9A01 1.28" round 240x240 ------------------------
+// Bare 7-pin SPI module, same wiring as the ST7789 C3 map (SCL=21, SDA=20,
+// DC=7, CS=6, RES=10). GC9A01 GRAM is a full 240x240 square; the corners are
+// simply not visible, so overdraw outside the inscribed circle is harmless.
+class LGFX_C3_ROUND : public lgfx::LGFX_Device {
+  lgfx::Panel_GC9A01  _panel;
+  lgfx::Bus_SPI       _bus;
+public:
+  LGFX_C3_ROUND() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 21;
+      cfg.pin_mosi   = 20;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 7;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 6;
+      cfg.pin_rst  = 10;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 240;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 240;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.readable      = false;
+      cfg.invert        = true;   // GC9A01 modules ship color-inverted
+      cfg.rgb_order     = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_C3_ROUND _tft_instance;
+
 #elif defined(BOARD_IS_C3)
 // --- ESP32-C3 Super Mini + ST7789 240x240 ------------------------------------
 class LGFX_C3 : public lgfx::LGFX_Device {

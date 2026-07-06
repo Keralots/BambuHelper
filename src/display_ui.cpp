@@ -959,7 +959,117 @@ static uint8_t countDryingUnits(AmsState& ams) {
   return n;
 }
 
+#if defined(DISPLAY_ROUND_240)
+// Round (GC9A01) drying screen: rim ring = drying progress, centered text
+// stack (title, remaining time, AMS temp, humidity). The square layout's
+// bars/columns don't fit the inscribed circle.
+static void drawIdleDryingRound(PrinterSlot& p) {
+  BambuState& s = p.state;
+  const int16_t cx = SCREEN_W / 2;
+
+  uint8_t dryCount = countDryingUnits(s.ams);
+  if (dryCount > 1 && millis() - dryRotateMs >= DRY_ROTATE_MS) {
+    dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
+    dryRotateMs = millis();
+    forceRedraw = true;
+    tft.fillScreen(CLR_BG);
+    markFrameDirty();
+    resetGaugeTextCache();
+  }
+  if (dryCount <= 1) dryDisplayIdx = 0;
+
+  int8_t ui = findDryingUnit(s.ams, dryDisplayIdx);
+  if (ui < 0) return;
+  AmsUnit& u = s.ams.units[ui];
+
+  static int8_t   prevUnit  = -1;
+  static uint8_t  prevCount = 0xFF;
+  static uint16_t prevMin   = 0xFFFF;
+  static int16_t  prevTemp  = -32768;
+  static uint8_t  prevHum   = 0xFF;
+
+  int16_t tempShown = (int16_t)((u.temp >= 0.0f) ? (u.temp + 0.5f) : (u.temp - 0.5f));
+  bool unitChanged = forceRedraw || ui != prevUnit || dryCount != prevCount;
+
+  uint8_t dryProgress = 0;
+  if (u.dryTotalMin > 0 && u.dryRemainMin <= u.dryTotalMin)
+    dryProgress = 100 - (uint8_t)((uint32_t)u.dryRemainMin * 100 / u.dryTotalMin);
+
+  tft.setTextDatum(MC_DATUM);
+
+  // Rim ring = drying progress
+  if (unitChanged || u.dryRemainMin != prevMin) {
+    markFrameDirty();
+    drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
+                dryProgress, CLR_GREEN, forceRedraw || unitChanged);
+  }
+
+  // Title: "Drying" (+ rotation index with several units)
+  if (unitChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 75, LY_RND_STATUS_Y - 10, 150, 20, CLR_BG);
+    setFont(tft, FONT_BODY);
+    tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+    char title[24];
+    if (dryCount > 1)
+      snprintf(title, sizeof(title), "Drying  (%u/%u)", dryDisplayIdx + 1, dryCount);
+    else
+      snprintf(title, sizeof(title), "Drying");
+    tft.drawString(title, cx, LY_RND_STATUS_Y);
+  }
+
+  // Remaining time, big and centered
+  if (unitChanged || u.dryRemainMin != prevMin) {
+    markFrameDirty();
+    tft.fillRect(cx - 70, LY_RND_PCT_Y - 20, 140, 40, CLR_BG);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%uh %02um", u.dryRemainMin / 60, u.dryRemainMin % 60);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString(buf, cx, LY_RND_PCT_Y);
+  }
+
+  // AMS temperature
+  if (unitChanged || tempShown != prevTemp) {
+    markFrameDirty();
+    tft.fillRect(cx - 60, LY_RND_G_Y - 26, 120, 26, CLR_BG);
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%d", (int)tempShown);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_ORANGE, CLR_BG);
+    tft.setTextDatum(MR_DATUM);
+    tft.drawString(buf, cx + 2, LY_RND_G_Y - 13);
+    drawCelsiusUnit(cx + 6, LY_RND_G_Y - 13, CLR_ORANGE);
+    tft.setTextDatum(MC_DATUM);
+  }
+
+  // Humidity (colored like the AMS humidity gauge)
+  if (unitChanged || u.humidityRaw != prevHum) {
+    markFrameDirty();
+    tft.fillRect(cx - 60, LY_RND_G_Y + 4, 120, 24, CLR_BG);
+    char buf[16];
+    if (u.humidityRaw > 0)
+      snprintf(buf, sizeof(buf), "RH %u%%", u.humidityRaw);
+    else
+      snprintf(buf, sizeof(buf), "RH -");
+    setFont(tft, FONT_BODY);
+    tft.setTextColor(amsHumidityColor(u.humidityRaw, u.humidity, true), CLR_BG);
+    tft.drawString(buf, cx, LY_RND_G_Y + 16);
+  }
+
+  prevUnit  = ui;
+  prevCount = dryCount;
+  prevMin   = u.dryRemainMin;
+  prevTemp  = tempShown;
+  prevHum   = u.humidityRaw;
+}
+#endif // DISPLAY_ROUND_240
+
 static void drawIdleDrying(PrinterSlot& p) {
+#if defined(DISPLAY_ROUND_240)
+  drawIdleDryingRound(p);
+}
+#else
   BambuState& s = p.state;
   const bool land = isLandscape();
   const int16_t scrW = uiW();
@@ -1298,6 +1408,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   prevTempShown = tempShown;
   prevDryProgress = dryProgress;
 }
+#endif // !DISPLAY_ROUND_240
 
 static bool wasNoPrinter = false;
 
@@ -1574,6 +1685,14 @@ static void drawIdle() {
 
   if (bottomChanged) {
     markFrameDirty();
+#if defined(DISPLAY_ROUND_240)
+    // Round: the bottom corners are invisible — the filament/door items of the
+    // square layout have no room. Show only the WiFi signal, pulled up toward
+    // the center of the circle.
+    tft.fillRect(cx - 70, LY_RND_IDLE_WIFI_Y - 12, 140, 24, CLR_BG);
+    setFont(tft, FONT_BODY);
+    drawWifiSignalIndicator(s, LY_RND_IDLE_WIFI_Y);
+#else
     tft.fillRect(0, scrH - 18, scrW, 18, CLR_BG);
     setFont(tft, FONT_BODY);
 
@@ -1625,6 +1744,7 @@ static void drawIdle() {
       drawIcon16(tft, scrW - 18, botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     }
+#endif // !DISPLAY_ROUND_240
   }
 }
 
@@ -2459,6 +2579,183 @@ static void drawCameraFullscreen() {
 void drawCameraGauge(int16_t, int16_t, int16_t, bool) {}
 #endif
 
+#if defined(DISPLAY_ROUND_240)
+// ===========================================================================
+//  Round display (GC9A01): printing screen, fixed layout.
+//  Rim progress ring + centered % / layer / ETA stack + three mini gauges
+//  (nozzle / bed / part fan). No header, LED bar, AMS strip, bottom bar or
+//  configurable slot grid — those all live outside the inscribed circle.
+// ===========================================================================
+static void drawPrintingRound() {
+  PrinterSlot& p = displayedPrinter();
+  BambuState& s = p.state;
+
+  bool animating = tickGaugeSmooth(s, forceRedraw);
+  gaugesAnimating = animating;
+  bool progChanged  = forceRedraw || (s.progress != prevState.progress);
+  bool etaChanged   = forceRedraw ||
+                      (s.remainingMinutes != prevState.remainingMinutes);
+  bool stateChanged = forceRedraw ||
+                      (s.gcodeStateId != prevState.gcodeStateId) ||
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+  bool layerChanged = forceRedraw ||
+                      (s.layerNum != prevState.layerNum) ||
+                      (s.totalLayers != prevState.totalLayers);
+  bool tempChanged  = forceRedraw || animating ||
+                      (s.nozzleTemp != prevState.nozzleTemp) ||
+                      (s.nozzleTarget != prevState.nozzleTarget) ||
+                      (s.bedTemp != prevState.bedTemp) ||
+                      (s.bedTarget != prevState.bedTarget);
+  bool fanChanged   = forceRedraw || animating ||
+                      (s.coolingFanPct != prevState.coolingFanPct);
+
+  const int16_t cx = SCREEN_W / 2;
+  tft.setTextDatum(MC_DATUM);
+
+  // === Rim progress ring (replaces the LED bar; gold when nearly done) ===
+  if (progChanged || stateChanged) {
+    markFrameDirty();
+    uint16_t ringColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
+    if (s.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
+                s.progress, ringColor, forceRedraw);
+  }
+
+  // === Status line: printer name + state (replaces the header bar) ===
+  if (stateChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 75, LY_RND_STATUS_Y - 10, 150, 26, CLR_BG);
+    setFont(tft, FONT_BODY);
+    uint16_t stColor = CLR_TEXT_DIM;
+    if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
+    else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
+    else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    char line[48], clipped[48];
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+    snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
+    tft.setTextColor(stColor, CLR_BG);
+    tft.drawString(ellipsizeToWidth(tft, line, 148, clipped, sizeof(clipped)),
+                   cx, LY_RND_STATUS_Y);
+    if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_STATUS_Y + 13);
+  }
+
+  // === Big progress % ===
+  if (progChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 55, LY_RND_PCT_Y - 18, 110, 36, CLR_BG);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", s.progress);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString(buf, cx, LY_RND_PCT_Y);
+  }
+
+  // === Layer line ===
+  if (layerChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 70, LY_RND_LAYER_Y - 9, 140, 18, CLR_BG);
+    if (s.totalLayers > 0) {
+      char buf[24];
+      snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString(buf, cx, LY_RND_LAYER_Y);
+    }
+  }
+
+  // === Mini gauges: nozzle / bed / part fan ===
+  if (tempChanged) {
+    markFrameDirty();
+    drawTempGauge(tft, LY_RND_G_X1, LY_RND_G_Y, LY_RND_G_R,
+                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
+                  dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
+                  &dispSettings.nozzle, smoothNozzleTemp);
+    drawTempGauge(tft, LY_RND_G_X2, LY_RND_G_Y, LY_RND_G_R,
+                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
+                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"),
+                  nullptr, forceRedraw, &dispSettings.bed, smoothBedTemp);
+  }
+  if (fanChanged) {
+    markFrameDirty();
+    drawFanGauge(tft, LY_RND_G_X3, LY_RND_G_Y, LY_RND_G_R,
+                 s.coolingFanPct, dispSettings.partFan.arc,
+                 gaugeLabelOr(gaugeLabels.partFan, "Part"), forceRedraw,
+                 &dispSettings.partFan, smoothPartFan);
+  }
+
+  // === ETA / remaining line — or PAUSED / ERROR alert ===
+  if (etaChanged || stateChanged) {
+    markFrameDirty();
+    tft.fillRect(cx - 80, LY_RND_ETA_Y - 13, 160, 26, CLR_BG);
+    tft.setTextDatum(MC_DATUM);
+
+    if (s.gcodeStateId == GCODE_PAUSE) {
+      setFont(tft, FONT_LARGE);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString("PAUSED", cx, LY_RND_ETA_Y);
+    } else if (s.gcodeStateId == GCODE_FAILED) {
+      setFont(tft, FONT_LARGE);
+      tft.setTextColor(CLR_RED, CLR_BG);
+      tft.drawString("ERROR!", cx, LY_RND_ETA_Y);
+    } else if (s.remainingMinutes > 0) {
+      // Same ETA logic as the square printing screen (see drawPrinting).
+      static bool ntpSynced = false;
+      time_t nowEpoch = time(nullptr);
+      struct tm now;
+      localtime_r(&nowEpoch, &now);
+      if (now.tm_year > (2020 - 1900)) ntpSynced = true;
+
+      if (!dispSettings.showTimeRemaining && ntpSynced) {
+        time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
+        struct tm etaTm;
+        localtime_r(&etaEpoch, &etaTm);
+
+        char etaBuf[32];
+        int etaH = etaTm.tm_hour;
+        const char* ampm = "";
+        if (!netSettings.use24h) {
+          ampm = etaH < 12 ? "AM" : "PM";
+          etaH = etaH % 12;
+          if (etaH == 0) etaH = 12;
+        }
+        if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
+          if (netSettings.use24h)
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
+                     etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
+          else
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
+                     etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
+        } else {
+          if (netSettings.use24h)
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
+          else
+            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
+        }
+        setFont(tft, FONT_BODY);
+        tft.setTextColor(CLR_GREEN, CLR_BG);
+        tft.drawString(etaBuf, cx, LY_RND_ETA_Y);
+      } else {
+        char remBuf[24];
+        uint16_t h = s.remainingMinutes / 60;
+        uint16_t m = s.remainingMinutes % 60;
+        snprintf(remBuf, sizeof(remBuf), "Remaining: %dh %02dm", h, m);
+        setFont(tft, FONT_BODY);
+        tft.setTextColor(CLR_TEXT, CLR_BG);
+        tft.drawString(remBuf, cx, LY_RND_ETA_Y);
+      }
+    } else {
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString("ETA: ---", cx, LY_RND_ETA_Y);
+    }
+  }
+}
+
+static void drawPrinting() {
+  drawPrintingRound();
+}
+#else
 static void drawPrinting() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
@@ -3233,10 +3530,71 @@ static void drawPrinting() {
     }
   }
 }
+#endif // !DISPLAY_ROUND_240
 
 // ---------------------------------------------------------------------------
 //  Screen: Finished (same layout as printing, but with 2 gauges + status)
 // ---------------------------------------------------------------------------
+#if defined(DISPLAY_ROUND_240)
+// Round (GC9A01) finished screen: gold rim ring at 100%, green checkmark,
+// centered text stack. Optional kWh line when a power plug tracked the print.
+static void drawFinishedRound() {
+  PrinterSlot& p = displayedPrinter();
+  BambuState& s = p.state;
+  const int16_t cx = SCREEN_W / 2;
+
+  if (forceRedraw) {
+    markFrameDirty();
+    drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T, 100, CLR_GOLD, true);
+
+    // Checkmark in a green circle outline
+    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R, CLR_GREEN);
+    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R - 1, CLR_GREEN);
+    for (int i = -1; i <= 1; i++) {
+      tft.drawLine(cx - 14, LY_RND_FIN_CHK_Y + i,
+                   cx - 4,  LY_RND_FIN_CHK_Y + 10 + i, CLR_GREEN);
+      tft.drawLine(cx - 4,  LY_RND_FIN_CHK_Y + 10 + i,
+                   cx + 15, LY_RND_FIN_CHK_Y - 8 + i, CLR_GREEN);
+    }
+
+    tft.setTextDatum(MC_DATUM);
+    setFont(tft, FONT_LARGE);
+    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.drawString("Print Complete!", cx, LY_RND_FIN_TEXT_Y);
+
+    if (s.subtaskName[0] != '\0') {
+      char clipped[64];
+      setFont(tft, FONT_BODY);
+      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+      tft.drawString(ellipsizeToWidth(tft, s.subtaskName, 150,
+                                      clipped, sizeof(clipped)),
+                     cx, LY_RND_FIN_FILE_Y);
+    }
+  }
+
+  // kWh used during the print (single centered line, only with a live plug)
+  static float prevKwh = -2.0f;
+  float kwh = tasmotaGetPrintKwhUsedForSlot(rotState.displayIndex);
+  bool plugActive = tasmotaIsActiveForSlot(rotState.displayIndex);
+  if (forceRedraw || (plugActive && kwh != prevKwh)) {
+    markFrameDirty();
+    tft.fillRect(cx - 60, LY_RND_FIN_TIME_Y - 10, 120, 20, CLR_BG);
+    if (plugActive && kwh > 0.0f) {
+      char buf[20];
+      snprintf(buf, sizeof(buf), "%.2f kWh", kwh);
+      tft.setTextDatum(MC_DATUM);
+      setFont(tft, FONT_SMALL);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString(buf, cx, LY_RND_FIN_TIME_Y);
+    }
+    prevKwh = kwh;
+  }
+}
+
+static void drawFinished() {
+  drawFinishedRound();
+}
+#else
 static void drawFinished() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
@@ -3516,6 +3874,7 @@ static void drawFinished() {
   prevFinTasmotaOnline = tasmotaActiveHere;
   prevFinWatts = finCurWatts;
 }
+#endif // !DISPLAY_ROUND_240
 
 // ---------------------------------------------------------------------------
 //  Night mode — scheduled brightness dimming
@@ -3664,7 +4023,9 @@ static void drawPowerConfirm() {
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
-  // Shimmer runs at its own cadence (~40fps), independent of display refresh
+#if !defined(DISPLAY_ROUND_240)
+  // Shimmer runs at its own cadence (~40fps), independent of display refresh.
+  // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
   if (currentScreen == SCREEN_PRINTING) {
     BambuState& sh = displayedPrinter().state;
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
@@ -3689,6 +4050,7 @@ void updateDisplay() {
     tickPongClock();
     markFrameDirty();
   }
+#endif // !DISPLAY_ROUND_240
 
   unsigned long now = millis();
   unsigned long interval = gaugesAnimating ? GAUGE_ANIM_MS : DISPLAY_UPDATE_MS;
@@ -3787,8 +4149,14 @@ void updateDisplay() {
       break;
 
     case SCREEN_CLOCK:
+#if defined(DISPLAY_ROUND_240)
+      // No pong on round: rectangular walls don't fit the circle. The pong
+      // setting is simply ignored and the watch-face clock always draws.
+      drawClock();
+#else
       if (!dispSettings.pongClock) drawClock();
       // Pong clock is ticked before the throttle (above)
+#endif
       break;
 
     case SCREEN_OFF:

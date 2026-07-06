@@ -8,6 +8,8 @@
 
 #if defined(DISPLAY_480x480)
   #include "layout_480x480.h"    // SenseCAP Indicator: ST7701S 480x480
+#elif defined(DISPLAY_ROUND_240)
+  #include "layout_round240.h"  // GC9A01 1.28" round 240x240
 #elif defined(DISPLAY_320x480)
   #include "layout_320x480.h"   // 320x480 portrait (Guition JC3248W535)
 #elif defined(DISPLAY_240x320)
