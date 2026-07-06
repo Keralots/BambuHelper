@@ -38,7 +38,9 @@
 
 // --- Printing screen (variant A: rim ring + 3 mini gauges) ---
 #define LY_RND_DOTS_Y      42      // multi-printer dots row (below top arc)
-#define LY_RND_PCT_Y       80      // big progress % (center datum)
+#define LY_RND_PCT_Y       80      // big progress % (center datum); drying reuses this
+#define LY_RND_PRINT_PCT_Y 68      // Rim printing %: pulled up to close the gap
+                                   // under the curved status (drying keeps 80)
 #define LY_RND_LAYER_Y     104     // "layer n / total" line (center datum)
 #define LY_RND_G_R         27      // mini gauge radius
 #define LY_RND_G_T         6       // mini gauge arc thickness
@@ -55,6 +57,10 @@
 #define LY_RND_SPD_R        107    // big arc outer radius (inner = 95)
 #define LY_RND_SPD_T        12     // big arc thickness
 #define LY_RND_SPD_STATUS_Y 64     // printer name + state (straight, center datum)
+// Curved status arc for the Speedo skin (mirrors the Rim skin's top text).
+// Radius sits inside the big arc's inner edge (95): 84 + FONT_BODY/2 clears it.
+#define LY_RND_SPD_STATUS_R    84  // curved status glyph-center radius
+#define LY_RND_SPD_STATUS_HDEG 52  // top clear sector half-angle
 #define LY_RND_SPD_DOTS_Y   80     // multi-printer dots row
 #define LY_RND_SPD_PCT_Y    118    // big progress % (center datum)
 #define LY_RND_SPD_LAYER_Y  144    // layer line (center datum)
@@ -76,8 +82,8 @@
 #define LY_RND_RGS_T        10     // ring thickness (all three)
 #define LY_RND_RGS_PCT_Y    94     // big progress % (center datum)
 #define LY_RND_RGS_TEMP_Y   126    // nozzle/bed readouts (center datum)
-#define LY_RND_RGS_NOZ_X    96     // nozzle readout center X
-#define LY_RND_RGS_BED_X    144    // bed readout center X
+#define LY_RND_RGS_NOZ_X    86     // nozzle readout center X (spread apart so the
+#define LY_RND_RGS_BED_X    154    // two readouts + markers don't touch)
 #define LY_RND_RGS_ETA_Y    152    // remaining line (center datum)
 #define LY_RND_RGS_DOTS_Y   170    // multi-printer dots row
 

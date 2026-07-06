@@ -2660,6 +2660,60 @@ static void drawTempReadout(int16_t x, int16_t y, float temp, uint16_t color,
   tft.drawCircle(x + tw / 2 + 5, y - 5, 2, color);
 }
 
+// Round "layer n / total" line that swaps to wattage when a power plug is
+// active for the shown slot - matches the square dashboard's layer/power
+// alternation. displayMode: 0 = alternate layers/power every 4 s, 1 = always
+// power, 2 = always layer count (power lives on a gauge). Owns its change
+// detection; no-ops the panel when nothing changed. Shared by the Rim and
+// Speedo skins (only one is active at a time, so the statics don't collide).
+static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
+                                  bool forceRedraw, bool layerChanged) {
+  static bool     altShowPower = false;
+  static uint32_t altFlipMs    = 0;
+  static bool     prevAlt = false, prevOnline = false;
+  static uint8_t  prevDm = 0xFF;
+  static float    prevWatts = -2.0f;
+
+  bool    online = tasmotaIsActiveForSlot(rotState.displayIndex);
+  uint8_t dm     = tasmotaDisplayModeForSlot(rotState.displayIndex);
+  float   watts  = tasmotaGetWattsForSlot(rotState.displayIndex);
+
+  if (online && dm == 0) {
+    if (millis() - altFlipMs > 4000) { altShowPower = !altShowPower; altFlipMs = millis(); }
+  } else { altShowPower = false; altFlipMs = 0; }
+  bool showPower = online && (dm == 1 || altShowPower);  // dm 2 -> always layer
+
+  // prevDm in the change set so flipping the mode in the web UI repaints at
+  // once, even when the layer/watt numbers themselves did not change.
+  bool changed = forceRedraw || layerChanged || (altShowPower != prevAlt) ||
+                 (online != prevOnline) || (dm != prevDm) ||
+                 (online && watts != prevWatts);
+  prevAlt = altShowPower; prevOnline = online; prevDm = dm; prevWatts = watts;
+  if (!changed) return;
+
+  markFrameDirty();
+  tft.fillRect(cx - 70, y - 9, 140, 18, CLR_BG);
+  tft.setTextDatum(MC_DATUM);
+  if (showPower) {
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%.0f W", watts);
+    setFont(tft, FONT_SMALL);
+    int16_t tw = (int16_t)tft.textWidth(buf);
+    int16_t total = 16 + 2 + tw;                 // lightning icon + gap + text
+    int16_t x0 = cx - total / 2;
+    drawIcon16(tft, x0, y - 8, icon_lightning, CLR_YELLOW);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+    tft.drawString(buf, x0 + 18, y);
+  } else if (s.totalLayers > 0) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
+    setFont(tft, FONT_SMALL);
+    tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+    tft.drawString(buf, cx, y);
+  }
+}
+
 // ---------------------------------------------------------------------------
 //  Skin 1 "Speedo": the classic 240-degree gauge arc scaled up to the whole
 //  screen; the arc's bottom gap holds the temperature readouts, the ETA line
@@ -2698,7 +2752,7 @@ static void drawPrintingSpeedo() {
                 forceRedraw);
   }
 
-  // === Status line inside the arc ===
+  // === Status line curved along the top rim, inside the big arc ===
   if (stateChanged) {
     markFrameDirty();
     setFont(tft, FONT_BODY);
@@ -2709,10 +2763,10 @@ static void drawPrintingSpeedo() {
     char line[48], clipped[48];
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
-    tft.fillRect(cx - 60, LY_RND_SPD_STATUS_Y - 11, 120, 22, CLR_BG);
-    tft.setTextColor(stColor, CLR_BG);
-    tft.drawString(ellipsizeToWidth(tft, line, 116, clipped, sizeof(clipped)),
-                   cx, LY_RND_SPD_STATUS_Y);
+    drawCurvedString(tft,
+                     ellipsizeToWidth(tft, line, 150, clipped, sizeof(clipped)),
+                     cx, cx, LY_RND_SPD_STATUS_R, false, stColor, FONT_BODY,
+                     LY_RND_SPD_STATUS_HDEG);
     tft.fillRect(cx - 30, LY_RND_SPD_DOTS_Y - 5, 60, 10, CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_SPD_DOTS_Y);
   }
@@ -2727,17 +2781,7 @@ static void drawPrintingSpeedo() {
     tft.setTextColor(CLR_TEXT, CLR_BG);
     tft.drawString(buf, cx, LY_RND_SPD_PCT_Y);
   }
-  if (layerChanged) {
-    markFrameDirty();
-    tft.fillRect(cx - 70, LY_RND_SPD_LAYER_Y - 9, 140, 18, CLR_BG);
-    if (s.totalLayers > 0) {
-      char buf[24];
-      snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(buf, cx, LY_RND_SPD_LAYER_Y);
-    }
-  }
+  drawRoundLayerOrPower(s, cx, LY_RND_SPD_LAYER_Y, forceRedraw, layerChanged);
 
   // === Nozzle / bed readouts in the arc's bottom gap ===
   if (tempChanged) {
@@ -2817,7 +2861,7 @@ static void drawPrintingRings() {
     int16_t bedShown = (int16_t)(s.bedTemp + 0.5f);
     if (forceRedraw || nozShown != prevNozShown || bedShown != prevBedShown) {
       markFrameDirty();
-      tft.fillRect(cx - 55, LY_RND_RGS_TEMP_Y - 11, 110, 22, CLR_BG);
+      tft.fillRect(cx - 70, LY_RND_RGS_TEMP_Y - 11, 140, 22, CLR_BG);
       drawTempReadout(LY_RND_RGS_NOZ_X, LY_RND_RGS_TEMP_Y, s.nozzleTemp,
                       dispSettings.nozzle.arc, false);
       drawTempReadout(LY_RND_RGS_BED_X, LY_RND_RGS_TEMP_Y, s.bedTemp,
@@ -2914,26 +2958,16 @@ static void drawPrintingRound() {
   // === Big progress % ===
   if (progChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 55, LY_RND_PCT_Y - 18, 110, 36, CLR_BG);
+    tft.fillRect(cx - 55, LY_RND_PRINT_PCT_Y - 18, 110, 36, CLR_BG);
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", s.progress);
     setFont(tft, FONT_LARGE);
     tft.setTextColor(CLR_TEXT, CLR_BG);
-    tft.drawString(buf, cx, LY_RND_PCT_Y);
+    tft.drawString(buf, cx, LY_RND_PRINT_PCT_Y);
   }
 
-  // === Layer line ===
-  if (layerChanged) {
-    markFrameDirty();
-    tft.fillRect(cx - 70, LY_RND_LAYER_Y - 9, 140, 18, CLR_BG);
-    if (s.totalLayers > 0) {
-      char buf[24];
-      snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
-      setFont(tft, FONT_SMALL);
-      tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(buf, cx, LY_RND_LAYER_Y);
-    }
-  }
+  // === Layer line (or power, when a plug is active) ===
+  drawRoundLayerOrPower(s, cx, LY_RND_LAYER_Y, forceRedraw, layerChanged);
 
   // === Mini gauges: nozzle / bed / part fan ===
   if (tempChanged) {
