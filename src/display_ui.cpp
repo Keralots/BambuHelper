@@ -2660,6 +2660,17 @@ static void drawTempReadout(int16_t x, int16_t y, float temp, uint16_t color,
   tft.drawCircle(x + tw / 2 + 5, y - 5, 2, color);
 }
 
+// Progress-arc color for the round skins. Honors the Per-gauge "Progress" arc
+// color (dispSettings.progress.arc, same setting the square Progress gauge
+// uses) instead of a hardcoded hue, with pause/fail status overrides. Shared
+// by all three skins and the shimmer so the sweep tint always matches the ring.
+static uint16_t roundProgressColor(const BambuState& s) {
+  uint16_t c = dispSettings.progress.arc;
+  if (s.gcodeStateId == GCODE_PAUSE)       c = CLR_YELLOW;
+  else if (s.gcodeStateId == GCODE_FAILED) c = CLR_RED;
+  return c;
+}
+
 // Round "layer n / total" line that swaps to wattage when a power plug is
 // active for the shown slot - matches the square dashboard's layer/power
 // alternation. displayMode: 0 = alternate layers/power every 4 s, 1 = always
@@ -2744,9 +2755,7 @@ static void drawPrintingSpeedo() {
   // === Big progress arc (redrawn in full on color change) ===
   if (progChanged || stateChanged) {
     markFrameDirty();
-    uint16_t arcColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
-    if (s.gcodeStateId == GCODE_PAUSE)       arcColor = CLR_YELLOW;
-    else if (s.gcodeStateId == GCODE_FAILED) arcColor = CLR_RED;
+    uint16_t arcColor = roundProgressColor(s);
     uint16_t fillEnd = 60 + (uint16_t)s.progress * 240 / 100;
     drawArcFill(tft, cx, cx, LY_RND_SPD_R, LY_RND_SPD_T, fillEnd, arcColor,
                 forceRedraw);
@@ -2830,9 +2839,7 @@ static void drawPrintingRings() {
   // === Outer ring: progress ===
   if (progChanged || stateChanged) {
     markFrameDirty();
-    uint16_t ringColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
-    if (s.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
-    else if (s.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    uint16_t ringColor = roundProgressColor(s);
     drawRimRing(tft, cx, cx, LY_RND_RGS_R1, LY_RND_RGS_T,
                 s.progress, ringColor, forceRedraw, 0);
   }
@@ -2928,9 +2935,7 @@ static void drawPrintingRound() {
   // === Rim progress ring (replaces the LED bar; gold when nearly done) ===
   if (progChanged || stateChanged) {
     markFrameDirty();
-    uint16_t ringColor = (s.progress >= 90) ? CLR_GOLD : CLR_GREEN;
-    if (s.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
-    else if (s.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    uint16_t ringColor = roundProgressColor(s);
     drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
                 s.progress, ringColor, forceRedraw);
   }
@@ -4322,9 +4327,7 @@ void updateDisplay() {
   // circle (Rings on its outer progress ring), Speedo sweeps its 240-deg arc.
   if (currentScreen == SCREEN_PRINTING) {
     BambuState& sh = displayedPrinter().state;
-    uint16_t ringColor = (sh.progress >= 90) ? CLR_GOLD : CLR_GREEN;
-    if (sh.gcodeStateId == GCODE_PAUSE)       ringColor = CLR_YELLOW;
-    else if (sh.gcodeStateId == GCODE_FAILED) ringColor = CLR_RED;
+    uint16_t ringColor = roundProgressColor(sh);
     const int16_t cx = SCREEN_W / 2;
     switch (dispSettings.roundSkin) {
       case 1:  // Speedo
