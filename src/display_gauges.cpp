@@ -90,7 +90,7 @@ static bool shimmerPaused = false;
 static unsigned long shimmerPauseStart = 0;
 
 static const int16_t SHIMMER_W = 12;       // width of highlight
-static const uint16_t SHIMMER_INTERVAL = 25;  // ms between steps (~40fps)
+static const uint16_t SHIMMER_INTERVAL = 20;  // ms between steps (~50fps)
 static const uint16_t SHIMMER_PAUSE = 1200;   // ms pause between sweeps
 static const int16_t SHIMMER_STEP = 3;       // pixels per step
 
@@ -516,9 +516,10 @@ void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 //  ring recompose). Angles are degrees from 12 o'clock, clockwise, matching
 //  drawRimRing; the 180-offset + 360-wrap maps into drawArcAA's angle space.
 // ---------------------------------------------------------------------------
-static const int16_t RIM_SHIM_BW   = 30;   // band angular width (deg)
-static const int16_t RIM_SHIM_STEP = 6;    // deg advanced per frame (lower = slower)
-static const int16_t RIM_SHIM_EDGE = 6;    // dimmer band shoulders (deg)
+static const int16_t RIM_SHIM_BW     = 30;  // band angular width (deg)
+static const int16_t RIM_SHIM_STEP   = 3;   // deg advanced per frame (lower = smoother motion)
+static const int16_t RIM_SHIM_SLICES = 6;   // angular gradient steps across the band
+static const uint8_t RIM_SHIM_PEAK   = 230; // max white blend at band center
 
 // Draw an arc [s0..s1] in drawArcAA angle space (0 = 6 o'clock, CW), splitting
 // at the 360 wrap so callers can pass s0/s1 up to ~720 for wrapped spans.
@@ -535,20 +536,34 @@ static void shimSpanAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   }
 }
 
-// Paint one shimmer band [a..b] (in drawArcAA space) with a bright core and
-// dimmer shoulders, over the base fill color.
+// Paint one shimmer band [a..b] (in drawArcAA space) over the base fill color.
+// The band is split into RIM_SHIM_SLICES equal angular sub-spans whose white
+// blend follows a parabolic profile (0 at the band edges, RIM_SHIM_PEAK at the
+// center). Adjacent slices differ by only a small alpha, so the highlight reads
+// as a smooth gradient instead of the old 3-segment mid/bright/mid blocks with
+// their visible hard edges.
 static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                           int16_t r, int16_t ir, int16_t a, int16_t b,
                           uint16_t fillColor, uint16_t bg) {
-  if (b <= a) return;
-  const uint16_t bright = alphaBlend565(230, CLR_TEXT, fillColor);
-  const uint16_t mid    = alphaBlend565(150, CLR_TEXT, fillColor);
-  if (b - a > 2 * RIM_SHIM_EDGE) {
-    shimSpanAA(gfx, cx, cy, r, ir, a, a + RIM_SHIM_EDGE, mid, bg);
-    shimSpanAA(gfx, cx, cy, r, ir, a + RIM_SHIM_EDGE, b - RIM_SHIM_EDGE, bright, bg);
-    shimSpanAA(gfx, cx, cy, r, ir, b - RIM_SHIM_EDGE, b, mid, bg);
-  } else {
-    shimSpanAA(gfx, cx, cy, r, ir, a, b, bright, bg);
+  const int16_t span = b - a;
+  if (span <= 0) return;
+  if (span < RIM_SHIM_SLICES) {          // too narrow to slice: single band
+    shimSpanAA(gfx, cx, cy, r, ir, a, b,
+               alphaBlend565(RIM_SHIM_PEAK, CLR_TEXT, fillColor), bg);
+    return;
+  }
+  const int32_t s2 = (int32_t)RIM_SHIM_SLICES * RIM_SHIM_SLICES;
+  int16_t s0 = a;
+  for (int16_t i = 0; i < RIM_SHIM_SLICES; i++) {
+    int16_t s1 = a + (int32_t)span * (i + 1) / RIM_SHIM_SLICES;
+    if (s1 > s0) {
+      const int32_t d = 2 * i + 1 - RIM_SHIM_SLICES;   // signed dist*SLICES from center
+      const uint8_t alpha = (uint8_t)((int32_t)RIM_SHIM_PEAK * (s2 - d * d) / s2);
+      if (alpha >= 16)                                  // near-fill edges: leave base
+        shimSpanAA(gfx, cx, cy, r, ir, s0, s1,
+                   alphaBlend565(alpha, CLR_TEXT, fillColor), bg);
+    }
+    s0 = s1;
   }
 }
 
