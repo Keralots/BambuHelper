@@ -31,9 +31,11 @@ from pathlib import Path
 # (DIY builds first, then all-in-one boards, CYD-style at the end).
 WEB_FLASHER_BOARDS = [
     "esp32s3",
+    "esp32s3_round",
     "esp32s3_zero",
     "esp32s3_zero_320",
     "esp32c3",
+    "esp32c3_round",
     "ws_lcd_200",
     "ws_lcd_154",
     "ws_lcd_280",

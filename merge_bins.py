@@ -7,6 +7,8 @@ Usage:
     python merge_bins.py --board cyd        # build CYD firmware
     python merge_bins.py --board tzt_2432   # build TZT L1435-2.4 firmware
     python merge_bins.py --board esp32c3    # build ESP32-C3 firmware
+    python merge_bins.py --board esp32s3_round  # build ESP32-S3 + GC9A01 round firmware
+    python merge_bins.py --board esp32c3_round  # build ESP32-C3 + GC9A01 round firmware
     python merge_bins.py --board esp32s3_zero  # build Waveshare ESP32-S3-Zero firmware
     python merge_bins.py --board ws_lcd_200 # build Waveshare 2.0 firmware
     python merge_bins.py --board ws_lcd_154 # build Waveshare 1.54 firmware
@@ -49,6 +51,14 @@ BOARDS = {
         'firmware_offset': 0x10000,
         'build_env': 'esp32s3',
         'board_id': 'esp32s3',
+    },
+    'esp32s3_round': {
+        'build_dir': '.pio/build/esp32s3_round',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'esp32s3_round',
+        'board_id': 'esp32s3_round',
     },
     'esp32s3_zero': {
         'build_dir': '.pio/build/esp32s3_zero',
@@ -146,11 +156,22 @@ BOARDS = {
         'build_env': 'esp32c3',
         'board_id': 'esp32c3',
     },
+    'esp32c3_round': {
+        'build_dir': '.pio/build/esp32c3_round',
+        'bootloader_offset': 0x0,       # ESP32-C3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'esp32c3_round',
+        'board_id': 'esp32c3_round',
+    },
 }
 
 BOARD_ALIASES = {
     's3': 'esp32s3',
     'esp32s3': 'esp32s3',
+    's3round': 'esp32s3_round',
+    's3_round': 'esp32s3_round',
+    'esp32s3_round': 'esp32s3_round',
     's3zero': 'esp32s3_zero',
     's3_zero': 'esp32s3_zero',
     'esp32s3_zero': 'esp32s3_zero',
@@ -177,6 +198,9 @@ BOARD_ALIASES = {
     'es3': 'es3n28p',
     'c3': 'esp32c3',
     'esp32c3': 'esp32c3',
+    'c3round': 'esp32c3_round',
+    'c3_round': 'esp32c3_round',
+    'esp32c3_round': 'esp32c3_round',
 }
 
 CONFIG_H = os.path.join('include', 'config.h')

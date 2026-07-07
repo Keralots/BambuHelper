@@ -10,6 +10,10 @@ const BOARDS = {
     chipFamily: 'ESP32-S3',
     label: 'DIY - ESP32-S3 SuperMini + 1.54" ST7789',
   },
+  esp32s3_round: {
+    chipFamily: 'ESP32-S3',
+    label: 'DIY - ESP32-S3 SuperMini + 1.28" GC9A01 round',
+  },
   esp32s3_zero: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - Waveshare ESP32-S3-Zero + 1.54" ST7789',
@@ -21,6 +25,10 @@ const BOARDS = {
   esp32c3: {
     chipFamily: 'ESP32-C3',
     label: 'DIY - ESP32-C3 SuperMini + 1.54" ST7789',
+  },
+  esp32c3_round: {
+    chipFamily: 'ESP32-C3',
+    label: 'DIY - ESP32-C3 SuperMini + 1.28" GC9A01 round',
   },
   ws_lcd_200: {
     chipFamily: 'ESP32-S3',
