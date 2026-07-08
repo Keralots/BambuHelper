@@ -488,8 +488,15 @@ void initDisplay() {
 // SCREEN_CLOCK block (and so a future clear site can't forget it).
 static void resetActiveClockCache() {
   if (currentScreen != SCREEN_CLOCK) return;
+#if defined(DISPLAY_ROUND_240)
+  // Round never renders pong (rectangular walls don't fit the circle) and
+  // always draws the watch-face clock, so drop that cache regardless of the
+  // pongClock setting or the real clock repaints blank after a screen clear.
+  resetClock();
+#else
   if (dispSettings.pongClock) resetPongClock();
   else resetClock();
+#endif
 }
 
 void applyDisplaySettings() {
@@ -3828,14 +3835,21 @@ static void drawFinishedRound() {
     }
   }
 
-  // kWh used during the print (single centered line, only with a live plug)
+  // kWh used during the print (single centered line). Mirrors the square
+  // finished-screen policy: show the stored print energy whenever it's valid
+  // (>= 0), even after the plug has gone offline/stale, and redraw or clear the
+  // band when the value or the plug's active state changes. Includes 0.00 kWh.
   static float prevKwh = -2.0f;
+  static bool  prevPlugActive = false;
   float kwh = tasmotaGetPrintKwhUsedForSlot(rotState.displayIndex);
   bool plugActive = tasmotaIsActiveForSlot(rotState.displayIndex);
-  if (forceRedraw || (plugActive && kwh != prevKwh)) {
+  bool kwhChanged = tasmotaKwhChangedForSlot(rotState.displayIndex) ||
+                    (plugActive != prevPlugActive) ||
+                    (kwh != prevKwh);
+  if (forceRedraw || kwhChanged) {
     markFrameDirty();
     tft.fillRect(cx - 60, LY_RND_FIN_TIME_Y - 10, 120, 20, CLR_BG);
-    if (plugActive && kwh > 0.0f) {
+    if (kwh >= 0.0f) {
       char buf[20];
       snprintf(buf, sizeof(buf), "%.2f kWh", kwh);
       tft.setTextDatum(MC_DATUM);
@@ -3844,6 +3858,7 @@ static void drawFinishedRound() {
       tft.drawString(buf, cx, LY_RND_FIN_TIME_Y);
     }
     prevKwh = kwh;
+    prevPlugActive = plugActive;
   }
 }
 

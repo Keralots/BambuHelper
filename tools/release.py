@@ -95,7 +95,7 @@ def run(cmd, cwd=REPO_ROOT):
 
 
 def build_envs(pio_path: str):
-    """Build all six envs in a single PlatformIO invocation."""
+    """Build every WEB_FLASHER_BOARDS env in a single PlatformIO invocation."""
     cmd = [pio_path, "run"]
     for board in WEB_FLASHER_BOARDS:
         cmd.extend(["-e", board])
