@@ -54,6 +54,13 @@
 #define LY_RND_FIL_TXT_CAA   110   // type text sub-sector center (drawArcAA)
 #define LY_RND_FIL_DOT_AA    91    // swatch dot center angle (drawArcAA)
 #define LY_RND_FIL_TXT_MAXW  48    // ellipsize budget (px of arc length)
+// Right-side mirror sector (55..93 deg right of 12): door state when the
+// printer has a sensor, else speed mode — square bottom-bar parity. Same
+// caps mirrored: the part-fan gauge intrudes past ~97 deg.
+#define LY_RND_RSTAT_CLR_CAA  254  // clear-band center (drawArcAA)
+#define LY_RND_RSTAT_CLR_HDEG 19   // clear-band half-angle
+#define LY_RND_RSTAT_TXT_CAA  250  // text sub-sector center (drawArcAA)
+#define LY_RND_RSTAT_DOT_AA   269  // status dot center angle (drawArcAA)
 #define LY_RND_LAYER_Y     104     // "layer n / total" line (center datum)
 #define LY_RND_G_R         27      // mini gauge radius
 #define LY_RND_G_T         6       // mini gauge arc thickness

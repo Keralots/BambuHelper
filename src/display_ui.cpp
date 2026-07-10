@@ -2855,6 +2855,51 @@ static void drawRimFilamentCurved(BambuState& s, int16_t cx, bool forceRedraw) {
   tft.fillCircle(dx, dy, 4, color);
 }
 
+// Right-rim mirror of the filament sector: door state when the printer has a
+// sensor (square bottom-bar priority), else speed mode. Colored dot at the
+// sector's lower end matches the swatch dot on the left. Door renders the
+// user-renameable gauge label (like the square bottom bar) — the open/closed
+// state lives in the color: green closed, orange open. An emptied label
+// leaves just the dot, matching the square view's icon-only fallback.
+static void drawRimRightStatus(BambuState& s, int16_t cx, bool forceRedraw) {
+  static uint8_t prevKey = 0xFF;
+  static char    prevTxt[16] = "";
+
+  const uint8_t key = s.doorSensorPresent
+                      ? (uint8_t)(0x80 | (s.doorOpen ? 1 : 0))
+                      : s.speedLevel;
+  const char* txt;
+  uint16_t clr;
+  if (s.doorSensorPresent) {
+    txt = gaugeLabels.door;
+    clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+  } else {
+    txt = speedLevelName(s.speedLevel);
+    clr = speedLevelColor(s.speedLevel);
+  }
+  if (!forceRedraw && key == prevKey &&
+      strncmp(txt, prevTxt, sizeof(prevTxt)) == 0)
+    return;
+  prevKey = key;
+  strlcpy(prevTxt, txt, sizeof(prevTxt));
+
+  markFrameDirty();
+  drawCurvedStringSector(tft, "", cx, cx, LY_RND_ARC_R, LY_RND_RSTAT_CLR_CAA,
+                         CLR_TEXT_DIM, FONT_SMALL, LY_RND_RSTAT_CLR_HDEG);
+
+  setFont(tft, FONT_SMALL);
+  char clipped[16];
+  const char* t = ellipsizeToWidth(tft, txt, LY_RND_FIL_TXT_MAXW,
+                                   clipped, sizeof(clipped));
+  drawCurvedStringSector(tft, t, cx, cx, LY_RND_ARC_R, LY_RND_RSTAT_TXT_CAA,
+                         clr, FONT_SMALL, 0);
+
+  const float a = (LY_RND_RSTAT_DOT_AA + 90.0f) * 0.0174532925f;
+  const int16_t dx = cx + (int16_t)lroundf(LY_RND_ARC_R * cosf(a));
+  const int16_t dy = cx + (int16_t)lroundf(LY_RND_ARC_R * sinf(a));
+  tft.fillCircle(dx, dy, 4, clr);
+}
+
 // ---------------------------------------------------------------------------
 //  Skin 1 "Speedo": the classic 240-degree gauge arc scaled up to the whole
 //  screen; the arc's bottom gap holds the temperature readouts, the ETA line
@@ -3199,6 +3244,9 @@ static void drawPrintingRound() {
 
   // === Active filament: swatch + type curved on the upper-left rim ===
   drawRimFilamentCurved(s, cx, forceRedraw);
+
+  // === Door / speed mode curved on the upper-right rim (square parity) ===
+  drawRimRightStatus(s, cx, forceRedraw);
 }
 
 static void drawPrinting() {
