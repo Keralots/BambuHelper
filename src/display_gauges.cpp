@@ -90,7 +90,13 @@ static bool shimmerPaused = false;
 static unsigned long shimmerPauseStart = 0;
 
 static const int16_t SHIMMER_W = 12;       // width of highlight
+#if defined(DISPLAY_ROUND_240)
+// Arc shimmer cadence, tuned on round hardware. Only the rim/speedo arc
+// sweep runs on round builds; the LED-bar sweep below is compiled out.
 static const uint16_t SHIMMER_INTERVAL = 20;  // ms between steps (~50fps)
+#else
+static const uint16_t SHIMMER_INTERVAL = 25;  // ms between steps (~40fps)
+#endif
 static const uint16_t SHIMMER_PAUSE = 1200;   // ms pause between sweeps
 static const int16_t SHIMMER_STEP = 3;       // pixels per step
 
