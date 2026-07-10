@@ -4550,18 +4550,22 @@ void updateDisplay() {
     BambuState& sh = displayedPrinter().state;
     uint16_t ringColor = roundProgressColor(sh);
     const int16_t cx = SCREEN_W / 2;
+    // Sweep in every printer state, not just while printing: gating on
+    // sh.printing froze the bright band mid-ring when FINISH landed with the
+    // dashboard still up (e.g. sitting at 100%). Paused/failed rings shimmer
+    // in their override tint, which also keeps the band matching the ring.
     switch (dispSettings.roundSkin) {
       case 1:  // Speedo
         tickSpeedoShimmer(tft, cx, cx, LY_RND_SPD_R, LY_RND_SPD_T,
-                          sh.progress, ringColor, sh.printing);
+                          sh.progress, ringColor, true);
         break;
       case 2:  // Rings (outer progress ring)
         tickRimShimmer(tft, cx, cx, LY_RND_RGS_R1, LY_RND_RGS_T,
-                       sh.progress, ringColor, sh.printing);
+                       sh.progress, ringColor, true);
         break;
       default: // Rim
         tickRimShimmer(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
-                       sh.progress, ringColor, sh.printing);
+                       sh.progress, ringColor, true);
         break;
     }
     markFrameDirty();

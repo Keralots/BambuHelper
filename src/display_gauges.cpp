@@ -637,15 +637,31 @@ static void shimSweep(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   }
 }
 
+// When the shimmer goes inactive mid-sweep (animated-bar toggle, state gate),
+// the bright band would stay painted on the ring. Restore that span to the
+// base fill color once and forget the cursor.
+static void shimRestoreBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                            int16_t radius, int16_t thickness,
+                            uint16_t fillColor, ShimState& st) {
+  if (!st.hasPrev) return;
+  shimSpanAA(gfx, cx, cy, radius, radius - thickness,
+             st.prevA, st.prevA + RIM_SHIM_BW, fillColor,
+             dispSettings.bgColor);
+  st.hasPrev = false;
+}
+
 // Full-circle rim ring (Rim skin outer ring, Rings skin outer progress ring):
 // fill runs clockwise from 12 o'clock, which is 180 in drawArcAA space.
 void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                     int16_t radius, int16_t thickness,
                     uint8_t pct, uint16_t fillColor, bool printing) {
-  if (!dispSettings.animatedBar || !printing || pct == 0) return;
+  static ShimState st;
+  if (!dispSettings.animatedBar || !printing || pct == 0) {
+    shimRestoreBand(gfx, cx, cy, radius, thickness, fillColor, st);
+    return;
+  }
   if (pct > 100) pct = 100;
   const int16_t deg = (int16_t)pct * 360 / 100;
-  static ShimState st;
   // geomSig keys on radius only (Rim 118 vs Rings outer 116) so switching skins
   // resets the cursor; a normal progress change must NOT reset the sweep.
   shimSweep(gfx, cx, cy, radius, thickness, 180, 180 + deg, fillColor,
@@ -657,10 +673,13 @@ void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                        int16_t radius, int16_t thickness,
                        uint8_t pct, uint16_t fillColor, bool printing) {
-  if (!dispSettings.animatedBar || !printing || pct == 0) return;
+  static ShimState st;   // own state; geomSig = radius (constant for this skin)
+  if (!dispSettings.animatedBar || !printing || pct == 0) {
+    shimRestoreBand(gfx, cx, cy, radius, thickness, fillColor, st);
+    return;
+  }
   if (pct > 100) pct = 100;
   const int16_t fillEnd = 60 + (int16_t)pct * 240 / 100;
-  static ShimState st;   // own state; geomSig = radius (constant for this skin)
   shimSweep(gfx, cx, cy, radius, thickness, 60, fillEnd, fillColor, radius, st);
 }
 
