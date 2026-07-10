@@ -58,8 +58,11 @@
 #define LY_RND_SPD_T        12     // big arc thickness
 #define LY_RND_SPD_STATUS_Y 64     // printer name + state (straight, center datum)
 // Curved status arc for the Speedo skin (mirrors the Rim skin's top text).
-// Radius sits inside the big arc's inner edge (95): 84 + FONT_BODY/2 clears it.
-#define LY_RND_SPD_STATUS_R    84  // curved status glyph-center radius
+// Radius must keep the text band CLEAR (glyph cell + its band wipe, which
+// reaches ~R + FONT_BODY/2 + 2) below the big arc's inner AA edge at 94:
+// 82 + 10 + 2 = 94. At 84 the wipe shaved the arc's inner anti-aliasing and
+// left a jagged staircase across the top sector.
+#define LY_RND_SPD_STATUS_R    82  // curved status glyph-center radius
 #define LY_RND_SPD_STATUS_HDEG 52  // top clear sector half-angle
 #define LY_RND_SPD_DOTS_Y   80     // multi-printer dots row
 #define LY_RND_SPD_PCT_Y    118    // big progress % (center datum)

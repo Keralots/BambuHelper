@@ -685,10 +685,16 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
   if (clearHalfDeg > 0) {
     // drawArcAA space: 0 = 6 o'clock, clockwise. It handles end < start by
     // splitting at the 360 wrap, so the bottom sector needs no special case.
+    // Radial pad is +1, not +2: with fg == bg the arc's edge-AA pixels come
+    // out solid, so the clear effectively reaches ~1px past its nominal
+    // radius already. Glyph ink tops out at r + fh/2 + 1 (sprite cell fh+2
+    // plus AA resample spill), which +1 nominal (+~2 effective) still covers.
+    // At +2 the band bit into the rim/speedo ring's inner AA edge and left a
+    // hard aliased staircase across the top/bottom text sectors.
     uint32_t mid = bottom ? 0 : 180;
     uint32_t a0 = (mid + 360 - (uint32_t)clearHalfDeg) % 360;
     uint32_t a1 = (mid + (uint32_t)clearHalfDeg) % 360;
-    drawArcAA(gfx, cx, cy, r + fh / 2 + 2, r - fh / 2 - 2, a0, a1, bg, bg);
+    drawArcAA(gfx, cx, cy, r + fh / 2 + 1, r - fh / 2 - 2, a0, a1, bg, bg);
   }
   if (!str || !str[0]) return;
 
