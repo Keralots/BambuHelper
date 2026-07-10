@@ -341,8 +341,21 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "ISROUND") == 0) {
+    // JS board flag: the Gauge Layout card re-labels itself for round boards
+    // (3 Rim-skin mini slots, no bottom row / AMS view / extras).
+#if defined(DISPLAY_ROUND_240)
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMSV_ROW") == 0) {
-#if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480)
+    // AMS view swaps gauge row 2 for the AMS strip - 240x240 square boards
+    // only. Round boards have no AMS strip, big boards show AMS natively.
+#if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && \
+    !defined(DISPLAY_480x480) && !defined(DISPLAY_ROUND_240)
     out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"amsv\" value=\"1\" onchange=\"syncAmsView()\">";
     out += "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>";

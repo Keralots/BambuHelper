@@ -32,9 +32,12 @@
 // Text arcs just inside the ring (ring inner = R - T = 111). Radius is the
 // arc through the glyph centers; the band it occupies is r +/- fontHeight/2.
 #define LY_RND_ARC_R           98  // glyph-center radius for FONT_BODY arcs
-#define LY_RND_ARC_STATUS_HDEG 55  // top clear sector: 12 o'clock +/- 55 deg
+#define LY_RND_ARC_STATUS_HDEG 50  // top clear sector: 12 o'clock +/- 50 deg
+                                   // (was 55; trimmed to widen the filament
+                                   // sector - keep MAXW <= span-10px)
 #define LY_RND_ARC_ETA_HDEG    45  // bottom clear sector: 6 o'clock +/- 45 deg
-#define LY_RND_ARC_STATUS_MAXW 180 // ellipsize budget (px of arc length)
+#define LY_RND_ARC_STATUS_MAXW 160 // ellipsize budget (px of arc length;
+                                   // 100 deg at r=98 = ~171 px of arc)
 
 // --- Printing screen (variant A: rim ring + 3 mini gauges) ---
 #define LY_RND_DOTS_Y      42      // multi-printer dots row (below top arc)
@@ -45,22 +48,30 @@
                                    // inside r=88 (the status text band) —
                                    // that's what caps the digit height.
 // Active filament, curved along the upper-left rim (before the status arc in
-// clockwise reading order). Sector limits: status clear ends at 55 deg from
-// 12 o'clock; past ~97 deg the band clear (inner radius 89) shaves the nozzle
-// mini gauge's outer AA. Clear band = CAA +/- HDEG in drawArcAA space
-// (12 o'clock = 180): 87..125 -> 55..93 deg left of 12.
-#define LY_RND_FIL_CLR_CAA   106   // filament sector clear-band center
-#define LY_RND_FIL_CLR_HDEG  19    // clear-band half-angle
-#define LY_RND_FIL_TXT_CAA   110   // type text sub-sector center (drawArcAA)
-#define LY_RND_FIL_DOT_AA    91    // swatch dot center angle (drawArcAA)
-#define LY_RND_FIL_TXT_MAXW  48    // ellipsize budget (px of arc length)
+// clockwise reading order). Sector limits: status clear ends at 50 deg from
+// 12 o'clock (status INK stops at ~47 deg - MAXW 160 = +/-46.8 deg - so the
+// band may poke 1 deg past the status clear edge without touching it); past
+// ~97 deg the band clear (inner radius 89) shaves the nozzle mini gauge's
+// outer AA. Clear band = CAA +/- HDEG in drawArcAA space (12 o'clock = 180):
+// 85..131 -> 49..95 deg left of 12. Dot ink (r=98 +/- 5, ~3 deg half-angle)
+// at 87 spans 90..96 deg - 2 px clear of the nozzle slot. Text budget from
+// measured Inter-10 advances: "PLA Basic"=57, "PLA Matte"=59, "PETG Trans"=68;
+// 64 px (+/-18.7 deg around CAA 111 = AA 92.3..129.7) is the ceiling with the
+// dot on the arc - covers everything but the longest names ("PETG Trans").
+#define LY_RND_FIL_CLR_CAA   108   // filament sector clear-band center
+#define LY_RND_FIL_CLR_HDEG  23    // clear-band half-angle
+#define LY_RND_FIL_TXT_CAA   111   // type text sub-sector center (drawArcAA)
+#define LY_RND_FIL_DOT_AA    87    // swatch dot center angle (drawArcAA)
+#define LY_RND_FIL_TXT_MAXW  64    // ellipsize budget (px of arc length)
 // Right-side mirror sector (55..93 deg right of 12): door state when the
 // printer has a sensor, else speed mode — square bottom-bar parity. Same
-// caps mirrored: the part-fan gauge intrudes past ~97 deg.
+// caps mirrored: the part-fan gauge intrudes past ~97 deg. Narrower than the
+// filament sector (door/speed strings are short), so it keeps its own MAXW.
 #define LY_RND_RSTAT_CLR_CAA  254  // clear-band center (drawArcAA)
 #define LY_RND_RSTAT_CLR_HDEG 19   // clear-band half-angle
 #define LY_RND_RSTAT_TXT_CAA  250  // text sub-sector center (drawArcAA)
 #define LY_RND_RSTAT_DOT_AA   269  // status dot center angle (drawArcAA)
+#define LY_RND_RSTAT_TXT_MAXW 48   // ellipsize budget (px of arc length)
 #define LY_RND_LAYER_Y     104     // "layer n / total" line (center datum)
 #define LY_RND_G_R         27      // mini gauge radius
 #define LY_RND_G_T         6       // mini gauge arc thickness

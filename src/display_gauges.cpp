@@ -898,12 +898,28 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   const bool sm = dispSettings.smallLabels;
   setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
 
+#if defined(DISPLAY_ROUND_240)
+  // Round mini slots: the rim ring runs right behind the label band and the
+  // 62 px slot pitch leaves no spare width, so label ink must never exceed
+  // the slot. Step down to FONT_SMALL first (keeps "Nozzle R" / "Progress"
+  // whole), then hard-trim whatever still overflows. The clamped clear below
+  // and the Rim slot loop's type-change clear both rely on this cap -
+  // without it a wide label leaves edge ghosts when the slot changes type.
+  if (!sm && gfx.textWidth(label) > maxW) setFont(gfx, FONT_SMALL);
+#endif
+
   // Safety trim (no "..") so a long label can't bleed into a neighbor. Only long
   // labels (> 8) are trimmed; short ones (incl. the dynamic "Nozzle R/L") draw in
-  // full even if a hair wider than the slot, matching pre-#124 behavior.
+  // full even if a hair wider than the slot, matching pre-#124 behavior. Round
+  // trims unconditionally: ink wider than the slot can never be fully erased.
+#if defined(DISPLAY_ROUND_240)
+  const bool mustTrim = gfx.textWidth(label) > maxW;
+#else
+  const bool mustTrim = strlen(label) > 8 && gfx.textWidth(label) > maxW;
+#endif
   char buf[48];
   const char* draw = label;
-  if (strlen(label) > 8 && gfx.textWidth(label) > maxW) {
+  if (mustTrim) {
     strlcpy(buf, label, sizeof(buf));
     utf8TrimPartial(buf);
     size_t n = strlen(buf);

@@ -101,6 +101,19 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
 // draw the inert placeholder inside a band. No-op visual on non-camera boards.
 void drawCameraGauge(int16_t cx, int16_t cy, int16_t radius, bool forceRedraw);
 
+struct BambuState;
+
+// Shared configurable-slot tile dispatcher (defined in display_ui.cpp).
+// gaugeTileValueChanged mirrors the per-type change detection of the printing
+// screen's slot loop; drawGaugeTile renders one slot of any GaugeType.
+// smooth=true uses the global smoothed arc values - only valid when the tile
+// shows the currently displayed printer (round Rim skin); the split screen
+// passes false because the smooth floats cannot track two printers at once.
+bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p);
+void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
+                   int16_t cx, int16_t cy, int16_t r, int16_t t, bool fr,
+                   bool smooth);
+
 // Nozzle label honoring custom overrides + R/L side ('R'/'L'/0). Exported so the
 // split renderer formats nozzle labels identically. Returns a static buffer.
 const char* nozzleSideLabel(char side);
