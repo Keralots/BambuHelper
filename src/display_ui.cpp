@@ -2900,6 +2900,33 @@ static void drawRimRightStatus(BambuState& s, int16_t cx, bool forceRedraw) {
   tft.fillCircle(dx, dy, 4, clr);
 }
 
+// Composite progress figure shared by all three skins: 7-seg digits (built-in
+// 48px font, zero flash cost, scaled) + an Inter "%" suffix bottom-aligned
+// with the digits, centered as a block on (cx, y). halfH = scaled digit
+// height / 2; the caller clears its own band first.
+static void drawRound7segPct(uint8_t pct, int16_t cx, int16_t y,
+                             float scale, int16_t halfH) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", pct);
+  setFont(tft, FONT_7SEG);
+  tft.setTextSize(scale);
+  int16_t numW = (int16_t)tft.textWidth(buf);
+  tft.setTextSize(1);
+  setFont(tft, FONT_LARGE);
+  int16_t pctW = (int16_t)tft.textWidth("%");
+  int16_t x0 = cx - (numW + 4 + pctW) / 2;
+  tft.setTextColor(CLR_TEXT, CLR_BG);
+  setFont(tft, FONT_7SEG);
+  tft.setTextSize(scale);
+  tft.setTextDatum(TL_DATUM);
+  tft.drawString(buf, x0, y - halfH);
+  tft.setTextSize(1);
+  setFont(tft, FONT_LARGE);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("%", x0 + numW + 4, y + halfH);
+  tft.setTextDatum(MC_DATUM);
+}
+
 // ---------------------------------------------------------------------------
 //  Skin 1 "Speedo": the classic 240-degree gauge arc scaled up to the whole
 //  screen; the arc's bottom gap holds the temperature readouts, the ETA line
@@ -2974,28 +3001,10 @@ static void drawPrintingSpeedo() {
   }
 
   // === Big progress % + layer line ===
-  // Digits use the built-in 48px 7-segment font (zero flash cost, and the
-  // instrument-cluster look suits this skin); the "%" is an Inter suffix
-  // bottom-aligned with the digits since Font7 has no percent glyph.
   if (progChanged) {
     markFrameDirty();
     tft.fillRect(cx - 62, LY_RND_SPD_PCT_Y - 24, 124, 48, CLR_BG);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d", s.progress);
-    setFont(tft, FONT_7SEG);
-    tft.setTextSize(1);
-    int16_t numW = (int16_t)tft.textWidth(buf);
-    setFont(tft, FONT_LARGE);
-    int16_t pctW = (int16_t)tft.textWidth("%");
-    int16_t x0 = cx - (numW + 4 + pctW) / 2;
-    tft.setTextColor(CLR_TEXT, CLR_BG);
-    setFont(tft, FONT_7SEG);
-    tft.setTextDatum(TL_DATUM);
-    tft.drawString(buf, x0, LY_RND_SPD_PCT_Y - 24);
-    setFont(tft, FONT_LARGE);
-    tft.setTextDatum(BL_DATUM);
-    tft.drawString("%", x0 + numW + 4, LY_RND_SPD_PCT_Y + 24);
-    tft.setTextDatum(MC_DATUM);
+    drawRound7segPct(s.progress, cx, LY_RND_SPD_PCT_Y, 1.0f, 24);
   }
   drawRoundLayerOrPower(s, cx, LY_RND_SPD_LAYER_Y, forceRedraw, layerChanged);
 
@@ -3096,14 +3105,12 @@ static void drawPrintingRings() {
   }
 
   // === Big progress % ===
+  // 0.8x 7-seg composite like the Rim skin; the band corners (48, 45 off
+  // center -> dist 66) stay inside the r=74 center disc.
   if (progChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 50, LY_RND_RGS_PCT_Y - 18, 100, 36, CLR_BG);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", s.progress);
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(CLR_TEXT, CLR_BG);
-    tft.drawString(buf, cx, LY_RND_RGS_PCT_Y);
+    tft.fillRect(cx - 48, LY_RND_RGS_PCT_Y - 19, 96, 38, CLR_BG);
+    drawRound7segPct(s.progress, cx, LY_RND_RGS_PCT_Y, 0.8f, 19);
   }
 
   // === ETA / alert line + multi-printer dots ===
@@ -3183,31 +3190,12 @@ static void drawPrintingRound() {
   }
 
   // === Big progress % ===
-  // 0.8x-scaled 48px 7-seg digits (~38px) + Inter "%" suffix, same composite
-  // as the Speedo skin. Full-size digits don't fit here: the wider clear band
-  // they need would reach into the curved status text annulus (r >= 88).
+  // 0.8x 7-seg composite (~38px). Full-size digits don't fit here: the wider
+  // clear band they need would reach into the status text annulus (r >= 88).
   if (progChanged) {
     markFrameDirty();
     tft.fillRect(cx - 48, LY_RND_PRINT_PCT_Y - 19, 96, 38, CLR_BG);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d", s.progress);
-    setFont(tft, FONT_7SEG);
-    tft.setTextSize(0.8f);
-    int16_t numW = (int16_t)tft.textWidth(buf);
-    tft.setTextSize(1);
-    setFont(tft, FONT_LARGE);
-    int16_t pctW = (int16_t)tft.textWidth("%");
-    int16_t x0 = cx - (numW + 4 + pctW) / 2;
-    tft.setTextColor(CLR_TEXT, CLR_BG);
-    setFont(tft, FONT_7SEG);
-    tft.setTextSize(0.8f);
-    tft.setTextDatum(TL_DATUM);
-    tft.drawString(buf, x0, LY_RND_PRINT_PCT_Y - 19);
-    tft.setTextSize(1);
-    setFont(tft, FONT_LARGE);
-    tft.setTextDatum(BL_DATUM);
-    tft.drawString("%", x0 + numW + 4, LY_RND_PRINT_PCT_Y + 19);
-    tft.setTextDatum(MC_DATUM);
+    drawRound7segPct(s.progress, cx, LY_RND_PRINT_PCT_Y, 0.8f, 19);
   }
 
   // === Layer line (or power, when a plug is active) ===
