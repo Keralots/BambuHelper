@@ -2659,8 +2659,12 @@ static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen) {
 
 // Compact temperature readout for the Speedo / Rings skins: colored marker
 // (dot = nozzle, square = bed), the value in FONT_BODY, and a degree mark.
-static void drawTempReadout(int16_t x, int16_t y, float temp, uint16_t color,
-                            bool squareMarker) {
+// While a target is set and the reading is >2 deg away from it, a small
+// trend arrow appears after the degree mark (orange up = heating, blue
+// down = cooling) — the round readouts have no room for the square
+// dashboard's "current/target" form.
+static void drawTempReadout(int16_t x, int16_t y, float temp, float target,
+                            uint16_t color, bool squareMarker) {
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", (int)(temp + 0.5f));
   setFont(tft, FONT_BODY);
@@ -2671,6 +2675,13 @@ static void drawTempReadout(int16_t x, int16_t y, float temp, uint16_t color,
   if (squareMarker) tft.fillRect(x - tw / 2 - 15, y - 4, 8, 8, color);
   else              tft.fillCircle(x - tw / 2 - 11, y, 4, color);
   tft.drawCircle(x + tw / 2 + 5, y - 5, 2, color);
+  if (target > 0.5f) {
+    const int16_t ax = x + tw / 2 + 10;
+    if (temp < target - 2.0f)
+      tft.fillTriangle(ax, y + 4, ax + 8, y + 4, ax + 4, y - 4, CLR_ORANGE);
+    else if (temp > target + 2.0f)
+      tft.fillTriangle(ax, y - 4, ax + 8, y - 4, ax + 4, y + 4, CLR_BLUE);
+  }
 }
 
 // Progress-arc color for the round skins. Honors the Per-gauge "Progress" arc
@@ -2738,6 +2749,59 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
   }
 }
 
+// Active-filament line for the Speedo / Rings skins: color swatch dot +
+// material type, centered at (cx, y) — the info the square dashboard's bottom
+// bar carries and round v1 dropped. Mirrors the square view's tray sources:
+// regular tray, overflow tray (5+ AMS units) and the external spool. Owns its
+// change detection; the band (+/-40 x +/-8) fits the Rings center disc.
+// Shared statics are safe: only one skin is active at a time and every skin
+// or printer switch passes forceRedraw.
+static void drawRoundFilament(BambuState& s, int16_t cx, int16_t y,
+                              bool forceRedraw) {
+  static uint8_t  prevTray  = 0xFE;
+  static uint16_t prevColor = 0;
+  static char     prevType[16] = "";
+
+  uint16_t color = 0;
+  const char* type = nullptr;
+  if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS &&
+      s.ams.trays[s.ams.activeTray].present) {
+    color = s.ams.trays[s.ams.activeTray].colorRgb565;
+    type  = s.ams.trays[s.ams.activeTray].type;
+  } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
+    color = s.ams.ovTray.colorRgb565;
+    type  = s.ams.ovTray.type;
+  } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
+    color = s.ams.vtColorRgb565;
+    type  = s.ams.vtType;
+  }
+
+  const uint8_t tray = type ? s.ams.activeTray : 0xFF;
+  bool changed = forceRedraw || tray != prevTray ||
+                 (type && (color != prevColor ||
+                           strncmp(type, prevType, sizeof(prevType)) != 0));
+  if (!changed) return;
+  prevTray  = tray;
+  prevColor = color;
+  strlcpy(prevType, type ? type : "", sizeof(prevType));
+
+  markFrameDirty();
+  tft.fillRect(cx - 40, y - 8, 80, 16, CLR_BG);
+  if (!type) return;
+
+  setFont(tft, FONT_SMALL);
+  char clipped[16];
+  const char* txt = ellipsizeToWidth(tft, type, 62, clipped, sizeof(clipped));
+  const int16_t tw = (int16_t)tft.textWidth(txt);
+  const int16_t x0 = cx - (13 + tw) / 2;      // dot (9) + gap (4) + text
+  tft.drawCircle(x0 + 4, y, 5, CLR_TEXT_DARK);
+  tft.fillCircle(x0 + 4, y, 4, color);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+  tft.drawString(txt, x0 + 13, y);
+  tft.setTextDatum(MC_DATUM);
+}
+
 // ---------------------------------------------------------------------------
 //  Skin 1 "Speedo": the classic 240-degree gauge arc scaled up to the whole
 //  screen; the arc's bottom gap holds the temperature readouts, the ETA line
@@ -2760,10 +2824,28 @@ static void drawPrintingSpeedo() {
                       (s.totalLayers != prevState.totalLayers);
   bool tempChanged  = forceRedraw ||
                       ((int)s.nozzleTemp != (int)prevState.nozzleTemp) ||
-                      ((int)s.bedTemp != (int)prevState.bedTemp);
+                      ((int)s.bedTemp != (int)prevState.bedTemp) ||
+                      ((int)s.nozzleTarget != (int)prevState.nozzleTarget) ||
+                      ((int)s.bedTarget != (int)prevState.bedTarget);
 
   const int16_t cx = SCREEN_W / 2;
   tft.setTextDatum(MC_DATUM);
+
+  // === Scale ticks at 0/25/50/75/100%, radially outside the arc ===
+  // Static decoration: nothing else draws out there (arc full redraw clears
+  // only r <= 109, curved text bands sit far inside), so forceRedraw is the
+  // only trigger. Angle space matches drawArcFill: 0 = 6 o'clock, clockwise.
+  if (forceRedraw) {
+    markFrameDirty();
+    for (uint8_t k = 0; k <= 4; k++) {
+      const float a  = (60.0f + 60.0f * k) * 0.0174532925f;
+      const float sa = -sinf(a), ca = cosf(a);
+      tft.drawLine(cx + (int16_t)(sa * LY_RND_SPD_TICK_RI),
+                   cx + (int16_t)(ca * LY_RND_SPD_TICK_RI),
+                   cx + (int16_t)(sa * LY_RND_SPD_TICK_RO),
+                   cx + (int16_t)(ca * LY_RND_SPD_TICK_RO), CLR_TEXT_DIM);
+    }
+  }
 
   // === Big progress arc (redrawn in full on color change) ===
   if (progChanged || stateChanged) {
@@ -2819,14 +2901,17 @@ static void drawPrintingSpeedo() {
   }
   drawRoundLayerOrPower(s, cx, LY_RND_SPD_LAYER_Y, forceRedraw, layerChanged);
 
+  // === Active filament line between the layer line and the temps ===
+  drawRoundFilament(s, cx, LY_RND_SPD_FIL_Y, forceRedraw);
+
   // === Nozzle / bed readouts in the arc's bottom gap ===
   if (tempChanged) {
     markFrameDirty();
     tft.fillRect(cx - 66, LY_RND_SPD_TEMP_Y - 11, 132, 22, CLR_BG);
     drawTempReadout(LY_RND_SPD_NOZ_X, LY_RND_SPD_TEMP_Y, s.nozzleTemp,
-                    dispSettings.nozzle.arc, false);
+                    s.nozzleTarget, dispSettings.nozzle.arc, false);
     drawTempReadout(LY_RND_SPD_BED_X, LY_RND_SPD_TEMP_Y, s.bedTemp,
-                    dispSettings.bed.arc, true);
+                    s.bedTarget, dispSettings.bed.arc, true);
     tft.setTextDatum(MC_DATUM);
   }
 
@@ -2891,18 +2976,24 @@ static void drawPrintingRings() {
   // made the numbers visibly flash (erase + redraw with unchanged digits).
   {
     static int16_t prevNozShown = -32768, prevBedShown = -32768;
+    static int16_t prevNozTgt = -32768, prevBedTgt = -32768;
     int16_t nozShown = (int16_t)(s.nozzleTemp + 0.5f);
     int16_t bedShown = (int16_t)(s.bedTemp + 0.5f);
-    if (forceRedraw || nozShown != prevNozShown || bedShown != prevBedShown) {
+    int16_t nozTgt = (int16_t)s.nozzleTarget;
+    int16_t bedTgt = (int16_t)s.bedTarget;
+    if (forceRedraw || nozShown != prevNozShown || bedShown != prevBedShown ||
+        nozTgt != prevNozTgt || bedTgt != prevBedTgt) {
       markFrameDirty();
       tft.fillRect(cx - 70, LY_RND_RGS_TEMP_Y - 11, 140, 22, CLR_BG);
       drawTempReadout(LY_RND_RGS_NOZ_X, LY_RND_RGS_TEMP_Y, s.nozzleTemp,
-                      dispSettings.nozzle.arc, false);
+                      s.nozzleTarget, dispSettings.nozzle.arc, false);
       drawTempReadout(LY_RND_RGS_BED_X, LY_RND_RGS_TEMP_Y, s.bedTemp,
-                      dispSettings.bed.arc, true);
+                      s.bedTarget, dispSettings.bed.arc, true);
       tft.setTextDatum(MC_DATUM);
       prevNozShown = nozShown;
       prevBedShown = bedShown;
+      prevNozTgt = nozTgt;
+      prevBedTgt = bedTgt;
     }
   }
 
@@ -2929,9 +3020,15 @@ static void drawPrintingRings() {
     if (tft.textWidth(buf) > 112) setFont(tft, FONT_SMALL);
     tft.setTextColor(clr, CLR_BG);
     tft.drawString(buf, cx, LY_RND_RGS_ETA_Y);
-    tft.fillRect(cx - 30, LY_RND_RGS_DOTS_Y - 5, 60, 10, CLR_BG);
+    // Dots clear kept narrow: at y=186 the corner distance of a +/-16 x +/-5
+    // band is 73, just inside the r=74 center disc (the bed ring starts
+    // there). Max 2 dots on round (16 px wide), so the band still covers.
+    tft.fillRect(cx - 16, LY_RND_RGS_DOTS_Y - 5, 32, 10, CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_RGS_DOTS_Y);
   }
+
+  // === Active filament line between the ETA and the dots row ===
+  drawRoundFilament(s, cx, LY_RND_RGS_FIL_Y, forceRedraw);
 }
 static void drawPrintingRound() {
   PrinterSlot& p = displayedPrinter();

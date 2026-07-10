@@ -64,11 +64,16 @@
 // left a jagged staircase across the top sector.
 #define LY_RND_SPD_STATUS_R    82  // curved status glyph-center radius
 #define LY_RND_SPD_STATUS_HDEG 52  // top clear sector half-angle
-#define LY_RND_SPD_DOTS_Y   80     // multi-printer dots row
-#define LY_RND_SPD_PCT_Y    112    // big progress % (center datum; 48px 7-seg
-                                   // digits span PCT_Y +/- 24 -> 88..136,
-                                   // clearing the dots row above by 4 px)
+#define LY_RND_SPD_DOTS_Y   72     // multi-printer dots row (above the digits)
+#define LY_RND_SPD_PCT_Y    104    // big progress % (center datum; 48px 7-seg
+                                   // digits span PCT_Y +/- 24 -> 80..128,
+                                   // clearing the dots row above by 3 px)
 #define LY_RND_SPD_LAYER_Y  150    // layer/watts line (center datum, FONT_BODY)
+#define LY_RND_SPD_FIL_Y    170    // active filament line (dot + material type)
+// Speedometer scale ticks at 0/25/50/75/100%, radial between the arc outer
+// edge (107 + AA) and the bezel reserve (118).
+#define LY_RND_SPD_TICK_RI  110
+#define LY_RND_SPD_TICK_RO  115
 #define LY_RND_SPD_TEMP_Y   190    // nozzle/bed readouts in the arc gap
 #define LY_RND_SPD_NOZ_X    85     // nozzle readout center X
 #define LY_RND_SPD_BED_X    155    // bed readout center X
@@ -90,7 +95,10 @@
 #define LY_RND_RGS_NOZ_X    86     // nozzle readout center X (spread apart so the
 #define LY_RND_RGS_BED_X    154    // two readouts + markers don't touch)
 #define LY_RND_RGS_ETA_Y    152    // remaining line (center datum)
-#define LY_RND_RGS_DOTS_Y   170    // multi-printer dots row
+#define LY_RND_RGS_FIL_Y    172    // active filament line (dot + material type;
+                                   // band +/-40 x +/-8 -> corner dist 72 < 74)
+#define LY_RND_RGS_DOTS_Y   186    // multi-printer dots row (tight chord: the
+                                   // clear band must stay inside the r=74 disc)
 
 // --- Idle screen (printer online) ---
 #define LY_RND_IDLE_NAME_R   102   // curved printer name radius (no ring here)
