@@ -65,8 +65,10 @@
 #define LY_RND_SPD_STATUS_R    82  // curved status glyph-center radius
 #define LY_RND_SPD_STATUS_HDEG 52  // top clear sector half-angle
 #define LY_RND_SPD_DOTS_Y   80     // multi-printer dots row
-#define LY_RND_SPD_PCT_Y    118    // big progress % (center datum)
-#define LY_RND_SPD_LAYER_Y  144    // layer line (center datum)
+#define LY_RND_SPD_PCT_Y    112    // big progress % (center datum; 48px 7-seg
+                                   // digits span PCT_Y +/- 24 -> 88..136,
+                                   // clearing the dots row above by 4 px)
+#define LY_RND_SPD_LAYER_Y  150    // layer/watts line (center datum, FONT_BODY)
 #define LY_RND_SPD_TEMP_Y   190    // nozzle/bed readouts in the arc gap
 #define LY_RND_SPD_NOZ_X    85     // nozzle readout center X
 #define LY_RND_SPD_BED_X    155    // bed readout center X

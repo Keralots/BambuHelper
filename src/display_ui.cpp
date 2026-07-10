@@ -2716,12 +2716,12 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
   if (!changed) return;
 
   markFrameDirty();
-  tft.fillRect(cx - 70, y - 9, 140, 18, CLR_BG);
+  tft.fillRect(cx - 70, y - 11, 140, 22, CLR_BG);
   tft.setTextDatum(MC_DATUM);
   if (showPower) {
     char buf[12];
     snprintf(buf, sizeof(buf), "%.0f W", watts);
-    setFont(tft, FONT_SMALL);
+    setFont(tft, FONT_BODY);
     int16_t tw = (int16_t)tft.textWidth(buf);
     int16_t total = 16 + 2 + tw;                 // lightning icon + gap + text
     int16_t x0 = cx - total / 2;
@@ -2732,7 +2732,7 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
   } else if (s.totalLayers > 0) {
     char buf[24];
     snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
-    setFont(tft, FONT_SMALL);
+    setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, y);
   }
@@ -2794,14 +2794,28 @@ static void drawPrintingSpeedo() {
   }
 
   // === Big progress % + layer line ===
+  // Digits use the built-in 48px 7-segment font (zero flash cost, and the
+  // instrument-cluster look suits this skin); the "%" is an Inter suffix
+  // bottom-aligned with the digits since Font7 has no percent glyph.
   if (progChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 55, LY_RND_SPD_PCT_Y - 18, 110, 36, CLR_BG);
+    tft.fillRect(cx - 62, LY_RND_SPD_PCT_Y - 24, 124, 48, CLR_BG);
     char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", s.progress);
+    snprintf(buf, sizeof(buf), "%d", s.progress);
+    setFont(tft, FONT_7SEG);
+    tft.setTextSize(1);
+    int16_t numW = (int16_t)tft.textWidth(buf);
     setFont(tft, FONT_LARGE);
+    int16_t pctW = (int16_t)tft.textWidth("%");
+    int16_t x0 = cx - (numW + 4 + pctW) / 2;
     tft.setTextColor(CLR_TEXT, CLR_BG);
-    tft.drawString(buf, cx, LY_RND_SPD_PCT_Y);
+    setFont(tft, FONT_7SEG);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(buf, x0, LY_RND_SPD_PCT_Y - 24);
+    setFont(tft, FONT_LARGE);
+    tft.setTextDatum(BL_DATUM);
+    tft.drawString("%", x0 + numW + 4, LY_RND_SPD_PCT_Y + 24);
+    tft.setTextDatum(MC_DATUM);
   }
   drawRoundLayerOrPower(s, cx, LY_RND_SPD_LAYER_Y, forceRedraw, layerChanged);
 
