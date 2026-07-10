@@ -674,9 +674,16 @@ void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // Angle math below uses screen convention: 0 deg = 3 o'clock, clockwise
 // positive (y grows downward). drawArcAA's own space (0 = 6 o'clock) applies
 // only to the band-clear call.
-void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
-                      int16_t cx, int16_t cy, int16_t r, bool bottom,
-                      uint16_t color, FontID font, int16_t clearHalfDeg) {
+// Internal worker. midAA = sector center in drawArcAA space (0 = 6 o'clock,
+// clockwise). reverse = bottom-style: text runs counterclockwise with glyph
+// tops toward the center so it still reads left to right; otherwise top-style
+// (clockwise, glyph bottoms toward the center) — which is also what the
+// arbitrary-sector variant uses for side text.
+static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
+                                 int16_t cx, int16_t cy, int16_t r,
+                                 uint16_t midAA, bool reverse,
+                                 uint16_t color, FontID font,
+                                 int16_t clearHalfDeg) {
   ScopedWrite sw(gfx);
   const uint16_t bg = dispSettings.bgColor;
   setFont(gfx, font);
@@ -691,12 +698,17 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
     // plus AA resample spill), which +1 nominal (+~2 effective) still covers.
     // At +2 the band bit into the rim/speedo ring's inner AA edge and left a
     // hard aliased staircase across the top/bottom text sectors.
-    uint32_t mid = bottom ? 0 : 180;
-    uint32_t a0 = (mid + 360 - (uint32_t)clearHalfDeg) % 360;
-    uint32_t a1 = (mid + (uint32_t)clearHalfDeg) % 360;
+    uint32_t a0 = ((uint32_t)midAA + 360 - (uint32_t)clearHalfDeg) % 360;
+    uint32_t a1 = ((uint32_t)midAA + (uint32_t)clearHalfDeg) % 360;
     drawArcAA(gfx, cx, cy, r + fh / 2 + 1, r - fh / 2 - 2, a0, a1, bg, bg);
   }
   if (!str || !str[0]) return;
+
+  // Sector center in screen convention (0 = 3 o'clock, clockwise, y down).
+  constexpr float d2r = 3.14159265f / 180.0f;
+  const float midMath = (float)midAA + 90.0f;
+  const int16_t fbx = cx + (int16_t)lroundf((r - fh / 2) * cosf(midMath * d2r));
+  const int16_t fby = cy + (int16_t)lroundf((r - fh / 2) * sinf(midMath * d2r));
 
   // Split into UTF-8 code points and measure each advance at the target font.
   struct GlyphRef { const char* p; uint8_t len; int16_t w; };
@@ -730,7 +742,7 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
     spr.deleteSprite();
     gfx.setTextDatum(MC_DATUM);
     gfx.setTextColor(color, bg);
-    gfx.drawString(str, cx, bottom ? (cy + r - fh / 2) : (cy - r + fh / 2));
+    gfx.drawString(str, fbx, fby);
     return;
   }
   spr.setTextDatum(MC_DATUM);
@@ -751,19 +763,18 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
     spr.deleteSprite();
     gfx.setTextDatum(MC_DATUM);
     gfx.setTextColor(color, bg);
-    gfx.drawString(str, cx, bottom ? (cy + r - fh / 2) : (cy - r + fh / 2));
+    gfx.drawString(str, fbx, fby);
     return;
   }
 
-  constexpr float d2r = 3.14159265f / 180.0f;
   const float degPerPx = 180.0f / (3.14159265f * (float)r);
   const float totalDeg = totalW * degPerPx;
-  // Top text runs clockwise through 270 deg; bottom text runs counter-
-  // clockwise through 90 deg so it still reads left to right.
-  float a = bottom ? (90.0f + totalDeg * 0.5f) : (270.0f - totalDeg * 0.5f);
+  // Forward text runs clockwise through the sector center; reversed text runs
+  // counterclockwise so it still reads left to right below the center.
+  float a = reverse ? (midMath + totalDeg * 0.5f) : (midMath - totalDeg * 0.5f);
   for (int i = 0; i < n; i++) {
     const float half = glyphs[i].w * degPerPx * 0.5f;
-    const float ac = bottom ? (a - half) : (a + half);  // glyph center angle
+    const float ac = reverse ? (a - half) : (a + half);  // glyph center angle
     char tmp[5];
     memcpy(tmp, glyphs[i].p, glyphs[i].len);
     tmp[glyphs[i].len] = '\0';
@@ -772,17 +783,35 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
     const float px = cx + r * cosf(ac * d2r);
     const float py = cy + r * sinf(ac * d2r);
     // Tangent rotation: upright at the sector midpoint, tilting with the arc.
-    const float rot = bottom ? (ac - 90.0f) : (ac - 270.0f);
+    const float rot = reverse ? (ac - 90.0f) : (ac - 270.0f);
     rotspr.fillSprite(bg);
     spr.pushRotateZoomWithAA(&rotspr, side * 0.5f, side * 0.5f, rot,
                              1.0f, 1.0f, bg);
     rotspr.pushSprite(&gfx, (int32_t)lroundf(px) - side / 2,
                       (int32_t)lroundf(py) - side / 2, bg);
-    a = bottom ? (a - 2.0f * half) : (a + 2.0f * half);
+    a = reverse ? (a - 2.0f * half) : (a + 2.0f * half);
   }
   rotspr.deleteSprite();
   spr.unloadFont();
   spr.deleteSprite();
+}
+
+void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
+                      int16_t cx, int16_t cy, int16_t r, bool bottom,
+                      uint16_t color, FontID font, int16_t clearHalfDeg) {
+  drawCurvedStringImpl(gfx, str, cx, cy, r, bottom ? 0 : 180, bottom,
+                       color, font, clearHalfDeg);
+}
+
+// Arbitrary-sector variant: centerAA in drawArcAA space (0 = 6 o'clock,
+// clockwise). Top-style glyph orientation, so side text reads clockwise like
+// the top arc (tilted; decorative watch-bezel style).
+void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
+                            int16_t cx, int16_t cy, int16_t r,
+                            uint16_t centerAA, uint16_t color, FontID font,
+                            int16_t clearHalfDeg) {
+  drawCurvedStringImpl(gfx, str, cx, cy, r, centerAA, false,
+                       color, font, clearHalfDeg);
 }
 #endif // DISPLAY_ROUND_240
 

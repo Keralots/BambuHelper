@@ -39,8 +39,21 @@
 // --- Printing screen (variant A: rim ring + 3 mini gauges) ---
 #define LY_RND_DOTS_Y      42      // multi-printer dots row (below top arc)
 #define LY_RND_PCT_Y       80      // big progress % (center datum); drying reuses this
-#define LY_RND_PRINT_PCT_Y 68      // Rim printing %: pulled up to close the gap
-                                   // under the curved status (drying keeps 80)
+#define LY_RND_PRINT_PCT_Y 70      // Rim printing %: 0.8x 7-seg digits (~38px)
+                                   // span PCT_Y +/- 19 (drying keeps 80 and
+                                   // FONT_LARGE). Band corners must stay
+                                   // inside r=88 (the status text band) —
+                                   // that's what caps the digit height.
+// Active filament, curved along the upper-left rim (before the status arc in
+// clockwise reading order). Sector limits: status clear ends at 55 deg from
+// 12 o'clock; past ~97 deg the band clear (inner radius 89) shaves the nozzle
+// mini gauge's outer AA. Clear band = CAA +/- HDEG in drawArcAA space
+// (12 o'clock = 180): 87..125 -> 55..93 deg left of 12.
+#define LY_RND_FIL_CLR_CAA   106   // filament sector clear-band center
+#define LY_RND_FIL_CLR_HDEG  19    // clear-band half-angle
+#define LY_RND_FIL_TXT_CAA   110   // type text sub-sector center (drawArcAA)
+#define LY_RND_FIL_DOT_AA    91    // swatch dot center angle (drawArcAA)
+#define LY_RND_FIL_TXT_MAXW  48    // ellipsize budget (px of arc length)
 #define LY_RND_LAYER_Y     104     // "layer n / total" line (center datum)
 #define LY_RND_G_R         27      // mini gauge radius
 #define LY_RND_G_T         6       // mini gauge arc thickness

@@ -2749,13 +2749,32 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
   }
 }
 
+// Resolve the filament currently feeding: returns the material type (nullptr
+// when none) and fills color. Mirrors the square view's tray sources: regular
+// tray, overflow tray (5+ AMS units) and the external spool.
+static const char* roundActiveFilamentType(BambuState& s, uint16_t& color) {
+  if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS &&
+      s.ams.trays[s.ams.activeTray].present) {
+    color = s.ams.trays[s.ams.activeTray].colorRgb565;
+    return s.ams.trays[s.ams.activeTray].type;
+  }
+  if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
+    color = s.ams.ovTray.colorRgb565;
+    return s.ams.ovTray.type;
+  }
+  if (s.ams.vtPresent && s.ams.activeTray == 254) {
+    color = s.ams.vtColorRgb565;
+    return s.ams.vtType;
+  }
+  return nullptr;
+}
+
 // Active-filament line for the Speedo / Rings skins: color swatch dot +
 // material type, centered at (cx, y) — the info the square dashboard's bottom
-// bar carries and round v1 dropped. Mirrors the square view's tray sources:
-// regular tray, overflow tray (5+ AMS units) and the external spool. Owns its
-// change detection; the band (+/-40 x +/-8) fits the Rings center disc.
-// Shared statics are safe: only one skin is active at a time and every skin
-// or printer switch passes forceRedraw.
+// bar carries and round v1 dropped. Owns its change detection; the band
+// (+/-40 x +/-8) fits the Rings center disc. Shared statics are safe: only
+// one skin is active at a time and every skin or printer switch passes
+// forceRedraw.
 static void drawRoundFilament(BambuState& s, int16_t cx, int16_t y,
                               bool forceRedraw) {
   static uint8_t  prevTray  = 0xFE;
@@ -2763,18 +2782,7 @@ static void drawRoundFilament(BambuState& s, int16_t cx, int16_t y,
   static char     prevType[16] = "";
 
   uint16_t color = 0;
-  const char* type = nullptr;
-  if (s.ams.present && s.ams.activeTray < AMS_MAX_TRAYS &&
-      s.ams.trays[s.ams.activeTray].present) {
-    color = s.ams.trays[s.ams.activeTray].colorRgb565;
-    type  = s.ams.trays[s.ams.activeTray].type;
-  } else if (s.ams.activeTray == AMS_TRAY_OVERFLOW && s.ams.ovTray.present) {
-    color = s.ams.ovTray.colorRgb565;
-    type  = s.ams.ovTray.type;
-  } else if (s.ams.vtPresent && s.ams.activeTray == 254) {
-    color = s.ams.vtColorRgb565;
-    type  = s.ams.vtType;
-  }
+  const char* type = roundActiveFilamentType(s, color);
 
   const uint8_t tray = type ? s.ams.activeTray : 0xFF;
   bool changed = forceRedraw || tray != prevTray ||
@@ -2800,6 +2808,51 @@ static void drawRoundFilament(BambuState& s, int16_t cx, int16_t y,
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString(txt, x0 + 13, y);
   tft.setTextDatum(MC_DATUM);
+}
+
+// Rim-skin variant: swatch + type curved along the upper-left rim, reading
+// clockwise into the printer name. Every straight row on this skin is taken
+// (labels under the mini gauges, curved ETA at the bottom), but the left rim
+// sector between the status arc and the nozzle gauge is free. The dot sits at
+// the sector's lower end, the type text centered in the rest.
+static void drawRimFilamentCurved(BambuState& s, int16_t cx, bool forceRedraw) {
+  static uint8_t  prevTray  = 0xFE;
+  static uint16_t prevColor = 0;
+  static char     prevType[16] = "";
+
+  uint16_t color = 0;
+  const char* type = roundActiveFilamentType(s, color);
+
+  const uint8_t tray = type ? s.ams.activeTray : 0xFF;
+  bool changed = forceRedraw || tray != prevTray ||
+                 (type && (color != prevColor ||
+                           strncmp(type, prevType, sizeof(prevType)) != 0));
+  if (!changed) return;
+  prevTray  = tray;
+  prevColor = color;
+  strlcpy(prevType, type ? type : "", sizeof(prevType));
+
+  markFrameDirty();
+  // Wipe the whole sector first (empty string = band clear only) so a
+  // shrinking or disappearing type leaves no ghost, then draw the text
+  // centered in its sub-sector above the dot.
+  drawCurvedStringSector(tft, "", cx, cx, LY_RND_ARC_R, LY_RND_FIL_CLR_CAA,
+                         CLR_TEXT_DIM, FONT_SMALL, LY_RND_FIL_CLR_HDEG);
+  if (!type) return;
+
+  setFont(tft, FONT_SMALL);
+  char clipped[16];
+  const char* txt = ellipsizeToWidth(tft, type, LY_RND_FIL_TXT_MAXW,
+                                     clipped, sizeof(clipped));
+  drawCurvedStringSector(tft, txt, cx, cx, LY_RND_ARC_R, LY_RND_FIL_TXT_CAA,
+                         CLR_TEXT_DIM, FONT_SMALL, 0);
+
+  // Swatch dot at the sector's lower end (drawArcAA -> screen angle is +90).
+  const float a = (LY_RND_FIL_DOT_AA + 90.0f) * 0.0174532925f;
+  const int16_t dx = cx + (int16_t)lroundf(LY_RND_ARC_R * cosf(a));
+  const int16_t dy = cx + (int16_t)lroundf(LY_RND_ARC_R * sinf(a));
+  tft.drawCircle(dx, dy, 5, CLR_TEXT_DARK);
+  tft.fillCircle(dx, dy, 4, color);
 }
 
 // ---------------------------------------------------------------------------
@@ -3085,14 +3138,31 @@ static void drawPrintingRound() {
   }
 
   // === Big progress % ===
+  // 0.8x-scaled 48px 7-seg digits (~38px) + Inter "%" suffix, same composite
+  // as the Speedo skin. Full-size digits don't fit here: the wider clear band
+  // they need would reach into the curved status text annulus (r >= 88).
   if (progChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 55, LY_RND_PRINT_PCT_Y - 18, 110, 36, CLR_BG);
+    tft.fillRect(cx - 48, LY_RND_PRINT_PCT_Y - 19, 96, 38, CLR_BG);
     char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", s.progress);
+    snprintf(buf, sizeof(buf), "%d", s.progress);
+    setFont(tft, FONT_7SEG);
+    tft.setTextSize(0.8f);
+    int16_t numW = (int16_t)tft.textWidth(buf);
+    tft.setTextSize(1);
     setFont(tft, FONT_LARGE);
+    int16_t pctW = (int16_t)tft.textWidth("%");
+    int16_t x0 = cx - (numW + 4 + pctW) / 2;
     tft.setTextColor(CLR_TEXT, CLR_BG);
-    tft.drawString(buf, cx, LY_RND_PRINT_PCT_Y);
+    setFont(tft, FONT_7SEG);
+    tft.setTextSize(0.8f);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(buf, x0, LY_RND_PRINT_PCT_Y - 19);
+    tft.setTextSize(1);
+    setFont(tft, FONT_LARGE);
+    tft.setTextDatum(BL_DATUM);
+    tft.drawString("%", x0 + numW + 4, LY_RND_PRINT_PCT_Y + 19);
+    tft.setTextDatum(MC_DATUM);
   }
 
   // === Layer line (or power, when a plug is active) ===
@@ -3126,6 +3196,9 @@ static void drawPrintingRound() {
     drawCurvedString(tft, buf, cx, cx, LY_RND_ARC_R, true, clr,
                      FONT_BODY, LY_RND_ARC_ETA_HDEG);
   }
+
+  // === Active filament: swatch + type curved on the upper-left rim ===
+  drawRimFilamentCurved(s, cx, forceRedraw);
 }
 
 static void drawPrinting() {

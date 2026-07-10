@@ -50,6 +50,15 @@ void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
                       int16_t cx, int16_t cy, int16_t r, bool bottom,
                       uint16_t color, FontID font, int16_t clearHalfDeg);
+
+// Arbitrary-sector variant of drawCurvedString: centerAA is the sector center
+// in drawArcAA space (0 = 6 o'clock, clockwise; 12 o'clock = 180). Glyphs use
+// top-style orientation (bottoms toward the center), so side text renders
+// tilted — decorative watch-bezel style, keep the strings short.
+void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
+                            int16_t cx, int16_t cy, int16_t r,
+                            uint16_t centerAA, uint16_t color, FontID font,
+                            int16_t clearHalfDeg);
 #endif
 
 // Standard 240-degree gauge arc primitive (track 60..300, gap at 6 o'clock).
