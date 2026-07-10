@@ -164,6 +164,19 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   tft.fillRect(0, blockTop, sw, maxRows * lineH + bottomMargin, bg);
   markFrameDirty();
 
+#if defined(DISPLAY_ROUND_240)
+  // The full-width band clear sweeps across the lower rim ticks (4-8 o'clock
+  // live at y >= 176) and, with two footer lines, can reach the date row.
+  // Invalidate both caches so they repaint: ticks on the next drawClock()
+  // pass, the date later in this very pass (drawClockInfo runs before the
+  // minute-change block, so resetting prevMinute redraws it immediately).
+  roundTicksDrawn = false;
+  if (blockTop < clockBottom + 4) {
+    prevDateBuf[0] = '\0';
+    prevMinute = -1;
+  }
+#endif
+
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(clr, bg);
   for (int i = 0; i < count; i++) {

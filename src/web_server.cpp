@@ -1148,6 +1148,7 @@ static void handleSettingsExport() {
   disp["gaugeSmoothing"]  = dispSettings.gaugeSmoothing;
   rgb565ToHtml(dispSettings.warnColor, buf); disp["warnColor"] = String(buf);
   disp["warnThresholdPct"] = dispSettings.warnThresholdPct;
+  disp["roundSkin"] = dispSettings.roundSkin;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1468,6 +1469,7 @@ static void handleSettingsImportFinish() {
     if (disp["gaugeSmoothing"].is<int>())  { int sm = disp["gaugeSmoothing"].as<int>(); dispSettings.gaugeSmoothing = (sm >= 0 && sm <= 3) ? (uint8_t)sm : 2; }
     if (disp["warnColor"].is<const char*>()) dispSettings.warnColor = htmlToRgb565(disp["warnColor"]);
     if (disp["warnThresholdPct"].is<int>()) dispSettings.warnThresholdPct = constrain(disp["warnThresholdPct"].as<int>(), 0, 100);
+    if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 

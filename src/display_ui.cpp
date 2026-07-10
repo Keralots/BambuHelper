@@ -994,6 +994,8 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   static uint16_t prevMin   = 0xFFFF;
   static int16_t  prevTemp  = -32768;
   static uint8_t  prevHum   = 0xFF;
+  static uint8_t  prevProg  = 0xFF;
+  static uint8_t  prevHumLvl = 0xFF;
 
   int16_t tempShown = (int16_t)((u.temp >= 0.0f) ? (u.temp + 0.5f) : (u.temp - 0.5f));
   bool unitChanged = forceRedraw || ui != prevUnit || dryCount != prevCount;
@@ -1004,8 +1006,9 @@ static void drawIdleDryingRound(PrinterSlot& p) {
 
   tft.setTextDatum(MC_DATUM);
 
-  // Rim ring = drying progress
-  if (unitChanged || u.dryRemainMin != prevMin) {
+  // Rim ring = drying progress (track the derived percentage, not the raw
+  // minutes: dryTotalMin can change mid-session and shift the ring too)
+  if (unitChanged || dryProgress != prevProg) {
     markFrameDirty();
     drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
                 dryProgress, CLR_GREEN, forceRedraw || unitChanged);
@@ -1048,8 +1051,9 @@ static void drawIdleDryingRound(PrinterSlot& p) {
     tft.setTextDatum(MC_DATUM);
   }
 
-  // Humidity (colored like the AMS humidity gauge)
-  if (unitChanged || u.humidityRaw != prevHum) {
+  // Humidity (colored like the AMS humidity gauge). The color also depends on
+  // the legacy 0-5 level (used when no raw RH is reported), so track both.
+  if (unitChanged || u.humidityRaw != prevHum || u.humidity != prevHumLvl) {
     markFrameDirty();
     tft.fillRect(cx - 60, LY_RND_G_Y + 4, 120, 24, CLR_BG);
     char buf[16];
@@ -1067,6 +1071,8 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   prevMin   = u.dryRemainMin;
   prevTemp  = tempShown;
   prevHum   = u.humidityRaw;
+  prevProg  = dryProgress;
+  prevHumLvl = u.humidity;
 }
 #endif // DISPLAY_ROUND_240
 
@@ -3835,30 +3841,46 @@ static void drawFinishedRound() {
     }
   }
 
-  // kWh used during the print (single centered line). Mirrors the square
-  // finished-screen policy: show the stored print energy whenever it's valid
-  // (>= 0), even after the plug has gone offline/stale, and redraw or clear the
-  // band when the value or the plug's active state changes. Includes 0.00 kWh.
+  // Bottom line: the door-acknowledgement prompt takes priority — with ack
+  // enabled main.cpp suppresses the finish timeout, so the screen must tell
+  // the user how to dismiss it (mirrors the square view's bottom bar).
+  // Otherwise: kWh used during the print (single centered line). Mirrors the
+  // square finished-screen policy: show the stored print energy whenever it's
+  // valid (>= 0), even after the plug has gone offline/stale, and redraw or
+  // clear the band when the value or the plug's active state changes.
+  // Includes 0.00 kWh.
   static float prevKwh = -2.0f;
   static bool  prevPlugActive = false;
+  static bool  prevWaitDoor = false;
+  bool waitingForDoor = dpSettings.doorAckEnabled && s.doorSensorPresent &&
+                        !s.doorAcknowledged;
   float kwh = tasmotaGetPrintKwhUsedForSlot(rotState.displayIndex);
   bool plugActive = tasmotaIsActiveForSlot(rotState.displayIndex);
   bool kwhChanged = tasmotaKwhChangedForSlot(rotState.displayIndex) ||
                     (plugActive != prevPlugActive) ||
                     (kwh != prevKwh);
-  if (forceRedraw || kwhChanged) {
+  if (forceRedraw || kwhChanged || waitingForDoor != prevWaitDoor) {
     markFrameDirty();
-    tft.fillRect(cx - 60, LY_RND_FIN_TIME_Y - 10, 120, 20, CLR_BG);
-    if (kwh >= 0.0f) {
+    // Band half-width 64: corner distance sqrt(64^2 + 88^2) = 109 stays
+    // inside the gold rim ring's inner edge (111).
+    tft.fillRect(cx - 64, LY_RND_FIN_TIME_Y - 10, 128, 20, CLR_BG);
+    tft.setTextDatum(MC_DATUM);
+    setFont(tft, FONT_SMALL);
+    if (waitingForDoor) {
+      char clipped[24];
+      tft.setTextColor(CLR_ORANGE, CLR_BG);
+      tft.drawString(ellipsizeToWidth(tft, "Open door to dismiss", 124,
+                                      clipped, sizeof(clipped)),
+                     cx, LY_RND_FIN_TIME_Y);
+    } else if (kwh >= 0.0f) {
       char buf[20];
       snprintf(buf, sizeof(buf), "%.2f kWh", kwh);
-      tft.setTextDatum(MC_DATUM);
-      setFont(tft, FONT_SMALL);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(buf, cx, LY_RND_FIN_TIME_Y);
     }
     prevKwh = kwh;
     prevPlugActive = plugActive;
+    prevWaitDoor = waitingForDoor;
   }
 }
 
