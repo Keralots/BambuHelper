@@ -45,8 +45,6 @@ const BOARDS = {
       { t: '3D-printable case', u: 'https://makerworld.com/en/models/3037776' },
       { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
     ],
-    // Interim pin: round bins were cut ahead of the next full release.
-    version: 'v3.7.4',
   },
   esp32s3_zero: {
     chipFamily: 'ESP32-S3',
@@ -111,7 +109,6 @@ const BOARDS = {
       { t: '3D-printable case', u: 'https://makerworld.com/en/models/3037776' },
       { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
     ],
-    version: 'v3.7.4', // interim pin, see esp32s3_round
   },
   ws_lcd_200: {
     chipFamily: 'ESP32-S3',
