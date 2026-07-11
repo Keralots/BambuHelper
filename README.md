@@ -279,7 +279,7 @@ Supports the 15 most common boards (ESP32-S3 SuperMini with 1.54" square or 1.28
 
 ### Manual: Generic ESP Web Flasher
 
-1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.3-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.4-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD** or **TZT L1435-2.4**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to both CYD-shaped boards (they use a CH340 USB-Serial chip that does not tolerate high baud rates on first contact).
 4. Connect your ESP32 via USB
@@ -303,21 +303,21 @@ The device reboots automatically once the update is written; the web page reload
 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
-| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.3-Full.bin` |
-| ESP32-S3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32s3_round-v3.7.3-Full.bin` |
-| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Zero + 2.0" 240x320 panel | `BambuHelper-esp32s3_zero_320-v3.7.3-Full.bin` |
-| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.3-Full.bin` |
-| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.3-Full.bin` |
-| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.3-Full.bin` |
-| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.3-Full.bin` |
-| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.3-Full.bin` |
-| ESP32-C3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32c3_round-v3.7.3-Full.bin` |
+| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.4-Full.bin` |
+| ESP32-S3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32s3_round-v3.7.4-Full.bin` |
+| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Zero + 2.0" 240x320 panel | `BambuHelper-esp32s3_zero_320-v3.7.4-Full.bin` |
+| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.4-Full.bin` |
+| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.4-Full.bin` |
+| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.4-Full.bin` |
+| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.4-Full.bin` |
+| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.4-Full.bin` |
+| ESP32-C3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32c3_round-v3.7.4-Full.bin` |
 
 > The SenseCAP Indicator is not part of the automated release pipeline - build it locally with `pio.exe run -e sensecap_indicator` and flash the resulting `.pio/build/sensecap_indicator/firmware.bin`.
 
