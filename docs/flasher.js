@@ -13,6 +13,10 @@ const BOARDS = {
   esp32s3_round: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - ESP32-S3 SuperMini + 1.28" GC9A01 round',
+    // Interim pin: round bins were cut ahead of the next full release.
+    // Remove both overrides once release.py publishes this version for
+    // every board (VERSION file catches up).
+    version: 'v3.7.4',
   },
   esp32s3_zero: {
     chipFamily: 'ESP32-S3',
@@ -29,6 +33,7 @@ const BOARDS = {
   esp32c3_round: {
     chipFamily: 'ESP32-C3',
     label: 'DIY - ESP32-C3 SuperMini + 1.28" GC9A01 round',
+    version: 'v3.7.4', // interim pin, see esp32s3_round
   },
   ws_lcd_200: {
     chipFamily: 'ESP32-S3',
@@ -72,6 +77,12 @@ const DEFAULT_BOARD = 'esp32s3';
 
 let _version = null;
 let _currentManifestUrl = null;
+
+// Boards may pin their own version (interim release ahead of the full set);
+// everything else follows the global VERSION file.
+function effectiveVersion(boardId) {
+  return BOARDS[boardId].version || _version;
+}
 
 async function loadVersion() {
   const r = await fetch('firmware/latest/VERSION', { cache: 'no-cache' });
@@ -136,6 +147,9 @@ function renderSpecs(boardId) {
   const info = BOARDS[boardId];
   document.getElementById('spec-chip').textContent = info.chipFamily;
   document.getElementById('spec-id').textContent = boardId;
+  if (_version) {
+    document.getElementById('spec-version').textContent = effectiveVersion(boardId);
+  }
 }
 
 function renderInstallButton(boardId, version) {
@@ -207,12 +221,12 @@ async function init() {
   }
 
   showVersion(_version);
-  renderInstallButton(DEFAULT_BOARD, _version);
+  renderInstallButton(DEFAULT_BOARD, effectiveVersion(DEFAULT_BOARD));
 
   document.getElementById('board-select').addEventListener('change', (e) => {
     const boardId = e.target.value;
     renderSpecs(boardId);
-    renderInstallButton(boardId, _version);
+    renderInstallButton(boardId, effectiveVersion(boardId));
   });
 }
 
