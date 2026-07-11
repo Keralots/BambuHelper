@@ -42,6 +42,7 @@ const BOARDS = {
           'so brightness control and night dimming are unavailable.',
     links: [
       { t: 'display module (pick Type Y)', u: 'https://aliexpress.com/item/1005007702290129.html' },
+      { t: '3D-printable case', u: 'https://makerworld.com/en/models/3037776' },
       { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
     ],
     // Interim pin: round bins were cut ahead of the next full release.
@@ -107,6 +108,7 @@ const BOARDS = {
           'dimming are unavailable.',
     links: [
       { t: 'display module (pick Type Y)', u: 'https://aliexpress.com/item/1005007702290129.html' },
+      { t: '3D-printable case', u: 'https://makerworld.com/en/models/3037776' },
       { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
     ],
     version: 'v3.7.4', // interim pin, see esp32s3_round
