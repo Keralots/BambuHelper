@@ -155,155 +155,6 @@ const char* stateLabel(uint8_t gid) {
   }
 }
 
-// Mirrors the per-type change detection in drawPrinting()'s slot loop so a tile
-// is only redrawn when its underlying value actually changed.
-bool tileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p) {
-  switch (gt) {
-    case GAUGE_PROGRESS:      return s.progress != p.progress || s.remainingMinutes != p.remainingMinutes;
-    case GAUGE_NOZZLE:        return s.nozzleTemp != p.nozzleTemp || s.nozzleTarget != p.nozzleTarget;
-    case GAUGE_NOZZLE_RIGHT:  return s.nozzleTempN[0] != p.nozzleTempN[0] || s.nozzleTargetN[0] != p.nozzleTargetN[0];
-    case GAUGE_NOZZLE_LEFT:   return s.nozzleTempN[1] != p.nozzleTempN[1] || s.nozzleTargetN[1] != p.nozzleTargetN[1];
-    case GAUGE_BED:           return s.bedTemp != p.bedTemp || s.bedTarget != p.bedTarget;
-    case GAUGE_PART_FAN:      return s.coolingFanPct != p.coolingFanPct;
-    case GAUGE_AUX_FAN:       return s.auxFanPct != p.auxFanPct;
-    case GAUGE_AUX_FAN_RIGHT: return s.auxFanRightPct != p.auxFanRightPct;
-    case GAUGE_CHAMBER_FAN:   return s.chamberFanPct != p.chamberFanPct;
-    case GAUGE_EXHAUST_FAN:   return s.exhaustFanPct != p.exhaustFanPct;
-    case GAUGE_CHAMBER_TEMP:  return s.chamberTemp != p.chamberTemp;
-    case GAUGE_HEATBREAK:     return s.heatbreakFanPct != p.heatbreakFanPct;
-    case GAUGE_CLOCK:         return true;   // text cache gates the actual redraw
-    case GAUGE_POWER:         return true;   // watts live outside BambuState
-    case GAUGE_CAMERA:        return false;  // never streams in split (multi-printer); placeholder only
-    case GAUGE_LAYER:         return s.layerNum != p.layerNum || s.totalLayers != p.totalLayers;
-    default: break;
-  }
-  if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
-    uint8_t ui = gt - GAUGE_AMS_HUM_1;
-    const AmsUnit& cu = s.ams.units[ui]; const AmsUnit& pu = p.ams.units[ui];
-    return cu.humidityRaw != pu.humidityRaw || cu.humidity != pu.humidity || cu.present != pu.present;
-  }
-  if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
-    uint8_t ui = gt - GAUGE_AMS_TEMP_1;
-    const AmsUnit& cu = s.ams.units[ui]; const AmsUnit& pu = p.ams.units[ui];
-    return cu.temp != pu.temp || cu.present != pu.present;
-  }
-  if ((gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) ||
-      (gt >= GAUGE_AMS_BARS_1 && gt <= GAUGE_AMS_BARS_4)) {
-    const bool isBars = (gt >= GAUGE_AMS_BARS_1);
-    uint8_t ui = isBars ? (gt - GAUGE_AMS_BARS_1) : (gt - GAUGE_AMS_FILAMENT_1);
-    if (s.ams.present != p.ams.present || s.ams.unitCount != p.ams.unitCount) return true;
-    const AmsUnit& cu = s.ams.units[ui]; const AmsUnit& pu = p.ams.units[ui];
-    if (cu.present != pu.present || (!isBars && cu.humidity != pu.humidity) ||
-        cu.trayCount != pu.trayCount) return true;
-    if (isBars && s.ams.activeTray != p.ams.activeTray) return true;
-    for (int tr = 0; tr < AMS_TRAYS_PER_UNIT; tr++) {
-      int idx = ui * AMS_TRAYS_PER_UNIT + tr;
-      const AmsTray& ct = s.ams.trays[idx]; const AmsTray& pt = p.ams.trays[idx];
-      if (ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565 ||
-          ct.remain != pt.remain || (!isBars && strcmp(ct.type, pt.type) != 0)) return true;
-    }
-    return false;
-  }
-  return false;
-}
-
-// Reuses the shared gauge primitives. No smoothing pointers (the global smooth
-// structs cannot serve two printers); arcs snap to value. Power uses slotIndex
-// so each band reports its own plug.
-void drawTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
-              int16_t cx, int16_t cy, int16_t r, int16_t t, bool fr) {
-  switch (gt) {
-    case GAUGE_PROGRESS:
-      drawProgressArc(tft, cx, cy, r, t, s.progress, s.progress, s.remainingMinutes, fr);
-      break;
-    case GAUGE_NOZZLE:
-      drawTempGauge(tft, cx, cy, r, s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
-                    dispSettings.nozzle.arc,
-                    nozzleSideLabel(s.dualNozzle ? (s.activeNozzle == 0 ? 'R' : 'L') : 0),
-                    nullptr, fr, &dispSettings.nozzle);
-      break;
-    case GAUGE_NOZZLE_RIGHT:
-      drawTempGauge(tft, cx, cy, r, s.nozzleTempN[0], s.nozzleTargetN[0], (float)dispSettings.nozzleScaleMax,
-                    dispSettings.nozzle.arc, nozzleSideLabel('R'), nullptr, fr, &dispSettings.nozzle);
-      break;
-    case GAUGE_NOZZLE_LEFT:
-      drawTempGauge(tft, cx, cy, r, s.nozzleTempN[1], s.nozzleTargetN[1], (float)dispSettings.nozzleScaleMax,
-                    dispSettings.nozzle.arc, nozzleSideLabel('L'), nullptr, fr, &dispSettings.nozzle);
-      break;
-    case GAUGE_BED:
-      drawTempGauge(tft, cx, cy, r, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                    dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, fr, &dispSettings.bed);
-      break;
-    case GAUGE_PART_FAN:
-      drawFanGauge(tft, cx, cy, r, s.coolingFanPct, dispSettings.partFan.arc,
-                   gaugeLabelOr(gaugeLabels.partFan, "Part"), fr, &dispSettings.partFan);
-      break;
-    case GAUGE_AUX_FAN:
-      drawFanGauge(tft, cx, cy, r, s.auxFanPct, dispSettings.auxFan.arc,
-                   gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux"), fr, &dispSettings.auxFan);
-      break;
-    case GAUGE_AUX_FAN_RIGHT:
-      drawFanGauge(tft, cx, cy, r, s.auxFanRightPct, dispSettings.auxFanRight.arc,
-                   gaugeLabelOr(gaugeLabels.auxFanRight, "R.Aux"), fr, &dispSettings.auxFanRight);
-      break;
-    case GAUGE_CHAMBER_FAN:
-      drawFanGauge(tft, cx, cy, r, s.chamberFanPct, dispSettings.chamberFan.arc,
-                   gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber"), fr, &dispSettings.chamberFan);
-      break;
-    case GAUGE_EXHAUST_FAN:
-      drawFanGauge(tft, cx, cy, r, s.exhaustFanPct, dispSettings.exhaustFan.arc,
-                   gaugeLabelOr(gaugeLabels.exhaustFan, "Exhaust"), fr, &dispSettings.exhaustFan);
-      break;
-    case GAUGE_CHAMBER_TEMP:
-      drawTempGauge(tft, cx, cy, r, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
-                    dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, "Chamber"), nullptr, fr, &dispSettings.chamberTemp);
-      break;
-    case GAUGE_HEATBREAK:
-      drawFanGauge(tft, cx, cy, r, s.heatbreakFanPct, dispSettings.heatbreak.arc,
-                   gaugeLabelOr(gaugeLabels.heatbreak, "HBreak"), fr, &dispSettings.heatbreak);
-      break;
-    case GAUGE_CLOCK:
-      drawClockWidget(tft, cx, cy, r, t, fr);
-      break;
-    case GAUGE_LAYER:
-      drawLayerGauge(tft, cx, cy, r, t, s.layerNum, s.totalLayers, fr);
-      break;
-    case GAUGE_POWER:
-      drawPowerGauge(tft, cx, cy, r, tasmotaGetWattsForSlot(slotIndex),
-                     tasmotaIsActiveForSlot(slotIndex), gaugeLabelOr(gaugeLabels.power, "Power"), fr);
-      break;
-    case GAUGE_CAMERA:
-      drawCameraGauge(cx, cy, r, fr);  // inert placeholder in split (camera disabled with 2+ printers)
-      break;
-    case GAUGE_EMPTY:
-      if (fr) tft.fillCircle(cx, cy, r + 2, CLR_BG);
-      break;
-    default: {
-      char amsLbl[64];
-      if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
-        uint8_t ui = gt - GAUGE_AMS_HUM_1;
-        const AmsUnit& u = s.ams.units[ui];
-        formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
-        drawHumidityGauge(tft, cx, cy, r, u.humidityRaw, u.humidity, u.present, amsLbl, fr);
-      } else if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4) {
-        uint8_t ui = gt - GAUGE_AMS_TEMP_1;
-        const AmsUnit& u = s.ams.units[ui];
-        formatAmsNumberLabel(amsLbl, sizeof(amsLbl), ui);
-        drawTempGauge(tft, cx, cy, r, u.present ? u.temp : 0, 0, (float)dispSettings.chamberScaleMax,
-                      dispSettings.chamberTemp.arc, amsLbl, nullptr, fr, &dispSettings.chamberTemp);
-      } else if (gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) {
-        uint8_t ui = gt - GAUGE_AMS_FILAMENT_1;
-        drawAmsFilamentAllGauge(tft, cx, cy, r, t, s.ams, ui, fr);
-      } else if (gt >= GAUGE_AMS_BARS_1 && gt <= GAUGE_AMS_BARS_4) {
-        uint8_t ui = gt - GAUGE_AMS_BARS_1;
-        drawAmsBarsGauge(cx, cy, r, s.ams, ui, fr);
-      } else if (fr) {
-        tft.fillCircle(cx, cy, r + 2, CLR_BG);
-      }
-    } break;
-  }
-}
-
 // --- Drying-band helpers (mirror display_ui.cpp's idle-drying screen) --------
 
 uint16_t dryHumidityColor(uint8_t level) {
@@ -587,7 +438,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
       sPrevTypes[bandIdx][si] = gt;
     }
 
-    bool needDraw = force || typeChanged || tileValueChanged(gt, s, prev);
+    bool needDraw = force || typeChanged || gaugeTileValueChanged(gt, s, prev);
     // Refresh Chamber/Exhaust + Aux/L.Aux labels when the airduct mask first
     // lands (it starts 0 and gets bits OR'd in on the first pushall).
     if (!needDraw && (gt == GAUGE_CHAMBER_FAN || gt == GAUGE_AUX_FAN) &&
@@ -597,7 +448,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     if (!needDraw) continue;
 
     markFrameDirty();
-    drawTile(gt, s, slotIndex, cx, cy, g.r, g.t, force || typeChanged);
+    drawGaugeTile(gt, s, slotIndex, cx, cy, g.r, g.t, force || typeChanged, false);
   }
 
   // --- ETA line + bottom info line ---

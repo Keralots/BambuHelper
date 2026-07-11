@@ -81,6 +81,10 @@ struct DisplaySettings {
                             // (classic: red LED) and red LED on GPIO22. Enables
                             // the amp while the buzzer is on and parks the
                             // moved RGB LED off at boot.
+  uint8_t  roundSkin;       // round displays only: printing dashboard skin.
+                            // 0 = Rim (rim progress ring + mini gauges),
+                            // 1 = Speedo (one large 240-degree arc),
+                            // 2 = Rings (concentric progress/nozzle/bed).
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip
@@ -245,7 +249,7 @@ struct TasmotaSettings {
   bool    enabled;
   uint8_t plugType;          // 0=Tasmota, 1=Shelly Gen2/Gen3 (same RPC API)
   char    ip[16];
-  uint8_t displayMode;       // 0=alternate layers/power every 4s, 1=always show power
+  uint8_t displayMode;       // 0=alternate layers/power every 4s, 1=always show power, 2=always layer count
   uint8_t pollInterval;      // poll interval in seconds (10-60)
 #if TASMOTA_PLUG_COUNT == 1
   uint8_t assignedSlot;      // single-plug builds: which printer slot (0, 1, ... or 255=any)

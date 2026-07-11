@@ -269,6 +269,23 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "ROUND_SKIN_ROW") == 0) {
+#if defined(DISPLAY_ROUND_240)
+    // Round boards only: printing dashboard skin picker. Posts through the
+    // same /save/toggle endpoint as the checkboxes (val carries 0-2).
+    auto sel = [&](uint8_t v) { return dispSettings.roundSkin == v ? " selected" : ""; };
+    out  = "<div class=\"field\"><label for=\"rskin\">Print dashboard skin</label>";
+    out += "<select id=\"rskin\" onchange=\"toggleSetting('rskin',this.value)\">";
+    out += "<option value=\"0\""; out += sel(0); out += ">Rim (progress ring + mini gauges)</option>";
+    out += "<option value=\"1\""; out += sel(1); out += ">Speedo (large 240&deg; arc)</option>";
+    out += "<option value=\"2\""; out += sel(2); out += ">Rings (concentric progress/nozzle/bed)</option>";
+    out += "</select>";
+    out += "<span class=\"text-dim small\">applies immediately</span></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "EXTENDED_MODES_CARD") == 0) {
     // Card lives in the Advanced section. Only renders on layouts that
     // actually have extended grid modes, otherwise the whole card is empty.
@@ -324,8 +341,21 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "ISROUND") == 0) {
+    // JS board flag: the Gauge Layout card re-labels itself for round boards
+    // (3 Rim-skin mini slots, no bottom row / AMS view / extras).
+#if defined(DISPLAY_ROUND_240)
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMSV_ROW") == 0) {
-#if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480)
+    // AMS view swaps gauge row 2 for the AMS strip - 240x240 square boards
+    // only. Round boards have no AMS strip, big boards show AMS natively.
+#if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && \
+    !defined(DISPLAY_480x480) && !defined(DISPLAY_ROUND_240)
     out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"amsv\" value=\"1\" onchange=\"syncAmsView()\">";
     out += "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>";

@@ -169,6 +169,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.invertColors = false;
   ds.cydPanelClassic = false;
   ds.cyd32eVariant = false;
+  ds.roundSkin = 0;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT;
@@ -216,12 +217,23 @@ void defaultDisplaySettings(DisplaySettings& ds) {
 
 // Default standard 2x3 grid: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
 static void defaultGaugeSlots(uint8_t* slots) {
+#if defined(DISPLAY_ROUND_240)
+  // Round Rim skin: only slots 0-2 render (left/center/right mini gauge).
+  // Default matches the original fixed layout; slots 3-5 stay unused.
+  slots[0] = GAUGE_NOZZLE;
+  slots[1] = GAUGE_BED;
+  slots[2] = GAUGE_PART_FAN;
+  slots[3] = GAUGE_EMPTY;
+  slots[4] = GAUGE_EMPTY;
+  slots[5] = GAUGE_EMPTY;
+#else
   slots[0] = GAUGE_PROGRESS;
   slots[1] = GAUGE_NOZZLE;
   slots[2] = GAUGE_BED;
   slots[3] = GAUGE_PART_FAN;
   slots[4] = GAUGE_AUX_FAN;
   slots[5] = GAUGE_CHAMBER_FAN;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +410,21 @@ void loadSettings() {
       for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
         if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) cfg.gaugeSlots[g] = def[g];
       }
+#if defined(DISPLAY_ROUND_240)
+      // One-time migration: savePrinterConfig persisted the grid default
+      // (Progress..ChamberFan) back when round builds ignored gaugeSlots.
+      // That exact pattern cannot be produced through the round web UI
+      // (only slots 0-2 are editable there), so treat it as "never
+      // customized" and swap in the round default (Nozzle/Bed/PartFan) to
+      // keep the Rim skin looking the way it did before slots applied.
+      static const uint8_t gridDef[GAUGE_SLOT_COUNT] = {
+        GAUGE_PROGRESS, GAUGE_NOZZLE, GAUGE_BED,
+        GAUGE_PART_FAN, GAUGE_AUX_FAN, GAUGE_CHAMBER_FAN
+      };
+      if (memcmp(cfg.gaugeSlots, gridDef, sizeof(gridDef)) == 0) {
+        defaultGaugeSlots(cfg.gaugeSlots);
+      }
+#endif
     }
 
     snprintf(key, sizeof(key), "p%d_lext", i);
@@ -464,6 +491,8 @@ void loadSettings() {
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
   dispSettings.cyd32eVariant = prefs.getBool("dsp_cyd32e", def.cyd32eVariant);
+  dispSettings.roundSkin = prefs.getUChar("dsp_rskin", def.roundSkin);
+  if (dispSettings.roundSkin > 2) dispSettings.roundSkin = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
@@ -764,6 +793,7 @@ void saveSettings() {
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
   prefs.putBool("dsp_cyd32e", dispSettings.cyd32eVariant);
+  prefs.putUChar("dsp_rskin", dispSettings.roundSkin);
   prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
   prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);

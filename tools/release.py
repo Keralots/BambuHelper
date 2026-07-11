@@ -31,9 +31,11 @@ from pathlib import Path
 # (DIY builds first, then all-in-one boards, CYD-style at the end).
 WEB_FLASHER_BOARDS = [
     "esp32s3",
+    "esp32s3_round",
     "esp32s3_zero",
     "esp32s3_zero_320",
     "esp32c3",
+    "esp32c3_round",
     "ws_lcd_200",
     "ws_lcd_154",
     "ws_lcd_280",
@@ -93,7 +95,7 @@ def run(cmd, cwd=REPO_ROOT):
 
 
 def build_envs(pio_path: str):
-    """Build all six envs in a single PlatformIO invocation."""
+    """Build every WEB_FLASHER_BOARDS env in a single PlatformIO invocation."""
     cmd = [pio_path, "run"]
     for board in WEB_FLASHER_BOARDS:
         cmd.extend(["-e", board])

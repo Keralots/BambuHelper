@@ -571,6 +571,7 @@ static void handleToggleSetting() {
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;
+  else if (key == "rskin")   dispSettings.roundSkin = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
@@ -597,6 +598,7 @@ static void handleToggleSetting() {
   if (key == "invcol" || key == "slbl" || key == "abar" || key == "shtire") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
+  if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
@@ -1146,6 +1148,7 @@ static void handleSettingsExport() {
   disp["gaugeSmoothing"]  = dispSettings.gaugeSmoothing;
   rgb565ToHtml(dispSettings.warnColor, buf); disp["warnColor"] = String(buf);
   disp["warnThresholdPct"] = dispSettings.warnThresholdPct;
+  disp["roundSkin"] = dispSettings.roundSkin;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1466,6 +1469,7 @@ static void handleSettingsImportFinish() {
     if (disp["gaugeSmoothing"].is<int>())  { int sm = disp["gaugeSmoothing"].as<int>(); dispSettings.gaugeSmoothing = (sm >= 0 && sm <= 3) ? (uint8_t)sm : 2; }
     if (disp["warnColor"].is<const char*>()) dispSettings.warnColor = htmlToRgb565(disp["warnColor"]);
     if (disp["warnThresholdPct"].is<int>()) dispSettings.warnThresholdPct = constrain(disp["warnThresholdPct"].as<int>(), 0, 100);
+    if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 

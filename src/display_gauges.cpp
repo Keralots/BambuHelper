@@ -90,7 +90,13 @@ static bool shimmerPaused = false;
 static unsigned long shimmerPauseStart = 0;
 
 static const int16_t SHIMMER_W = 12;       // width of highlight
+#if defined(DISPLAY_ROUND_240)
+// Arc shimmer cadence, tuned on round hardware. Only the rim/speedo arc
+// sweep runs on round builds; the LED-bar sweep below is compiled out.
+static const uint16_t SHIMMER_INTERVAL = 20;  // ms between steps (~50fps)
+#else
 static const uint16_t SHIMMER_INTERVAL = 25;  // ms between steps (~40fps)
+#endif
 static const uint16_t SHIMMER_PAUSE = 1200;   // ms pause between sweeps
 static const int16_t SHIMMER_STEP = 3;       // pixels per step
 
@@ -421,9 +427,9 @@ static void drawArcSegmentAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   drawArcAA(gfx, cx, cy, radius, innerRadius, a0, a1, fg_color, bg_color);
 }
 
-static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
-                        int16_t radius, int16_t thickness,
-                        uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
+void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint16_t fillEnd, uint16_t fillColor, bool forceRedraw) {
   const uint16_t startAngle = 60;
   const uint16_t endAngle = 300;
   const uint16_t clampedFillEnd =
@@ -450,6 +456,389 @@ static void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                      false, true, bg, bg);
   }
 }
+
+#if defined(DISPLAY_ROUND_240)
+// ---------------------------------------------------------------------------
+//  Full-circle rim ring (round displays): progress fill runs clockwise from
+//  12 o'clock. drawArcAA's angle space has 0 at 6 o'clock increasing
+//  clockwise, so the fill starts at 180 and wraps through 360 -> 0.
+//  Incremental: only the newly filled span is drawn, unless the value moved
+//  backwards, the fill color changed, or forceRedraw is set (every screen
+//  wipe passes forceRedraw, which is what keeps the single static cache
+//  valid across the printing / finished / drying screens that share it).
+// ---------------------------------------------------------------------------
+void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw,
+                 uint8_t cacheSlot) {
+  static uint16_t prevDegs[3]   = { 0xFFFF, 0xFFFF, 0xFFFF };
+  static uint16_t prevColors[3] = { 0, 0, 0 };
+  if (cacheSlot > 2) cacheSlot = 0;
+  uint16_t& prevDeg   = prevDegs[cacheSlot];
+  uint16_t& prevColor = prevColors[cacheSlot];
+
+  if (pct > 100) pct = 100;
+  const uint16_t deg   = (uint16_t)pct * 360 / 100;
+  const uint16_t bg    = dispSettings.bgColor;
+  const uint16_t track = dispSettings.trackColor;
+  const int16_t  ir    = radius - thickness;
+
+  const bool full = forceRedraw || prevDeg == 0xFFFF || deg < prevDeg ||
+                    (deg > 0 && fillColor != prevColor);
+  if (!full && deg == prevDeg) return;
+
+  // Draw the span [a..b] (degrees from 12 o'clock, clockwise) in `color`,
+  // splitting at the 360 wrap of drawArcAA's angle space.
+  auto spanDraw = [&](uint16_t a, uint16_t b, uint16_t color) {
+    if (b <= a) return;
+    uint16_t s0 = 180 + a, s1 = 180 + b;
+    if (s0 >= 360) { s0 -= 360; s1 -= 360; }
+    if (s1 <= 360) {
+      drawArcAA(gfx, cx, cy, radius, ir, s0, s1, color, bg);
+    } else {
+      drawArcAA(gfx, cx, cy, radius, ir, s0, 360, color, bg);
+      drawArcAA(gfx, cx, cy, radius, ir, 0, s1 - 360, color, bg);
+    }
+  };
+
+  if (full) {
+    if (deg < 360) spanDraw(deg, 360, track);
+    if (deg > 0)   spanDraw(0, deg, fillColor);
+  } else {
+    spanDraw(prevDeg, deg, fillColor);
+  }
+
+  prevDeg   = deg;
+  prevColor = fillColor;
+}
+
+// ---------------------------------------------------------------------------
+//  Rim-ring shimmer (experimental): a white-tinted specular band sweeps
+//  clockwise around the filled portion of the progress ring, then pauses and
+//  repeats. Runs at its own ~40fps cadence from updateDisplay(), independent
+//  of the event-driven ring redraw. Incremental: each frame restores the
+//  previous band to the base fill color and paints the new one, so only about
+//  one band-width of the thin ring is touched per frame (cheap SPI, no full-
+//  ring recompose). Angles are degrees from 12 o'clock, clockwise, matching
+//  drawRimRing; the 180-offset + 360-wrap maps into drawArcAA's angle space.
+// ---------------------------------------------------------------------------
+static const int16_t RIM_SHIM_BW     = 30;  // band angular width (deg)
+static const int16_t RIM_SHIM_STEP   = 3;   // deg advanced per frame (lower = smoother motion)
+static const int16_t RIM_SHIM_SLICES = 6;   // angular gradient steps across the band
+static const uint8_t RIM_SHIM_PEAK   = 230; // max white blend at band center
+
+// Draw an arc [s0..s1] in drawArcAA angle space (0 = 6 o'clock, CW), splitting
+// at the 360 wrap so callers can pass s0/s1 up to ~720 for wrapped spans.
+static void shimSpanAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t r, int16_t ir, int16_t s0, int16_t s1,
+                       uint16_t color, uint16_t bg) {
+  if (s1 <= s0) return;
+  if (s0 >= 360) { s0 -= 360; s1 -= 360; }
+  if (s1 <= 360) {
+    drawArcAA(gfx, cx, cy, r, ir, s0, s1, color, bg);
+  } else {
+    drawArcAA(gfx, cx, cy, r, ir, s0, 360, color, bg);
+    drawArcAA(gfx, cx, cy, r, ir, 0, s1 - 360, color, bg);
+  }
+}
+
+// Paint one shimmer band [a..b] (in drawArcAA space) over the base fill color.
+// The band is split into RIM_SHIM_SLICES equal angular sub-spans whose white
+// blend follows a parabolic profile (0 at the band edges, RIM_SHIM_PEAK at the
+// center). Adjacent slices differ by only a small alpha, so the highlight reads
+// as a smooth gradient instead of the old 3-segment mid/bright/mid blocks with
+// their visible hard edges.
+static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                          int16_t r, int16_t ir, int16_t a, int16_t b,
+                          uint16_t fillColor, uint16_t bg) {
+  const int16_t span = b - a;
+  if (span <= 0) return;
+  if (span < RIM_SHIM_SLICES) {          // too narrow to slice: single band
+    shimSpanAA(gfx, cx, cy, r, ir, a, b,
+               alphaBlend565(RIM_SHIM_PEAK, CLR_TEXT, fillColor), bg);
+    return;
+  }
+  const int32_t s2 = (int32_t)RIM_SHIM_SLICES * RIM_SHIM_SLICES;
+  int16_t s0 = a;
+  for (int16_t i = 0; i < RIM_SHIM_SLICES; i++) {
+    int16_t s1 = a + (int32_t)span * (i + 1) / RIM_SHIM_SLICES;
+    if (s1 > s0) {
+      const int32_t d = 2 * i + 1 - RIM_SHIM_SLICES;   // signed dist*SLICES from center
+      const uint8_t alpha = (uint8_t)((int32_t)RIM_SHIM_PEAK * (s2 - d * d) / s2);
+      if (alpha >= 16)                                  // near-fill edges: leave base
+        shimSpanAA(gfx, cx, cy, r, ir, s0, s1,
+                   alphaBlend565(alpha, CLR_TEXT, fillColor), bg);
+    }
+    s0 = s1;
+  }
+}
+
+// Core sweep engine shared by the full-circle (Rim/Rings) and the 240-deg arc
+// (Speedo) skins. Sweeps a band from fillStart to fillEnd (drawArcAA space),
+// restoring the trailing band to fillColor each frame, then pauses and repeats.
+// `state` holds this instance's animation cursor so different skins/geometries
+// don't share a cursor; the caller resets it when the geometry changes.
+struct ShimState {
+  int16_t       a       = 0;
+  int16_t       prevA   = 0;
+  bool          hasPrev = false;
+  unsigned long lastMs  = 0;
+  bool          paused  = false;
+  unsigned long pauseMs = 0;
+  int16_t       geom    = -1;   // geometry signature; change -> reset
+};
+
+static void shimSweep(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                      int16_t radius, int16_t thickness,
+                      int16_t fillStart, int16_t fillEnd,
+                      uint16_t fillColor, int16_t geomSig, ShimState& st) {
+  if (fillEnd - fillStart < RIM_SHIM_BW + 4) return;  // filled arc too short
+
+  if (st.geom != geomSig) {          // geometry changed (skin/radius) -> reset
+    st.geom = geomSig;
+    st.hasPrev = false;
+    st.paused  = false;
+    st.a       = fillStart;
+  }
+
+  unsigned long now = millis();
+  if (st.paused) {
+    if (now - st.pauseMs < SHIMMER_PAUSE) return;
+    st.paused  = false;
+    st.hasPrev = false;
+    st.a       = fillStart;
+  }
+  if (now - st.lastMs < SHIMMER_INTERVAL) return;
+  st.lastMs = now;
+  if (st.a < fillStart) st.a = fillStart;
+
+  const uint16_t bg = dispSettings.bgColor;
+  const int16_t  ir = radius - thickness;
+
+  ScopedWrite sw_(gfx);
+
+  if (st.hasPrev) {
+    int16_t pb = st.prevA + RIM_SHIM_BW;
+    if (pb > fillEnd) pb = fillEnd;
+    shimSpanAA(gfx, cx, cy, radius, ir, st.prevA, pb, fillColor, bg);
+  }
+
+  int16_t a = st.a;
+  int16_t b = a + RIM_SHIM_BW;
+  if (b > fillEnd) b = fillEnd;
+  shimPaintBand(gfx, cx, cy, radius, ir, a, b, fillColor, bg);
+
+  st.prevA   = a;
+  st.hasPrev = true;
+
+  st.a += RIM_SHIM_STEP;
+  if (st.a >= fillEnd) {
+    int16_t pb = st.prevA + RIM_SHIM_BW;
+    if (pb > fillEnd) pb = fillEnd;
+    shimSpanAA(gfx, cx, cy, radius, ir, st.prevA, pb, fillColor, bg);
+    st.hasPrev = false;
+    st.paused  = true;
+    st.pauseMs = now;
+    st.a       = fillStart;
+  }
+}
+
+// When the shimmer goes inactive mid-sweep (animated-bar toggle, state gate),
+// the bright band would stay painted on the ring. Restore that span to the
+// base fill color once and forget the cursor.
+static void shimRestoreBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                            int16_t radius, int16_t thickness,
+                            uint16_t fillColor, ShimState& st) {
+  if (!st.hasPrev) return;
+  shimSpanAA(gfx, cx, cy, radius, radius - thickness,
+             st.prevA, st.prevA + RIM_SHIM_BW, fillColor,
+             dispSettings.bgColor);
+  st.hasPrev = false;
+}
+
+// Full-circle rim ring (Rim skin outer ring, Rings skin outer progress ring):
+// fill runs clockwise from 12 o'clock, which is 180 in drawArcAA space.
+void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                    int16_t radius, int16_t thickness,
+                    uint8_t pct, uint16_t fillColor, bool printing) {
+  static ShimState st;
+  if (!dispSettings.animatedBar || !printing || pct == 0) {
+    shimRestoreBand(gfx, cx, cy, radius, thickness, fillColor, st);
+    return;
+  }
+  if (pct > 100) pct = 100;
+  const int16_t deg = (int16_t)pct * 360 / 100;
+  // geomSig keys on radius only (Rim 118 vs Rings outer 116) so switching skins
+  // resets the cursor; a normal progress change must NOT reset the sweep.
+  shimSweep(gfx, cx, cy, radius, thickness, 180, 180 + deg, fillColor,
+            radius, st);
+}
+
+// 240-deg gauge arc (Speedo skin): fill runs from 60 to 60+pct*240/100 in
+// drawArcAA space, gap at the bottom (6 o'clock).
+void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t radius, int16_t thickness,
+                       uint8_t pct, uint16_t fillColor, bool printing) {
+  static ShimState st;   // own state; geomSig = radius (constant for this skin)
+  if (!dispSettings.animatedBar || !printing || pct == 0) {
+    shimRestoreBand(gfx, cx, cy, radius, thickness, fillColor, st);
+    return;
+  }
+  if (pct > 100) pct = 100;
+  const int16_t fillEnd = 60 + (int16_t)pct * 240 / 100;
+  shimSweep(gfx, cx, cy, radius, thickness, 60, fillEnd, fillColor, radius, st);
+}
+
+// ---------------------------------------------------------------------------
+//  Curved rim text (round displays)
+// ---------------------------------------------------------------------------
+// Each glyph is rendered into a small 16-bit sprite and pushed rotated (with
+// AA resampling) tangent to the arc. The sprite is pre-filled with the screen
+// background color, which doubles as the transparency key: only glyph pixels
+// land on screen, so neighboring glyph cells can't erase each other's AA edges.
+// Angle math below uses screen convention: 0 deg = 3 o'clock, clockwise
+// positive (y grows downward). drawArcAA's own space (0 = 6 o'clock) applies
+// only to the band-clear call.
+// Internal worker. midAA = sector center in drawArcAA space (0 = 6 o'clock,
+// clockwise). reverse = bottom-style: text runs counterclockwise with glyph
+// tops toward the center so it still reads left to right; otherwise top-style
+// (clockwise, glyph bottoms toward the center) — which is also what the
+// arbitrary-sector variant uses for side text.
+static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
+                                 int16_t cx, int16_t cy, int16_t r,
+                                 uint16_t midAA, bool reverse,
+                                 uint16_t color, FontID font,
+                                 int16_t clearHalfDeg) {
+  ScopedWrite sw(gfx);
+  const uint16_t bg = dispSettings.bgColor;
+  setFont(gfx, font);
+  const int16_t fh = gfx.fontHeight();
+
+  if (clearHalfDeg > 0) {
+    // drawArcAA space: 0 = 6 o'clock, clockwise. It handles end < start by
+    // splitting at the 360 wrap, so the bottom sector needs no special case.
+    // Radial pad is +1, not +2: with fg == bg the arc's edge-AA pixels come
+    // out solid, so the clear effectively reaches ~1px past its nominal
+    // radius already. Glyph ink tops out at r + fh/2 + 1 (sprite cell fh+2
+    // plus AA resample spill), which +1 nominal (+~2 effective) still covers.
+    // At +2 the band bit into the rim/speedo ring's inner AA edge and left a
+    // hard aliased staircase across the top/bottom text sectors.
+    uint32_t a0 = ((uint32_t)midAA + 360 - (uint32_t)clearHalfDeg) % 360;
+    uint32_t a1 = ((uint32_t)midAA + (uint32_t)clearHalfDeg) % 360;
+    drawArcAA(gfx, cx, cy, r + fh / 2 + 1, r - fh / 2 - 2, a0, a1, bg, bg);
+  }
+  if (!str || !str[0]) return;
+
+  // Sector center in screen convention (0 = 3 o'clock, clockwise, y down).
+  constexpr float d2r = 3.14159265f / 180.0f;
+  const float midMath = (float)midAA + 90.0f;
+  const int16_t fbx = cx + (int16_t)lroundf((r - fh / 2) * cosf(midMath * d2r));
+  const int16_t fby = cy + (int16_t)lroundf((r - fh / 2) * sinf(midMath * d2r));
+
+  // Split into UTF-8 code points and measure each advance at the target font.
+  struct GlyphRef { const char* p; uint8_t len; int16_t w; };
+  GlyphRef glyphs[48];
+  int   n = 0;
+  int   totalW = 0;
+  int16_t maxW = 1;
+  for (const char* p = str; *p && n < 48;) {
+    uint8_t c = (uint8_t)*p;
+    uint8_t len = (c < 0x80) ? 1 : (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : 2;
+    char tmp[5];
+    uint8_t i = 0;
+    for (; i < len && p[i]; i++) tmp[i] = p[i];
+    tmp[i] = '\0';
+    int16_t w = gfx.textWidth(tmp);
+    glyphs[n].p = p;
+    glyphs[n].len = i;
+    glyphs[n].w = w;
+    if (w > maxW) maxW = w;
+    totalW += w;
+    n++;
+    p += i;
+  }
+  if (n == 0 || totalW <= 0) return;
+
+  lgfx::LGFX_Sprite spr(&gfx);
+  spr.setColorDepth(16);
+  const int16_t sprW = maxW + 2, sprH = fh + 2;
+  if (!spr.createSprite(sprW, sprH) || !loadFontInto(spr, font)) {
+    // Heap-starved fallback: straight line at the arc's chord.
+    spr.deleteSprite();
+    gfx.setTextDatum(MC_DATUM);
+    gfx.setTextColor(color, bg);
+    gfx.drawString(str, fbx, fby);
+    return;
+  }
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextColor(color, bg);
+  spr.setPivot(sprW * 0.5f, sprH * 0.5f);
+
+  // Rotation happens sprite-to-sprite: the AA affine push blends its edge
+  // pixels by reading the destination, and this panel is write-only (7-pin
+  // GC9A01, no MISO) — pushing rotated glyphs straight at the panel blends
+  // against floating-bus garbage and shatters the text. A RAM destination
+  // blends correctly; the composed square then goes out with a plain
+  // transparent (non-reading) push.
+  const int16_t side = (int16_t)ceilf(sqrtf((float)(sprW * sprW + sprH * sprH))) + 2;
+  lgfx::LGFX_Sprite rotspr(&gfx);
+  rotspr.setColorDepth(16);
+  if (!rotspr.createSprite(side, side)) {
+    spr.unloadFont();
+    spr.deleteSprite();
+    gfx.setTextDatum(MC_DATUM);
+    gfx.setTextColor(color, bg);
+    gfx.drawString(str, fbx, fby);
+    return;
+  }
+
+  const float degPerPx = 180.0f / (3.14159265f * (float)r);
+  const float totalDeg = totalW * degPerPx;
+  // Forward text runs clockwise through the sector center; reversed text runs
+  // counterclockwise so it still reads left to right below the center.
+  float a = reverse ? (midMath + totalDeg * 0.5f) : (midMath - totalDeg * 0.5f);
+  for (int i = 0; i < n; i++) {
+    const float half = glyphs[i].w * degPerPx * 0.5f;
+    const float ac = reverse ? (a - half) : (a + half);  // glyph center angle
+    char tmp[5];
+    memcpy(tmp, glyphs[i].p, glyphs[i].len);
+    tmp[glyphs[i].len] = '\0';
+    spr.fillSprite(bg);
+    spr.drawString(tmp, sprW / 2, sprH / 2);
+    const float px = cx + r * cosf(ac * d2r);
+    const float py = cy + r * sinf(ac * d2r);
+    // Tangent rotation: upright at the sector midpoint, tilting with the arc.
+    const float rot = reverse ? (ac - 90.0f) : (ac - 270.0f);
+    rotspr.fillSprite(bg);
+    spr.pushRotateZoomWithAA(&rotspr, side * 0.5f, side * 0.5f, rot,
+                             1.0f, 1.0f, bg);
+    rotspr.pushSprite(&gfx, (int32_t)lroundf(px) - side / 2,
+                      (int32_t)lroundf(py) - side / 2, bg);
+    a = reverse ? (a - 2.0f * half) : (a + 2.0f * half);
+  }
+  rotspr.deleteSprite();
+  spr.unloadFont();
+  spr.deleteSprite();
+}
+
+void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
+                      int16_t cx, int16_t cy, int16_t r, bool bottom,
+                      uint16_t color, FontID font, int16_t clearHalfDeg) {
+  drawCurvedStringImpl(gfx, str, cx, cy, r, bottom ? 0 : 180, bottom,
+                       color, font, clearHalfDeg);
+}
+
+// Arbitrary-sector variant: centerAA in drawArcAA space (0 = 6 o'clock,
+// clockwise). Top-style glyph orientation, so side text reads clockwise like
+// the top arc (tilted; decorative watch-bezel style).
+void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
+                            int16_t cx, int16_t cy, int16_t r,
+                            uint16_t centerAA, uint16_t color, FontID font,
+                            int16_t clearHalfDeg) {
+  drawCurvedStringImpl(gfx, str, cx, cy, r, centerAA, false,
+                       color, font, clearHalfDeg);
+}
+#endif // DISPLAY_ROUND_240
 
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
@@ -515,12 +904,28 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   const bool sm = dispSettings.smallLabels;
   setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
 
+#if defined(DISPLAY_ROUND_240)
+  // Round mini slots: the rim ring runs right behind the label band and the
+  // 62 px slot pitch leaves no spare width, so label ink must never exceed
+  // the slot. Step down to FONT_SMALL first (keeps "Nozzle R" / "Progress"
+  // whole), then hard-trim whatever still overflows. The clamped clear below
+  // and the Rim slot loop's type-change clear both rely on this cap -
+  // without it a wide label leaves edge ghosts when the slot changes type.
+  if (!sm && gfx.textWidth(label) > maxW) setFont(gfx, FONT_SMALL);
+#endif
+
   // Safety trim (no "..") so a long label can't bleed into a neighbor. Only long
   // labels (> 8) are trimmed; short ones (incl. the dynamic "Nozzle R/L") draw in
-  // full even if a hair wider than the slot, matching pre-#124 behavior.
+  // full even if a hair wider than the slot, matching pre-#124 behavior. Round
+  // trims unconditionally: ink wider than the slot can never be fully erased.
+#if defined(DISPLAY_ROUND_240)
+  const bool mustTrim = gfx.textWidth(label) > maxW;
+#else
+  const bool mustTrim = strlen(label) > 8 && gfx.textWidth(label) > maxW;
+#endif
   char buf[48];
   const char* draw = label;
-  if (strlen(label) > 8 && gfx.textWidth(label) > maxW) {
+  if (mustTrim) {
     strlcpy(buf, label, sizeof(buf));
     utf8TrimPartial(buf);
     size_t n = strlen(buf);
@@ -537,8 +942,15 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   // Clear the actual drawn extent so a previous, wider label leaves no ghost
   // (e.g. "Nozzle R" -> "Nozzle L" on a side flip, or a full label > maxW).
   const int16_t fh = gfx.fontHeight();
+#if defined(DISPLAY_ROUND_240)
+  // Side-gauge labels sit close to the rim ring; a wider-than-slot clear band
+  // would cut a rectangular notch into it. Cap at the slot width — ghosts are
+  // impossible in practice (labels here only flip between short strings).
+  const int16_t clearW = maxW;
+#else
   const int16_t tw = gfx.textWidth(draw);
   const int16_t clearW = (tw + 4 > maxW) ? (int16_t)(tw + 4) : maxW;
+#endif
   gfx.fillRect(cx - clearW / 2, ly - fh / 2 - 1, clearW, fh + 2, bg);
 
   gfx.setTextDatum(MC_DATUM);

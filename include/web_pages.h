@@ -77,7 +77,7 @@ function saveWifi(){
 //              cl_pname, dualp, gs0..gs5, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
 //              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, hidelp, invcol,
-//              cydcls, rotation, tz, use24h, datefmt, clk_time, clk_date,
+//              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
@@ -806,12 +806,12 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p>Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. Set any slot to <em>Empty</em> to hide it.</p>
+        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
 %AMSV_ROW%
-    <div class="row-divider" style="margin-top:var(--sp-3)">&#9650; Top row</div>
+    <div class="row-divider" style="margin-top:var(--sp-3)" id="topRowDivider">&#9650; Top row</div>
     <div class="gauge-grid">
       <div class="cell"><label>Top-left</label><select id="gs0" class="gauge-slot-sel"></select></div>
       <div class="cell"><label>Top-center</label><select id="gs1" class="gauge-slot-sel"></select></div>
@@ -901,6 +901,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 %AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
+%ROUND_SKIN_ROW%
   </div>
 
   <div class="card">
@@ -1802,6 +1803,24 @@ function rebuildGaugeOptions(){
   });
 }
 rebuildGaugeOptions();
+
+/* Round boards (GC9A01): the printing dashboard has no 2x3 grid. Only the Rim
+   skin renders gauges - three mini slots fed from gaugeSlots[0..2] - so the
+   card re-labels itself and hides the bottom row. gs3-gs5 stay in the DOM
+   (hidden) so saveGaugeLayout keeps posting all six slots unchanged. */
+var IS_ROUND = %ISROUND% === 1;
+if (IS_ROUND){
+  var gd = document.getElementById('glDesc');
+  if (gd) gd.innerHTML = 'Per-printer mini gauges for the round <em>Rim</em> skin: left, center and right slot. The <em>Speedo</em> and <em>Rings</em> skins have fixed layouts. Set a slot to <em>Empty</em> to hide it.';
+  var roundLbls = ['Left gauge','Center gauge','Right gauge'];
+  for (var ri = 0; ri < 3; ri++){
+    var rsel = document.getElementById('gs' + ri);
+    if (rsel){ var rlb = rsel.parentNode.querySelector('label'); if (rlb) rlb.textContent = roundLbls[ri]; }
+  }
+  var trd = document.getElementById('topRowDivider'); if (trd) trd.style.display = 'none';
+  var brg = document.getElementById('bottomRowGroup'); if (brg) brg.style.display = 'none';
+}
+
 function refreshGaugeCaps(){
   Promise.all([0,1].map(function(slot){
     return fetch('/printer/config?slot=' + slot).then(function(r){return r.json();}).catch(function(){return {};});
@@ -1828,8 +1847,9 @@ refreshGaugeCaps();
 
 function resetGaugeLayout(){
   // Standard 2x3 grid -> Progress/Nozzle/Bed/PartFan/AuxFan/ChamberFan.
+  // Round Rim skin -> Nozzle/Bed/PartFan (the original fixed layout).
   // Both extras arrays default to Empty (user opts in via mode toggles).
-  var d = [1,2,3,4,5,6];
+  var d = IS_ROUND ? [2,3,4,0,0,0] : [1,2,3,4,5,6];
   for (var i = 0; i < 6; i++) { var s = document.getElementById('gs' + i); if (s) s.value = d[i]; }
   var lx = ['lx0','lx1'], px = ['px0','px1','px2'];
   lx.forEach(function(id){ var s = document.getElementById(id); if (s) s.value = 0; });
@@ -2494,9 +2514,12 @@ function applyDisplay(){
 }
 
 /* ============ Whitelisted toggle ============ */
+/* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
+   their string value through unchanged. */
 function toggleSetting(key, on){
-  fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+(on?'1':'0')})
-    .then(function(r){if(r.ok)showToast(on?key+' ON':key+' OFF');else showToast('Error');})
+  var val = (on === true) ? '1' : (on === false) ? '0' : String(on);
+  fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+encodeURIComponent(val)})
+    .then(function(r){if(r.ok)showToast(typeof on==='boolean'?(on?key+' ON':key+' OFF'):key+' saved');else showToast('Error');})
     .catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
 function toggleDualPrinterMode(on){

@@ -40,6 +40,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | ![Waveshare 2 inch](img/waveshare2inch.png) | **Waveshare ESP32-S3-Touch-LCD-2** | `240x320` ST7789 version with ESP32-S3, sold as a more plug-and-play option. Use the `ws_lcd_200` firmware build. Supports **up to 2 printers** (no PSRAM), like the main ESP32-S3 DIY version. Product page: [waveshare.com/esp32-s3-touch-lcd-2.htm](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm) Case (Horizontal and vertical): [MakerWorld model](https://makerworld.com/en/models/2773835) |
 | ![Waveshare 1.54 inch](img/waveshare1.54inch.png) | **Waveshare ESP32-S3-Touch-LCD-1.54** | `240x240` ST7789 with ESP32-S3, touchscreen, battery holder, and 3 built-in buttons. Use the `ws_lcd_154` firmware build. Supports **up to 2 printers** (no PSRAM). The left button (BOOT) works as a screen switcher alongside the touchscreen. **Battery power:** press and hold the center PWR button to power on. To power off, hold the left (BOOT) and right buttons simultaneously for 1.5 seconds. Product page: [waveshare.com/esp32-s3-touch-lcd-1.54.htm](https://www.waveshare.com/esp32-s3-touch-lcd-1.54.htm) |
 | ![ESP32-C3 board](img/ESP32c3Board.png) | **ESP32-C3 Super Mini** | DIY version, just like the main ESP32-S3 build, using the same `240x240` ST7789 display. Use the `esp32c3` firmware build. Due to RAM limits, this board supports **1 printer only**. |
+| ![Round GC9A01 display](img/roundDisplay.jpg) | **ESP32-S3 / ESP32-C3 Super Mini + 1.28" GC9A01 round** | DIY variant with a round `1.28"` **GC9A01** (`240x240`) 7-pin SPI module and a dedicated round dashboard with three selectable print skins (Rim / Speedo / Rings, chosen in the web UI). Use the `esp32s3_round` build on an ESP32-S3 Super Mini (**up to 2 printers**) or the `esp32c3_round` build on an ESP32-C3 Super Mini (**1 printer only**). Wiring uses the same SPI pins as the square ST7789 builds - see the wiring table below. The 7-pin module has no backlight pin, so brightness control and night dimming are not available. Display module (AliExpress, pick the **Type Y** variant): [aliexpress.com/item/1005007702290129.html](https://aliexpress.com/item/1005007702290129.html) |
 | ![Waveshare ESP32-S3-Zero](img/es32s3zero.png) | **Waveshare ESP32-S3-Zero + 1.54" ST7789** | DIY version for the ESP32-S3FH4R2 module with `4MB` flash and `2MB` PSRAM. Use the `esp32s3_zero` firmware build. It uses the same external ST7789 wiring as the ESP32-S3 Super Mini build and supports **up to 2 printers** (up to 4 with the experimental opt-in). GPIO21 is occupied by the onboard WS2812 RGB LED. Product page: [waveshare.com/esp32-s3-zero.htm](https://www.waveshare.com/esp32-s3-zero.htm) |
 | ![ESP32-S3-Zero with 2" 240x320 panel](img/esp32s3_zero_320.jpg) | **Waveshare ESP32-S3-Zero + 2.0" ST7789V (240x320)** | DIY variant of the ESP32-S3-Zero build using a larger `240x320` **ST7789V** panel module instead of the 1.54" 240x240. Same pinout as the standard `esp32s3_zero` build - only the panel differs (driven through the existing 240x320 layout). Use the `esp32s3_zero_320` firmware build. Supports **up to 2 printers** (up to 4 with the experimental opt-in). Display module (AliExpress): [pl.aliexpress.com/item/1005007523612119.html](https://pl.aliexpress.com/item/1005007523612119.html) |
 | ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** (ILI9341) | `240x320` **ILI9341** all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Display**. Case shown in the photo: [MakerWorld model](https://makerworld.com/models/2721746). |
@@ -96,7 +97,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 
 BambuHelper monitors 2 printers simultaneously on full-RAM ESP32-S3 boards, each over an independent MQTT connection. PSRAM-equipped boards can opt in to a third and fourth printer.
 
-> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, jc3248w535, ws_lcd_350, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **Advanced > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. No-PSRAM S3 boards (esp32s3, ws_lcd_200, ws_lcd_154, ws_lcd_280) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3**) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
+> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, jc3248w535, ws_lcd_350, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **Advanced > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. No-PSRAM S3 boards (esp32s3, esp32s3_round, ws_lcd_200, ws_lcd_154, ws_lcd_280) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3** square and round) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
 
 ### Rotation Modes
 
@@ -150,10 +151,11 @@ When the printer comes back online, the backoff resets once the connection has h
 
 ## Hardware Assembly for the DIY Version (ESP32-S3 Super Mini)
 
-> **If you bought an all-in-one board** (CYD, TZT L1435-2.4, Waveshare 2" or 1.54", SenseCAP Indicator), **skip this section** - everything is already wired on the PCB. The tables below apply only to the **DIY** builds (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 SuperMini) that need an external display soldered up.
+> **If you bought an all-in-one board** (CYD, TZT L1435-2.4, Waveshare 2" or 1.54", SenseCAP Indicator), **skip this section** - everything is already wired on the PCB. The tables below apply only to the **DIY** builds (ESP32-S3 SuperMini, ESP32-S3-Zero, ESP32-C3 SuperMini) that need an external display soldered up - either the square 1.54" ST7789 or the round 1.28" GC9A01.
 
 AliExpress links (DIY parts):
 - Display 1.54" ST7789: https://a.aliexpress.com/_EG9y7wc
+- Display 1.28" GC9A01 round: https://aliexpress.com/item/1005007702290129.html (pick the **Type Y** variant)
 - ESP32-S3 SuperMini: https://a.aliexpress.com/_Eyk9GdA (the **S3** variant supports 2 printers; the **C3** variant supports 1 printer. If you use C3, the wiring is different; check the default wiring table)
 - Case for the 1.54" DIY build: https://makerworld.com/en/models/2501721
 
@@ -180,6 +182,18 @@ Links for optional accessories:
 | BL | 13 | 13 | 5 |
 | GND | GND | GND | GND |
 | VCC | 3.3V | 3.3V | 3.3V |
+
+**Round 1.28" GC9A01 display** (`esp32s3_round` / `esp32c3_round` builds) - same SPI pins as the ST7789 table above, but the 7-pin module has **no BL pin** (backlight is hardwired on, so brightness control is not available):
+
+| Display Pin GC9A01 (1.28" round) | ESP32-S3 GPIO | ESP32-C3 GPIO |
+|---|---|---|
+| SDA (MOSI) | 11 | 20 |
+| SCL | 12 | 21 |
+| CS | 10 | 6 |
+| DC | 9 | 7 |
+| RST | 8 | 10 |
+| GND | GND | GND |
+| VCC | 3.3V | 3.3V |
 
 Adjust pin assignments in `platformio.ini` `build_flags` to match your wiring (only needed if you are flashing from source; the prebuilt binaries use the defaults above).
 
@@ -261,11 +275,11 @@ Open **[keralots.github.io/BambuHelper](https://keralots.github.io/BambuHelper/)
 
 After the flash, the install dialog runs a 3-minute **Configure WiFi** step right in the browser using Improv-Serial - type your home SSID/password and the device joins your network without you ever having to connect to the captive portal. The device still falls back to AP mode (showing the SSID and password on its screen) if you dismiss the dialog or run out of time.
 
-Supports the 13 most common boards (ESP32-S3 SuperMini, ESP32-S3-Zero with 1.54" or 2.0" panel, ESP32-C3 SuperMini, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-LCD-1.54, Waveshare ESP32-S3-Touch-LCD-2.8, QD ES3N28P 2.8", Waveshare ESP32-S3-Touch-LCD-3.5, Panlee WT32-SC01 Plus, Guition JC3248W535, CYD / ESP32-2432S028, TZT L1435-2.4). For the community-maintained SenseCAP Indicator use the manual flow below.
+Supports the 15 most common boards (ESP32-S3 SuperMini with 1.54" square or 1.28" round panel, ESP32-S3-Zero with 1.54" or 2.0" panel, ESP32-C3 SuperMini with 1.54" square or 1.28" round panel, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-LCD-1.54, Waveshare ESP32-S3-Touch-LCD-2.8, QD ES3N28P 2.8", Waveshare ESP32-S3-Touch-LCD-3.5, Panlee WT32-SC01 Plus, Guition JC3248W535, CYD / ESP32-2432S028, TZT L1435-2.4). For the community-maintained SenseCAP Indicator use the manual flow below.
 
 ### Manual: Generic ESP Web Flasher
 
-1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.3-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
+1. Download the latest firmware from [Releases](../../releases). **If you are flashing a new device for the first time**, use the file ending with **-Full** (for example `BambuHelper-esp32s3-v3.7.4-Full.bin`). The regular `-ota.bin` file is for OTA updates on devices that already have BambuHelper installed.
 2. Open [ESP Web Flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge
 3. If you are flashing a **CYD** or **TZT L1435-2.4**, set **Baudrate** to **115200** before clicking **Connect**. Two or more attempts may be needed - the first one will fail. This applies to both CYD-shaped boards (they use a CH340 USB-Serial chip that does not tolerate high baud rates on first contact).
 4. Connect your ESP32 via USB
@@ -289,19 +303,21 @@ The device reboots automatically once the update is written; the web page reload
 
 | Board | Use this `Full` file for first flash / recovery |
 |---|---|
-| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.3-Full.bin` |
-| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Zero + 2.0" 240x320 panel | `BambuHelper-esp32s3_zero_320-v3.7.3-Full.bin` |
-| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.3-Full.bin` |
-| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.3-Full.bin` |
-| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.3-Full.bin` |
-| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.3-Full.bin` |
-| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.3-Full.bin` |
-| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.3-Full.bin` |
+| ESP32-S3 Super Mini | `BambuHelper-esp32s3-v3.7.4-Full.bin` |
+| ESP32-S3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32s3_round-v3.7.4-Full.bin` |
+| Guition JC3248W535 | `BambuHelper-jc3248w535-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Zero | `BambuHelper-esp32s3_zero-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Zero + 2.0" 240x320 panel | `BambuHelper-esp32s3_zero_320-v3.7.4-Full.bin` |
+| CYD / ESP32-2432S028 | `BambuHelper-cyd-v3.7.4-Full.bin` |
+| TZT L1435-2.4 | `BambuHelper-tzt_2432-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2 | `BambuHelper-ws_lcd_200-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-1.54 | `BambuHelper-ws_lcd_154-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-2.8 | `BambuHelper-ws_lcd_280-v3.7.4-Full.bin` |
+| QD ES3N28P 2.8" | `BambuHelper-es3n28p-v3.7.4-Full.bin` |
+| Waveshare ESP32-S3-Touch-LCD-3.5 | `BambuHelper-ws_lcd_350-v3.7.4-Full.bin` |
+| Panlee WT32-SC01 Plus 3.5" | `BambuHelper-wt32_sc01_plus-v3.7.4-Full.bin` |
+| ESP32-C3 Super Mini | `BambuHelper-esp32c3-v3.7.4-Full.bin` |
+| ESP32-C3 Super Mini + 1.28" GC9A01 round | `BambuHelper-esp32c3_round-v3.7.4-Full.bin` |
 
 > The SenseCAP Indicator is not part of the automated release pipeline - build it locally with `pio.exe run -e sensecap_indicator` and flash the resulting `.pio/build/sensecap_indicator/firmware.bin`.
 

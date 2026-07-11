@@ -2,6 +2,7 @@
 #define DISPLAY_GAUGES_H
 
 #include <LovyanGFX.hpp>
+#include "fonts.h"
 
 struct GaugeColors;  // forward declaration from settings.h
 
@@ -18,6 +19,55 @@ const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
 // Draw a centered gauge label below the arc (auto-shrinks over-wide labels).
 void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                     const char* label, uint16_t lblColor, uint16_t bg);
+
+#if defined(DISPLAY_ROUND_240)
+// Full-circle rim progress ring (round displays). Fill runs clockwise from
+// 12 o'clock; incremental redraw unless forceRedraw / regression / color change.
+// cacheSlot (0-2) selects an independent incremental-draw cache so the Rings
+// skin can keep three concentric rings on screen at once.
+void drawRimRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint8_t pct, uint16_t fillColor, bool forceRedraw,
+                 uint8_t cacheSlot = 0);
+
+// Shimmer ticks (experimental): sweep a bright specular band around the filled
+// progress arc. Call from updateDisplay() at its own cadence; gated on
+// dispSettings.animatedBar. tickRimShimmer = full circle from 12 o'clock (Rim
+// skin + Rings outer ring); tickSpeedoShimmer = 240-deg gauge arc (Speedo).
+void tickRimShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                    int16_t radius, int16_t thickness,
+                    uint8_t pct, uint16_t fillColor, bool printing);
+void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                       int16_t radius, int16_t thickness,
+                       uint8_t pct, uint16_t fillColor, bool printing);
+
+// Draw str along a circular arc of radius r around (cx,cy), centered on
+// 12 o'clock (bottom=false, glyph tops facing the rim) or 6 o'clock
+// (bottom=true, glyph tops facing the center — coin-style, reads left to
+// right). clearHalfDeg > 0 first wipes the annulus band r +/- fontHeight/2
+// over the sector midpoint +/- clearHalfDeg; the caller must keep the string
+// short enough to stay inside that sector.
+void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
+                      int16_t cx, int16_t cy, int16_t r, bool bottom,
+                      uint16_t color, FontID font, int16_t clearHalfDeg);
+
+// Arbitrary-sector variant of drawCurvedString: centerAA is the sector center
+// in drawArcAA space (0 = 6 o'clock, clockwise; 12 o'clock = 180). Glyphs use
+// top-style orientation (bottoms toward the center), so side text renders
+// tilted — decorative watch-bezel style, keep the strings short.
+void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
+                            int16_t cx, int16_t cy, int16_t r,
+                            uint16_t centerAA, uint16_t color, FontID font,
+                            int16_t clearHalfDeg);
+#endif
+
+// Standard 240-degree gauge arc primitive (track 60..300, gap at 6 o'clock).
+// fillEnd is the fill's end angle in that space; forceRedraw repaints the
+// track (and wipes the enclosing circle) first. Used by every arc gauge and
+// directly by the round Speedo skin.
+void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                 int16_t radius, int16_t thickness,
+                 uint16_t fillEnd, uint16_t fillColor, bool forceRedraw);
 
 // Draw progress arc with percentage and time in center
 void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
