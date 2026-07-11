@@ -904,7 +904,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
 %ROUND_SKIN_ROW%
   </div>
 
-  <div class="card">
+  <div class="card" style="%BL_DISP%">
     <div class="card-head"><div><h3>Brightness</h3></div></div>
     <div class="field">
       <label class="hstack" style="justify-content:space-between" for="bright"><span>Daytime brightness</span><span class="mono text-dim" id="brightVal">%BRIGHT%</span></label>
@@ -964,13 +964,13 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <label for="kps">Keep print status screen after completion</label>
     </label>
     <div class="help-text" style="padding-left:28px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
-    <div class="field" style="margin-top:var(--sp-4)">
+    <div class="field" style="margin-top:var(--sp-4);%BL_DISP%">
       <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
       <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
              oninput="document.getElementById('ssbrightVal').textContent=this.value">
       <div class="hint">Brightness when clock/screensaver is active. Set to 0 to turn off backlight.</div>
     </div>
-    <label class="check-row" id="pong-row">
+    <label class="check-row" id="pong-row" style="%PONG_DISP%">
       <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
       <label for="pong">Breakout clock (animated game as screensaver)</label>
     </label>

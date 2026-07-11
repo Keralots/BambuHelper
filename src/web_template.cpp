@@ -63,6 +63,18 @@ static bool resolvePlaceholder(const char* name, String& out) {
   }
 
   // --- Brightness / Night mode ---
+  if (strcmp(name, "BL_DISP") == 0) {
+    // Inline style for the Brightness card and the screensaver-brightness
+    // field. Boards without a controllable backlight (7-pin round GC9A01
+    // modules wire BLK hardwired on, BACKLIGHT_PIN=-1) hide them entirely -
+    // setBacklight() is a no-op there and the sliders would do nothing.
+#if defined(BACKLIGHT_PIN) && (BACKLIGHT_PIN >= 0)
+    out = "";
+#else
+    out = "display:none";
+#endif
+    return true;
+  }
   if (strcmp(name, "BRIGHT") == 0)          { out = String(brightness); return true; }
   if (strcmp(name, "NIGHTEN") == 0)         { out = dpSettings.nightModeEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "NIGHTDISP") == 0)       { out = dpSettings.nightModeEnabled ? "block" : "none"; return true; }
@@ -336,6 +348,18 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<div class=\"cell\"><label>Row 3 mid</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>";
     out += "<div class=\"cell\"><label>Row 3 right</label><select id=\"px2\" class=\"gauge-slot-sel\"></select></div>";
     out += "</div></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "PONG_DISP") == 0) {
+    // Inline style for the Breakout-clock row. The game plays in a rectangle;
+    // on round panels the walls and corner bricks sit outside the visible
+    // circle, so the firmware never runs it there (display_ui always draws
+    // the watch-face clock) and the option is hidden.
+#if defined(DISPLAY_ROUND_240)
+    out = "display:none";
 #else
     out = "";
 #endif
