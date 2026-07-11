@@ -1,75 +1,254 @@
 // BambuHelper Web Flasher - client logic.
-// Builds ESP Web Tools manifests on the fly from a single board map, and
-// keeps the install button in sync with the user's board selection.
+// Builds ESP Web Tools manifests on the fly from a single board map, keeps
+// the install button in sync with the board selection, and renders the
+// selected board's photo/specs/description card.
 
 // Order: DIY builds grouped at the top (the "you wired this yourself" path),
 // then all-in-one boards, then the two CYD-style boards differentiated by
 // their display driver so users don't pick the wrong one.
+//
+// Optional per-board fields:
+//   version - pins this board to a firmware version ahead of the global
+//             VERSION file (interim releases); remove once release.py
+//             publishes that version for every board.
+//   credit  - community contributor shown on the board card.
 const BOARDS = {
   esp32s3: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - ESP32-S3 SuperMini + 1.54" ST7789',
+    name: 'ESP32-S3 Super Mini + 1.54" ST7789',
+    badge: 'diy',
+    display: '1.54" ST7789, 240x240, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: 'up to 2',
+    desc: 'The original DIY build this project started from: an ESP32-S3 ' +
+          'Super Mini wired to a 1.54" ST7789 TFT. Cheap, small, and easy ' +
+          'to solder - follow the wiring table in the README.',
+    links: [
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
   },
   esp32s3_round: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - ESP32-S3 SuperMini + 1.28" GC9A01 round',
+    name: 'ESP32-S3 Super Mini + 1.28" GC9A01 round',
+    badge: 'diy',
+    display: '1.28" GC9A01, 240x240 round, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: 'up to 2',
+    desc: 'DIY round variant with a dedicated circular dashboard and three ' +
+          'selectable print skins (Rim / Speedo / Rings). Same SPI wiring as ' +
+          'the square ST7789 builds. The 7-pin module has no backlight pin, ' +
+          'so brightness control and night dimming are unavailable.',
+    links: [
+      { t: 'display module (pick Type Y)', u: 'https://aliexpress.com/item/1005007702290129.html' },
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
     // Interim pin: round bins were cut ahead of the next full release.
-    // Remove both overrides once release.py publishes this version for
-    // every board (VERSION file catches up).
     version: 'v3.7.4',
   },
   esp32s3_zero: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - Waveshare ESP32-S3-Zero + 1.54" ST7789',
+    name: 'Waveshare ESP32-S3-Zero + 1.54" ST7789',
+    badge: 'diy',
+    display: '1.54" ST7789, 240x240, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Same external ST7789 wiring as the Super Mini build, on ' +
+          'Waveshare\'s tiny S3-Zero module (4MB flash, 2MB PSRAM). GPIO21 ' +
+          'is taken by the onboard WS2812 LED.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-zero.htm' },
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
   },
   esp32s3_zero_320: {
     chipFamily: 'ESP32-S3',
     label: 'DIY - Waveshare ESP32-S3-Zero + 2.0" ST7789 (240x320)',
+    name: 'Waveshare ESP32-S3-Zero + 2.0" ST7789V',
+    badge: 'diy',
+    display: '2.0" ST7789V, 240x320, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'The S3-Zero build with a bigger 2.0" 240x320 panel - identical ' +
+          'pinout to the standard esp32s3_zero build, only the panel differs.',
+    links: [
+      { t: 'display module', u: 'https://pl.aliexpress.com/item/1005007523612119.html' },
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
   },
   esp32c3: {
     chipFamily: 'ESP32-C3',
     label: 'DIY - ESP32-C3 SuperMini + 1.54" ST7789',
+    name: 'ESP32-C3 Super Mini + 1.54" ST7789',
+    badge: 'diy',
+    display: '1.54" ST7789, 240x240, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: '1 (RAM limit)',
+    desc: 'Budget DIY build using the same 1.54" ST7789 display and wiring ' +
+          'as the ESP32-S3 version. RAM limits it to a single printer.',
+    links: [
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
   },
   esp32c3_round: {
     chipFamily: 'ESP32-C3',
     label: 'DIY - ESP32-C3 SuperMini + 1.28" GC9A01 round',
+    name: 'ESP32-C3 Super Mini + 1.28" GC9A01 round',
+    badge: 'diy',
+    display: '1.28" GC9A01, 240x240 round, SPI',
+    touch: 'none (optional button / TTP223)',
+    printers: '1 (RAM limit)',
+    desc: 'The round GC9A01 build on the budget ESP32-C3 Super Mini - ' +
+          'circular dashboard with three selectable print skins (Rim / ' +
+          'Speedo / Rings). Same SPI wiring as the square builds. The 7-pin ' +
+          'module has no backlight pin, so brightness control and night ' +
+          'dimming are unavailable.',
+    links: [
+      { t: 'display module (pick Type Y)', u: 'https://aliexpress.com/item/1005007702290129.html' },
+      { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
+    ],
     version: 'v3.7.4', // interim pin, see esp32s3_round
   },
   ws_lcd_200: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-2 (240x320)',
+    name: 'Waveshare ESP32-S3-Touch-LCD-2',
+    display: '2.0" ST7789, 240x320, SPI',
+    touch: 'CST816D capacitive',
+    printers: 'up to 2',
+    desc: 'All-in-one board and the most plug-and-play option - nothing to ' +
+          'wire. Touchscreen switches printers/screens, battery operation ' +
+          'is supported.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.htm' },
+      { t: '3D-printable case', u: 'https://makerworld.com/en/models/2773835' },
+    ],
   },
   ws_lcd_154: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-1.54 (240x240)',
+    name: 'Waveshare ESP32-S3-Touch-LCD-1.54',
+    display: '1.54" ST7789, 240x240, SPI',
+    touch: 'CST816T capacitive + 3 buttons',
+    printers: 'up to 2',
+    desc: 'All-in-one board with touchscreen, three buttons, speaker, and a ' +
+          'battery holder. Hold the center PWR button to power on; hold the ' +
+          'left and right buttons for ~1.5 s to power off. The left (BOOT) ' +
+          'button switches screens.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-touch-lcd-1.54.htm' },
+    ],
   },
   ws_lcd_280: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-2.8 (240x320) - community (not owned by maintainer)',
+    name: 'Waveshare ESP32-S3-Touch-LCD-2.8',
+    badge: 'community',
+    display: '2.8" ST7789, 240x320, SPI',
+    touch: 'CST328 capacitive',
+    printers: 'up to 2',
+    desc: 'Like the 2.0" board but with a CST328 touch controller - the ' +
+          'ws_lcd_200 firmware boots on it but leaves the screen black, so ' +
+          'use this build. Battery, IMU, and audio are not wired up in ' +
+          'firmware.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.8.htm' },
+    ],
+    credit: { name: '@FranciscoSaoMarcos', u: 'https://github.com/FranciscoSaoMarcos' },
   },
   es3n28p: {
     chipFamily: 'ESP32-S3',
     label: 'QD ES3N28P 2.8" (240x320, ILI9341V) - community (not owned by maintainer)',
+    name: 'QD ES3N28P 2.8"',
+    badge: 'community',
+    display: '2.8" ILI9341V IPS, 240x320, SPI',
+    touch: 'FT6336 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'QD electronic 2.8" IPS module (board codes ES3C28P / ES3N28P) ' +
+          'with 16MB flash and 8MB PSRAM. The buzzer is disabled by default ' +
+          'because its default pin doubles as an I2S clock line.',
+    links: [
+      { t: 'hardware notes (#125)', u: 'https://github.com/Keralots/BambuHelper/issues/125' },
+    ],
+    credit: { name: '@gwbuss', u: 'https://github.com/gwbuss' },
   },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community (not owned by maintainer)',
+    name: 'Waveshare ESP32-S3-Touch-LCD-3.5',
+    badge: 'community',
+    display: '3.5" ST7796 IPS, 320x480, SPI',
+    touch: 'FT6336 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Waveshare\'s 3.5" all-in-one with ESP32-S3R8 (16MB flash, 8MB ' +
+          'PSRAM). Uses the same 320x480 layout as the Guition board. The ' +
+          'board has no buzzer hardware.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/product/esp32-s3-touch-lcd-3.5.htm' },
+    ],
   },
   wt32_sc01_plus: {
     chipFamily: 'ESP32-S3',
     label: 'Panlee WT32-SC01 Plus 3.5" (320x480) - community (not owned by maintainer)',
+    name: 'Panlee WT32-SC01 Plus 3.5"',
+    badge: 'community',
+    display: '3.5" ST7796 IPS, 320x480, 8-bit parallel',
+    touch: 'FT6336 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Sold as the WT32-SC01 Plus - a 3.5" all-in-one with 16MB flash ' +
+          'and 8MB PSRAM, and the project\'s first parallel-bus display. ' +
+          'The buzzer is disabled by default because its default pin is the ' +
+          'touch I2C clock line.',
+    links: [
+      { t: 'hardware notes (#123)', u: 'https://github.com/Keralots/BambuHelper/issues/123' },
+    ],
+    credit: { name: '@cliomjh', u: 'https://github.com/cliomjh' },
   },
   jc3248w535: {
     chipFamily: 'ESP32-S3',
     label: 'Guition JC3248W535 (320x480, AXS15231B QSPI)',
+    name: 'Guition JC3248W535',
+    display: '3.5" IPS AXS15231B, 320x480, QSPI',
+    touch: 'capacitive (in display IC)',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'All-in-one 320x480 IPS board with 16MB flash and 8MB PSRAM, an ' +
+          'onboard NS4168 speaker for notifications, and a battery ' +
+          'indicator. Supports portrait and landscape layouts. Initial port ' +
+          'contributed by Niels.',
+    links: [
+      { t: 'AliExpress', u: 'https://pl.aliexpress.com/item/1005007566315926.html' },
+    ],
+    credit: { name: '@theNailz', u: 'https://github.com/theNailz' },
   },
   cyd: {
     chipFamily: 'ESP32',
     label: 'CYD / ESP32-2432S028 (ILI9341, 240x320)',
+    name: 'CYD / ESP32-2432S028',
+    display: '2.8" ILI9341, 240x320, SPI',
+    touch: 'XPT2046 resistive',
+    printers: '1 (RAM limit)',
+    desc: 'The classic "Cheap Yellow Display". If colors look inverted ' +
+          'after flashing (white background instead of dark), enable ' +
+          '"Invert display colors" under Display in the web UI.',
+    links: [
+      { t: '3D-printable case', u: 'https://makerworld.com/models/2721746' },
+    ],
   },
   tzt_2432: {
     chipFamily: 'ESP32',
     label: 'CYD / TZT L1435-2.4 (ST7789, 240x320) - community (not owned by maintainer)',
+    name: 'CYD / TZT L1435-2.4',
+    badge: 'community',
+    display: '2.4" ST7789V, 240x320, SPI',
+    touch: 'XPT2046 resistive',
+    printers: '1 (RAM limit)',
+    desc: 'Looks nearly identical to the standard CYD but uses an ST7789V ' +
+          'panel with the backlight on GPIO27 - the regular cyd build gives ' +
+          'a black screen on this hardware. Often sold on AliExpress as ' +
+          '"TZT ESP32 LVGL 2.4 inch LCD TFT 240*320 With Touch".',
+    links: [],
   },
 };
 
@@ -110,7 +289,7 @@ function buildManifest(boardId, version) {
     // Improv-Serial. The firmware exposes Improv only on first boot (no
     // stored WiFi credentials), so this kicks in for fresh installs and
     // lets ESP Web Tools show the "Configure WiFi" dialog in-browser -
-    // i.e. the "recommended" path in section 02 of index.html.
+    // i.e. the "recommended" path in the After flashing card.
     new_install_improv_wait_time: 15,
     builds: [{
       chipFamily: board.chipFamily,
@@ -143,12 +322,61 @@ function populateBoardSelect() {
   sel.value = DEFAULT_BOARD;
 }
 
-function renderSpecs(boardId) {
+function renderBoardCard(boardId) {
   const info = BOARDS[boardId];
+
+  const img = document.getElementById('board-img');
+  img.src = `img/boards/${boardId}.jpg`;
+  img.alt = info.name;
+
+  document.getElementById('board-name').textContent = info.name;
+
+  const badge = document.getElementById('board-badge');
+  if (info.badge === 'community') {
+    badge.hidden = false;
+    badge.textContent = 'community';
+    badge.classList.remove('badge-diy');
+    badge.title = 'Community-contributed board, hardware not owned by the maintainer';
+  } else if (info.badge === 'diy') {
+    badge.hidden = false;
+    badge.textContent = 'diy build';
+    badge.classList.add('badge-diy');
+    badge.title = 'Requires wiring a display module to the dev board yourself';
+  } else {
+    badge.hidden = true;
+  }
+
+  document.getElementById('board-desc').textContent = info.desc;
   document.getElementById('spec-chip').textContent = info.chipFamily;
+  document.getElementById('spec-display').textContent = info.display;
+  document.getElementById('spec-touch').textContent = info.touch;
+  document.getElementById('spec-printers').textContent = info.printers;
   document.getElementById('spec-id').textContent = boardId;
   if (_version) {
     document.getElementById('spec-version').textContent = effectiveVersion(boardId);
+  }
+
+  const links = document.getElementById('board-links');
+  links.innerHTML = '';
+  for (const l of (info.links || [])) {
+    const a = document.createElement('a');
+    a.href = l.u;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = l.t + ' ↗';
+    links.appendChild(a);
+  }
+  if (info.credit) {
+    const span = document.createElement('span');
+    span.className = 'credit';
+    span.append('contributed by ');
+    const a = document.createElement('a');
+    a.href = info.credit.u;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = info.credit.name;
+    span.appendChild(a);
+    links.appendChild(span);
   }
 }
 
@@ -183,14 +411,18 @@ function showStatus(message, kind) {
 
 function showVersion(version) {
   document.getElementById('spec-version').textContent = version;
-  const rail = document.getElementById('rail-version');
-  if (rail) rail.textContent = version;
+  for (const id of ['rail-version', 'sidebar-version']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = version;
+  }
 }
 
 function showVersionError(err) {
   document.getElementById('spec-version').textContent = 'unavailable';
-  const rail = document.getElementById('rail-version');
-  if (rail) rail.textContent = 'unavailable';
+  for (const id of ['rail-version', 'sidebar-version']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = 'unavailable';
+  }
   showStatus(
     `Could not load firmware version (${err.message}). The site may be mid-deploy - try again in a minute.`,
     'error',
@@ -210,7 +442,7 @@ function checkBrowserSupport() {
 async function init() {
   checkBrowserSupport();
   populateBoardSelect();
-  renderSpecs(DEFAULT_BOARD);
+  renderBoardCard(DEFAULT_BOARD);
   wireMonitor();
 
   try {
@@ -221,16 +453,17 @@ async function init() {
   }
 
   showVersion(_version);
+  renderBoardCard(DEFAULT_BOARD);
   renderInstallButton(DEFAULT_BOARD, effectiveVersion(DEFAULT_BOARD));
 
   document.getElementById('board-select').addEventListener('change', (e) => {
     const boardId = e.target.value;
-    renderSpecs(boardId);
+    renderBoardCard(boardId);
     renderInstallButton(boardId, effectiveVersion(boardId));
   });
 }
 
-// ────────── 03 serial monitor ──────────
+// ────────── serial monitor ──────────
 // Reads the device's USB CDC stream at 115200 baud and appends decoded text
 // to <pre id="monitor-output">. Independent of the ESP Web Tools install
 // button - only one program can hold the port at a time, so users must

@@ -5,268 +5,337 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BambuHelper Web Flasher</title>
   <meta name="description" content="Flash BambuHelper firmware to your ESP32 board directly from the browser. No tools, no installs.">
-  <meta name="theme-color" content="#09090b">
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <meta name="theme-color" content="#FAF8F6">
 
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    (function() {
+      try {
+        if (localStorage.getItem('bhTheme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (_) {}
+    })();
+  </script>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 </head>
 <body>
-  <div class="shell">
-    <div class="layout">
+  <div class="app">
 
-      <!-- ────────── left rail ────────── -->
-      <aside class="rail">
-        <div class="rail-inner">
-          <div class="brand">
-            <div class="brand-mark" aria-hidden="true"></div>
-            <div class="brand-text">
-              <div class="brand-name">BambuHelper</div>
-              <div class="brand-sub">web&nbsp;flasher</div>
-            </div>
-          </div>
+    <!-- ────────── topbar ────────── -->
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" type="button" aria-label="Toggle navigation" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+        </svg>
+      </button>
+      <div class="brand">
+        <span class="mark" aria-hidden="true">B</span>
+        <span>BambuHelper</span>
+      </div>
+      <span class="version-pill" id="rail-version">…</span>
+      <span class="section-title">Web Flasher</span>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+        </button>
+        <a class="icon-btn" href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener" aria-label="GitHub repository">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/>
+          </svg>
+        </a>
+      </div>
+    </header>
 
-          <nav class="toc" aria-label="On this page">
-            <div class="rail-label">On this page</div>
-            <a href="#prereq-head" class="toc-item" data-target="prereq-head">
-              <span class="toc-num">00</span><span>Before you start</span>
-            </a>
-            <a href="#flash-head" class="toc-item" data-target="flash-head">
-              <span class="toc-num">01</span><span>Flash your board</span>
-            </a>
-            <a href="#after-head" class="toc-item" data-target="after-head">
-              <span class="toc-num">02</span><span>After flashing</span>
-            </a>
-            <a href="#monitor-head" class="toc-item" data-target="monitor-head">
-              <span class="toc-num">03</span><span>View serial logs</span>
-            </a>
-          </nav>
+    <!-- ────────── sidebar ────────── -->
+    <aside class="sidebar" id="sidebar">
+      <h4>Setup</h4>
+      <nav aria-label="On this page">
+        <a class="nav-item" href="#prereq-head" data-target="prereq-head">Before you start</a>
+        <a class="nav-item" href="#flash-head" data-target="flash-head">Flash your board</a>
+        <a class="nav-item" href="#after-head" data-target="after-head">After flashing</a>
+        <a class="nav-item" href="#monitor-head" data-target="monitor-head">Serial logs</a>
+      </nav>
+      <h4>Project</h4>
+      <nav aria-label="Project links">
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">GitHub <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper#configuration" target="_blank" rel="noopener">Documentation <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">Report a bug <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://ko-fi.com/keralots" target="_blank" rel="noopener">Support the project <span class="ext">&#8599;</span></a>
+      </nav>
+      <div class="sidebar-footer">firmware <span id="sidebar-version">…</span></div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
-          <nav class="rail-links" aria-label="Project links">
-            <div class="rail-label">Project</div>
-            <a href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">github</a>
-            <a href="https://github.com/Keralots/BambuHelper#configuration" target="_blank" rel="noopener">docs</a>
-            <a href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">report a bug</a>
-            <a href="https://ko-fi.com/keralots" target="_blank" rel="noopener">support project</a>
-          </nav>
+    <!-- ────────── main ────────── -->
+    <main class="main">
 
-          <div class="rail-foot">
-            <span class="rail-version">firmware <span id="rail-version">…</span></span>
-          </div>
+      <div class="section-intro">
+        <h2>Web Flasher</h2>
+        <p>Pick your board, plug it in over USB, hit install. The browser does the rest - no Arduino, no PlatformIO, no toolchain.</p>
+      </div>
+
+      <aside id="browser-callout" class="browser-callout" role="status">
+        <span class="pulse" aria-hidden="true"></span>
+        <div>
+          <strong>Open this page on desktop Chrome or Edge.</strong>
+          Flashing uses Web Serial, which only runs on a desktop Chromium browser. The rest of this page is just a preview.
         </div>
       </aside>
 
-      <!-- ────────── main column ────────── -->
-      <main class="main">
-
-        <section class="hero">
-          <h1>Flash BambuHelper to your ESP32 <span class="accent">straight from your browser.</span></h1>
-          <p>Pick your board, plug it in over USB, hit install. The browser does the rest - no Arduino, no PlatformIO, no toolchain.</p>
-        </section>
-
-        <aside id="browser-callout" class="browser-callout" role="status">
-          <span class="pulse" aria-hidden="true"></span>
+      <!-- ────────── Before you start ────────── -->
+      <section class="card" aria-labelledby="prereq-head">
+        <div class="card-head">
           <div>
-            <strong>Open this page on desktop Chrome or Edge.</strong>
-            Flashing uses Web Serial, which only runs on a desktop Chromium browser. The rest of this page is just a preview.
+            <h3 id="prereq-head">Before you start</h3>
+            <p>Three things that cover 90% of failed flash attempts.</p>
           </div>
-        </aside>
+        </div>
+        <ul class="checklist">
+          <li><strong>Desktop Chrome or Edge.</strong> Web Serial doesn't run on Firefox, Safari, or mobile.</li>
+          <li><strong>A real data USB cable.</strong> Power-only cables are silent killers. The port just won't show up.</li>
+          <li><strong>Nothing else on the serial port.</strong> Close Arduino IDE, PlatformIO Monitor, screen, picocom, etc.</li>
+        </ul>
+      </section>
 
-        <!-- ────────── 00 Before you start ────────── -->
-        <section class="panel" id="panel-prereq" aria-labelledby="prereq-head">
-          <header class="panel-head">
-            <span class="num">00</span>
-            <h2 id="prereq-head">Before you start</h2>
-          </header>
-          <ul class="checklist">
-            <li><strong>Desktop Chrome or Edge.</strong> Web Serial doesn't run on Firefox, Safari, or mobile.</li>
-            <li><strong>A real data USB cable.</strong> Power-only cables are silent killers. The port just won't show up.</li>
-            <li><strong>Nothing else on the serial port.</strong> Close Arduino IDE, PlatformIO Monitor, screen, picocom, etc.</li>
-          </ul>
-        </section>
+      <!-- ────────── Flash your board ────────── -->
+      <section class="card" aria-labelledby="flash-head">
+        <div class="card-head">
+          <div>
+            <h3 id="flash-head">Flash your board</h3>
+            <p>The full image is written - bootloader, partitions, and app. Existing settings on the device are erased on a fresh install.</p>
+          </div>
+        </div>
 
-        <!-- ────────── 01 Flash ────────── -->
-        <section class="panel" id="panel-flash" aria-labelledby="flash-head">
-          <header class="panel-head">
-            <span class="num">01</span>
-            <h2 id="flash-head">Flash your board</h2>
-          </header>
-
-          <label for="board-select" class="field-label">Board</label>
+        <div class="field">
+          <label for="board-select">Board</label>
           <div class="select-wrap">
             <select id="board-select" aria-label="Board"></select>
           </div>
+        </div>
 
-          <dl class="specs" aria-label="Selected board specs">
-            <div class="spec-row">
-              <dt>chip</dt>
-              <dd id="spec-chip">ESP32</dd>
-            </div>
-            <div class="spec-row">
-              <dt>board id</dt>
-              <dd id="spec-id">esp32s3</dd>
-            </div>
-            <div class="spec-row">
-              <dt>firmware</dt>
-              <dd id="spec-version">…</dd>
-            </div>
-            <div class="spec-row">
-              <dt>image</dt>
-              <dd>Full (bootloader + partitions + app)</dd>
-            </div>
-          </dl>
-
-          <p class="status-line" id="status-line" role="status"></p>
-
-          <div class="install-row">
-            <div id="install-slot"></div>
-            <p class="hint">A dialog will ask which serial port to use. Pick the one that appears when you plug the board in.</p>
+        <div class="board-card" id="board-card">
+          <div class="board-photo">
+            <img id="board-img" src="" alt="" loading="lazy">
           </div>
-        </section>
-
-        <!-- ────────── 02 After flashing ────────── -->
-        <section class="panel" id="panel-after" aria-labelledby="after-head">
-          <header class="panel-head">
-            <span class="num">02</span>
-            <h2 id="after-head">After flashing</h2>
-          </header>
-
-          <p class="lede">Once the flash finishes, the install dialog opens a Configure&nbsp;WiFi step that stays on screen for about 3 minutes. Use it. If it times out, the device falls back to broadcasting a hotspot you can join from any device.</p>
-
-          <article class="path path-primary" aria-labelledby="path-improv">
-            <header class="path-head">
-              <span class="path-tag">
-                <span class="path-pulse" aria-hidden="true"></span>
-                recommended
-              </span>
-              <h3 id="path-improv">Configure WiFi in this tab</h3>
-              <span class="path-timer" aria-label="You have roughly 3 minutes">
-                <span class="path-timer-dot" aria-hidden="true"></span>
-                <span>~3 min window</span>
-              </span>
-            </header>
-            <p class="path-body">
-              When the flash completes, the install dialog opens a
-              <strong>Configure WiFi</strong> step. Pick your home network from the
-              list, type the password, and hit <strong>Connect</strong>. Credentials
-              go to the device over USB using
-              <a href="https://www.improv-wifi.com/" target="_blank" rel="noopener">Improv&nbsp;Serial</a>.
-              No phone, no captive portal, no app switching.
-            </p>
-            <ol class="step-list">
-              <li>Wait for "Installation complete", then keep the dialog open.</li>
-              <li>Pick your WiFi network and enter the password.</li>
-              <li>Follow the link to the device's config page and finish setup.</li>
-            </ol>
-          </article>
-
-          <div class="path-divider" role="separator" aria-label="or after timeout"><span>or after timeout</span></div>
-
-          <article class="path" aria-labelledby="path-ap">
-            <header class="path-head">
-              <span class="path-tag path-tag-muted">fallback</span>
-              <h3 id="path-ap">Join the device's hotspot from any device</h3>
-            </header>
-            <p class="path-body">
-              If the Configure&nbsp;WiFi step times out or you dismiss the dialog,
-              the board falls back to hotspot mode and prints these credentials on
-              its screen. Connect to it from a phone or laptop and finish setup in
-              a browser.
-            </p>
-
-            <div class="creds" aria-label="Setup-mode credentials">
-              <div class="creds-head">
-                <span class="creds-dot"></span>
-                <span class="creds-title">setup-mode credentials</span>
-              </div>
-              <div class="creds-row">
-                <span class="creds-key">network</span>
-                <span class="creds-val">BambuHelper-<span class="dim">XXXX</span></span>
-              </div>
-              <div class="creds-row">
-                <span class="creds-key">password</span>
-                <span class="creds-val">bambu1234</span>
-              </div>
-              <div class="creds-row">
-                <span class="creds-key">open</span>
-                <span class="creds-val"><a href="http://192.168.4.1">http://192.168.4.1</a></span>
-              </div>
-              <p class="creds-note">XXXX is a unique 4-character suffix per device.</p>
+          <div class="board-info">
+            <div class="board-title-row">
+              <h4 id="board-name">…</h4>
+              <span class="badge" id="board-badge" hidden>community</span>
             </div>
+            <p class="board-desc" id="board-desc"></p>
+            <dl class="specs" aria-label="Selected board specs">
+              <div class="spec-row">
+                <dt>chip</dt>
+                <dd id="spec-chip">ESP32</dd>
+              </div>
+              <div class="spec-row">
+                <dt>display</dt>
+                <dd id="spec-display">…</dd>
+              </div>
+              <div class="spec-row">
+                <dt>touch</dt>
+                <dd id="spec-touch">…</dd>
+              </div>
+              <div class="spec-row">
+                <dt>printers</dt>
+                <dd id="spec-printers">…</dd>
+              </div>
+              <div class="spec-row">
+                <dt>board id</dt>
+                <dd id="spec-id" class="mono">esp32s3</dd>
+              </div>
+              <div class="spec-row">
+                <dt>firmware</dt>
+                <dd id="spec-version" class="mono">…</dd>
+              </div>
+            </dl>
+            <div class="board-links" id="board-links"></div>
+          </div>
+        </div>
 
-            <ol class="step-list">
-              <li>Join the <code>BambuHelper-XXXX</code> network from your phone or laptop.</li>
-              <li>Open <a href="http://192.168.4.1">192.168.4.1</a> in any browser.</li>
-              <li>Enter your home WiFi and printer details, then save.</li>
-            </ol>
-          </article>
+        <p class="status-line" id="status-line" role="status"></p>
 
-          <p class="hint">Either way, the device reboots, joins your WiFi, and starts monitoring the printer.</p>
-        </section>
+        <div class="install-row">
+          <div id="install-slot"></div>
+          <p class="hint">A dialog will ask which serial port to use. Pick the one that appears when you plug the board in.</p>
+        </div>
+      </section>
 
-        <!-- ────────── 03 Serial monitor ────────── -->
-        <section class="panel" id="panel-monitor" aria-labelledby="monitor-head">
-          <header class="panel-head">
-            <span class="num">03</span>
-            <h2 id="monitor-head">View serial logs</h2>
+      <!-- ────────── After flashing ────────── -->
+      <section class="card" aria-labelledby="after-head">
+        <div class="card-head">
+          <div>
+            <h3 id="after-head">After flashing</h3>
+            <p>Get the device on your WiFi. Two ways - the first one happens right in this tab.</p>
+          </div>
+        </div>
+
+        <article class="path" aria-labelledby="path-improv">
+          <header class="path-head">
+            <span class="path-tag">
+              <span class="path-pulse" aria-hidden="true"></span>
+              recommended
+            </span>
+            <h4 id="path-improv">Configure WiFi in this tab</h4>
+            <span class="path-timer" aria-label="You have roughly 3 minutes">~3 min window</span>
           </header>
+          <p class="path-body">
+            When the flash completes, the install dialog opens a
+            <strong>Configure WiFi</strong> step. Pick your home network from the
+            list, type the password, and hit <strong>Connect</strong>. Credentials
+            go to the device over USB using
+            <a href="https://www.improv-wifi.com/" target="_blank" rel="noopener">Improv&nbsp;Serial</a>.
+            No phone, no captive portal, no app switching.
+          </p>
+          <ol class="step-list">
+            <li>Wait for "Installation complete", then keep the dialog open.</li>
+            <li>Pick your WiFi network and enter the password.</li>
+            <li>Follow the link to the device's config page and finish setup.</li>
+          </ol>
+        </article>
 
-          <p class="lede">Reading the board's serial output is the fastest way to capture a crash, a stack trace, or WiFi/TLS errors for a bug report. Plug the board in over USB, click Connect, and pick the same serial port you'd use for flashing.</p>
+        <div class="path-divider" role="separator" aria-label="or after timeout"><span>or after timeout</span></div>
 
-          <p class="status-line" id="monitor-status" role="status"></p>
+        <article class="path" aria-labelledby="path-ap">
+          <header class="path-head">
+            <span class="path-tag path-tag-muted">fallback</span>
+            <h4 id="path-ap">Join the device's hotspot from any device</h4>
+          </header>
+          <p class="path-body">
+            If the Configure&nbsp;WiFi step times out or you dismiss the dialog,
+            the board falls back to hotspot mode and prints these credentials on
+            its screen. Connect to it from a phone or laptop and finish setup in
+            a browser.
+          </p>
 
-          <div class="monitor-row">
-            <button id="monitor-connect" class="btn-monitor" type="button">Connect</button>
-            <button id="monitor-disconnect" class="btn-monitor btn-ghost" type="button" disabled>Disconnect</button>
-            <button id="monitor-export" class="btn-monitor btn-ghost" type="button" disabled>Export</button>
-            <button id="monitor-clear" class="btn-monitor btn-ghost" type="button" disabled>Clear</button>
+          <div class="creds" aria-label="Setup-mode credentials">
+            <div class="creds-head">
+              <span class="creds-dot"></span>
+              <span class="creds-title">setup-mode credentials</span>
+            </div>
+            <div class="creds-row">
+              <span class="creds-key">network</span>
+              <span class="creds-val">BambuHelper-<span class="dim">XXXX</span></span>
+            </div>
+            <div class="creds-row">
+              <span class="creds-key">password</span>
+              <span class="creds-val">bambu1234</span>
+            </div>
+            <div class="creds-row">
+              <span class="creds-key">open</span>
+              <span class="creds-val"><a href="http://192.168.4.1">http://192.168.4.1</a></span>
+            </div>
+            <p class="creds-note">XXXX is a unique 4-character suffix per device.</p>
           </div>
 
-          <pre id="monitor-output" class="monitor-output" aria-live="polite" aria-label="Serial output"></pre>
+          <ol class="step-list">
+            <li>Join the <code>BambuHelper-XXXX</code> network from your phone or laptop.</li>
+            <li>Open <a href="http://192.168.4.1">192.168.4.1</a> in any browser.</li>
+            <li>Enter your home WiFi and printer details, then save.</li>
+          </ol>
+        </article>
 
-          <p class="hint">Only one program can hold the serial port at a time - close PlatformIO Monitor or Arduino IDE first, and don't click Install during a monitor session. Baud rate is 115200 to match the firmware.</p>
-          <p class="hint">Need more detail in the log? Open your device's config page in a browser, go to <strong>Diagnostics</strong>, and turn on <strong>Enable verbose serial logging</strong>. That streams MQTT and printer events over USB. Disable it again when you're done - it impacts performance.</p>
-        </section>
+        <p class="hint">Either way, the device reboots, joins your WiFi, and starts monitoring the printer.</p>
+      </section>
 
-        <footer class="footer">
-          <span>BambuHelper. Open-source 3D printer monitor.</span>
-          <span>
-            <a href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">source</a>
-            &nbsp;·&nbsp;
-            <a href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">report a bug</a>
-          </span>
-        </footer>
-      </main>
-    </div>
+      <!-- ────────── Serial monitor ────────── -->
+      <section class="card" aria-labelledby="monitor-head">
+        <div class="card-head">
+          <div>
+            <h3 id="monitor-head">View serial logs</h3>
+            <p>Capture a crash, a stack trace, or WiFi/TLS errors for a bug report.</p>
+          </div>
+        </div>
+
+        <p class="help-text">Plug the board in over USB, click Connect, and pick the same serial port you'd use for flashing. Baud rate is 115200 to match the firmware.</p>
+
+        <p class="status-line" id="monitor-status" role="status"></p>
+
+        <div class="monitor-row">
+          <button id="monitor-connect" class="btn" type="button">Connect</button>
+          <button id="monitor-disconnect" class="btn btn-ghost" type="button" disabled>Disconnect</button>
+          <button id="monitor-export" class="btn btn-ghost" type="button" disabled>Export</button>
+          <button id="monitor-clear" class="btn btn-ghost" type="button" disabled>Clear</button>
+        </div>
+
+        <pre id="monitor-output" class="monitor-output" aria-live="polite" aria-label="Serial output"></pre>
+
+        <p class="hint">Only one program can hold the serial port at a time - close PlatformIO Monitor or Arduino IDE first, and don't click Install during a monitor session.</p>
+        <p class="hint">Need more detail in the log? Open your device's config page in a browser, go to <strong>Diagnostics</strong>, and turn on <strong>Enable verbose serial logging</strong>. That streams MQTT and printer events over USB. Disable it again when you're done - it impacts performance.</p>
+      </section>
+
+      <footer class="footer">
+        <span>BambuHelper. Open-source 3D printer monitor.</span>
+        <span>
+          <a href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">source</a>
+          &nbsp;·&nbsp;
+          <a href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">report a bug</a>
+        </span>
+      </footer>
+    </main>
   </div>
 
   <script src="flasher.js"></script>
   <script>
-    // Highlight the TOC item matching the panel currently in view.
+    // ── Theme toggle (mirrors the device web UI's data-theme mechanism) ──
     (function() {
-      const items = document.querySelectorAll('.toc-item');
-      const byId = {};
-      items.forEach(a => { byId[a.dataset.target] = a; });
-      const headings = [...document.querySelectorAll('.panel-head h2')];
+      const root = document.documentElement;
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const dark = root.getAttribute('data-theme') === 'dark';
+        if (dark) root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', 'dark');
+        try { localStorage.setItem('bhTheme', dark ? 'light' : 'dark'); } catch (_) {}
+      });
+    })();
+
+    // ── Mobile sidebar ──
+    (function() {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const burger = document.getElementById('hamburger');
+      const close = () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+        burger.setAttribute('aria-expanded', 'false');
+      };
+      burger.addEventListener('click', () => {
+        const open = sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show', open);
+        burger.setAttribute('aria-expanded', String(open));
+      });
+      backdrop.addEventListener('click', close);
+      sidebar.querySelectorAll('a[data-target]').forEach(a => a.addEventListener('click', close));
+    })();
+
+    // ── Highlight the sidebar item matching the card currently in view ──
+    (function() {
+      const items = document.querySelectorAll('.nav-item[data-target]');
+      const headings = [...document.querySelectorAll('.card-head h3')];
       if (!('IntersectionObserver' in window) || !headings.length) return;
       let lastId = null;
       const set = (id) => {
         if (id === lastId) return;
         lastId = id;
-        items.forEach(a => a.classList.toggle('is-active', a.dataset.target === id));
+        items.forEach(a => {
+          if (a.dataset.target === id) a.setAttribute('aria-current', 'true');
+          else a.removeAttribute('aria-current');
+        });
       };
       const io = new IntersectionObserver((entries) => {
-        // Pick the heading closest to the top of the viewport that's visible.
         const visible = entries
           .filter(e => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible.length) set(visible[0].target.id);
       }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
       headings.forEach(h => io.observe(h));
-      // Initial state.
       set(headings[0].id);
     })();
   </script>
