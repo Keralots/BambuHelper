@@ -275,6 +275,11 @@ extern char  tasmotaCurrency[8];      // e.g. "€", "$", "zł"
 extern float tasmotaTariffPerKwh;     // global tariff (same for all plugs)
 extern bool dualPrinterUnsafe;
 extern bool quadPrinterBeta;
+// C3 antenna workaround (issue #146): true = this board's radio only works at
+// reduced TX power, so every WiFi connect must be capped at 8.5 dBm. Set by
+// wifi_manager when a reduced-power STA attempt succeeds after full-power
+// attempts failed. Only meaningful on BOARD_IS_C3 builds.
+extern bool wifiTxCapped;
 
 void loadSettings();
 void saveSettings();
@@ -290,6 +295,7 @@ void saveButtonSettings();
 void saveBuzzerSettings();
 void saveLedSettings();
 void saveBatteryIndicatorSetting();
+void saveWifiTxCapped();
 void resetSettings();
 
 // Cloud token persistence (shared across printer slots)

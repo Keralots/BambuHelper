@@ -20,6 +20,23 @@ static String apSSID;
 static bool splashStaStarted = false;
 static unsigned long splashStaStartMs = 0;
 
+// C3 antenna workaround (issue #146): a common batch of ESP32-C3 SuperMini
+// clones (and LOLIN C3 Mini v1.0.0) ships with a mis-tuned antenna matching
+// network. At the default ~19.5 dBm the PA distorts so badly that beacons and
+// association frames never decode on any receiver, even at <1 m - while the
+// radio itself reports success, so softAP() logs "AP started" with an SSID
+// nobody can see. Capping TX power at 8.5 dBm is the community-established
+// fix. Policy: AP/setup mode is always capped (close range by definition, and
+// an invisible AP would strand the user); STA boot connect tries full power
+// first and falls back to capped on the last attempt - a capped success is
+// persisted (wifiTxCapped) so every later connect starts capped. Healthy
+// boards keep full power and range.
+#ifdef BOARD_IS_C3
+static void capTxPower() {
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+}
+#endif
+
 bool isWiFiConnected() {
   return WiFi.status() == WL_CONNECTED;
 }
@@ -52,6 +69,10 @@ static void startAP() {
   // Use AP+STA so we can probe STA while serving the config portal
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ssidBuf, WIFI_AP_PASSWORD);
+#ifdef BOARD_IS_C3
+  capTxPower();
+  Serial.println("WiFi: TX power capped to 8.5 dBm in AP mode (C3 antenna workaround)");
+#endif
 
   // Captive portal: redirect all DNS to our IP
   if (!dnsServer) {
@@ -158,6 +179,9 @@ static void beginStaConnectAttempt() {
   WiFi.mode(WIFI_STA);
   applyStaticNetworkConfig();
   WiFi.begin(wifiSSID, wifiPass);
+#ifdef BOARD_IS_C3
+  if (wifiTxCapped) capTxPower();
+#endif
 }
 
 void startWiFiDuringSplash() {
@@ -191,13 +215,34 @@ void initWiFi() {
         beginStaConnectAttempt();
       }
 
+#ifdef BOARD_IS_C3
+      // Last attempt: retry at reduced power in case this board's antenna
+      // cannot handle full TX power (see capTxPower above). If it works,
+      // remember it so every future connect skips the doomed full-power tries.
+      bool cappedAttempt = false;
+      if (attempt == 3 && !wifiTxCapped) {
+        capTxPower();
+        Serial.println("WiFi: retrying at 8.5 dBm TX power (C3 antenna workaround)");
+        cappedAttempt = true;
+      }
+#endif
+
       while (WiFi.status() != WL_CONNECTED &&
              millis() - start < WIFI_CONNECT_TIMEOUT) {
         delay(100);
         updateDisplay();
         flushFrame();  // JC3248W535: push sprite to panel during blocking loop
       }
-      if (WiFi.status() == WL_CONNECTED) break;
+      if (WiFi.status() == WL_CONNECTED) {
+#ifdef BOARD_IS_C3
+        if (cappedAttempt) {
+          wifiTxCapped = true;
+          saveWifiTxCapped();
+          Serial.println("WiFi: connected at reduced TX power - cap persisted for future boots");
+        }
+#endif
+        break;
+      }
 
       Serial.println("WiFi attempt failed, retrying...");
       WiFi.disconnect(true);
@@ -277,6 +322,11 @@ void handleWiFi() {
                       WiFi.localIP().toString().c_str());
         stopAP();
         WiFi.mode(WIFI_STA);
+#ifdef BOARD_IS_C3
+        // AP mode capped the shared radio; healthy boards get full power back
+        // for normal operation, capped boards stay at 8.5 dBm.
+        if (!wifiTxCapped) WiFi.setTxPower(WIFI_POWER_19_5dBm);
+#endif
         apMode = false;
         staProbing = false;
         disconnectTime = 0;
@@ -335,6 +385,9 @@ void handleWiFi() {
 
       WiFi.disconnect();
       WiFi.begin(wifiSSID, wifiPass);
+#ifdef BOARD_IS_C3
+      if (wifiTxCapped) capTxPower();
+#endif
     }
   } else {
     if (disconnectTime > 0) {

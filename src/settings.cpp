@@ -48,6 +48,12 @@ bool dualPrinterUnsafe = false;
 // ticks the Advanced toggle. Local-only - NOT exported (same reason as above).
 bool quadPrinterBeta = false;
 
+// C3 antenna workaround (issue #146): persisted marker that this board's radio
+// only communicates reliably at reduced TX power. Written by wifi_manager once
+// a capped STA attempt succeeds after full-power attempts failed. Local-only -
+// NOT exported (hardware property of this specific board, not a preference).
+bool wifiTxCapped = false;
+
 static Preferences prefs;
 
 // ---------------------------------------------------------------------------
@@ -762,6 +768,9 @@ void loadSettings() {
   // Experimental 4-printer override on BOARD_HAS_PSRAM (local-only, not exported)
   quadPrinterBeta = prefs.getBool("quadp", false);
 
+  // C3 antenna workaround flag (local-only, not exported)
+  wifiTxCapped = prefs.getBool("wifi_txcap", false);
+
   prefs.end();
 }
 
@@ -907,6 +916,9 @@ void saveSettings() {
   // Experimental 4-printer override on BOARD_HAS_PSRAM (local-only, not exported)
   prefs.putBool("quadp", quadPrinterBeta);
 
+  // C3 antenna workaround flag (local-only, not exported)
+  prefs.putBool("wifi_txcap", wifiTxCapped);
+
   prefs.end();
 }
 
@@ -1026,6 +1038,12 @@ void saveLedSettings() {
 void saveBatteryIndicatorSetting() {
   prefs.begin(NVS_NAMESPACE, false);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
+  prefs.end();
+}
+
+void saveWifiTxCapped() {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.putBool("wifi_txcap", wifiTxCapped);
   prefs.end();
 }
 
