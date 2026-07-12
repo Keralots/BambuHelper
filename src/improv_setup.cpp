@@ -50,6 +50,13 @@ static void onImprovConnected(const char *ssid, const char *password) {
 static bool improvCustomConnect(const char *ssid, const char *password) {
   Serial.printf("Improv: attempting STA connect to %s\n", ssid);
   WiFi.begin(ssid, password);
+#ifdef BOARD_IS_C3
+  // C3 antenna workaround (issue #146): some C3 SuperMini batches only work at
+  // reduced TX power. Setup always runs capped (the user is at arm's length);
+  // the normal boot path after the Improv restart re-detects whether the cap
+  // is needed long-term (see wifi_manager.cpp).
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+#endif
   const uint32_t deadline = millis() + 15000;  // 15s STA connect timeout
   while (WiFi.status() != WL_CONNECTED &&
          (int32_t)(millis() - deadline) < 0) {
