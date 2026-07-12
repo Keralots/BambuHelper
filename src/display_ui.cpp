@@ -251,11 +251,22 @@ void setBacklight(uint8_t level) {
   lastAppliedBrightness = level;
 }
 
+static void applyPanelInversion() {
 #if defined(DISPLAY_CYD)
-static void applyCydPanelInversion() {
   _tft_instance.invertDisplay(dispSettings.invertColors);
-}
+#elif defined(BOARD_IS_SC05X) || defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_TZT_2432)
+  // These panels set cfg.invert=true in LovyanGFX, so "false" is the native
+  // corrected state and the user checkbox is an extra flip on top of that.
+  _tft_instance.invertDisplay(dispSettings.invertColors);
+#elif defined(DISPLAY_240x320) && defined(USE_ST7789_INVERT)
+  // ST7789 panels with cfg.invert=false need INVON as the baseline.
+  _tft_instance.invertDisplay(!dispSettings.invertColors);
+#elif defined(USE_ST7789_INVERT)
+  _tft_instance.invertDisplay(true);
+#elif defined(DISPLAY_240x320)
+  _tft_instance.invertDisplay(dispSettings.invertColors);
 #endif
+}
 
 // ---------------------------------------------------------------------------
 //  Active-canvas helpers (rotation-aware; needed before drawing)
@@ -391,11 +402,8 @@ void initDisplay() {
 #endif
   Serial.println("Display: calling _tft_instance.init()...");
   _tft_instance.init();  // LovyanGFX configures SPI from the board class above
-#if defined(DISPLAY_CYD)
-  applyCydPanelInversion();
-#elif defined(USE_ST7789_INVERT)
-  _tft_instance.invertDisplay(true);  // ST7789 panels need color inversion
-#elif defined(BOARD_IS_SENSECAP)
+  applyPanelInversion();
+#if defined(BOARD_IS_SENSECAP)
   // ST7701S IPS inversion already handled by default Panel_ST7701 init (0x21 command).
   // Release SPI CS HIGH now that init commands are done
   Wire.beginTransmission(PCA9535_ADDR);
@@ -419,11 +427,7 @@ void initDisplay() {
 #else
   tft.setRotation(dispSettings.rotation);
 #endif
-#if defined(DISPLAY_CYD)
-  applyCydPanelInversion();
-#elif defined(DISPLAY_240x320)
-  if (dispSettings.invertColors) _tft_instance.invertDisplay(false);
-#endif
+  applyPanelInversion();
   Serial.println("Display: setRotation done");
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
@@ -514,11 +518,7 @@ void applyDisplaySettings() {
   markFrameDirty();
 #endif
   tft.setRotation(sanitizeRotation(dispSettings.rotation));
-#if defined(DISPLAY_CYD)
-  applyCydPanelInversion();
-#elif defined(DISPLAY_240x320)
-  _tft_instance.invertDisplay(dispSettings.invertColors ? false : true);
-#endif
+  applyPanelInversion();
   tft.fillScreen(dispSettings.bgColor);
   markFrameDirty();
   forceRedraw = true;

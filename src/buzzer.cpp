@@ -53,6 +53,29 @@ void sanitizeBuzzerPin() {
     }
   }
 #endif
+#if defined(BOARD_IS_SC05X)
+  // Panlee SC05_X / ZX2D80CE02S has no GPIO buzzer in this target. Reject the
+  // full reserved set (kept in sync with led.cpp and button.cpp): 8080 LCD
+  // bus/control 1/2/7/15/16/17/18/40/41/42, reset 3, touch 8/9/48, TE 38,
+  // RS485 4/5/6, USB CDC 19/20, and the flash/PSRAM range 26-37.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p == 1 || p == 2 || p == 7 || p == 15 || p == 16 ||
+       p == 17 || p == 18 || p == 40 || p == 41 || p == 42) ||
+      (p == 3) ||                                                // LCD reset
+      (p == 8 || p == 9 || p == 48) ||                           // touch I2C/INT
+      (p == 38) ||                                               // LCD_TE
+      (p == 4 || p == 5 || p == 6) ||                            // RS485
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on SC05_X, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
 #if defined(DISPLAY_CYD)
   // ESP32-32E clone variant: GPIO4 is the speaker amp enable, not a tone
   // output - the GPIO backend would hijack it and mute the amp.

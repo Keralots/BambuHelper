@@ -116,6 +116,20 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_SC05X)
+  // Panlee SC05_X / ZX2D80CE02S (ST7789 8-bit 8080 parallel + FT5X06 I2C)
+  if (pin == 1 || pin == 2 || pin == 7 ||
+      pin == 15 || pin == 16 || pin == 17 || pin == 18 ||
+      pin == 40 || pin == 41 || pin == 42) return false;                           // 8080 bus: D0-D7 + WR + RS/DC
+  if (pin == 3) return false;                                                       // LCD reset
+  if (pin == 47) return false;                                                      // backlight
+  if (pin == 38) return false;                                                      // LCD_TE (frame sync)
+  if (pin == 8 || pin == 9 || pin == 48) return false;                              // FT5X06 I2C + INT
+  if (pin == 4 || pin == 5 || pin == 6) return false;                               // RS485
+  if (pin == 19 || pin == 20) return false;                                         // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                         // SPI flash/PSRAM
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_WS154)
   // Waveshare ESP32-S3-Touch-LCD-1.54"
   if (pin == 21 || pin == 38 || pin == 39 || pin == 40 || pin == 45) return false; // display SPI

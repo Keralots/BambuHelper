@@ -173,6 +173,22 @@ const BOARDS = {
     ],
     credit: { name: '@gwbuss', u: 'https://github.com/gwbuss' },
   },
+  sc05_x: {
+    chipFamily: 'ESP32-S3',
+    label: 'Panlee SC05_X / ZX2D80CE02S 2.8" (240x320, ST7789 8080) - experimental',
+    name: 'Panlee SC05_X / ZX2D80CE02S 2.8"',
+    badge: 'community',
+    display: '2.8" ST7789 IPS, 240x320, 8-bit parallel',
+    touch: 'FT5X06 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Smartpanle/Panlee SC05_X board (model ZX2D80CE02S / WT32S3-28S ' +
+          'PRO) with 8MB flash and QSPI PSRAM. This is not the 3.5" ' +
+          'WT32-SC01 Plus; that firmware drives a different panel and pin map ' +
+          'and leaves this board on a black screen.',
+    links: [
+      { t: 'vendor Arduino library', u: 'https://github.com/smartpanle/PanelLan_esp32_arduino' },
+    ],
+  },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',
     label: 'Waveshare ESP32-S3-Touch-LCD-3.5 (320x480) - community (not owned by maintainer)',
