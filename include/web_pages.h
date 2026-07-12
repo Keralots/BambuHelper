@@ -265,6 +265,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .card-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--text-dim); }
 /* Reusable greyed helper text under a control, styled like .card-head p. */
 .help-text { margin: 4px 0 14px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
+/* Block of settings that only apply while an enable checkbox above is ticked. */
+.deps-off { opacity: 0.45; pointer-events: none; }
 .section-intro { margin: 0 0 var(--sp-5); }
 .section-intro h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
 .section-intro p { margin: 0; color: var(--text-dim); font-size: 13.5px; }
@@ -1516,9 +1518,10 @@ R"rawliteral(
     </div>
     <p class="card-desc">Each plug pairs with one printer slot. Settings on screen reflect the selected plug.</p>
     <label class="check-row">
-      <input type="checkbox" id="tsm_en" value="1">
+      <input type="checkbox" id="tsm_en" value="1" onchange="applyPowerEnableState()">
       <label for="tsm_en">Enable power monitoring for this plug</label>
     </label>
+    <div id="plugDeps1">
     <div class="field" style="margin-top:var(--sp-3)">
       <label for="tsm_pt">Power plug type</label>
       <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option></select>
@@ -1539,10 +1542,12 @@ R"rawliteral(
       <div class="help-text" style="margin-top:6px">Keeps the layer count in the status bar and never swaps to watts - use this when power already has its own gauge.</div>
       <div id="dmHiddenNote" class="help-text" style="margin-top:6px;display:none">Disabled because <b>Hide layer/power line in status bar</b> is on (Display tab). The whole status-bar readout is hidden, so this has no effect.</div>
     </div>
+    </div>
   </div>
 
   <div class="card">
     <div class="card-head"><div><h3>Auto power-off</h3></div></div>
+    <div id="plugDeps2">
     <label class="check-row">
       <input type="checkbox" id="tsm_ao" value="1">
       <label for="tsm_ao">Auto power-off after print</label>
@@ -1557,6 +1562,7 @@ R"rawliteral(
       <label for="tsm_aod">Cancel auto-off if door is opened</label>
     </label>
     <div class="help-text" style="padding-left:28px">If the printer door opens during the delay, the auto-off is cancelled for this print (you are at the printer). A new print re-arms it. Ignored on printers without a door sensor (P1/A1).</div>
+    </div>
   </div>
 
   <div class="card">
@@ -2283,10 +2289,26 @@ var powerPlugCount = (document.getElementById('ptab1') ? 2 : 1);
 function applyHideReadoutToPowerDM(){
   var hp = document.getElementById('hidelp');
   var hidden = !!(hp && hp.checked);
+  var plugOff = !document.getElementById('tsm_en').checked;
   var dm = document.querySelectorAll('input[name="tsm_dm"]');
-  for (var i = 0; i < dm.length; i++) dm[i].disabled = hidden;
+  for (var i = 0; i < dm.length; i++) dm[i].disabled = hidden || plugOff;
   var note = document.getElementById('dmHiddenNote');
   if (note) note.style.display = hidden ? 'block' : 'none';
+}
+/* Grey out and disable the per-plug settings while "Enable power monitoring"
+   is unchecked, so a filled-in but disabled plug can't be mistaken for a
+   working one. The tariff card (shared) and Live stats stay active. */
+function applyPowerEnableState(){
+  var en = document.getElementById('tsm_en').checked;
+  var blocks = ['plugDeps1', 'plugDeps2'];
+  for (var i = 0; i < blocks.length; i++){
+    var el = document.getElementById(blocks[i]);
+    if (!el) continue;
+    el.classList.toggle('deps-off', !en);
+    var ctl = el.querySelectorAll('input,select');
+    for (var j = 0; j < ctl.length; j++) ctl[j].disabled = !en;
+  }
+  applyHideReadoutToPowerDM();
 }
 function selectPowerTab(plug){
   if (plug >= powerPlugCount) return;
@@ -2304,7 +2326,7 @@ function selectPowerTab(plug){
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
     for (var j = 0; j < dm.length; j++) dm[j].checked = (parseInt(dm[j].value) === (d.displayMode || 0));
-    applyHideReadoutToPowerDM();
+    applyPowerEnableState();
     var slotSel = document.getElementById('tsm_slot');
     if (slotSel && typeof d.assignedSlot !== 'undefined') slotSel.value = d.assignedSlot;
     document.getElementById('tsm_pi').value = d.pollInterval || 10;
