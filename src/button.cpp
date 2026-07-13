@@ -210,6 +210,14 @@ void sanitizeButtonPin() {
       buttonPin == 42) { clash("SC05_X LCD bus/control"); return; }
   if (buttonPin == 3)  { clash("SC05_X LCD reset"); return; }
   if (buttonPin == 38) { clash("SC05_X LCD_TE"); return; }
+  if (buttonPin == 19 || buttonPin == 20) {
+    clash("SC05_X native USB");
+    return;
+  }
+  if (buttonPin >= 26 && buttonPin <= 37) {
+    clash("SC05_X flash/PSRAM");
+    return;
+  }
   if (buttonPin == 4 || buttonPin == 5 || buttonPin == 6) {
     clash("SC05_X RS485");
     return;
