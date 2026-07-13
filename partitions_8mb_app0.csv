@@ -1,0 +1,10 @@
+# Partition table for 8 MB ESP32-S3 boards using the standard 0x10000 app offset.
+# Dual OTA app slots of 3 MB each, leaving room for NVS and filesystem data.
+# NOTE: changing the partition table requires a full USB flash; OTA cannot update it.
+#
+# Name,    Type,  SubType,  Offset,    Size,
+nvs,       data,  nvs,      0x9000,    0x5000,
+otadata,   data,  ota,      0xe000,    0x2000,
+app0,      app,   ota_0,    0x10000,   0x300000,
+app1,      app,   ota_1,    0x310000,  0x300000,
+spiffs,    data,  spiffs,   0x610000,  0x1F0000,

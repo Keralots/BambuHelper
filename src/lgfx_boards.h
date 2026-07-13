@@ -433,6 +433,91 @@ public:
 };
 static LGFX_WS350 _tft_instance;
 
+#elif defined(BOARD_IS_SC05X)
+// --- Panlee / Smartpanle SC05_X (ZX2D80CE02S, 2.8" ST7789 240x320) ---------
+// Vendor model mapping:
+//   SC05_X / ZX2D80CE02S / WT32S3-28S PRO
+// This is a 240x320 ST7789 panel on an 8-bit 8080 bus. Do not confuse it with
+// the 3.5" WT32-SC01 Plus (ZX3D50CE08S), which is 320x480 ST7796 and uses a
+// completely different pin map.
+class Panel_SC05X_ST7789 : public lgfx::Panel_ST7789 {
+protected:
+  const uint8_t* getInitCommands(uint8_t listno) const override {
+    static constexpr uint8_t list0[] = {
+      0x11, 0 + CMD_INIT_DELAY, 120,    // Exit sleep mode
+      0x36, 1, 0x00,
+      0x3A, 1, 0x05,
+      0xB2, 5, 0x0C, 0x0C, 0x00, 0x33, 0x33,
+      0xB7, 1, 0x46,
+      0xBB, 1, 0x1B,
+      0xC0, 1, 0x2C,
+      0xC2, 1, 0x01,
+      0xC3, 1, 0x0F,
+      0xC4, 1, 0x20,
+      0xC6, 1, 0x0F,
+      0xD0, 2, 0xA4, 0xA1,
+      0xD6, 1, 0xA1,
+      0xE0, 14, 0xF0, 0x00, 0x06, 0x04, 0x05, 0x05, 0x31, 0x44, 0x48, 0x36, 0x12, 0x12, 0x2B, 0x34,
+      0xE1, 14, 0xF0, 0x0B, 0x0F, 0x0F, 0x0D, 0x26, 0x31, 0x43, 0x47, 0x38, 0x14, 0x14, 0x2C, 0x32,
+      0x21, 0,
+      0x29, 0,
+      0x2C, 0,
+      0xFF, 0xFF,
+    };
+
+    return listno == 0 ? list0 : nullptr;
+  }
+};
+
+class LGFX_SC05X : public lgfx::LGFX_Device {
+  Panel_SC05X_ST7789 _panel;
+  lgfx::Bus_Parallel8 _bus;
+public:
+  LGFX_SC05X() {
+    {
+      auto cfg = _bus.config();
+      cfg.port       = 0;          // LCD_CAM (only 0 on ESP32-S3)
+      cfg.freq_write = 20000000;   // vendor PanelLan config uses 20 MHz
+      cfg.pin_wr     = 17;         // LCD_WR
+      cfg.pin_rd     = -1;
+      cfg.pin_rs     = 18;         // LCD_RS (D/C)
+      cfg.pin_d0     = 16;
+      cfg.pin_d1     = 40;
+      cfg.pin_d2     = 15;
+      cfg.pin_d3     = 7;
+      cfg.pin_d4     = 41;
+      cfg.pin_d5     = 42;
+      cfg.pin_d6     = 2;
+      cfg.pin_d7     = 1;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = -1;
+      cfg.pin_rst  = 3;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 240;
+      cfg.memory_height = 320;
+      cfg.panel_width   = 240;
+      cfg.panel_height  = 320;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = 2;
+      cfg.dummy_read_pixel = 8;
+      cfg.dummy_read_bits  = 1;
+      cfg.readable      = false;
+      cfg.invert        = true;
+      cfg.rgb_order     = true;
+      cfg.dlen_16bit    = false;
+      cfg.bus_shared    = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_SC05X _tft_instance;
+
 #elif defined(BOARD_IS_SC01PLUS)
 // --- Panlee WT32-SC01 Plus (3.5" ST7796 320x480 IPS, 8-bit 8080 parallel) -----
 // First parallel-bus board in the tree: ST7796 over lgfx::Bus_Parallel8 (ESP32-S3

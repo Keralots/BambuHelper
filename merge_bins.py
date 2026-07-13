@@ -15,6 +15,7 @@ Usage:
     python merge_bins.py --board ws_lcd_280 # build Waveshare 2.8 firmware (community)
     python merge_bins.py --board ws_lcd_350 # build Waveshare 3.5 firmware (community)
     python merge_bins.py --board jc3248w535 # build Guition JC3248W535 firmware
+    python merge_bins.py --board sc05_x    # build Panlee SC05_X / ZX2D80CE02S firmware
     python merge_bins.py --all              # build all board variants
     python merge_bins.py v2.5               # override version
     python merge_bins.py --ota              # OTA binary only
@@ -148,6 +149,14 @@ BOARDS = {
         'build_env': 'es3n28p',
         'board_id': 'es3n28p',
     },
+    'sc05_x': {                          # community / experimental (ZX2D80CE02S)
+        'build_dir': '.pio/build/sc05_x',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'sc05_x',
+        'board_id': 'sc05_x',
+    },
     'esp32c3': {
         'build_dir': '.pio/build/esp32c3',
         'bootloader_offset': 0x0,       # ESP32-C3 starts at 0x0
@@ -194,6 +203,11 @@ BOARD_ALIASES = {
     'sc01': 'wt32_sc01_plus',
     'sc01plus': 'wt32_sc01_plus',
     'wt32_sc01_plus': 'wt32_sc01_plus',
+    'sc05': 'sc05_x',
+    'sc05x': 'sc05_x',
+    'sc05_x': 'sc05_x',
+    'zx2d80ce02s': 'sc05_x',
+    'wt32s3_28s': 'sc05_x',
     'es3n28p': 'es3n28p',
     'es3': 'es3n28p',
     'c3': 'esp32c3',

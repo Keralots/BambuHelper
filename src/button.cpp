@@ -182,6 +182,17 @@ void sanitizeButtonPin() {
   if (buttonPin == FT6336_SDA) { clash("FT6336 touch SDA"); return; }
   if (buttonPin == FT6336_SCL) { clash("FT6336 touch SCL"); return; }
 #endif
+#if defined(USE_FT5X06)
+  #if defined(FT5X06_SDA)
+  if (buttonPin == FT5X06_SDA) { clash("FT5X06 touch SDA"); return; }
+  #endif
+  #if defined(FT5X06_SCL)
+  if (buttonPin == FT5X06_SCL) { clash("FT5X06 touch SCL"); return; }
+  #endif
+  #if defined(FT5X06_IRQ)
+  if (buttonPin == FT5X06_IRQ) { clash("FT5X06 touch IRQ"); return; }
+  #endif
+#endif
 #if defined(BOARD_IS_WS350)
   // Display SPI lines - driving any as a button GPIO disturbs the panel bus.
   // (Backlight 6 and I2C 7/8 are already covered above / by FT6336 checks.)
@@ -189,6 +200,28 @@ void sanitizeButtonPin() {
   if (buttonPin == 2) { clash("WS350 display MISO"); return; }
   if (buttonPin == 3) { clash("WS350 display DC");   return; }
   if (buttonPin == 5) { clash("WS350 display SCLK"); return; }
+#endif
+#if defined(BOARD_IS_SC05X)
+  // ST7789 8-bit 8080 parallel bus + control - driving any as a button GPIO
+  // disturbs the panel. Backlight 47 and touch 8/9/48 are covered above.
+  if (buttonPin == 1 || buttonPin == 2 || buttonPin == 7 ||
+      buttonPin == 15 || buttonPin == 16 || buttonPin == 17 ||
+      buttonPin == 18 || buttonPin == 40 || buttonPin == 41 ||
+      buttonPin == 42) { clash("SC05_X LCD bus/control"); return; }
+  if (buttonPin == 3)  { clash("SC05_X LCD reset"); return; }
+  if (buttonPin == 38) { clash("SC05_X LCD_TE"); return; }
+  if (buttonPin == 19 || buttonPin == 20) {
+    clash("SC05_X native USB");
+    return;
+  }
+  if (buttonPin >= 26 && buttonPin <= 37) {
+    clash("SC05_X flash/PSRAM");
+    return;
+  }
+  if (buttonPin == 4 || buttonPin == 5 || buttonPin == 6) {
+    clash("SC05_X RS485");
+    return;
+  }
 #endif
 #if defined(BOARD_IS_SC01PLUS)
   // ST7796 8-bit 8080 parallel bus + control - driving any as a button GPIO
@@ -350,8 +383,12 @@ void initButton() {
     Wire.begin(FT6336_SDA, FT6336_SCL);
 #else
     // SenseCAP: FT5X06 shares the PCA9535PW IO-expander I2C bus (SDA=39,
-    // SCL=40). Touch RST is pulsed via PCA9535 pin 7 during display init.
+    // SCL=40). Other boards can define FT5X06_SDA/SCL directly.
+    #if defined(FT5X06_SDA) && defined(FT5X06_SCL)
+    Wire.begin(FT5X06_SDA, FT5X06_SCL);
+    #else
     Wire.begin(39, 40);
+    #endif
 #endif
     Wire.setClock(400000);
     ft5x06BusReady = true;

@@ -187,6 +187,11 @@
 // board's I2S BCK (audio). initBuzzer() drives the pin regardless of the enabled
 // flag, so disable (0) to leave audio/PSRAM alone. (I2C SCL is GPIO 15 here.)
 #define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_SC05X)
+// Panlee SC05_X / ZX2D80CE02S: no buzzer hardware is wired in this target, and
+// the DISPLAY_240x320 fallback would pick GPIO26 (inside the ESP32-S3
+// flash/PSRAM range). Disable the GPIO buzzer backend by default.
+#define BUZZER_DEFAULT_PIN    0
 #elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
 #elif defined(BOARD_IS_WS350)
