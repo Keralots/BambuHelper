@@ -188,6 +188,7 @@ const BOARDS = {
     links: [
       { t: 'vendor Arduino library', u: 'https://github.com/smartpanle/PanelLan_esp32_arduino' },
     ],
+    credit: { name: '@nunnypern', u: 'https://github.com/nunnypern' },
   },
   ws_lcd_350: {
     chipFamily: 'ESP32-S3',

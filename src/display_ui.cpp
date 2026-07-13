@@ -254,12 +254,16 @@ void setBacklight(uint8_t level) {
 static void applyPanelInversion() {
 #if defined(DISPLAY_CYD)
   _tft_instance.invertDisplay(dispSettings.invertColors);
-#elif defined(BOARD_IS_SC05X) || defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_TZT_2432)
+#elif defined(BOARD_IS_SC05X) || defined(BOARD_IS_ES3N28P)
   // These panels set cfg.invert=true in LovyanGFX, so "false" is the native
   // corrected state and the user checkbox is an extra flip on top of that.
   _tft_instance.invertDisplay(dispSettings.invertColors);
 #elif defined(DISPLAY_240x320) && defined(USE_ST7789_INVERT)
   // ST7789 panels with cfg.invert=false need INVON as the baseline.
+  // tzt_2432 also lands here on purpose: it sets BOTH cfg.invert=true and
+  // USE_ST7789_INVERT, so the double flip yields net INVOFF with the checkbox
+  // unchecked - the state TZT units have shipped with since #88/#89. Moving it
+  // to the branch above would silently invert fielded TZT displays.
   _tft_instance.invertDisplay(!dispSettings.invertColors);
 #elif defined(USE_ST7789_INVERT)
   _tft_instance.invertDisplay(true);
