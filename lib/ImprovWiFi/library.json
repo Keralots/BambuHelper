@@ -1,0 +1,19 @@
+{
+  "name": "ImprovWiFi",
+  "version": "0.0.2",
+  "description": "Improv WiFi serial provisioning protocol. Vendored copy of jnthas/Improv-WiFi-Library 0.0.2 (MIT). Vendored because the registry package declares 'depends=WiFi', which makes PlatformIO install arduino-libraries/WiFi (Arduino WiFi shield library) into libdeps, shadowing the ESP32 core WiFi library and breaking the build.",
+  "keywords": "improv, wifi, provisioning",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jnthas/Improv-WiFi-Library"
+  },
+  "authors": [
+    {
+      "name": "Jonathas Barbosa",
+      "url": "https://github.com/jnthas"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}
