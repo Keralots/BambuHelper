@@ -440,6 +440,7 @@ static void handleStatus() {
   doc["display_off"] = (getScreenState() == SCREEN_OFF);
   doc["name"] = printers[slot].config.name;
   doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
+  doc["cali"] = isCalibrationPrint(st);  // current/last job is a calibration print (issue #149)
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;

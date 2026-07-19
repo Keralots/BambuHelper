@@ -143,6 +143,33 @@ inline bool isCalibrationPrint(const BambuState& s) {
   return s.caliPrintType || s.caliSubtask || s.caliGcodeFile;
 }
 
+// Friendly label for calibration jobs, mapped from the Studio wizard job
+// names (BambuStudio get_calib_mode_name). Returns NULL for normal prints.
+// "retration" is Bambu's own typo in the wizard job name, not ours.
+inline const char* calibrationPrintLabel(const BambuState& s) {
+  if (s.caliSubtask) {
+    const char* n = s.subtaskName;
+    if (strncmp(n, "pa_", 3) == 0 || strncmp(n, "auto_pa_", 8) == 0)
+      return "Flow Dynamics Calibration";
+    if (strncmp(n, "flow_rate_coarse", 16) == 0) return "Flow Rate Calibration (1/2)";
+    if (strncmp(n, "flow_rate_fine", 14) == 0)   return "Flow Rate Calibration (2/2)";
+    if (strncmp(n, "temp_tower", 10) == 0)       return "Temp Tower Calibration";
+    if (strncmp(n, "vol_speed", 9) == 0)         return "Volumetric Speed Calibration";
+    if (strncmp(n, "vfa_", 4) == 0)              return "VFA Calibration";
+    if (strncmp(n, "retration_", 10) == 0)       return "Retraction Calibration";
+    return "Calibration";
+  }
+  if (s.caliPrintType || s.caliGcodeFile) return "Calibration";
+  return NULL;
+}
+
+// Job name for display: friendly calibration label when the job is a
+// calibration print, raw subtask name otherwise.
+inline const char* jobDisplayName(const BambuState& s) {
+  const char* cali = calibrationPrintLabel(s);
+  return cali ? cali : s.subtaskName;
+}
+
 inline void setPrinterGcodeStateRaw(BambuState& state, const char* rawState) {
   strlcpy(state.gcodeState, rawState ? rawState : "", sizeof(state.gcodeState));
   state.gcodeStateId = parsePrinterGcodeState(state.gcodeState);

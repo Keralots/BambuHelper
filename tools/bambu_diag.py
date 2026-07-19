@@ -474,7 +474,7 @@ def on_message(client, userdata, msg):
             status_keys = ["gcode_state", "mc_percent", "nozzle_temper", "bed_temper",
                            "chamber_temper", "nozzle_target_temper", "bed_target_temper",
                            "layer_num", "total_layer_num", "gcode_file",
-                           "subtask_name", "wifi_signal", "nozzle_diameter"]
+                           "subtask_name", "print_type", "wifi_signal", "nozzle_diameter"]
             found = {k: p[k] for k in status_keys if k in p}
             if found:
                 print(f"  Status: {json.dumps(found, indent=4)}")

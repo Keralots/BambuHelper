@@ -4041,18 +4041,21 @@ static void drawPrinting() {
 
 #if defined(DISPLAY_320x480)
   // === File name line (320x480 only — fills the gap above the bottom bar) ===
+  // Compare display names (not raw subtaskName): the calibration label can
+  // change without the subtask changing, e.g. when print_type arrives late.
+  const char* fileName = jobDisplayName(s);
   bool fileChanged = forceRedraw ||
-                     strcmp(s.subtaskName, prevState.subtaskName) != 0;
+                     strcmp(fileName, jobDisplayName(prevState)) != 0;
   if (fileChanged) {
     markFrameDirty();
     const int16_t fileW  = (int16_t)tft.width();
     const int16_t fileCx = fileW / 2;
     tft.fillRect(0, LY_FILE_Y - LY_FILE_H / 2, fileW, LY_FILE_H, CLR_BG);
-    if (s.subtaskName[0] != '\0') {
+    if (fileName[0] != '\0') {
       setFont(tft, FONT_BODY);
       tft.setTextDatum(MC_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      drawStringClipped(s.subtaskName, fileCx, LY_FILE_Y, fileW - 20);
+      drawStringClipped(fileName, fileCx, LY_FILE_Y, fileW - 20);
     }
   }
 #endif
@@ -4247,11 +4250,12 @@ static void drawFinishedRound() {
     tft.setTextColor(CLR_GREEN, CLR_BG);
     tft.drawString("Print Complete!", cx, LY_RND_FIN_TEXT_Y);
 
-    if (s.subtaskName[0] != '\0') {
+    const char* rndFinName = jobDisplayName(s);
+    if (rndFinName[0] != '\0') {
       char clipped[64];
       setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(ellipsizeToWidth(tft, s.subtaskName, 150,
+      tft.drawString(ellipsizeToWidth(tft, rndFinName, 150,
                                       clipped, sizeof(clipped)),
                      cx, LY_RND_FIN_FILE_Y);
     }
@@ -4420,12 +4424,13 @@ static void drawFinished() {
     tft.setTextDatum(MC_DATUM);
     setFont(tft, FONT_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-    if (s.subtaskName[0] != '\0') {
+    const char* finName = jobDisplayName(s);
+    if (finName[0] != '\0') {
       // Trim to canvas width (font 2 ~9px/char nominal). 25 chars suited 240
       // portrait but landscape (320) can fit more — adapt to actual width by
       // shrinking until the rendered string fits in `scrW - 16`.
       char truncName[64];
-      strncpy(truncName, s.subtaskName, sizeof(truncName) - 1);
+      strncpy(truncName, finName, sizeof(truncName) - 1);
       truncName[sizeof(truncName) - 1] = '\0';
       utf8TrimPartial(truncName);
       const int16_t maxW = scrW - 16;
