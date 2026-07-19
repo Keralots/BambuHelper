@@ -181,6 +181,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.clockTimeColor = CLR_TEXT;
   ds.clockDateColor = CLR_TEXT_DIM;
   ds.clockTimeSize = 0;        // Auto
+  ds.clockDateSize = 0;        // Auto (match time size)
   ds.hideClockDate = false;
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
@@ -507,6 +508,10 @@ void loadSettings() {
     uint8_t cts = prefs.getUChar("dsp_clkts", def.clockTimeSize);
     dispSettings.clockTimeSize = (cts <= 3) ? cts : 0;
   }
+  {
+    uint8_t cds = prefs.getUChar("dsp_clkds", def.clockDateSize);
+    dispSettings.clockDateSize = (cds <= 3) ? cds : 0;
+  }
   dispSettings.hideClockDate = prefs.getBool("dsp_clkhd", def.hideClockDate);
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
@@ -808,6 +813,7 @@ void saveSettings() {
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
   prefs.putUShort("dsp_clkd", dispSettings.clockDateColor);
   prefs.putUChar("dsp_clkts", dispSettings.clockTimeSize);
+  prefs.putUChar("dsp_clkds", dispSettings.clockDateSize);
   prefs.putBool("dsp_clkhd", dispSettings.hideClockDate);
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);

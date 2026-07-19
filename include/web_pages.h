@@ -78,7 +78,7 @@ function saveWifi(){
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
 //              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, hidelp, invcol,
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
-//              clk_size, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
+//              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
@@ -1020,6 +1020,15 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
           <option value="1" %CLKSZ1%>Normal</option>
           <option value="2" %CLKSZ2%>Medium</option>
           <option value="3" %CLKSZ3%>Large (falls back if screen too narrow)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="clk_dsize">Date size</label>
+        <select id="clk_dsize">
+          <option value="0" %CLKDS0%>Auto (match time size)</option>
+          <option value="1" %CLKDS1%>Normal</option>
+          <option value="2" %CLKDS2%>Medium</option>
+          <option value="3" %CLKDS3%>Large (falls back if too wide)</option>
         </select>
       </div>
       <label class="check-row">
@@ -2512,6 +2521,7 @@ function applyDisplay(){
   p.append('clk_time', document.getElementById('clk_time').value);
   p.append('clk_date', document.getElementById('clk_date').value);
   p.append('clk_size', document.getElementById('clk_size').value);
+  p.append('clk_dsize', document.getElementById('clk_dsize').value);
   if (document.getElementById('clk_hidedate').checked) p.append('clk_hidedate', '1');
   p.append('noz_max', document.getElementById('noz_max').value);
   p.append('bed_max', document.getElementById('bed_max').value);

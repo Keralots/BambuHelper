@@ -19,8 +19,9 @@ static constexpr int CLK_BASE_COLON = 12;
 static inline int clkScrW() { return (int)tft.width(); }
 static inline int clkScrH() { return (int)tft.height(); }
 
-static constexpr int DATE_FONT_H   = 16;   // FONT_BODY at 1x
+static constexpr int DATE_FONT_H   = 16;   // nominal FONT_BODY height (AM/PM block only)
 static constexpr int DATE_GAP      = 14;   // gap between time digits and date
+static constexpr int DATE_CLEAR_PAD = 4;   // extra rows around the date when wiping
 
 static int clkDigitX(int i, int timeX0, int digitW, int colonW) {
   if (i < 2)  return timeX0 + i * digitW;
@@ -68,6 +69,161 @@ static float getEffectiveClockScale() {
   return sizeIndexToScale(wanted);
 }
 
+// Widest strip of screen available to the date at a given vertical extent.
+// Flat panels: full width minus a small margin. Round panels: the smallest
+// circle chord across the date's clear box, kept inside the rim ticks.
+static int dateMaxWidth(int boxTop, int boxBottom) {
+#if defined(DISPLAY_ROUND_240)
+  const float r  = (float)(LY_RND_CLK_TICK_RIM - 2);
+  const float cy = clkScrH() / 2.0f;
+  auto halfChord = [&](float y) -> float {
+    float dy = fabsf(y - cy);
+    if (dy >= r) return 0.0f;
+    return sqrtf(r * r - dy * dy);
+  };
+  float h = halfChord((float)boxTop);
+  float hb = halfChord((float)boxBottom);
+  if (hb < h) h = hb;
+  return (int)(2.0f * h);
+#else
+  (void)boxTop; (void)boxBottom;
+  return clkScrW() - 4;
+#endif
+}
+
+// Date size presets. Each step picks a native font first and only then a zoom
+// factor: Normal and Medium render unscaled glyphs (fully crisp), and Large -
+// which has no native blob (inter_22+ doesn't fit the tight-flash boards) -
+// AA-zooms the 19pt font through a RAM sprite instead of nearest-neighbor
+// scaling, which reads as jagged blocks on the panel.
+struct DateSizeSpec { FontID font; float zoom; };
+static const DateSizeSpec kDateSizes[4] = {
+  {FONT_BODY,  1.0f},   // [0] placeholder (Auto resolves to 1..3)
+  {FONT_BODY,  1.0f},   // 1 Normal  (~20 px cell)
+  {FONT_LARGE, 1.0f},   // 2 Medium  (~27 px cell)
+  {FONT_LARGE, 1.5f},   // 3 Large   (~40 px cell)
+};
+
+// Resolve the user-selected date size. Auto (0) follows the effective time
+// scale; explicit sizes are honored but clamped down until the rendered date
+// string fits the screen (round: fits the circle chord at the date row).
+// Returns the size index (1..3) and, via dateFontH, the measured cell height.
+// Memoized: measuring flips the active VLW font, so recomputing on every
+// drawClock() tick would thrash the setFont() cache against the colon/footer
+// draws. Inputs only change on a settings edit, resize, or date rollover.
+static int getEffectiveDateSize(float timeScale, int digitH,
+                                const char* dateBuf, int* dateFontH) {
+  static uint8_t cachedIdx = 0;                                  // 0 = invalid
+  static int     cachedFontH = 0;
+  static uint8_t cachedRequested = 255;
+  static float   cachedTimeScale = -1.0f;
+  static int     cachedSw = -1, cachedSh = -1;
+  static char    cachedBuf[28] = "";
+
+  uint8_t requested = dispSettings.clockDateSize;
+  if (requested > 3) requested = 0;                              // tolerate junk
+
+  const int sw = clkScrW();
+  const int sh = clkScrH();
+  if (cachedIdx && requested == cachedRequested &&
+      timeScale == cachedTimeScale && sw == cachedSw && sh == cachedSh &&
+      strcmp(dateBuf, cachedBuf) == 0) {
+    *dateFontH = cachedFontH;
+    return cachedIdx;
+  }
+
+  int wanted;
+  if (requested) {
+    wanted = requested;
+  } else {
+    wanted = (timeScale >= 2.0f) ? 3 : (timeScale >= 1.5f) ? 2 : 1;
+  }
+
+  int fontH = 0;
+  while (true) {
+    const DateSizeSpec& sz = kDateSizes[wanted];
+    setFont(tft, sz.font);
+    tft.setTextSize(sz.zoom);
+    fontH = tft.fontHeight();
+    const int textW = tft.textWidth(dateBuf);
+    tft.setTextSize(1);
+    if (wanted <= 1) break;
+    // Candidate geometry: where would the date land at this size?
+    const int contentH = digitH + DATE_GAP + fontH;
+    const int dateY    = (sh - contentH) / 2 + digitH + DATE_GAP + fontH / 2;
+    const int boxTop    = dateY - fontH / 2 - DATE_CLEAR_PAD;
+    const int boxBottom = dateY + fontH / 2 + DATE_CLEAR_PAD;
+    if (textW <= dateMaxWidth(boxTop, boxBottom)) break;
+    wanted--;
+  }
+
+  cachedIdx = (uint8_t)wanted;
+  cachedFontH = fontH;
+  cachedRequested = requested;
+  cachedTimeScale = timeScale;
+  cachedSw = sw;
+  cachedSh = sh;
+  strlcpy(cachedBuf, dateBuf, sizeof(cachedBuf));
+  *dateFontH = fontH;
+  return wanted;
+}
+
+// Draw the date centered at (cx, cy). Native sizes draw directly; zoomed sizes
+// render the text 1x into a RAM sprite and push it through an AA affine zoom
+// into a second sprite, then blit the result - smooth edges instead of
+// nearest-neighbor blocks. Falls back to the plain scaled draw if the
+// transient sprites don't fit in heap (never leaves the row blank).
+static void drawDateString(const char* str, int cx, int cy,
+                           const DateSizeSpec& sz, int fontH,
+                           uint16_t fg, uint16_t bg) {
+  setFont(tft, sz.font);
+  if (sz.zoom == 1.0f) {
+    tft.setTextSize(1);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(fg, bg);
+    tft.drawString(str, cx, cy);
+    return;
+  }
+
+  tft.setTextSize(1);
+  const int baseW = tft.textWidth(str);
+  const int baseH = tft.fontHeight();
+  const int sprW = baseW + 2, sprH = baseH + 2;
+  const int zw = (int)ceilf(sprW * sz.zoom);
+  const int zh = (int)ceilf(sprH * sz.zoom);
+
+  lgfx::LGFX_Sprite spr(&tft);
+  spr.setColorDepth(16);
+  lgfx::LGFX_Sprite zspr(&tft);
+  zspr.setColorDepth(16);
+  if (!spr.createSprite(sprW, sprH) || !loadFontInto(spr, sz.font) ||
+      !zspr.createSprite(zw, zh)) {
+    zspr.deleteSprite();
+    spr.deleteSprite();
+    tft.setTextSize(sz.zoom);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(fg, bg);
+    tft.drawString(str, cx, cy);
+    tft.setTextSize(1);
+    return;
+  }
+
+  spr.fillSprite(bg);
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextColor(fg, bg);
+  spr.drawString(str, sprW / 2, sprH / 2);
+  spr.setPivot(sprW * 0.5f, sprH * 0.5f);
+  // Sprite-to-sprite: the AA push blends edge pixels by reading the
+  // destination, which must be RAM (panels here are write-only).
+  zspr.fillSprite(bg);
+  spr.pushRotateZoomWithAA(&zspr, zw * 0.5f, zh * 0.5f, 0.0f,
+                           sz.zoom, sz.zoom, bg);
+  zspr.pushSprite(&tft, cx - zw / 2, cy - zh / 2);
+  zspr.deleteSprite();
+  spr.unloadFont();
+  spr.deleteSprite();
+}
+
 // --- Per-tick state cache ---
 static int  prevMinute = -1;
 static char prevDigits[5] = {0, 0, 0, 0, 0};
@@ -79,7 +235,11 @@ static int  prevAmpmY = -1;
 static int  prevSuffixTextW = 0;
 static int  prevDateY = -1;
 static float prevScale = -1.0f;
+static uint8_t prevDateSizeIdx = 0;
+static int   prevDateFontH = 0;
 static int   prevTimeX0 = -1;
+static int   prevBlockTop = -1;
+static int   prevBlockH = 0;
 static bool  prevUse24h = true;
 static bool  prevHideDate = false;
 
@@ -104,7 +264,11 @@ void resetClock() {
   prevSuffixTextW = 0;
   prevDateY = -1;
   prevScale = -1.0f;
+  prevDateSizeIdx = 0;
+  prevDateFontH = 0;
   prevTimeX0 = -1;
+  prevBlockTop = -1;
+  prevBlockH = 0;
   prevUse24h = true;
   prevHideDate = false;
   for (int i = 0; i < MAX_ACTIVE_PRINTERS; i++) prevInfoLines[i][0] = '\0';
@@ -214,6 +378,26 @@ void drawClock() {
   const int colonW = (int)(CLK_BASE_COLON * scale);
   const int timeBlockW = 4 * digitW + colonW;
 
+  // Date string is needed up-front: the effective date scale clamps on the
+  // rendered width of the actual text.
+  static const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  static const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  char dateBuf[28];
+  const int day = now.tm_mday;
+  const int mon = now.tm_mon + 1;
+  const int year = now.tm_year + 1900;
+  switch (netSettings.dateFormat) {
+    case 1:  snprintf(dateBuf, sizeof(dateBuf), "%s %02d-%02d-%04d", days[now.tm_wday], day, mon, year); break;
+    case 2:  snprintf(dateBuf, sizeof(dateBuf), "%s %02d/%02d/%04d", days[now.tm_wday], mon, day, year); break;
+    case 3:  snprintf(dateBuf, sizeof(dateBuf), "%s %04d-%02d-%02d", days[now.tm_wday], year, mon, day); break;
+    case 4:  snprintf(dateBuf, sizeof(dateBuf), "%s %d %s %04d", days[now.tm_wday], day, months[now.tm_mon], year); break;
+    case 5:  snprintf(dateBuf, sizeof(dateBuf), "%s %s %d, %04d", days[now.tm_wday], months[now.tm_mon], day, year); break;
+    default: snprintf(dateBuf, sizeof(dateBuf), "%s %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
+  }
+
+  int dateFontH = 0;
+  const int dateSizeIdx = getEffectiveDateSize(scale, digitH, dateBuf, &dateFontH);
+
   // AM/PM suffix width (only meaningful in 12h mode).
   int suffixTextW = 0;
   int suffixW = 0;
@@ -234,38 +418,48 @@ void drawClock() {
   // and below it in landscape (the 240x320 layout's value was chosen for
   // portrait). Compute timeYTop from the actual screen height instead.
   const int contentH = digitH +
-                       (dispSettings.hideClockDate ? 0 : (DATE_GAP + DATE_FONT_H));
+                       (dispSettings.hideClockDate ? 0 : (DATE_GAP + dateFontH));
   const int timeYTop = (sh - contentH) / 2;
   const int ampmX   = timeX0 + timeBlockW + 6;
   const int ampmFontH = DATE_FONT_H;
   const int ampmY   = timeYTop + digitH - ampmFontH;             // bottom-align with digits
 
-  // Force a full redraw whenever the horizontal layout shifts (scale change,
-  // 12h <-> 24h centering shift, or hide-date toggle).
-  if (scale != prevScale || timeX0 != prevTimeX0 ||
+  // Force a full redraw whenever the layout shifts (time or date scale change,
+  // 12h <-> 24h centering shift, or hide-date toggle). Wipe the union of the
+  // previous and new clock block rects: a fixed layout band cannot cover every
+  // size combination (e.g. Large time + Large date on 320x240 landscape starts
+  // above the 240x320 profile's band).
+  if (scale != prevScale || dateSizeIdx != prevDateSizeIdx ||
+      timeX0 != prevTimeX0 ||
       netSettings.use24h != prevUse24h ||
       dispSettings.hideClockDate != prevHideDate) {
     prevMinute = -1;
     memset(prevDigits, 0, sizeof(prevDigits));
     prevColon = false;
     prevDateBuf[0] = '\0';
+    prevDateY = -1;
     prevAmPm[0] = '\0';
-#if defined(LAYOUT_HAS_LANDSCAPE)
-    const bool clkLand = (sw > sh);
-    const int clkClearY = clkLand ? LY_LAND_CLK_CLEAR_Y : LY_CLK_CLEAR_Y;
-    const int clkClearH = clkLand ? LY_LAND_CLK_CLEAR_H : LY_CLK_CLEAR_H;
-#else
-    const int clkClearY = LY_CLK_CLEAR_Y;
-    const int clkClearH = LY_CLK_CLEAR_H;
-#endif
-    tft.fillRect(0, clkClearY, sw, clkClearH, bg);
+    int clrTop = timeYTop - 2;
+    int clrBot = timeYTop + contentH + DATE_CLEAR_PAD;
+    if (prevBlockTop >= 0) {
+      if (prevBlockTop - 2 < clrTop) clrTop = prevBlockTop - 2;
+      if (prevBlockTop + prevBlockH + DATE_CLEAR_PAD > clrBot)
+        clrBot = prevBlockTop + prevBlockH + DATE_CLEAR_PAD;
+    }
+    if (clrTop < 0) clrTop = 0;
+    if (clrBot > sh) clrBot = sh;
+    tft.fillRect(0, clrTop, sw, clrBot - clrTop, bg);
     markFrameDirty();
     prevScale = scale;
+    prevDateSizeIdx = (uint8_t)dateSizeIdx;
+    prevDateFontH = dateFontH;
     prevTimeX0 = timeX0;
+    prevBlockTop = timeYTop;
+    prevBlockH = contentH;
     prevUse24h = netSettings.use24h;
     prevHideDate = dispSettings.hideClockDate;
 #if defined(DISPLAY_ROUND_240)
-    roundTicksDrawn = false;   // the wipe band crosses the 3/9 o'clock ticks
+    roundTicksDrawn = false;   // the wipe band can cross the rim ticks
 #endif
   }
 
@@ -324,7 +518,7 @@ void drawClock() {
   // as the printer's IP arrives via pushall, not just on the next minute roll.
   {
     const int clockBottom = timeYTop + digitH +
-                            (dispSettings.hideClockDate ? 0 : (DATE_GAP + DATE_FONT_H));
+                            (dispSettings.hideClockDate ? 0 : (DATE_GAP + dateFontH));
     drawClockInfo(sw, sh, clockBottom, bg, dateClr);
   }
 
@@ -401,42 +595,27 @@ void drawClock() {
   // --- Date (or hide-date wipe) ---
   if (dispSettings.hideClockDate) {
     if (prevDateBuf[0] && prevDateY >= 0) {
-      const int dateClearH = 22;
+      const int dateClearH = (prevDateFontH > 0 ? prevDateFontH : 20) + DATE_CLEAR_PAD + 2;
       tft.fillRect(0, prevDateY - dateClearH / 2, sw, dateClearH, bg);
       prevDateBuf[0] = '\0';
     }
     return;
   }
 
-  const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-  char dateBuf[28];
-  const int day = now.tm_mday;
-  const int mon = now.tm_mon + 1;
-  const int year = now.tm_year + 1900;
-  switch (netSettings.dateFormat) {
-    case 1:  snprintf(dateBuf, sizeof(dateBuf), "%s %02d-%02d-%04d", days[now.tm_wday], day, mon, year); break;
-    case 2:  snprintf(dateBuf, sizeof(dateBuf), "%s %02d/%02d/%04d", days[now.tm_wday], mon, day, year); break;
-    case 3:  snprintf(dateBuf, sizeof(dateBuf), "%s %04d-%02d-%02d", days[now.tm_wday], year, mon, day); break;
-    case 4:  snprintf(dateBuf, sizeof(dateBuf), "%s %d %s %04d", days[now.tm_wday], day, months[now.tm_mon], year); break;
-    case 5:  snprintf(dateBuf, sizeof(dateBuf), "%s %s %d, %04d", days[now.tm_wday], months[now.tm_mon], day, year); break;
-    default: snprintf(dateBuf, sizeof(dateBuf), "%s %02d.%02d.%04d", days[now.tm_wday], day, mon, year); break;
-  }
-
   // Date Y: derived from the centered time block. MC_DATUM expects the
   // vertical center of the text — add half the font height to the gap-relative
   // top so the baseline sits cleanly below the digits.
-  const int dateY = timeYTop + digitH + DATE_GAP + DATE_FONT_H / 2;
+  const int dateY = timeYTop + digitH + DATE_GAP + dateFontH / 2;
 
   if (strcmp(dateBuf, prevDateBuf) != 0 || dateY != prevDateY) {
-    setFont(tft, FONT_BODY);
-    tft.setTextSize(1);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(dateClr, bg);
-    const int dateClearH = 22;
+    const DateSizeSpec& dsz = kDateSizes[dateSizeIdx];
+    setFont(tft, dsz.font);
+    tft.setTextSize(dsz.zoom);
     const int dateW = tft.textWidth(prevDateBuf[0] ? prevDateBuf : dateBuf);
     const int newW = tft.textWidth(dateBuf);
+    tft.setTextSize(1);
     const int clearW = (dateW > newW) ? dateW : newW;
+    const int dateClearH = dateFontH + DATE_CLEAR_PAD;
     // If Y moved, also wipe the previous date strip first.
     if (prevDateY >= 0 && prevDateY != dateY && prevDateBuf[0]) {
       tft.fillRect(0, prevDateY - dateClearH / 2, sw, dateClearH, bg);
@@ -444,7 +623,7 @@ void drawClock() {
     tft.fillRect(sw / 2 - clearW / 2 - 2,
                  dateY - dateClearH / 2,
                  clearW + 4, dateClearH, bg);
-    tft.drawString(dateBuf, sw / 2, dateY);
+    drawDateString(dateBuf, sw / 2, dateY, dsz, dateFontH, dateClr, bg);
     strlcpy(prevDateBuf, dateBuf, sizeof(prevDateBuf));
     prevDateY = dateY;
   }

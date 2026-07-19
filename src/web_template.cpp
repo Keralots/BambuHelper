@@ -122,6 +122,10 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = dispSettings.clockTimeSize == (uint8_t)(name[5] - '0') ? "selected" : "";
     return true;
   }
+  if (strncmp(name, "CLKDS", 5) == 0 && name[5] >= '0' && name[5] <= '3' && name[6] == '\0') {
+    out = dispSettings.clockDateSize == (uint8_t)(name[5] - '0') ? "selected" : "";
+    return true;
+  }
   if (strcmp(name, "CLK_HIDEDATE") == 0) { out = dispSettings.hideClockDate ? "checked" : ""; return true; }
 
   // --- Display rotation ---

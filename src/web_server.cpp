@@ -91,6 +91,10 @@ static void readDisplayFromForm() {
     int s = server.arg("clk_size").toInt();
     if (s >= 0 && s <= 3) dispSettings.clockTimeSize = (uint8_t)s;
   }
+  if (server.hasArg("clk_dsize")) {
+    int s = server.arg("clk_dsize").toInt();
+    if (s >= 0 && s <= 3) dispSettings.clockDateSize = (uint8_t)s;
+  }
   dispSettings.hideClockDate = server.hasArg("clk_hidedate");
 
   readGaugeColorsFromForm("prg", dispSettings.progress);
@@ -1130,6 +1134,7 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.clockTimeColor, buf); disp["clockTimeColor"] = String(buf);
   rgb565ToHtml(dispSettings.clockDateColor, buf); disp["clockDateColor"] = String(buf);
   disp["clockTimeSize"] = dispSettings.clockTimeSize;
+  disp["clockDateSize"] = dispSettings.clockDateSize;
   disp["hideClockDate"] = dispSettings.hideClockDate;
   disp["showClockInfo"] = dispSettings.showClockInfo;
   disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
@@ -1448,6 +1453,10 @@ static void handleSettingsImportFinish() {
     if (disp["clockTimeSize"].is<int>()) {
       int s = disp["clockTimeSize"].as<int>();
       dispSettings.clockTimeSize = (s >= 0 && s <= 3) ? (uint8_t)s : 0;
+    }
+    if (disp["clockDateSize"].is<int>()) {
+      int s = disp["clockDateSize"].as<int>();
+      dispSettings.clockDateSize = (s >= 0 && s <= 3) ? (uint8_t)s : 0;
     }
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();

@@ -92,6 +92,7 @@ struct DisplaySettings {
   uint16_t clockTimeColor; // clock digits color (RGB565)
   uint16_t clockDateColor; // clock date/AM-PM color (RGB565)
   uint8_t  clockTimeSize;  // 0=Auto, 1=Normal(1.0x), 2=Medium(1.5x), 3=Large(2.0x). Auto = Large on >=480, Medium on >=320, else Normal.
+  uint8_t  clockDateSize;  // 0=Auto (match effective time size), 1=Normal(1.0x), 2=Medium(1.5x), 3=Large(2.0x). Clamped down if the date wouldn't fit.
   bool     hideClockDate;  // minimalist mode: time only, no date line
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
