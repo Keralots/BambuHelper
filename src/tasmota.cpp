@@ -361,6 +361,15 @@ static void evaluateAutoOff(uint8_t i) {
       Serial.printf("[Tasmota %u] Auto-off cancelled: door opened on slot %u\n", i, slot);
       g_rt[i].autoOffFired = true;
     }
+    // Calibration cancel: Bambu Studio still needs the printer after a
+    // calibration print to read back / save results (issue #149), so never
+    // power it off automatically.
+    if (s.autoOffEnabled
+        && !g_rt[i].autoOffFired
+        && isCalibrationPrint(ps)) {
+      Serial.printf("[Tasmota %u] Auto-off skipped: calibration print on slot %u\n", i, slot);
+      g_rt[i].autoOffFired = true;
+    }
     uint32_t elapsedMin = (now - g_rt[i].finishEnteredMs) / 60000UL;
     if (s.autoOffEnabled
         && !g_rt[i].autoOffFired

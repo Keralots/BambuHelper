@@ -83,6 +83,9 @@ struct BambuState {
   float bedTarget;
   float chamberTemp;
   char subtaskName[48];
+  bool caliPrintType;         // print_type == "system" (device-initiated calibration job)
+  bool caliSubtask;           // subtask_name ends with "_calib_mode" (Studio calibration wizard job)
+  bool caliGcodeFile;         // gcode_file is a built-in calibration gcode (auto_cali_for_user / extrusion_cali)
   uint16_t layerNum;
   uint16_t totalLayers;
   uint8_t coolingFanPct;      // part cooling fan 0-100%
@@ -130,6 +133,14 @@ inline bool isPrintingGcodeState(PrinterGcodeState state) {
   return state == GCODE_RUNNING ||
          state == GCODE_PAUSE ||
          state == GCODE_PREPARE;
+}
+
+// True when the current/last job is a calibration print - either a Bambu
+// Studio calibration wizard job or a device-initiated system calibration.
+// Studio still needs the printer after these finish (to read back / save
+// results), so plug auto-off must not power it down (issue #149).
+inline bool isCalibrationPrint(const BambuState& s) {
+  return s.caliPrintType || s.caliSubtask || s.caliGcodeFile;
 }
 
 inline void setPrinterGcodeStateRaw(BambuState& state, const char* rawState) {

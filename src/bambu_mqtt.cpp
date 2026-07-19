@@ -372,6 +372,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   pf["ctc"]["info"]["temp"] = true;           // legacy/alternate chamber temp path
   pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
+  pf["print_type"] = true;  // "system" = device-initiated calibration (issue #149)
+  pf["gcode_file"] = true;  // built-in calibration gcode names (issue #149)
   pf["layer_num"] = true;
   pf["total_layer_num"] = true;
   pf["cooling_fan_speed"] = true;
@@ -875,6 +877,26 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     const char* name = print["subtask_name"];
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
     utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the 48B buffer
+    // Studio calibration wizard jobs are named "*_calib_mode"
+    // (BambuStudio get_calib_mode_name: pa_line, flow_rate_coarse, ...).
+    size_t snLen = strlen(s.subtaskName);
+    s.caliSubtask = snLen >= 11 &&
+                    strcmp(s.subtaskName + snLen - 11, "_calib_mode") == 0;
+  }
+
+  // Calibration-print markers (issue #149). Each flag updates only when its
+  // source field appears in a push and the printer overwrites all of them at
+  // the next print start, so they self-clear on the next normal job. They are
+  // deliberately NOT cleared on disconnect: a stale true only skips one plug
+  // auto-off, while clearing would open a fire window between reconnect and
+  // the full pushall restoring them.
+  if (print["print_type"].is<const char*>()) {
+    s.caliPrintType = strcmp(print["print_type"].as<const char*>(), "system") == 0;
+  }
+  if (print["gcode_file"].is<const char*>()) {
+    const char* gf = print["gcode_file"].as<const char*>();
+    s.caliGcodeFile = strstr(gf, "auto_cali_for_user") != NULL ||
+                      strstr(gf, "extrusion_cali") != NULL;
   }
 
   if (print["layer_num"].is<int>()) {
