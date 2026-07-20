@@ -840,9 +840,15 @@ static void handleGcodeStateTransitions() {
           ps.finishBuzzerPlayed = true;
         }
         // Suppress the display-snap side effects while the power-confirm modal is
-        // up (they would steal the frozen target / drop the modal). The one-shot
-        // alert + light + Tasmota bookkeeping below still run unconditionally.
-        if (getScreenState() != SCREEN_POWER_CONFIRM) {
+        // up (they would steal the frozen target / drop the modal), and while the
+        // display is in a sleep-sticky screen (clock / off). In sleep-sticky the
+        // finish screen is intentionally kept asleep (handleDisplayedPrinterFinishState),
+        // so waking the backlight here would light a blank panel that nothing turns
+        // back off - the "turn display off after finish" case, most visible when a
+        // second printer finishes after the first already put the panel to sleep.
+        // The one-shot alert + light + Tasmota bookkeeping below still run.
+        if (getScreenState() != SCREEN_POWER_CONFIRM &&
+            !isSleepStickyScreen(getScreenState())) {
           if (rotState.displayIndex != i) {
             rotState.displayIndex = i;
             triggerDisplayTransition();
