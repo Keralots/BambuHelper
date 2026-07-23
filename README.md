@@ -59,6 +59,46 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | ![Panlee WT32-SC01 Plus](img/SC01Plus3.5.png) | **Panlee WT32-SC01 Plus 3.5"** | `320x480` **ST7796** IPS panel driven over an **8-bit 8080 parallel** bus (the project's first `Bus_Parallel8` board, not SPI or QSPI), ESP32-S3-N16R8 (`16MB` flash / `8MB` PSRAM), and **FT6336** capacitive touch on I2C. Use the `wt32_sc01_plus` firmware build. Reuses the same `320x480` layout as the JC3248W535 and supports **up to 2 printers** (up to 4 with the experimental opt-in). The board has an I2S audio amp, but the buzzer is disabled by default because its default pin is the touch I2C clock line. Sold as the *WT32-SC01 Plus*. | [@cliomjh](https://github.com/cliomjh) |
 | ![CYD TZT variant](img/CYD_tzt.png) | **CYD / TZT L1435-2.4** (ST7789) | Looks almost identical to the standard CYD, but uses a `240x320` **ST7789V** panel (instead of ILI9341) and the backlight is on GPIO27. Use the `tzt_2432` firmware build - the regular `cyd` build will give you a black screen on this hardware. Due to RAM limits, this board supports **1 printer only**. Often sold on Aliexpress as *"TZT ESP32 LVGL 2.4 inch LCD TFT 240*320 With Touch"*. | _community_ |
 
+### Custom-Wired Displays (generic DIY env)
+
+Wired your own SPI display to a bare ESP32 and it doesn't match any board above? Instead of editing C++, there is a **generic DIY build** whose display driver and pins come from build flags in a `boards/*.ini` file. Set your wiring once and build - no source changes.
+
+**Supported drivers:** `GC9A01` (round 240x240), `ST7789` (240x240 or 240x320), `ILI9341` (240x320), `ST7796` (320x480).
+
+**Two starter files** live in [`boards/`](boards/):
+
+- **`boards/diy_round240.ini`** - a ready-to-use example for a GC9A01 round module on an ESP32-C3 Super Mini. Edit the five `DIY_PIN_*` lines to match your wiring and build with `pio run -e diy_round240`.
+- **`boards/diy_spi_template.ini`** - a fully commented template (a working ST7789 240x320 example). Copy it to a new `boards/<yourname>.ini`, rename the `[env:...]`, and edit the flags.
+
+**Required flags** in the env's `build_flags`:
+
+```ini
+-D BOARD_IS_DIY=1
+-D DIY_PANEL_GC9A01=1        ; pick ONE panel driver
+-D DISPLAY_ROUND_240=1       ; the layout that MATCHES the driver (see table)
+-D DIY_PIN_SCLK=4            ; SPI clock
+-D DIY_PIN_MOSI=3            ; SPI data (SDA)
+-D DIY_PIN_DC=10             ; data/command
+-D DIY_PIN_CS=1              ; chip select
+-D BACKLIGHT_PIN=-1          ; a GPIO, or -1 if the backlight is hardwired on
+```
+
+**Driver &harr; layout pairing** (the build refuses to compile if they disagree, so you can't silently ship the wrong layout - which is what makes text fall off a round screen):
+
+| Panel driver | Layout flag to set |
+|---|---|
+| `DIY_PANEL_GC9A01` | `DISPLAY_ROUND_240` |
+| `DIY_PANEL_ST7789` (240x240) | *(none)* |
+| `DIY_PANEL_ST7789` (240x320) | `DISPLAY_240x320` **+** `DIY_PANEL_H=320` |
+| `DIY_PANEL_ILI9341` | `DISPLAY_240x320` |
+| `DIY_PANEL_ST7796` | `DISPLAY_320x480` |
+
+**Optional flags:** `DIY_PIN_MISO` / `DIY_PIN_RST` (default `-1`), `DIY_FREQ_WRITE` (default 40 MHz), `DIY_INVERT` (flip if colours are wrong), `DIY_RGB_ORDER=1` (if red/blue are swapped), `DIY_OFFSET_ROTATION` (0-7, if the image is mirrored/rotated).
+
+**Classic ESP32 (DevKitC / WROOM)** rather than S3/C3: add `board = esp32dev`, `board_build.partitions = min_spiffs.csv`, `-D BOARD_LOW_RAM=1` and `-D DIY_SPI_HOST=VSPI_HOST` (drop the `ARDUINO_USB_CDC_ON_BOOT` flag - classic ESP32 has no native USB). See the commented block in `diy_spi_template.ini`.
+
+The button, buzzer, and status-LED pins default to *disabled* on a DIY build (their normal defaults often collide with a custom display's SPI pins), and the firmware refuses to assign any of them to a pin that's already driving the display. Configure them in the web UI once the device boots. These envs are user-compiled and are **not** part of the web flasher / release set.
+
 ## Features
 
 - **One-click web flasher** - install firmware directly from [keralots.github.io/BambuHelper](https://keralots.github.io/BambuHelper/) in desktop Chrome/Edge - no PlatformIO, no esptool, no flash offsets
