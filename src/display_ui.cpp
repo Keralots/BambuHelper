@@ -4802,7 +4802,8 @@ void updateDisplay() {
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
     markFrameDirty();
   }
-  if (currentScreen == SCREEN_IDLE && isPrinterConfigured(rotState.displayIndex)) {
+  if ((currentScreen == SCREEN_IDLE || currentScreen == SCREEN_DRY_PEEK) &&
+      isPrinterConfigured(rotState.displayIndex)) {
     BambuState& sh = displayedPrinter().state;
     if (sh.ams.anyDrying) {
       uint8_t dp = 0;
@@ -4924,6 +4925,14 @@ void updateDisplay() {
 
     case SCREEN_IDLE:
       drawIdle();
+      break;
+
+    case SCREEN_DRY_PEEK:
+      // Same renderer as the idle drying screen (#150). updateDisplay() already
+      // cleared the panel and set forceRedraw on the state change, so the
+      // renderer's prev* caches repaint from scratch on entry and the print
+      // screen repaints in full on the way out.
+      drawIdleDrying(displayedPrinter());
       break;
 
     case SCREEN_PRINTING:

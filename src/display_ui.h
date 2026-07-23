@@ -21,7 +21,8 @@ enum ScreenState {
   SCREEN_OTA_UPDATE,
   SCREEN_SPLIT,         // two printers side-by-side (top/bottom bands)
   SCREEN_CAMERA,        // fullscreen P1/A1 chamber image (#120); tap to exit
-  SCREEN_POWER_CONFIRM  // fullscreen plug on/off confirmation (#136); hold to confirm
+  SCREEN_POWER_CONFIRM, // fullscreen plug on/off confirmation (#136); hold to confirm
+  SCREEN_DRY_PEEK       // AMS drying view tapped up during a print (#150); auto-closes
 };
 
 // Read-only snapshot of the plug power-confirm modal, filled by main.cpp so the
