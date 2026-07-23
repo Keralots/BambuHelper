@@ -162,7 +162,10 @@ static void readDisplayFromForm() {
   dispSettings.animatedBar = server.hasArg("abar");
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
-  dispSettings.showTimeRemaining = server.hasArg("shtire");
+  if (server.hasArg("timem")) {
+    int tm = server.arg("timem").toInt();
+    if (tm >= 0 && tm <= 2) dispSettings.timeDisplayMode = (uint8_t)tm;
+  }
   dispSettings.fanMatchPrinter = server.hasArg("fanmp");
 
   // Clock settings (timezone, 24h)
@@ -570,7 +573,7 @@ static void handleToggleSetting() {
   else if (key == "abar")    dispSettings.animatedBar = on;
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
-  else if (key == "shtire")  dispSettings.showTimeRemaining = on;
+  else if (key == "timem")   dispSettings.timeDisplayMode = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
   else if (key == "hidelp")  dispSettings.hideStatusReadout = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
@@ -600,7 +603,7 @@ static void handleToggleSetting() {
   }
 
   saveSettings();
-  if (key == "invcol" || key == "slbl" || key == "abar" || key == "shtire") applyDisplaySettings();
+  if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
@@ -1143,7 +1146,10 @@ static void handleSettingsExport() {
   disp["animatedBar"] = dispSettings.animatedBar;
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
-  disp["showTimeRemaining"] = dispSettings.showTimeRemaining;
+  disp["timeDisplayMode"] = dispSettings.timeDisplayMode;
+  // Legacy key, still emitted so an export imported by pre-3.7.7 firmware keeps
+  // the closest behaviour ("Both" degrades to the ETA form).
+  disp["showTimeRemaining"] = (dispSettings.timeDisplayMode == 1);
   disp["fanMatchPrinter"] = dispSettings.fanMatchPrinter;
   disp["hideStatusReadout"] = dispSettings.hideStatusReadout;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
@@ -1466,7 +1472,13 @@ static void handleSettingsImportFinish() {
     if (disp["animatedBar"].is<bool>())       dispSettings.animatedBar = disp["animatedBar"].as<bool>();
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
-    if (disp["showTimeRemaining"].is<bool>())   dispSettings.showTimeRemaining = disp["showTimeRemaining"].as<bool>();
+    // New tri-state key wins; fall back to the legacy boolean for old exports.
+    if (disp["timeDisplayMode"].is<int>()) {
+      int tm = disp["timeDisplayMode"].as<int>();
+      dispSettings.timeDisplayMode = (tm >= 0 && tm <= 2) ? (uint8_t)tm : 0;
+    } else if (disp["showTimeRemaining"].is<bool>()) {
+      dispSettings.timeDisplayMode = disp["showTimeRemaining"].as<bool>() ? 1 : 0;
+    }
     if (disp["fanMatchPrinter"].is<bool>())     dispSettings.fanMatchPrinter = disp["fanMatchPrinter"].as<bool>();
     if (disp["hideStatusReadout"].is<bool>())   dispSettings.hideStatusReadout = disp["hideStatusReadout"].as<bool>();
     if (disp["showBatteryIndicator"].is<bool>()) dispSettings.showBatteryIndicator = disp["showBatteryIndicator"].as<bool>();

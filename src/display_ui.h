@@ -126,4 +126,19 @@ void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex);   // "<base
 void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
                       uint8_t dryDisplayIdx, uint8_t dryCount);        // "<base>[ HT] N  (x/y)"
 
+// Build the finish-time line shared by the printing, split, round and drying
+// screens, and return the color it should be drawn in.
+//   mode           - a dispSettings.timeDisplayMode value: 0 = wall-clock ETA,
+//                    1 = remaining duration, 2 = both on one line. Callers that
+//                    must pin one form (the drying screen, whose layout already
+//                    carries the duration) pass it literally instead of reading
+//                    the setting.
+//   labelRemaining - false emits a bare "2h 05m" for the tight split bands.
+//   maxW           - when > 0, step down to the most compact form that fits this
+//                    pixel budget at the currently loaded font. Only the curved
+//                    round skins need it; everyone else passes 0.
+// Falls back to the duration whenever NTP has not synced, whatever mode asks for.
+uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
+                       int16_t maxW, char* buf, size_t n);
+
 #endif // DISPLAY_UI_H

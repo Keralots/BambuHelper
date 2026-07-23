@@ -76,7 +76,7 @@ function saveWifi(){
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
 //              cl_pname, dualp, gs0..gs5, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
-//              fmins, dack, kps, pong, abar, slbl, shtire, fanmp, hidelp, invcol,
+//              fmins, dack, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -887,10 +887,15 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
       <label for="abar">Animated progress bar (shimmer effect)</label>
     </label>
-    <label class="check-row">
-      <input type="checkbox" id="shtire" value="1" %SHTIRE% onchange="toggleSetting('shtire',this.checked)">
-      <label for="shtire">Show remaining time instead of ETA</label>
-    </label>
+    <div class="field">
+      <label for="timem">Time display</label>
+      <select id="timem" onchange="toggleSetting('timem',this.value)">
+        <option value="0" %TIMEM0%>Finish time / ETA (default)</option>
+        <option value="1" %TIMEM1%>Remaining time</option>
+        <option value="2" %TIMEM2%>Both (finish time + remaining)</option>
+      </select>
+      <span class="text-dim small">applies immediately</span>
+    </div>
     <label class="check-row">
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
@@ -2510,7 +2515,7 @@ function applyDisplay(){
   if (document.getElementById('abar').checked) p.append('abar', '1');
   if (document.getElementById('pong').checked) p.append('pong', '1');
   if (document.getElementById('slbl').checked) p.append('slbl', '1');
-  if (document.getElementById('shtire').checked) p.append('shtire', '1');
+  p.append('timem', document.getElementById('timem').value);
   if (document.getElementById('fanmp').checked) p.append('fanmp', '1');
   p.append('tz', document.getElementById('tz').value);
   if (document.getElementById('use24h').checked) p.append('use24h', '1');

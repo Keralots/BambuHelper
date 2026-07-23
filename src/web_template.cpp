@@ -230,7 +230,10 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "ABAR") == 0)   { out = dispSettings.animatedBar ? "checked" : ""; return true; }
   if (strcmp(name, "PONG") == 0)   { out = dispSettings.pongClock ? "checked" : ""; return true; }
   if (strcmp(name, "SLBL") == 0)   { out = dispSettings.smallLabels ? "checked" : ""; return true; }
-  if (strcmp(name, "SHTIRE") == 0) { out = dispSettings.showTimeRemaining ? "checked" : ""; return true; }
+  if (strncmp(name, "TIMEM", 5) == 0 && name[5] >= '0' && name[5] <= '2' && name[6] == '\0') {
+    out = dispSettings.timeDisplayMode == (uint8_t)(name[5] - '0') ? "selected" : "";
+    return true;
+  }
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "HIDELP") == 0) { out = dispSettings.hideStatusReadout ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
