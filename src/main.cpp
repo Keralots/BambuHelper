@@ -689,7 +689,14 @@ static void updateDisplayedPrinterScreenState() {
     if (!expired &&
         isPrinterActivityStateFresh(rotState.displayIndex) &&
         displayedPrinter().state.printing &&
-        displayedPrinter().state.ams.anyDrying) return;
+        displayedPrinter().state.ams.anyDrying) {
+      // Override the LED_ACT_IDLE default set at the top of this function: a
+      // print is still running behind the peek, so the status LED must not drop
+      // out of its printing animation for the ten seconds the screen is up.
+      ledSetActivity(displayedPrinter().state.gcodeStateId == GCODE_PAUSE
+                     ? LED_ACT_PAUSED : LED_ACT_PRINTING);
+      return;
+    }
     closeDryPeek();
     return;
   }
