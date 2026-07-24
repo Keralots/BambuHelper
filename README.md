@@ -68,6 +68,7 @@ Wired your own SPI display to a bare ESP32 and it doesn't match any board above?
 **Two starter files** live in [`boards/`](boards/):
 
 - **`boards/diy_round240.ini`** - a ready-to-use example for a GC9A01 round module on an ESP32-C3 Super Mini. Edit the five `DIY_PIN_*` lines to match your wiring and build with `pio run -e diy_round240`.
+- **`boards/diy_round240_esp32.ini`** - the same round module on a **classic ESP32** (DevKitC / WROOM). Build with `pio run -e diy_round240_esp32`.
 - **`boards/diy_spi_template.ini`** - a fully commented template (a working ST7789 240x320 example). Copy it to a new `boards/<yourname>.ini`, rename the `[env:...]`, and edit the flags.
 
 **Required flags** in the env's `build_flags`:

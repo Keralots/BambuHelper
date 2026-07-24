@@ -23,6 +23,16 @@ Two starter files ship in this folder:
   pio run -e diy_round240
   ```
 
+- **`boards/diy_round240_esp32.ini`** - the same round module on a **classic
+  ESP32** (DevKitC / WROOM) instead of a C3, pre-filled with the wiring from
+  issue #151. A classic ESP32 needs four things changed together (board,
+  partition table, SPI host, printer count), so it ships as its own file rather
+  than a note to apply by hand:
+
+  ```
+  pio run -e diy_round240_esp32
+  ```
+
 - **`boards/diy_spi_template.ini`** - a fully commented template (a working
   ST7789 240x320 example). Copy it to a new `boards/<yourname>.ini`, rename the
   `[env:...]` header, edit the flags, and build `pio run -e <yourname>`.

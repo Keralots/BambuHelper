@@ -86,9 +86,10 @@ void sanitizeBuzzerPin() {
   }
 #endif
 #if defined(BOARD_IS_DIY)
-  // A pin carried over from another board's config could drive a DIY display line.
+  // A pin carried over from another board's config could drive a DIY display
+  // line, or one of the chip's flash / USB pins - see isDiyReservedPin().
   if (isDiyReservedPin(buzzerSettings.pin)) {
-    Serial.printf("Buzzer: pin %d is a DIY display pin, disabling\n", buzzerSettings.pin);
+    Serial.printf("Buzzer: pin %d is reserved on this DIY build, disabling\n", buzzerSettings.pin);
     buzzerSettings.pin = 0;
     return;
   }

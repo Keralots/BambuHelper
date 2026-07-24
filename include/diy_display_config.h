@@ -17,6 +17,15 @@
 
 #if defined(BOARD_IS_DIY)
 
+// sdkconfig.h is what defines CONFIG_IDF_TARGET_*, and the reserved-pin helper
+// at the bottom keys its per-chip rules off those. config.h pulls this header in
+// before any Arduino/ESP header, so without this include the macros are simply
+// absent and every one of those rules compiles away to nothing - a silent no-op
+// that still builds clean. Verified: adding an #error on "no target visible"
+// here fails the build unless this include is present. It is a pure #define
+// header, so it does not break the "preprocessor only" rule stated above.
+#include <sdkconfig.h>
+
 // --- Exactly one panel driver -----------------------------------------------
 // Normalise to 0/1 first: `defined()` produced BY macro expansion is undefined
 // behaviour (GCC -Wexpansion-to-defined), so never `#define X (defined(A)+...)`.
@@ -219,11 +228,23 @@
   #error "BOARD_IS_DIY: DIY_OFFSET_Y + DIY_PANEL_H exceeds DIY_MEM_H - raise DIY_MEM_H to the controller's real GRAM height or lower the offset"
 #endif
 
-// --- Reserved display pins ---------------------------------------------------
+// --- Reserved pins -----------------------------------------------------------
 // The button / buzzer / LED sanitizers call this to refuse a pin (fresh default
-// OR persisted-from-another-board OR hand-typed) that would drive a display
-// line. Every candidate is guarded >= 0 so an unused -1 pin never matches.
-// BACKLIGHT_PIN is already resolved by config.h before this header is included.
+// OR persisted-from-another-board OR hand-typed) that must not be driven.
+//
+// Two groups. First this build's display lines - every candidate is guarded
+// >= 0 so an unused -1 pin never matches, and BACKLIGHT_PIN is already resolved
+// by config.h before this header is included.
+//
+// Then the pins the CHIP cannot lend out whatever the wiring: the SPI flash /
+// PSRAM bus, the native USB data lines, and anything past the last real GPIO.
+// The maintained boards get these from their BOARD_IS_* branch in led.cpp, but
+// a DIY env is allowed to name no chip target at all (diy_spi_template and the
+// classic-ESP32 starter do not), and those envs would otherwise reach the end
+// of that chain with nothing but the display pins denied - on a DevKitC header
+// GPIO 6-11 are silkscreened right next to the usable ones. Keyed off the IDF
+// target macros so it works with or without a BOARD_IS_* flag; a DIY env that
+// does set one (diy_round240 sets BOARD_IS_C3) just gets the same answer twice.
 static inline bool isDiyReservedPin(int pin) {
   if (pin < 0) return false;
   if (pin == DIY_PIN_SCLK) return true;
@@ -233,6 +254,19 @@ static inline bool isDiyReservedPin(int pin) {
   if (DIY_PIN_MISO  >= 0 && pin == DIY_PIN_MISO)  return true;
   if (DIY_PIN_RST   >= 0 && pin == DIY_PIN_RST)   return true;
   if (BACKLIGHT_PIN >= 0 && pin == BACKLIGHT_PIN) return true;
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+  if (pin >= 6 && pin <= 11) return true;    // SPI flash
+  if (pin > 39) return true;                 // no such GPIO
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+  if (pin >= 26 && pin <= 37) return true;   // SPI flash + PSRAM
+  if (pin == 19 || pin == 20) return true;   // native USB D-/D+
+  if (pin > 48) return true;
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  if (pin >= 11 && pin <= 17) return true;   // SPI flash
+  if (pin == 18 || pin == 19) return true;   // native USB D-/D+
+  if (pin > 21) return true;
+#endif
   return false;
 }
 
