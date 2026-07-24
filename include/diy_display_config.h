@@ -173,6 +173,19 @@
   #endif
 #endif
 
+// --- Visible geometry must match the chosen layout ---------------------------
+// The driver<->layout checks above fix the UI to SCREEN_W x SCREEN_H. A manual
+// DIY_PANEL_W/H override that disagrees (e.g. ILI9341 + DISPLAY_240x320 but
+// DIY_PANEL_H=240) compiles fine yet hands LovyanGFX a panel a different size
+// than the UI, silently clipping the bottom/right. Catch it at build time.
+// (Guarded on defined() so the header stays usable if ever included before the
+// layout; config.h defines SCREEN_W/H just before pulling this in.)
+#if defined(SCREEN_W) && defined(SCREEN_H)
+  #if (DIY_PANEL_W != SCREEN_W) || (DIY_PANEL_H != SCREEN_H)
+    #error "BOARD_IS_DIY: DIY_PANEL_W/H must equal the layout's SCREEN_W x SCREEN_H - drop the geometry override or pick the matching DISPLAY_* layout"
+  #endif
+#endif
+
 // --- Reserved display pins ---------------------------------------------------
 // The button / buzzer / LED sanitizers call this to refuse a pin (fresh default
 // OR persisted-from-another-board OR hand-typed) that would drive a display
