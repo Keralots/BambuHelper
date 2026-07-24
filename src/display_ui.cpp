@@ -938,6 +938,12 @@ static void drawStringClipped(const char* s, int16_t x, int16_t y, int16_t maxW)
   if (n > 0) tft.drawString(buf, x, y);
 }
 
+// Pixel length of a +/-halfDeg clear sector measured at the glyph-center radius.
+// Curved text longer than this paints outside the band drawCurvedString() clears.
+static inline int16_t arcBudgetPx(int16_t r, int16_t halfDeg) {
+  return (int16_t)(2.0f * (float)halfDeg * 3.14159265f / 180.0f * (float)r);
+}
+
 static void drawCelsiusUnit(int16_t x, int16_t y, uint16_t color) {
   setFont(tft, FONT_LARGE);
   tft.setTextDatum(ML_DATUM);
@@ -1068,6 +1074,24 @@ static void drawIdleDryingRound(PrinterSlot& p) {
     setFont(tft, FONT_BODY);
     tft.setTextColor(amsHumidityColor(u.humidityRaw, u.humidity, true), CLR_BG);
     tft.drawString(buf, cx, LY_RND_G_Y + 16);
+  }
+
+  // Finish time curved along the bottom rim. The square drying screens have
+  // carried this line all along; the round one never did, so the "show
+  // remaining instead of ETA" setting looked ignored here (#152). Pinned to the
+  // clock form for the same reason as the square layouts - the big line above
+  // is already the remaining duration.
+  if (unitChanged || u.dryRemainMin != prevMin) {
+    markFrameDirty();
+    char etaBuf[40];
+    setFont(tft, FONT_BODY);
+    uint16_t etaClr = formatEtaLine(u.dryRemainMin, /*mode=*/0,
+                                    /*labelRemaining=*/true,
+                                    arcBudgetPx(LY_RND_ARC_R, LY_RND_ARC_ETA_HDEG),
+                                    etaBuf, sizeof(etaBuf));
+    drawCurvedString(tft, etaBuf, cx, cx, LY_RND_ARC_R, true, etaClr,
+                     FONT_BODY, LY_RND_ARC_ETA_HDEG);
+    tft.setTextDatum(MC_DATUM);
   }
 
   prevUnit  = ui;
@@ -1354,45 +1378,21 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.fillRect(0, etaY, scrW, etaH, CLR_BG);
     tft.setTextDatum(MC_DATUM);
 
-    time_t nowEpoch = time(nullptr);
-    struct tm now;
-    localtime_r(&nowEpoch, &now);
-    bool ntpOk = (now.tm_year > (2020 - 1900));
-
-    char etaBuf[32];
-    if (ntpOk && u.dryRemainMin > 0) {
-      time_t etaEpoch = nowEpoch + (time_t)u.dryRemainMin * 60;
-      struct tm etaTm;
-      localtime_r(&etaEpoch, &etaTm);
-      int etaH = etaTm.tm_hour;
-      const char* ampm = "";
-      if (!netSettings.use24h) {
-        ampm = etaH < 12 ? "AM" : "PM";
-        etaH = etaH % 12;
-        if (etaH == 0) etaH = 12;
-      }
-      if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
-        if (netSettings.use24h)
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
-                   etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
-        else
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
-                   etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
-      } else {
-        if (netSettings.use24h)
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
-        else
-          snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
-      }
-    } else if (u.dryRemainMin > 0) {
-      uint16_t h = u.dryRemainMin / 60;
-      uint16_t m = u.dryRemainMin % 60;
-      snprintf(etaBuf, sizeof(etaBuf), "ETA: %dh %02dm", h, m);
+    char etaBuf[40];
+    uint16_t etaClr = CLR_GREEN;
+    setFont(tft, FONT_LARGE);
+    if (u.dryRemainMin > 0) {
+      // Pinned to the clock form (mode 0) rather than following
+      // dispSettings.timeDisplayMode: this screen already shows the remaining
+      // duration on the line above, so honouring "remaining" here would just
+      // print the same value twice. Falls back to the duration when NTP is
+      // down, which is also what stops the old "ETA: 2h 05m" mislabel.
+      etaClr = formatEtaLine(u.dryRemainMin, /*mode=*/0, /*labelRemaining=*/true,
+                             scrW - 4, etaBuf, sizeof(etaBuf));
     } else {
       snprintf(etaBuf, sizeof(etaBuf), "---");
     }
-    setFont(tft, FONT_LARGE);
-    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.setTextColor(etaClr, CLR_BG);
     tft.drawString(etaBuf, cx, etaTextY);
   }
 
@@ -2772,6 +2772,107 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
   }
 }
 
+// ---------------------------------------------------------------------------
+//  Shared finish-time line
+// ---------------------------------------------------------------------------
+//  Used by the printing screen, the split bands, the round print skins and the
+//  drying screen, so it MUST live outside the DISPLAY_ROUND_240 block below -
+//  square builds and display_split.cpp link against it too.
+// ---------------------------------------------------------------------------
+uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
+                       int16_t maxW, char* buf, size_t n) {
+  // Use time() directly - avoids the getLocalTime() race with timeout 0. Once
+  // NTP syncs the RTC keeps running, so latch it: a momentary dip must not flip
+  // the whole UI back to durations.
+  static bool ntpSynced = false;
+  time_t nowEpoch = time(nullptr);
+  struct tm now;
+  localtime_r(&nowEpoch, &now);
+  if (now.tm_year > (2020 - 1900)) ntpSynced = true;
+
+  const uint16_t h = remainingMin / 60;
+  const uint16_t m = remainingMin % 60;
+
+  // Duration form, also the fallback whenever the clock is not trustworthy.
+  auto duration = [&]() -> uint16_t {
+    if (labelRemaining) snprintf(buf, n, "Remaining: %dh %02dm", h, m);
+    else                snprintf(buf, n, "%dh %02dm", h, m);
+    return CLR_TEXT;
+  };
+
+  if (!ntpSynced) return duration();
+
+  if (mode == 1) {
+    uint16_t clr = duration();
+    // Tight sectors (round Speedo) can't take the labelled form - dropping the
+    // word is better than painting outside the clear band.
+    if (maxW > 0 && labelRemaining && tft.textWidth(buf) > maxW)
+      snprintf(buf, n, "%dh %02dm", h, m);
+    return clr;
+  }
+
+  time_t etaEpoch = nowEpoch + (time_t)remainingMin * 60;
+  struct tm e;
+  localtime_r(&etaEpoch, &e);
+  const bool crossDay = (e.tm_yday != now.tm_yday) || (e.tm_year != now.tm_year);
+
+  int eh = e.tm_hour;
+  const char* ampm = "";
+  if (!netSettings.use24h) {
+    ampm = eh < 12 ? "AM" : "PM";
+    eh %= 12;
+    if (eh == 0) eh = 12;
+  }
+
+  auto clockOnly = [&]() -> uint16_t {
+    if (crossDay) {
+      if (netSettings.use24h)
+        snprintf(buf, n, "ETA: %02d.%02d. %02d:%02d",
+                 e.tm_mday, e.tm_mon + 1, eh, e.tm_min);
+      else
+        snprintf(buf, n, "ETA: %02d/%02d %d:%02d%s",
+                 e.tm_mon + 1, e.tm_mday, eh, e.tm_min, ampm);
+    } else {
+      if (netSettings.use24h) snprintf(buf, n, "ETA: %02d:%02d", eh, e.tm_min);
+      else                    snprintf(buf, n, "ETA: %d:%02d %s", eh, e.tm_min, ampm);
+    }
+    return CLR_GREEN;
+  };
+
+  // Both values on one line. The "ETA:" prefix is dropped - a clock time sitting
+  // next to a duration needs no label, and the width buys the second value.
+  // Separator is U+00B7 MIDDLE DOT, which the bundled VLW pack carries.
+  auto both = [&]() -> uint16_t {
+    char t[24];
+    if (crossDay) {
+      if (netSettings.use24h)
+        snprintf(t, sizeof(t), "%02d.%02d. %02d:%02d",
+                 e.tm_mday, e.tm_mon + 1, eh, e.tm_min);
+      else
+        snprintf(t, sizeof(t), "%02d/%02d %d:%02d%s",
+                 e.tm_mon + 1, e.tm_mday, eh, e.tm_min, ampm);
+    } else {
+      if (netSettings.use24h) snprintf(t, sizeof(t), "%02d:%02d", eh, e.tm_min);
+      else                    snprintf(t, sizeof(t), "%d:%02d%s", eh, e.tm_min, ampm);
+    }
+    snprintf(buf, n, "%s \xC2\xB7 %dh%02dm", t, h, m);
+    return CLR_GREEN;
+  };
+
+  uint16_t clr = (mode == 2) ? both() : clockOnly();
+  if (maxW > 0 && tft.textWidth(buf) > maxW) {
+    // Step down to the most compact form that fits: both -> clock -> duration.
+    if (mode == 2) {
+      clr = clockOnly();
+      if (tft.textWidth(buf) <= maxW) return clr;
+    }
+    clr = duration();
+    if (labelRemaining && tft.textWidth(buf) > maxW)
+      snprintf(buf, n, "%dh %02dm", h, m);
+  }
+  return clr;
+}
+
 #if defined(DISPLAY_ROUND_240)
 // ===========================================================================
 //  Round display (GC9A01): printing screen. Three skins selectable from the
@@ -2782,48 +2883,23 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
 
 // Compose the ETA / Remaining / alert line shared by the round skins.
 // Returns the text color. Logic matches the square printing screen's ETA zone.
-static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen) {
+//
+// maxW is the caller's clear-band width and measureFont the widest font it may
+// end up drawing with. The curved skins need this because drawCurvedString()
+// clears a fixed sector but lays glyphs out over the string's full width with no
+// clamp, so anything longer paints outside the cleared band and leaves ghosts -
+// Speedo's sector is only ~131px, which the labelled "Remaining: 2h 05m" form
+// (146px at FONT_BODY) already overflows today. Rings draws straight but into a
+// fixed 116px rect, so it passes its own budget at its FONT_SMALL fallback.
+static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
+                                  int16_t maxW, FontID measureFont) {
   if (s.gcodeStateId == GCODE_PAUSE)  { strlcpy(buf, "PAUSED", bufLen); return CLR_YELLOW; }
   if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
   if (s.remainingMinutes == 0) { strlcpy(buf, "ETA: ---", bufLen); return CLR_TEXT_DIM; }
 
-  static bool ntpSynced = false;
-  time_t nowEpoch = time(nullptr);
-  struct tm now;
-  localtime_r(&nowEpoch, &now);
-  if (now.tm_year > (2020 - 1900)) ntpSynced = true;
-
-  if (!dispSettings.showTimeRemaining && ntpSynced) {
-    time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
-    struct tm etaTm;
-    localtime_r(&etaEpoch, &etaTm);
-
-    int etaH = etaTm.tm_hour;
-    const char* ampm = "";
-    if (!netSettings.use24h) {
-      ampm = etaH < 12 ? "AM" : "PM";
-      etaH = etaH % 12;
-      if (etaH == 0) etaH = 12;
-    }
-    if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
-      if (netSettings.use24h)
-        snprintf(buf, bufLen, "ETA: %02d.%02d. %02d:%02d",
-                 etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
-      else
-        snprintf(buf, bufLen, "ETA: %02d/%02d %d:%02d%s",
-                 etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
-    } else {
-      if (netSettings.use24h)
-        snprintf(buf, bufLen, "ETA: %02d:%02d", etaH, etaTm.tm_min);
-      else
-        snprintf(buf, bufLen, "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
-    }
-    return CLR_GREEN;
-  }
-
-  snprintf(buf, bufLen, "Remaining: %dh %02dm",
-           s.remainingMinutes / 60, s.remainingMinutes % 60);
-  return CLR_TEXT;
+  setFont(tft, measureFont);   // the fit check lies if the font doesn't match
+  return formatEtaLine(s.remainingMinutes, dispSettings.timeDisplayMode,
+                       /*labelRemaining=*/true, maxW, buf, bufLen);
 }
 
 // Compact temperature readout for the Speedo / Rings skins: colored marker
@@ -3202,7 +3278,9 @@ static void drawPrintingSpeedo() {
   if (etaChanged || stateChanged) {
     markFrameDirty();
     char buf[32];
-    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    uint16_t clr = buildRoundEtaLine(
+        s, buf, sizeof(buf),
+        arcBudgetPx(LY_RND_SPD_ETA_R, LY_RND_SPD_ETA_HDEG), FONT_BODY);
     drawCurvedString(tft, buf, cx, cx, LY_RND_SPD_ETA_R, true, clr,
                      FONT_BODY, LY_RND_SPD_ETA_HDEG);
   }
@@ -3292,7 +3370,11 @@ static void drawPrintingRings() {
   if (etaChanged || stateChanged) {
     markFrameDirty();
     char buf[32];
-    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    // Straight text into a fixed 116px rect. Budget is measured at FONT_SMALL -
+    // the widest form this skin can still render - so the font fallback below
+    // stays the first line of defence and the string only shortens when even
+    // FONT_SMALL would spill (mode 2 with a cross-day date).
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf), 116, FONT_SMALL);
     tft.fillRect(cx - 58, LY_RND_RGS_ETA_Y - 11, 116, 22, CLR_BG);
     // FONT_BODY when it fits the chord; the long date+time ETA form drops
     // to FONT_SMALL instead of clipping.
@@ -3421,7 +3503,9 @@ static void drawPrintingRound() {
   if (etaChanged || stateChanged) {
     markFrameDirty();
     char buf[32];
-    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf));
+    uint16_t clr = buildRoundEtaLine(
+        s, buf, sizeof(buf),
+        arcBudgetPx(LY_RND_ARC_R, LY_RND_ARC_ETA_HDEG), FONT_BODY);
     drawCurvedString(tft, buf, cx, cx, LY_RND_ARC_R, true, clr,
                      FONT_BODY, LY_RND_ARC_ETA_HDEG);
   }
@@ -3984,54 +4068,13 @@ static void drawPrinting() {
       tft.setTextColor(CLR_RED, CLR_BG);
       tft.drawString("ERROR!", etaCx, eff_etaTextY);
     } else if (s.remainingMinutes > 0) {
-      // Use time() directly - avoids getLocalTime() race condition with timeout 0.
-      // Once NTP syncs the RTC keeps running; ntpSynced latches true forever.
-      static bool ntpSynced = false;
-      time_t nowEpoch = time(nullptr);
-      struct tm now;
-      localtime_r(&nowEpoch, &now);
-      if (now.tm_year > (2020 - 1900)) ntpSynced = true;
-
-      if (!dispSettings.showTimeRemaining && ntpSynced) {
-        // Calculate ETA: current time + remaining minutes
-        time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
-        struct tm etaTm;
-        localtime_r(&etaEpoch, &etaTm);
-
-        char etaBuf[32];
-        int etaH = etaTm.tm_hour;
-        const char* ampm = "";
-        if (!netSettings.use24h) {
-          ampm = etaH < 12 ? "AM" : "PM";
-          etaH = etaH % 12;
-          if (etaH == 0) etaH = 12;
-        }
-        if (etaTm.tm_yday != now.tm_yday || etaTm.tm_year != now.tm_year) {
-          if (netSettings.use24h)
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d.%02d. %02d:%02d",
-                     etaTm.tm_mday, etaTm.tm_mon + 1, etaH, etaTm.tm_min);
-          else
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d/%02d %d:%02d%s",
-                     etaTm.tm_mon + 1, etaTm.tm_mday, etaH, etaTm.tm_min, ampm);
-        } else {
-          if (netSettings.use24h)
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %02d:%02d", etaH, etaTm.tm_min);
-          else
-            snprintf(etaBuf, sizeof(etaBuf), "ETA: %d:%02d %s", etaH, etaTm.tm_min, ampm);
-        }
-        setFont(tft, FONT_LARGE);
-        tft.setTextColor(CLR_GREEN, CLR_BG);
-        tft.drawString(etaBuf, etaCx, eff_etaTextY);
-      } else {
-        // NTP not synced yet OR user requested remaining time - show remaining time only
-        char remBuf[24];
-        uint16_t h = s.remainingMinutes / 60;
-        uint16_t m = s.remainingMinutes % 60;
-        snprintf(remBuf, sizeof(remBuf), "Remaining: %dh %02dm", h, m);
-        setFont(tft, FONT_LARGE);
-        tft.setTextColor(CLR_TEXT, CLR_BG);
-        tft.drawString(remBuf, etaCx, eff_etaTextY);
-      }
+      char etaBuf[40];
+      setFont(tft, FONT_LARGE);   // set before formatting: it measures to fit
+      uint16_t clr = formatEtaLine(s.remainingMinutes, dispSettings.timeDisplayMode,
+                                   /*labelRemaining=*/true, etaW - 4,
+                                   etaBuf, sizeof(etaBuf));
+      tft.setTextColor(clr, CLR_BG);
+      tft.drawString(etaBuf, etaCx, eff_etaTextY);
     } else {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
@@ -4759,7 +4802,8 @@ void updateDisplay() {
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
     markFrameDirty();
   }
-  if (currentScreen == SCREEN_IDLE && isPrinterConfigured(rotState.displayIndex)) {
+  if ((currentScreen == SCREEN_IDLE || currentScreen == SCREEN_DRY_PEEK) &&
+      isPrinterConfigured(rotState.displayIndex)) {
     BambuState& sh = displayedPrinter().state;
     if (sh.ams.anyDrying) {
       uint8_t dp = 0;
@@ -4881,6 +4925,14 @@ void updateDisplay() {
 
     case SCREEN_IDLE:
       drawIdle();
+      break;
+
+    case SCREEN_DRY_PEEK:
+      // Same renderer as the idle drying screen (#150). updateDisplay() already
+      // cleared the panel and set forceRedraw on the state change, so the
+      // renderer's prev* caches repaint from scratch on entry and the print
+      // screen repaints in full on the way out.
+      drawIdleDrying(displayedPrinter());
       break;
 
     case SCREEN_PRINTING:

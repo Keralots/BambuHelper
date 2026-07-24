@@ -63,6 +63,11 @@ static float       pcProgress        = 0.0f;
 static bool        pcPrevHeld        = false;
 static volatile bool pcSendingDrawn  = false;
 
+// AMS drying peek (#150): tapping during a print brings the drying screen up for
+// a few seconds, then it closes itself.
+static const uint32_t DRY_PEEK_MS = 10000;
+static uint32_t dryPeekUntilMs = 0;
+
 static bool isPrinterActivityStateFresh(uint8_t slot) {
   if (slot >= MAX_ACTIVE_PRINTERS || !isPrinterConfigured(slot)) return false;
   BambuState& s = printers[slot].state;
@@ -199,6 +204,33 @@ static bool isBoardButton3Held() {
 #endif
 }
 
+// Open the AMS drying peek (#150) for the shown printer, if it has anything to
+// show. Single entry point on purpose: there are two call sites (tap from the
+// print screen, and tapping out of the camera) and both MUST arm the deadline -
+// setting the screen state without it leaves a stale value and the expiry check
+// closes the peek on the very next loop.
+//
+// state.printing is required rather than just "the print screen is up": with
+// keepPrintScreen the dashboard is also shown while idle, and the sticky branch
+// in updateDisplayedPrinterScreenState() demands real printing, so mismatched
+// predicates would open a peek that immediately closes.
+static bool openDryPeek() {
+  PrinterSlot& p = displayedPrinter();
+  if (!p.state.printing || !p.state.ams.anyDrying) return false;
+  dryPeekUntilMs = millis() + DRY_PEEK_MS;
+  setScreenState(SCREEN_DRY_PEEK);
+  return true;
+}
+
+// Leave the peek. Auto-rotation is frozen while it is up but lastRotateMs keeps
+// aging, and the minimum rotate interval is also 10s - without this reset the
+// user taps to check drying and lands on a different printer the moment it
+// closes.
+static void closeDryPeek() {
+  rotState.lastRotateMs = millis();
+  setScreenState(SCREEN_PRINTING);
+}
+
 // Existing on-press behavior, factored out so it can be invoked either on
 // press-edge (LED disabled path: unchanged behavior) or on release-edge
 // (LED enabled path: deferred until tap/hold disambiguation completes).
@@ -233,6 +265,9 @@ static void doTapActions() {
   // fullscreen, and tapping out advances to the next printer (so the cycle keeps
   // moving instead of stranding the user here until the next auto-rotate).
   if (cur == SCREEN_CAMERA) {
+    // Keep the drying peek reachable on camera boards by making it the next
+    // stop in the cycle: printing -> camera -> drying -> printing (+ next).
+    if (openDryPeek()) return;
     setScreenState(SCREEN_PRINTING);
     if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
     return;
@@ -243,6 +278,17 @@ static void doTapActions() {
     return;
   }
 #endif
+
+  // AMS drying peek (#150). During a print the tap has no job on a
+  // single-printer setup, so it brings up the drying view for a few seconds.
+  // Tapping out advances the printer when more than one is connected, matching
+  // how the camera tile behaves.
+  if (cur == SCREEN_DRY_PEEK) {
+    closeDryPeek();
+    if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
+    return;
+  }
+  if (cur == SCREEN_PRINTING && openDryPeek()) return;
 
   if (getActiveConnCount() >= 2) {
     cycleDisplayedPrinterFromButton();
@@ -633,6 +679,28 @@ static void updateDisplayedPrinterScreenState() {
   }
 #endif
 
+  // AMS drying peek (#150) is sticky for its timeout: hold it against the auto
+  // state machine, then drop back and let the normal flow re-derive next loop.
+  // Placed above the drying-wake and split branches so neither steals it.
+  // Note this is not the only expiry check - handleDisplaySleepTimeouts() runs
+  // even when WiFi is down, where this function is never called at all.
+  if (current == SCREEN_DRY_PEEK) {
+    bool expired = (long)(millis() - dryPeekUntilMs) >= 0;
+    if (!expired &&
+        isPrinterActivityStateFresh(rotState.displayIndex) &&
+        displayedPrinter().state.printing &&
+        displayedPrinter().state.ams.anyDrying) {
+      // Override the LED_ACT_IDLE default set at the top of this function: a
+      // print is still running behind the peek, so the status LED must not drop
+      // out of its printing animation for the ten seconds the screen is up.
+      ledSetActivity(displayedPrinter().state.gcodeStateId == GCODE_PAUSE
+                     ? LED_ACT_PAUSED : LED_ACT_PRINTING);
+      return;
+    }
+    closeDryPeek();
+    return;
+  }
+
   // Global drying-wake: if any fresh printer state is drying, leave sleep-sticky
   // screens regardless of which slot is currently displayed. Point displayIndex
   // at the dryer so the rendered drying screen reflects real state.
@@ -733,6 +801,16 @@ static void handleDisplaySleepTimeouts() {
   // Covers both SCREEN_IDLE (printer connected but not printing) and
   // SCREEN_CONNECTING_MQTT (printer offline/unreachable at startup).
   ScreenState cur = getScreenState();
+
+  // AMS drying peek (#150) auto-close. This runs unconditionally, unlike
+  // updateDisplayedPrinterScreenState() which is gated on WiFi being up - a
+  // normal STA drop does not change the screen and AP fallback can be 15 min
+  // away, so without this the peek would sit there for the whole outage.
+  if (cur == SCREEN_DRY_PEEK && (long)(millis() - dryPeekUntilMs) >= 0) {
+    closeDryPeek();
+    cur = getScreenState();
+  }
+
   if ((cur == SCREEN_FINISHED || (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen)) &&
       !dpSettings.keepDisplayOn && finishActive) {
     BambuState& fs = displayedPrinter().state;
@@ -849,6 +927,11 @@ static void handleGcodeStateTransitions() {
         // The one-shot alert + light + Tasmota bookkeeping below still run.
         if (getScreenState() != SCREEN_POWER_CONFIRM &&
             !isSleepStickyScreen(getScreenState())) {
+          // A finish outranks the drying peek (#150): this branch moves
+          // displayIndex, and leaving the peek up would render another
+          // printer's drying data under it. Close it and let the state machine
+          // land on the finish screen.
+          if (getScreenState() == SCREEN_DRY_PEEK) closeDryPeek();
           if (rotState.displayIndex != i) {
             rotState.displayIndex = i;
             triggerDisplayTransition();
@@ -1108,7 +1191,8 @@ void loop() {
     // Freeze auto-rotation while the camera fullscreen or the power-confirm modal
     // is up so the displayed printer (and its stream / target) does not drift.
     if (getScreenState() != SCREEN_CAMERA &&
-        getScreenState() != SCREEN_POWER_CONFIRM) handleRotation();
+        getScreenState() != SCREEN_POWER_CONFIRM &&
+        getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 
   // Commit the framebuffer sprite to the panel. On JC3248W535 this is a

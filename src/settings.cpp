@@ -170,7 +170,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.animatedBar = true;
   ds.pongClock = false;
   ds.smallLabels = false;
-  ds.showTimeRemaining = false;
+  ds.timeDisplayMode = 0;      // ETA (wall-clock finish time)
   ds.fanMatchPrinter = true;
   ds.invertColors = false;
   ds.cydPanelClassic = false;
@@ -493,7 +493,14 @@ void loadSettings() {
   dispSettings.animatedBar = prefs.getBool("dsp_abar", def.animatedBar);
   dispSettings.pongClock = prefs.getBool("dsp_pong", def.pongClock);
   dispSettings.smallLabels = prefs.getBool("dsp_slbl", def.smallLabels);
-  dispSettings.showTimeRemaining = prefs.getBool("dsp_shtire", def.showTimeRemaining);
+  {
+    // Pre-3.7.7 devices only have the boolean "show remaining instead of ETA".
+    // 0xFF means the new key was never written, so fall back to it once; from
+    // the next save on, both keys are kept in sync.
+    uint8_t tdm = prefs.getUChar("dsp_timem", 0xFF);
+    if (tdm > 2) tdm = prefs.getBool("dsp_shtire", false) ? 1 : 0;
+    dispSettings.timeDisplayMode = tdm;
+  }
   dispSettings.fanMatchPrinter = prefs.getBool("dsp_fanmp", def.fanMatchPrinter);
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
@@ -802,7 +809,10 @@ void saveSettings() {
   prefs.putBool("dsp_abar", dispSettings.animatedBar);
   prefs.putBool("dsp_pong", dispSettings.pongClock);
   prefs.putBool("dsp_slbl", dispSettings.smallLabels);
-  prefs.putBool("dsp_shtire", dispSettings.showTimeRemaining);
+  prefs.putUChar("dsp_timem", dispSettings.timeDisplayMode);
+  // Keep the legacy boolean in sync so a firmware downgrade lands on the
+  // closest behaviour ("Both" degrades to the ETA form).
+  prefs.putBool("dsp_shtire", dispSettings.timeDisplayMode == 1);
   prefs.putBool("dsp_fanmp", dispSettings.fanMatchPrinter);
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
