@@ -21,6 +21,9 @@
 #ifndef BACKLIGHT_PIN
 #define BACKLIGHT_PIN   TFT_BL  // TFT_eSPI: set via -D TFT_BL=N; LovyanGFX: set via -D BACKLIGHT_PIN=N
 #endif
+// Resolve/validate the generic DIY display flags (no-op unless BOARD_IS_DIY).
+// Included here, after BACKLIGHT_PIN, so isDiyReservedPin() can reference it.
+#include "diy_display_config.h"
 #define BACKLIGHT_CH    0
 #define BACKLIGHT_FREQ  5000
 #define BACKLIGHT_RES   8
@@ -151,7 +154,9 @@
 // =============================================================================
 //  Physical button
 // =============================================================================
-#ifdef DISPLAY_240x320
+#if defined(BOARD_IS_DIY)
+#define BUTTON_DEFAULT_PIN    0       // DIY: no button assumed; user configures in web UI
+#elif defined(DISPLAY_240x320)
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
 #elif defined(BOARD_IS_SENSECAP)
 #define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
@@ -172,7 +177,11 @@
 // =============================================================================
 //  Buzzer (optional passive buzzer)
 // =============================================================================
-#if defined(BOARD_IS_C3)
+#if defined(BOARD_IS_DIY)
+// DIY: no buzzer assumed - the generic C3 default (GPIO3) is often the display's
+// MOSI, and the S3 default (GPIO5) a common SCLK. Disable; user picks a free pin.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_C3)
 #define BUZZER_DEFAULT_PIN    3       // C3: GPIO 3 (GPIO 5 is backlight)
 #elif defined(BOARD_IS_SENSECAP)
 // SenseCAP Indicator: no buzzer hardware connected to ESP32-S3 GPIO.
@@ -231,7 +240,9 @@
 #define LED_PWM_FREQ    5000  // PWM frequency (Hz)
 #define LED_PWM_RES     8     // PWM resolution (bits) -> 0..255 duty
 
-#if defined(DISPLAY_CYD)
+#if defined(BOARD_IS_DIY)
+#define LED_DEFAULT_PIN 0     // DIY: no status LED assumed; user configures in web UI
+#elif defined(DISPLAY_CYD)
 #define LED_DEFAULT_PIN 22    // CYD: GPIO 22 on P3 connector
 #elif defined(BOARD_IS_SENSECAP)
 #define LED_DEFAULT_PIN 0     // SenseCAP Indicator: no dedicated LED pin (user must configure)

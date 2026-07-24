@@ -18,7 +18,67 @@
 
 #include <LovyanGFX.hpp>
 
-#if defined(BOARD_IS_S3_ZERO)
+#if defined(BOARD_IS_DIY)
+// --- Generic DIY SPI display (issue #153/#151) -------------------------------
+// Pins/driver/geometry come from -D flags, resolved + validated in
+// diy_display_config.h (pulled in via config.h, re-included here for clarity;
+// #pragma once makes it a no-op the second time). This branch is FIRST in the
+// chain so a DIY env that also sets BOARD_IS_C3 (to keep the C3 WiFi/Improv
+// fixes) still gets the DIY panel class - specialized-first, same convention as
+// BOARD_IS_C3_ROUND preceding BOARD_IS_C3.
+#include "config.h"
+#if   defined(DIY_PANEL_GC9A01)
+  using DiyPanel = lgfx::Panel_GC9A01;
+#elif defined(DIY_PANEL_ST7789)
+  using DiyPanel = lgfx::Panel_ST7789;
+#elif defined(DIY_PANEL_ILI9341)
+  using DiyPanel = lgfx::Panel_ILI9341;
+#elif defined(DIY_PANEL_ST7796)
+  using DiyPanel = lgfx::Panel_ST7796;
+#endif
+
+class LGFX_DIY : public lgfx::LGFX_Device {
+  DiyPanel      _panel;
+  lgfx::Bus_SPI _bus;
+public:
+  LGFX_DIY() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = DIY_SPI_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = DIY_FREQ_WRITE;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = DIY_PIN_SCLK;
+      cfg.pin_mosi   = DIY_PIN_MOSI;
+      cfg.pin_miso   = DIY_PIN_MISO;
+      cfg.pin_dc     = DIY_PIN_DC;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = DIY_PIN_CS;
+      cfg.pin_rst  = DIY_PIN_RST;
+      cfg.pin_busy = -1;
+      cfg.memory_width  = DIY_MEM_W;
+      cfg.memory_height = DIY_MEM_H;
+      cfg.panel_width   = DIY_PANEL_W;
+      cfg.panel_height  = DIY_PANEL_H;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = DIY_OFFSET_ROTATION;
+      cfg.invert        = DIY_INVERT;
+      cfg.rgb_order     = DIY_RGB_ORDER;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_DIY _tft_instance;
+
+#elif defined(BOARD_IS_S3_ZERO)
 // --- Waveshare ESP32-S3-Zero + external ST7789 240x240 -----------------------
 class LGFX_S3Zero : public lgfx::LGFX_Device {
   lgfx::Panel_ST7789  _panel;

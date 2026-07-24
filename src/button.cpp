@@ -170,6 +170,10 @@ void sanitizeButtonPin() {
     buttonPin = 0;
   };
 
+#if defined(BOARD_IS_DIY)
+  // A pin carried over from another board's config could drive a DIY display line.
+  if (isDiyReservedPin(buttonPin)) { clash("DIY display pin"); return; }
+#endif
 #if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
   if (buttonPin == BACKLIGHT_PIN) { clash("backlight"); return; }
 #endif
