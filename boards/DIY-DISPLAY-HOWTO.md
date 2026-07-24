@@ -92,16 +92,26 @@ your panel looks wrong. You can also toggle inversion from the web UI's
 
 ### Geometry overrides (rarely needed)
 
-Each driver sets a sensible panel/memory size by default. Override only if
-your glass differs from the driver's native GRAM:
+Each driver sets a sensible panel/memory size by default.
 
 | Flag | Meaning |
 |---|---|
 | `DIY_PANEL_W` / `DIY_PANEL_H` | Visible panel width / height in pixels |
 | `DIY_MEM_W` / `DIY_MEM_H` | Controller GRAM width / height |
 
-(An ST7789 behind 240x240 glass still has a 240x320 GRAM, which the driver
-default already accounts for.)
+`DIY_PANEL_W` / `DIY_PANEL_H` are **not** a free-form resize. The UI is laid
+out for the dimensions of the `DISPLAY_*` layout you picked, so the build
+requires these to equal that layout's size and errors out otherwise - a
+mismatch would hand LovyanGFX a panel a different size than the UI and
+silently clip the bottom or right edge. In practice the only time you set one
+is `DIY_PANEL_H=320` to select the 240x320 ST7789 variant (see the driver
+table above); if your glass is some other size, none of the layouts fit it and
+this target cannot drive it yet.
+
+`DIY_MEM_W` / `DIY_MEM_H` are the unconstrained pair - override them if your
+controller's GRAM differs from the driver default. (An ST7789 behind 240x240
+glass still has a 240x320 GRAM, which the driver default already accounts
+for.)
 
 ## Classic ESP32 (DevKitC / WROOM)
 
