@@ -890,9 +890,9 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="field">
       <label for="timem">Time display</label>
       <select id="timem" onchange="toggleSetting('timem',this.value)">
-        <option value="0" %TIMEM0%>Finish time / ETA (default)</option>
-        <option value="1" %TIMEM1%>Remaining time</option>
-        <option value="2" %TIMEM2%>Both (finish time + remaining)</option>
+        <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
+        <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
+        <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
       </select>
       <span class="text-dim small">applies immediately</span>
     </div>
