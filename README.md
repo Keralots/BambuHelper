@@ -93,7 +93,7 @@ Wired your own SPI display to a bare ESP32 and it doesn't match any board above?
 | `DIY_PANEL_ILI9341` | `DISPLAY_240x320` |
 | `DIY_PANEL_ST7796` | `DISPLAY_320x480` |
 
-**Optional flags:** `DIY_PIN_MISO` / `DIY_PIN_RST` (default `-1`), `DIY_FREQ_WRITE` (default 40 MHz), `DIY_INVERT` (flip if colours are wrong), `DIY_RGB_ORDER=1` (if red/blue are swapped), `DIY_OFFSET_ROTATION` (0-7, if the image is mirrored/rotated).
+**Optional flags:** `DIY_PIN_MISO` / `DIY_PIN_RST` (default `-1`), `DIY_FREQ_WRITE` (default 40 MHz), `DIY_INVERT` (flip if colours are wrong), `DIY_RGB_ORDER=1` (if red/blue are swapped), `DIY_OFFSET_ROTATION` (0-7, if the image is mirrored/rotated), `DIY_OFFSET_X` / `DIY_OFFSET_Y` (default `0` - where the glass starts inside the controller's GRAM; set these if the image is *shifted* by a fixed number of pixels with a noisy or blank strip along one edge, e.g. `DIY_OFFSET_Y=80` on a 240x240 ST7789 bonded to the far end of its 240x320 die).
 
 **Classic ESP32 (DevKitC / WROOM)** rather than S3/C3: add `board = esp32dev`, `board_build.partitions = min_spiffs.csv`, `-D BOARD_LOW_RAM=1` and `-D DIY_SPI_HOST=VSPI_HOST` (drop the `ARDUINO_USB_CDC_ON_BOOT` flag - classic ESP32 has no native USB). See the commented block in `diy_spi_template.ini`.
 

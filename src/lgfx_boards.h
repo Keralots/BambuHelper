@@ -65,8 +65,8 @@ public:
       cfg.memory_height = DIY_MEM_H;
       cfg.panel_width   = DIY_PANEL_W;
       cfg.panel_height  = DIY_PANEL_H;
-      cfg.offset_x      = 0;
-      cfg.offset_y      = 0;
+      cfg.offset_x      = DIY_OFFSET_X;
+      cfg.offset_y      = DIY_OFFSET_Y;
       cfg.offset_rotation = DIY_OFFSET_ROTATION;
       cfg.invert        = DIY_INVERT;
       cfg.rgb_order     = DIY_RGB_ORDER;

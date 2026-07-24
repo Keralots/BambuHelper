@@ -106,6 +106,21 @@
 #ifndef DIY_MEM_H
   #define DIY_MEM_H DIY_DEF_MH
 #endif
+// Where the visible glass starts inside the controller's GRAM, at rotation 0.
+// Needed when the panel is smaller than the GRAM and the glass is not wired to
+// its first row/column - a 240x280 ST7789 on a 240x320 die wants
+// DIY_OFFSET_Y=20, and a 240x240 module can want 80 depending on which end it
+// is bonded to (symptom: the image is shifted with a band of noise along one
+// edge). Only rotation 0 is configured here: LovyanGFX derives the flipped
+// rotations itself as memory - (panel + offset) (Panel_LCD::setRotation), so a
+// correct value at rotation 0 stays correct through the web UI's rotation
+// setting. Leave at 0 unless you actually see the shift.
+#ifndef DIY_OFFSET_X
+  #define DIY_OFFSET_X 0
+#endif
+#ifndef DIY_OFFSET_Y
+  #define DIY_OFFSET_Y 0
+#endif
 #ifndef DIY_INVERT
   #define DIY_INVERT DIY_DEF_INVERT
 #endif
@@ -184,6 +199,24 @@
   #if (DIY_PANEL_W != SCREEN_W) || (DIY_PANEL_H != SCREEN_H)
     #error "BOARD_IS_DIY: DIY_PANEL_W/H must equal the layout's SCREEN_W x SCREEN_H - drop the geometry override or pick the matching DISPLAY_* layout"
   #endif
+#endif
+
+// --- The offset window must fit inside the GRAM ------------------------------
+// LovyanGFX stores offset_x/y as uint16_t, so a negative silently wraps to a
+// huge column start, and an offset that pushes the visible area past the GRAM
+// edge shifts the image off-screen instead of correcting it. Both are the sort
+// of typo this target exists to make loud rather than mysterious. Note the
+// window has to fit at rotation 0 AND at the flipped rotations, but
+// Panel_LCD::setRotation derives those as memory - (panel + offset), which is
+// non-negative exactly when this check passes.
+#if (DIY_OFFSET_X) < 0 || (DIY_OFFSET_Y) < 0
+  #error "BOARD_IS_DIY: DIY_OFFSET_X/Y must be >= 0 (LovyanGFX stores them unsigned)"
+#endif
+#if ((DIY_OFFSET_X) + (DIY_PANEL_W)) > (DIY_MEM_W)
+  #error "BOARD_IS_DIY: DIY_OFFSET_X + DIY_PANEL_W exceeds DIY_MEM_W - raise DIY_MEM_W to the controller's real GRAM width or lower the offset"
+#endif
+#if ((DIY_OFFSET_Y) + (DIY_PANEL_H)) > (DIY_MEM_H)
+  #error "BOARD_IS_DIY: DIY_OFFSET_Y + DIY_PANEL_H exceeds DIY_MEM_H - raise DIY_MEM_H to the controller's real GRAM height or lower the offset"
 #endif
 
 // --- Reserved display pins ---------------------------------------------------

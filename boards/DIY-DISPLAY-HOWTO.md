@@ -94,10 +94,11 @@ your panel looks wrong. You can also toggle inversion from the web UI's
 
 Each driver sets a sensible panel/memory size by default.
 
-| Flag | Meaning |
-|---|---|
-| `DIY_PANEL_W` / `DIY_PANEL_H` | Visible panel width / height in pixels |
-| `DIY_MEM_W` / `DIY_MEM_H` | Controller GRAM width / height |
+| Flag | Default | Meaning |
+|---|---|---|
+| `DIY_PANEL_W` / `DIY_PANEL_H` | per-driver | Visible panel width / height in pixels |
+| `DIY_MEM_W` / `DIY_MEM_H` | per-driver | Controller GRAM width / height |
+| `DIY_OFFSET_X` / `DIY_OFFSET_Y` | `0` | Where the glass starts inside the GRAM |
 
 `DIY_PANEL_W` / `DIY_PANEL_H` are **not** a free-form resize. The UI is laid
 out for the dimensions of the `DISPLAY_*` layout you picked, so the build
@@ -112,6 +113,32 @@ this target cannot drive it yet.
 controller's GRAM differs from the driver default. (An ST7789 behind 240x240
 glass still has a 240x320 GRAM, which the driver default already accounts
 for.)
+
+#### Image shifted by a few pixels? (`DIY_OFFSET_X` / `DIY_OFFSET_Y`)
+
+When the panel is smaller than the controller's GRAM, the glass may be bonded
+somewhere other than the first row/column of that memory. The symptom is a
+picture shifted by a fixed number of pixels with a band of noise or a blank
+strip along one edge - not a wrong size, just displaced.
+
+`DIY_OFFSET_X` / `DIY_OFFSET_Y` are the GRAM column / row where the visible
+area begins. In practice only one case needs them:
+
+- **240x240 ST7789** (the glass is 240 rows of a 240x320 die): `0` for most
+  modules, `DIY_OFFSET_Y=80` if yours is bonded to the far end of the GRAM.
+- **GC9A01 / ILI9341 / ST7796, and 240x320 ST7789**: leave at `0`. Their GRAM
+  matches the glass, so there is nowhere for the window to move and the build
+  rejects a non-zero offset.
+
+Set them for **rotation 0 only**. LovyanGFX derives the flipped rotations
+itself, so a value that is right at rotation 0 stays right when you change the
+rotation in the web UI. The build checks that `offset + panel` still fits
+inside `DIY_MEM_*` and errors out if it does not.
+
+Note this knob cannot rescue glass of an *unsupported size*. A 240x280 ST7789,
+for example, would want `DIY_PANEL_H=280` - and there is no 280-row layout, so
+the driver/layout check rejects it before the offset ever matters. Offsets fix
+a panel that is the right size but in the wrong place, nothing else.
 
 ## Classic ESP32 (DevKitC / WROOM)
 
