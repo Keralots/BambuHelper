@@ -2793,23 +2793,22 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
   const uint16_t h = remainingMin / 60;
   const uint16_t m = remainingMin % 60;
 
-  // Duration form, also the fallback whenever the clock is not trustworthy.
+  // Duration form, and the terminal fallback of every step-down path below.
+  // The width fit-down lives INSIDE it on purpose: tight sectors (round Speedo,
+  // ~130 px at FONT_BODY) cannot take the labelled form ("Remaining: 2h 05m" is
+  // 146 px), and dropping the word is better than painting outside the band
+  // drawCurvedString() clears. Every route to a duration must get that check -
+  // the pre-NTP path most of all, since that is the state right after boot.
   auto duration = [&]() -> uint16_t {
     if (labelRemaining) snprintf(buf, n, "Remaining: %dh %02dm", h, m);
     else                snprintf(buf, n, "%dh %02dm", h, m);
+    if (maxW > 0 && labelRemaining && tft.textWidth(buf) > maxW)
+      snprintf(buf, n, "%dh %02dm", h, m);
     return CLR_TEXT;
   };
 
   if (!ntpSynced) return duration();
-
-  if (mode == 1) {
-    uint16_t clr = duration();
-    // Tight sectors (round Speedo) can't take the labelled form - dropping the
-    // word is better than painting outside the clear band.
-    if (maxW > 0 && labelRemaining && tft.textWidth(buf) > maxW)
-      snprintf(buf, n, "%dh %02dm", h, m);
-    return clr;
-  }
+  if (mode == 1)  return duration();
 
   time_t etaEpoch = nowEpoch + (time_t)remainingMin * 60;
   struct tm e;
@@ -2866,9 +2865,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
       clr = clockOnly();
       if (tft.textWidth(buf) <= maxW) return clr;
     }
-    clr = duration();
-    if (labelRemaining && tft.textWidth(buf) > maxW)
-      snprintf(buf, n, "%dh %02dm", h, m);
+    clr = duration();   // strips its own label when even that overflows
   }
   return clr;
 }
