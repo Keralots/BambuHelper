@@ -64,7 +64,8 @@ static bool        pcPrevHeld        = false;
 static volatile bool pcSendingDrawn  = false;
 
 // AMS drying peek (#150): tapping during a print brings the drying screen up for
-// a few seconds, then it closes itself.
+// a few seconds, then it closes itself. 10 s is what the issue asked for and is
+// what a single drying unit still gets; see openDryPeek() for the multi-unit case.
 static const uint32_t DRY_PEEK_MS = 10000;
 static uint32_t dryPeekUntilMs = 0;
 
@@ -217,7 +218,22 @@ static bool isBoardButton3Held() {
 static bool openDryPeek() {
   PrinterSlot& p = displayedPrinter();
   if (!p.state.printing || !p.state.ams.anyDrying) return false;
-  dryPeekUntilMs = millis() + DRY_PEEK_MS;
+
+  // Restart the drying screen's unit rotation. Its timer free-runs on the idle
+  // screen at a 60 s dwell and keeps aging while no peek is up, so without this
+  // the unit you land on is down to wall-clock luck and two peeks a few seconds
+  // apart show the same one.
+  resetDryingRotation();
+
+  // Size the window so every drying unit gets a turn. One unit keeps the 10 s
+  // promised in #150; beyond that each unit gets DRY_PEEK_DWELL_MS, which is
+  // also the cadence the renderer steps at while SCREEN_DRY_PEEK is up. Without
+  // this a 3-AMS printer showed exactly one unit per tap and the user had to
+  // wait out a full idle-screen rotation between taps to see the other two -
+  // which is the "check the drying during a long print" the issue asked for.
+  const uint32_t units = dryingUnitCount(p.state.ams);
+  const uint32_t span  = units * DRY_PEEK_DWELL_MS;
+  dryPeekUntilMs = millis() + (span > DRY_PEEK_MS ? span : DRY_PEEK_MS);
   setScreenState(SCREEN_DRY_PEEK);
   return true;
 }

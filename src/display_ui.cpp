@@ -904,13 +904,28 @@ static void drawIdleNoPrinter() {
 
 // ---------------------------------------------------------------------------
 //  Screen: Idle Drying (AMS drying active while printer idle)
-//  Shows ONE drying AMS at a time. Rotates between drying units every 60s.
+//  Shows ONE drying AMS at a time, rotating between drying units - every 60s on
+//  the idle screen, faster inside a drying peek (see dryRotateIntervalMs()).
 //  Layout: progress bar, header, large temp, time remaining, humidity, ETA.
 // ---------------------------------------------------------------------------
 static bool wasDrying = false;
 static uint8_t dryDisplayIdx = 0;           // which drying unit we're showing
 static unsigned long dryRotateMs = 0;       // last rotation timestamp
 static const unsigned long DRY_ROTATE_MS = 60000;  // 60s rotation interval
+
+// A drying peek (#150) is far shorter than the idle screen's 60s dwell, so it
+// steps units at DRY_PEEK_DWELL_MS instead - otherwise a tap on a 3-AMS setup
+// would only ever show one unit and the user would have to wait out a full
+// idle-screen rotation between taps to see the others. main.cpp sizes the peek
+// window from the same constant so every unit gets its turn before it closes.
+static inline unsigned long dryRotateIntervalMs() {
+  return (currentScreen == SCREEN_DRY_PEEK) ? DRY_PEEK_DWELL_MS : DRY_ROTATE_MS;
+}
+
+void resetDryingRotation() {
+  dryDisplayIdx = 0;
+  dryRotateMs = millis();
+}
 
 // Draw a string left-aligned, hard-truncating at character boundary if it
 // doesn't fit maxW. No ellipsis.
@@ -969,12 +984,16 @@ static int8_t findDryingUnit(AmsState& ams, uint8_t idx) {
   return -1;
 }
 
-static uint8_t countDryingUnits(AmsState& ams) {
+static uint8_t countDryingUnits(const AmsState& ams) {
   uint8_t n = 0;
   for (uint8_t i = 0; i < ams.unitCount && i < AMS_MAX_UNITS; i++)
     if (ams.units[i].dryRemainMin > 0) n++;
   return n;
 }
+
+// Public wrapper: main.cpp sizes the drying peek (#150) from this so a peek on
+// a multi-AMS printer lasts long enough for every unit to come around.
+uint8_t dryingUnitCount(const AmsState& ams) { return countDryingUnits(ams); }
 
 #if defined(DISPLAY_ROUND_240)
 // Round (GC9A01) drying screen: rim ring = drying progress, centered text
@@ -985,7 +1004,7 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   const int16_t cx = SCREEN_W / 2;
 
   uint8_t dryCount = countDryingUnits(s.ams);
-  if (dryCount > 1 && millis() - dryRotateMs >= DRY_ROTATE_MS) {
+  if (dryCount > 1 && millis() - dryRotateMs >= dryRotateIntervalMs()) {
     dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
     dryRotateMs = millis();
     forceRedraw = true;
@@ -1116,7 +1135,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 
   // Count drying units and handle rotation
   uint8_t dryCount = countDryingUnits(s.ams);
-  if (dryCount > 1 && millis() - dryRotateMs >= DRY_ROTATE_MS) {
+  if (dryCount > 1 && millis() - dryRotateMs >= dryRotateIntervalMs()) {
     dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
     dryRotateMs = millis();
     forceRedraw = true;

@@ -47,6 +47,22 @@ void powerConfirmMarkSendingDrawn();
 // by reference without pulling in bambu_state.h here.
 struct AmsState;
 
+// --- AMS drying screen: unit rotation ---------------------------------------
+// The drying screen shows one unit at a time. On the idle screen it dwells 60 s
+// per unit, which is far longer than a drying peek (#150) lasts - so a peek
+// would only ever show whichever unit that free-running timer happened to be
+// on. main.cpp therefore restarts the rotation when it opens a peek and sizes
+// the peek window from the unit count, while the renderer steps at the shorter
+// cadence below whenever SCREEN_DRY_PEEK is up. Keep the two in agreement:
+// this constant is the per-unit dwell inside a peek.
+static const uint32_t DRY_PEEK_DWELL_MS = 5000;
+
+// Number of AMS units actively drying (dryRemainMin > 0).
+uint8_t dryingUnitCount(const AmsState& ams);
+// Restart the rotation at the first drying unit. Called when a peek opens so
+// the unit shown is deterministic rather than a function of wall-clock timing.
+void resetDryingRotation();
+
 extern lgfx::LovyanGFX* tft_ptr;
 // Macro (NOT a reference) so callers' `tft.method()` always dereferences the
 // current value of `tft_ptr`. On JC3248W535 we retarget this pointer to a
