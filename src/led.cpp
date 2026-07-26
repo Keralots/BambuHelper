@@ -99,6 +99,15 @@ bool isLedPinAllowed(uint8_t pin) {
   // Waveshare ESP32-S3-Touch-LCD-2.0"
   if (pin == 38 || pin == 39 || pin == 40 || pin == 42 || pin == 45) return false; // display SPI
   if (pin == 47 || pin == 48) return false;                                        // CST816D I2C
+  if (pin == 5) return false;                                                      // battery ADC (BAT_ADC_PIN)
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM
+  if (pin > 48) return false;
+
+#elif defined(BOARD_IS_WS280)
+  // Waveshare ESP32-S3-Touch-LCD-2.8" (community, untested in-house)
+  if (pin == 39 || pin == 40 || pin == 41 || pin == 42 || pin == 45) return false; // display SPI
+  if (pin == 1 || pin == 2 || pin == 3 || pin == 4) return false;                  // CST328 I2C + RST/IRQ
   if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM
   if (pin > 48) return false;
