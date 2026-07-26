@@ -255,6 +255,34 @@ void sanitizeButtonPin() {
     if (reserved) { clash("ES3N28P reserved peripheral"); return; }
   }
 #endif
+#if defined(BOARD_IS_WS200)
+  // Same reserved set as the WS200 LED deny-list (led.cpp) and buzzer
+  // sanitizer. initButton() calls pinMode() on the configured pin, so a
+  // stale/manual value pointing at the flash/PSRAM bus must be rejected here
+  // too. (CST816D SDA/SCL 48/47 and backlight 1 are already caught above.)
+  {
+    uint8_t p = buttonPin;
+    bool reserved =
+      (p == 38 || p == 39 || p == 40 || p == 42 || p == 45) ||  // display SPI
+      (p == 5) ||                                                // battery ADC
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) { clash("WS200 reserved peripheral"); return; }
+  }
+#endif
+#if defined(BOARD_IS_WS280)
+  // Same reserved set as the WS280 LED deny-list (led.cpp) and buzzer
+  // sanitizer. (CST328 SDA/SCL/IRQ/RST 1/3/4/2 and backlight 5 are already
+  // caught above.)
+  {
+    uint8_t p = buttonPin;
+    bool reserved =
+      (p == 39 || p == 40 || p == 41 || p == 42 || p == 45) ||  // display SPI
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) { clash("WS280 reserved peripheral"); return; }
+  }
+#endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
   if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }

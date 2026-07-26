@@ -192,7 +192,24 @@
 // the DISPLAY_240x320 fallback would pick GPIO26 (inside the ESP32-S3
 // flash/PSRAM range). Disable the GPIO buzzer backend by default.
 #define BUZZER_DEFAULT_PIN    0
-#elif defined(DISPLAY_CYD) || defined(DISPLAY_240x320)
+#elif defined(BOARD_IS_WS200)
+// Waveshare ESP32-S3-Touch-LCD-2.0: GPIO 4 is free and is the pin the wiring
+// docs recommend. Neither generic fallback works here - the DISPLAY_240x320
+// branch below would hand out the CYD's GPIO 26 (inside the ESP32-S3
+// flash/PSRAM range), and the S3 fallback GPIO 5 is this board's battery ADC.
+#define BUZZER_DEFAULT_PIN    4
+#elif defined(BOARD_IS_WS280)
+// Waveshare ESP32-S3-Touch-LCD-2.8: no buzzer hardware, and both generic
+// fallbacks are wrong - GPIO 26 (CYD) is in the S3 flash/PSRAM range and
+// GPIO 5 is this board's backlight. GPIO 4 is the CST328 touch IRQ here, so it
+// is not a safe shared default either. Disable (0); this board is not
+// hardware-tested in-house, so the user picks a free pin in the web UI.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432)
+// ESP32-classic CYD boards only. This used to key off DISPLAY_240x320, which
+// also matches the ESP32-S3 boards that reuse the same layout profile
+// (ws_lcd_200, ws_lcd_280, esp32s3_zero_320) - on those, GPIO 26 is a
+// flash/PSRAM bus pin, not a free GPIO.
 #define BUZZER_DEFAULT_PIN    26      // CYD: GPIO 26
 #elif defined(BOARD_IS_WS350)
 // Waveshare ESP32-S3-Touch-LCD-3.5: no buzzer hardware. Critically, the generic

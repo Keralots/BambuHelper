@@ -26,6 +26,67 @@ void sanitizeBuzzerPin() {
     return;
   }
 #endif
+#if defined(BOARD_IS_WS200)
+  // Waveshare ESP32-S3-Touch-LCD-2.0. Firmware up to v3.7.6 defaulted this
+  // board to the CYD's GPIO 26 (see BUZZER_DEFAULT_PIN), which is in the S3
+  // flash/PSRAM range - and the GPIO backend drives the pin LOW on init/stop
+  // even when the buzzer is disabled. Reject the full reserved set (kept in
+  // sync with the WS200 LED deny-list in led.cpp): display SPI 38/39/40/42/45,
+  // CST816D touch I2C 47/48, battery ADC 5, USB CDC 19/20, flash/PSRAM 26-37.
+  // Backlight 1 is caught by the BACKLIGHT_PIN check below.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p == 38 || p == 39 || p == 40 || p == 42 || p == 45) ||  // display SPI
+      (p == 47 || p == 48) ||                                    // touch I2C
+      (p == 5) ||                                                // battery ADC
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on WS200, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
+#if defined(BOARD_IS_WS280)
+  // Waveshare ESP32-S3-Touch-LCD-2.8, same story as WS200 above (the pre-v3.7.7
+  // default was GPIO 26). Reserved set: display SPI 39/40/41/42/45, CST328
+  // touch 1/2/3/4 (SDA/RST/SCL/IRQ), USB CDC 19/20, flash/PSRAM 26-37.
+  // Backlight 5 is caught by the BACKLIGHT_PIN check below.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p == 39 || p == 40 || p == 41 || p == 42 || p == 45) ||  // display SPI
+      (p == 1 || p == 2 || p == 3 || p == 4) ||                  // CST328 touch
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on WS280, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
+#if defined(BOARD_IS_S3_ZERO) && defined(DISPLAY_240x320)
+  // esp32s3_zero_320 shares the 240x320 layout profile and so also inherited
+  // the CYD's GPIO 26 before v3.7.7. Reserved set matches the S3_ZERO LED
+  // deny-list in led.cpp: display SPI 8-12, onboard WS2812 21, USB CDC 19/20,
+  // flash/PSRAM 26-37. Backlight 13 is caught by the BACKLIGHT_PIN check below.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p >= 8 && p <= 12) ||                                     // display SPI
+      (p == 21) ||                                               // onboard WS2812
+      (p == 19 || p == 20) ||                                    // USB CDC
+      (p >= 26 && p <= 37);                                      // flash/PSRAM
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on S3-Zero 320, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
 #if defined(BOARD_IS_ES3N28P)
   // QD ES3N28P has no GPIO buzzer; the GPIO backend drives the pin LOW on
   // init/stop even when disabled. The default pin is 0, but a stale/manual NVS

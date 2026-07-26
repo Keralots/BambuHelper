@@ -675,6 +675,20 @@ void loadSettings() {
   // Buzzer settings
   buzzerSettings.enabled = prefs.getBool("buz_on", false);
   buzzerSettings.pin = prefs.getUChar("buz_pin", BUZZER_DEFAULT_PIN);
+#if defined(BOARD_IS_WS200) || defined(BOARD_IS_WS280) || \
+    (defined(BOARD_IS_S3_ZERO) && defined(DISPLAY_240x320))
+  // One-shot migration off the bad pre-v3.7.7 default. These ESP32-S3 boards
+  // reuse the 240x320 layout profile and used to inherit the CYD's GPIO 26,
+  // which is a flash/PSRAM bus pin on the S3 - the buzzer could never work
+  // there. Anyone who opened the settings page has 26 persisted in NVS, so
+  // rewrite exactly that value to the board's real default. A pin the user
+  // picked themselves is left alone (sanitizeBuzzerPin() vets it instead).
+  if (buzzerSettings.pin == 26) {
+    buzzerSettings.pin = BUZZER_DEFAULT_PIN;
+    prefs.putUChar("buz_pin", buzzerSettings.pin);
+    Serial.printf("Buzzer: migrated stale pin 26 -> %d\n", buzzerSettings.pin);
+  }
+#endif
   buzzerSettings.quietStartHour = prefs.getUChar("buz_qstart", 0);
   buzzerSettings.quietEndHour = prefs.getUChar("buz_qend", 0);
   buzzerSettings.buttonClick = prefs.getBool("buz_click", false);

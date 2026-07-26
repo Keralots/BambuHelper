@@ -236,6 +236,10 @@ Use a **passive buzzer** (or a mini speaker on CYD) and connect it like this:
 > **CYD speaker:** The CYD board has a dedicated speaker connector on the PCB - just plug a mini speaker into it and set the buzzer pin to `GPIO 26` in the web interface.
 
 > **Note:** The firmware default buzzer pin is `GPIO 5` on both ESP32-S3 and ESP32-C3. The table above shows the **recommended wiring**. If you wire an ESP32-C3 buzzer to `GPIO 3`, you must change the buzzer pin to `GPIO 3` in the web interface after the first boot.
+
+> **Waveshare ESP32-S3-Touch-LCD-2.0:** the generic `GPIO 5` above does **not** apply - that pin is the battery ADC on this board. Wire the buzzer to `GPIO 4`, which is this board's default from v3.7.7 on. On firmware up to v3.7.6 the board incorrectly defaulted to the CYD's `GPIO 26` (a flash/PSRAM bus pin on the ESP32-S3, so the buzzer stayed silent); after updating, the stored pin is migrated to `GPIO 4` automatically, or you can set it by hand under **Buzzer**.
+
+> **Waveshare ESP32-S3-Touch-LCD-2.8 / ESP32-S3-Zero (320):** same pre-v3.7.7 `GPIO 26` problem. The 2.8" board now starts with the buzzer pin **disabled** (`0`) because `GPIO 5` is its backlight and `GPIO 4` its touch IRQ - pick a free GPIO in the web interface. The S3-Zero 320 build uses `GPIO 5` like the 240x240 version.
 You can change the buzzer GPIO later in the web interface under **Buzzer**. The buzzer can be used for print-finished, connected, and error notifications.
 
 > **Waveshare ESP32-S3-Touch-LCD-1.54** has a built-in **ES8311 audio codec** + speaker on its own pins (no buzzer GPIO to set) - it produces the same notifications using the onboard amplifier. No external buzzer needed.
@@ -251,6 +255,7 @@ Things to know:
 - The pin is set in the web UI - there is no default. The setting starts **disabled** with pin `0`.
 - The firmware refuses to attach the LED to the configured buzzer pin or the configured button pin (it will silently disable LED output to avoid a conflict).
 - On **ESP32-S3-Zero**, GPIO21 is reserved for the onboard WS2812 RGB LED and cannot be selected.
+- On the **Waveshare ESP32-S3-Touch-LCD-2.0**, `GPIO 2` is free and is a good choice for the LED driver's control input. The firmware rejects the pins this board already uses: `1` (backlight), `5` (battery ADC), `19`/`20` (USB), `26`-`37` (flash/PSRAM), `38`/`39`/`40`/`42`/`45` (display SPI) and `47`/`48` (touch I2C).
 - The LED is also a dimmer target: **hold the optional button / touchscreen** to ramp brightness down/up while the LED is on. The chosen brightness is debounced and saved to NVS after ~2 s of release.
 - Inverted-logic wiring (LED to VCC instead of GND) is not currently supported - the firmware always drives the pin active-HIGH.
 
