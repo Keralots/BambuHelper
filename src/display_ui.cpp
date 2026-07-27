@@ -252,7 +252,12 @@ void setBacklight(uint8_t level) {
 }
 
 static void applyPanelInversion() {
-#if defined(DISPLAY_CYD)
+#if defined(BOARD_IS_DIY)
+  // DIY class sets cfg.invert = DIY_INVERT; LovyanGFX's setInvert() XORs its
+  // argument with cfg.invert, so pass the checkbox directly (checkbox off = the
+  // DIY_INVERT baseline, on = flipped). Do NOT XOR DIY_INVERT again here.
+  _tft_instance.invertDisplay(dispSettings.invertColors);
+#elif defined(DISPLAY_CYD)
   _tft_instance.invertDisplay(dispSettings.invertColors);
 #elif defined(BOARD_IS_SC05X) || defined(BOARD_IS_ES3N28P)
   // These panels set cfg.invert=true in LovyanGFX, so "false" is the native

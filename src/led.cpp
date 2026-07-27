@@ -66,6 +66,12 @@ bool isLedPinAllowed(uint8_t pin) {
   if (buzzerSettings.enabled && pin == buzzerSettings.pin) return false;
   if (buttonType != BTN_DISABLED && pin == buttonPin) return false;
 
+#if defined(BOARD_IS_DIY)
+  // Standalone (not part of the board #elif chain below): a DIY+C3 build must
+  // reject BOTH the DIY display pins here AND the C3 reserved pins in the chain.
+  if (isDiyReservedPin(pin)) return false;
+#endif
+
 #if defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432)
   // CYD (ESP32-2432S028) and TZT L1435-2.4 - same ESP32 pinout, both esp32dev
   if (pin == 2 || pin == 12 || pin == 13 || pin == 14 || pin == 15) return false;  // display SPI
@@ -208,6 +214,17 @@ bool isLedPinAllowed(uint8_t pin) {
   // MISO not used but on SPI bus
   if (pin == 47) return false;
   if (pin > 48) return false;
+
+#elif defined(BOARD_IS_DIY)
+  // Last resort for a DIY env that named no chip target, so none of the
+  // BOARD_IS_* branches above matched. isDiyReservedPin() (checked near the top
+  // of this function) already covers the display lines plus the chip's flash /
+  // PSRAM / USB pins; what is left is output capability, which only matters
+  // here - GPIO 34-39 on a classic ESP32 are input-only, perfectly good as a
+  // button but unable to drive an LED at all.
+  #if defined(CONFIG_IDF_TARGET_ESP32)
+  if (pin >= 34 && pin <= 39) return false;
+  #endif
 #endif
 
   return true;
