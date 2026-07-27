@@ -772,7 +772,8 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
             <li>Find the cookie named <span class="mono">token</span> and copy its value.</li>
             <li>Paste it below and save.</li>
           </ol>
-          <a href="https://github.com/Keralots/BambuHelper#getting-a-cloud-token" target="_blank" class="small" style="display:inline-block;margin-top:var(--sp-2);color:var(--accent)">Detailed instructions with screenshots</a>
+          <p style="margin:var(--sp-3) 0 0;font-size:12.5px;color:var(--text-mid);line-height:1.6">Rather skip all that? The <strong>Companion Tool</strong> logs into your Bambu account, finds your printers, and pushes the token and serial straight to this device over your network.</p>
+          <a href="https://keralots.github.io/BambuHelper/cloud-token.html" target="_blank" class="small" style="display:inline-block;margin-top:var(--sp-2);color:var(--accent)">Both methods, step by step</a>
         </div>
       </details>
 
