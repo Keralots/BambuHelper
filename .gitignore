@@ -10,6 +10,13 @@ codex/
 /firmware/
 *.map
 tools/pushall/*
+
+# PyInstaller leftovers from tools/build_exe.bat. The shipped exe is committed
+# at tools/BambuHelper-CompanionTool.exe; these are the intermediates.
+tools/build/
+tools/dist/
+tools/__pycache__/
+tools/BambuHelper-CompanionTool.spec
 *.bak-*
 CLAUDE.md
 VLW_FONTS_PARKED.md

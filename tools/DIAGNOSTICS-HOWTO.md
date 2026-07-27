@@ -34,11 +34,33 @@ That's it.
 Windows exe is not available on these platforms. You'll need Python instead.
 
 ```
-pip install paho-mqtt curl_cffi
+pip install -U paho-mqtt curl_cffi
 python tools/bambu_diag.py
 ```
 
 Then follow steps 3-6 from the Windows section above.
+
+## Cloud login fails with "HTTP 403"
+
+If it says `CSRF error`, you are on an old build. Bambu added a CSRF check to
+the 2FA step in mid-2026 and it broke every version before that; current
+versions handle it. Update the tool.
+
+Otherwise it is Cloudflare, which fronts Bambu's login servers and turns away
+anything that doesn't look like a real browser. The tool imitates one, but
+Cloudflare retires those signatures over time, so an old `curl_cffi` eventually
+stops working:
+
+```
+pip install -U curl_cffi
+```
+
+On the Windows exe that means grabbing the current
+`BambuHelper-CompanionTool.exe` - the library is baked into the exe, so
+updating it locally does nothing.
+
+Still blocked? Use LAN mode instead, or configure the device by hand with a
+token from the Bambu Handy app.
 
 ## Privacy note
 

@@ -15,7 +15,9 @@ Usage:
 
 Requirements:
     pip install paho-mqtt              # always required
-    pip install curl_cffi              # only for Cloud mode (Cloudflare bypass)
+    pip install -U curl_cffi           # only for Cloud mode (Cloudflare bypass);
+                                       # keep it updated, Cloudflare retires old
+                                       # browser fingerprints over time
 """
 
 import atexit
@@ -42,7 +44,36 @@ except ImportError:
 API_BASE_US = "https://api.bambulab.com"
 API_BASE_CN = "https://api.bambulab.cn"
 TFA_URL     = "https://bambulab.com/api/sign-in/tfa"
-IMPERSONATE = "chrome"
+WEB_ORIGIN  = "https://bambulab.com"
+
+# Cloudflare fronts the Bambu endpoints. curl_cffi's TLS/JA3 impersonation is
+# what gets us past the fingerprint check, but that alone is not enough:
+# Cloudflare hands out clearance cookies on the first response and expects them
+# back on the next request, so every cloud call has to share ONE session. Doing
+# a fresh request per call is what produced "Verification failed: HTTP Error 403"
+# on the 2FA/verification step while the login call itself went through.
+#
+# Impersonation targets are tried in order. "chrome" is an alias for whatever
+# Chrome build the installed curl_cffi ships with; the explicit ones are
+# fallbacks for when Cloudflare starts rejecting that particular fingerprint.
+# Unknown names (older curl_cffi) are skipped automatically.
+IMPERSONATE_TARGETS = ["chrome", "chrome136", "chrome131", "safari18_0"]
+
+# bambulab.com's double-submit CSRF (see _ensure_csrf)
+CSRF_COOKIE = "bbl_csrf_token"
+CSRF_HEADER = "x-bbl-csrf-token"
+CSRF_URL    = f"{WEB_ORIGIN}/api/csrf"
+
+BROWSER_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Content-Type": "application/json",
+    "Origin": WEB_ORIGIN,
+    "Referer": f"{WEB_ORIGIN}/",
+}
+
+_session = None          # curl_cffi Session shared by every cloud call
+_session_target = None   # impersonation target the live session was built with
 
 def _require_curl_cffi():
     try:
@@ -53,22 +84,134 @@ def _require_curl_cffi():
         print("Install with: pip install curl_cffi")
         sys.exit(1)
 
-def cloud_login(email, password, region):
+def _build_session(target):
+    """New session on a given impersonation target, or None if unsupported."""
     requests = _require_curl_cffi()
+    try:
+        session = requests.Session(impersonate=target)
+    except Exception:
+        return None  # target unknown to this curl_cffi build
+    session.headers.update(BROWSER_HEADERS)
+    return session
+
+def _cloud_session():
+    global _session, _session_target
+    if _session is None:
+        for target in IMPERSONATE_TARGETS:
+            session = _build_session(target)
+            if session is not None:
+                _session, _session_target = session, target
+                break
+        if _session is None:
+            print("\nERROR: no usable browser impersonation target in curl_cffi.")
+            print("Upgrade it with: pip install -U curl_cffi")
+            sys.exit(1)
+    return _session
+
+def _next_impersonate_target():
+    """Rebuild the session on the next target after a 403. False when exhausted."""
+    global _session, _session_target
+    try:
+        start = IMPERSONATE_TARGETS.index(_session_target) + 1
+    except ValueError:
+        start = len(IMPERSONATE_TARGETS)
+    for target in IMPERSONATE_TARGETS[start:]:
+        session = _build_session(target)
+        if session is not None:
+            # New session = new cookie jar, so the CSRF token is refetched on
+            # the next write.
+            _session, _session_target = session, target
+            return True
+    return False
+
+def _csrf_token():
+    for cookie in _cloud_session().cookies.jar:
+        if cookie.name == CSRF_COOKIE:
+            return cookie.value
+    return None
+
+def _ensure_csrf(refresh=False):
+    """Fetch the CSRF cookie bambulab.com requires on writes (added mid-2026).
+
+    The site does double-submit CSRF: `GET /api/csrf` sets a `bbl_csrf_token`
+    cookie and every POST has to echo that value back in an `x-bbl-csrf-token`
+    header. Without it the 2FA endpoint answers 403 `CSRF error: missing_cookie`
+    - which is what broke Cloud mode. Only bambulab.com does this; the
+    api.bambulab.com endpoints do not.
+    """
+    if refresh or not _csrf_token():
+        try:
+            _cloud_session().get(CSRF_URL, timeout=15)
+        except Exception:
+            pass
+    return _csrf_token()
+
+def _body_snippet(resp):
+    try:
+        return resp.text[:300]
+    except Exception:
+        return ""
+
+def _cloud_request(method, url, **kwargs):
+    """Cloud HTTP call, handling both CSRF and a Cloudflare fingerprint block."""
+    kwargs.setdefault("timeout", 15)
+    needs_csrf = (url.startswith(WEB_ORIGIN)
+                  and method.upper() not in ("GET", "HEAD", "OPTIONS"))
+    csrf_retried = False
+
+    while True:
+        if needs_csrf:
+            token = _ensure_csrf()
+            if token:
+                headers = dict(kwargs.get("headers") or {})
+                headers[CSRF_HEADER] = token
+                kwargs["headers"] = headers
+
+        resp = _cloud_session().request(method, url, **kwargs)
+
+        if resp.status_code != 403:
+            if resp.status_code >= 400:
+                # raise_for_status() alone gives "HTTP Error 400:" with no hint
+                # of what the server objected to; the body usually says.
+                raise RuntimeError(f"HTTP {resp.status_code} - {_body_snippet(resp)}")
+            return resp
+
+        body = _body_snippet(resp)
+
+        # A CSRF rejection is the site's own guard, not Cloudflare - swapping
+        # browser fingerprints would not help. Refetch the token and retry once.
+        if "csrf" in body.lower() and needs_csrf and not csrf_retried:
+            csrf_retried = True
+            _ensure_csrf(refresh=True)
+            continue
+
+        if not _next_impersonate_target():
+            raise RuntimeError(
+                "HTTP 403 - the request was refused on every browser "
+                "fingerprint this curl_cffi build offers.\n"
+                "  Try:  pip install -U curl_cffi\n"
+                "  If it still fails, use LAN mode, or grab the token from the "
+                "Bambu Handy app / bambulab.com and configure the device by hand.\n"
+                f"  Response: {body}")
+
+def cloud_login(email, password, region):
     api_base = API_BASE_CN if region == "cn" else API_BASE_US
     url = f"{api_base}/v1/user-service/user/login"
-    resp = requests.post(url, json={"account": email, "password": password},
-                         impersonate=IMPERSONATE, timeout=15)
-    resp.raise_for_status()
+    resp = _cloud_request("POST", url, json={"account": email, "password": password})
     return resp.json()
 
 def cloud_verify_totp(tfa_code, tfa_key):
-    requests = _require_curl_cffi()
-    resp = requests.post(TFA_URL,
-                         json={"tfaKey": tfa_key, "tfaCode": tfa_code},
-                         impersonate=IMPERSONATE, timeout=15)
-    resp.raise_for_status()
+    # TFA_URL is on bambulab.com, so _cloud_request adds the CSRF header here.
+    resp = _cloud_request("POST", TFA_URL,
+                          json={"tfaKey": tfa_key, "tfaCode": tfa_code})
     token = resp.cookies.get("token")
+    if not token:
+        # The token cookie is set on the session, not necessarily echoed on this
+        # response, depending on how the redirect chain resolves.
+        for cookie in _cloud_session().cookies.jar:
+            if cookie.name == "token":
+                token = cookie.value
+                break
     if not token:
         try:
             data = resp.json()
@@ -78,21 +221,15 @@ def cloud_verify_totp(tfa_code, tfa_key):
     return token
 
 def cloud_verify_email(email, code, region):
-    requests = _require_curl_cffi()
     api_base = API_BASE_CN if region == "cn" else API_BASE_US
     url = f"{api_base}/v1/user-service/user/login"
-    resp = requests.post(url, json={"account": email, "code": code},
-                         impersonate=IMPERSONATE, timeout=15)
-    resp.raise_for_status()
+    resp = _cloud_request("POST", url, json={"account": email, "code": code})
     return resp.json()
 
 def cloud_fetch_devices(token, region):
-    requests = _require_curl_cffi()
     api_base = API_BASE_CN if region == "cn" else API_BASE_US
     url = f"{api_base}/v1/iot-service/api/user/bind"
-    resp = requests.get(url, headers={"Authorization": f"Bearer {token}"},
-                        impersonate=IMPERSONATE, timeout=15)
-    resp.raise_for_status()
+    resp = _cloud_request("GET", url, headers={"Authorization": f"Bearer {token}"})
     data = resp.json()
     devices = data.get("data", [])
     if not devices and isinstance(data.get("devices"), list):
@@ -122,16 +259,14 @@ def extract_user_id_jwt(token):
     return None
 
 def fetch_user_id_api(token, region):
+    # Same Cloudflare-fronted host as the login calls, so this goes through the
+    # shared impersonated session too - plain urllib gets a 403 here.
     api_base = API_BASE_CN if region == "cn" else API_BASE_US
     url = f"{api_base}/v1/user-service/my/profile"
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "bambu_network_agent/01.09.05.01",
-        "Accept": "application/json",
-    })
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        resp = _cloud_request("GET", url,
+                              headers={"Authorization": f"Bearer {token}"})
+        data = resp.json()
     except Exception as e:
         print(f"  [WARN] Profile API request failed: {e}")
         return None
