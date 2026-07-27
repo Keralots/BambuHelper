@@ -11,12 +11,21 @@ codex/
 *.map
 tools/pushall/*
 
-# PyInstaller leftovers from tools/build_exe.bat. The shipped exe is committed
-# at tools/BambuHelper-CompanionTool.exe; these are the intermediates.
+# PyInstaller leftovers from tools/companion/build_exe.bat. The shipped exe is
+# committed at tools/BambuHelper-CompanionTool.exe; these are the intermediates.
 tools/build/
 tools/dist/
 tools/__pycache__/
 tools/BambuHelper-CompanionTool.spec
+tools/companion/build/
+tools/companion/dist/
+tools/companion/__pycache__/
+tools/companion/*.spec
+
+# Diagnostic captures land next to wherever the tool was run.
+pushall_dump.json
+ams_dump.json
+diagnostic_log.txt
 *.bak-*
 CLAUDE.md
 VLW_FONTS_PARKED.md

@@ -1,0 +1,27 @@
+# Runtime dependencies for the BambuHelper Companion.
+#
+#   python -m pip install -r requirements.txt
+#
+# To build the standalone .exe you ALSO need PyInstaller (build-time only):
+#   python -m pip install pyinstaller
+
+paho-mqtt<3     # MQTT client for the printer diagnostic. Pinned below 3.x:
+                # the diagnostic reads raw v3.1.1 CONNACK codes (4 = bad
+                # credentials, 5 = not authorized) to tell the user their
+                # Access Code or cloud token is wrong, and that needs paho's
+                # v1 callback API, which 3.x is expected to drop.
+curl_cffi       # Cloud login: TLS/JA3 impersonation to get past Cloudflare.
+                # Keep this updated - Cloudflare retires browser fingerprints
+                # over time and an old build eventually starts getting 403s.
+pywebview       # Optional: native app window hosting the local web UI.
+                # Without it the app still runs and opens in the default
+                # browser instead, so this is not a hard requirement.
+
+# On Windows, pywebview uses the Edge WebView2 backend via pythonnet (clr); pip
+# installs pythonnet as a dependency of pywebview. The WebView2 runtime itself
+# ships with Windows 11; on Windows 10 install Microsoft's Evergreen runtime,
+# or just use the browser fallback.
+#
+# On Linux, pywebview needs GTK or Qt bindings from the system package manager
+# (e.g. python3-gi + gir1.2-webkit2-4.1 on Debian/Ubuntu). Skipping them is
+# fine - the browser fallback gives the identical UI.
