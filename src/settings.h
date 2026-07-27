@@ -69,7 +69,8 @@ struct DisplaySettings {
   bool     animatedBar;       // shimmer effect on progress bar
   bool     pongClock;         // Pong/Breakout animated clock
   bool     smallLabels;       // use smaller gauge labels (Font 1 instead of Font 2)
-  bool     showTimeRemaining; // always show time remaining instead of ETA
+  uint8_t  timeDisplayMode;   // finish-time line: 0=ETA clock, 1=remaining duration,
+                              // 2=both on one static line ("17:45 · 2h05m")
   bool     fanMatchPrinter;   // round fan % to 10% steps to match printer LCD (else 1% precision from fan_gear)
   bool     hideStatusReadout; // hide the printing status-bar center layer/power readout (redundant when shown as gauges); frees width for the filament name
   bool     invertColors;   // invert display colors (fixes white-bg on some panels)

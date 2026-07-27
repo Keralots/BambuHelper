@@ -21,7 +21,8 @@ enum ScreenState {
   SCREEN_OTA_UPDATE,
   SCREEN_SPLIT,         // two printers side-by-side (top/bottom bands)
   SCREEN_CAMERA,        // fullscreen P1/A1 chamber image (#120); tap to exit
-  SCREEN_POWER_CONFIRM  // fullscreen plug on/off confirmation (#136); hold to confirm
+  SCREEN_POWER_CONFIRM, // fullscreen plug on/off confirmation (#136); hold to confirm
+  SCREEN_DRY_PEEK       // AMS drying view tapped up during a print (#150); auto-closes
 };
 
 // Read-only snapshot of the plug power-confirm modal, filled by main.cpp so the
@@ -45,6 +46,22 @@ void powerConfirmMarkSendingDrawn();
 // Forward declaration so split-related declarations below can take an AmsState
 // by reference without pulling in bambu_state.h here.
 struct AmsState;
+
+// --- AMS drying screen: unit rotation ---------------------------------------
+// The drying screen shows one unit at a time. On the idle screen it dwells 60 s
+// per unit, which is far longer than a drying peek (#150) lasts - so a peek
+// would only ever show whichever unit that free-running timer happened to be
+// on. main.cpp therefore restarts the rotation when it opens a peek and sizes
+// the peek window from the unit count, while the renderer steps at the shorter
+// cadence below whenever SCREEN_DRY_PEEK is up. Keep the two in agreement:
+// this constant is the per-unit dwell inside a peek.
+static const uint32_t DRY_PEEK_DWELL_MS = 5000;
+
+// Number of AMS units actively drying (dryRemainMin > 0).
+uint8_t dryingUnitCount(const AmsState& ams);
+// Restart the rotation at the first drying unit. Called when a peek opens so
+// the unit shown is deterministic rather than a function of wall-clock timing.
+void resetDryingRotation();
 
 extern lgfx::LovyanGFX* tft_ptr;
 // Macro (NOT a reference) so callers' `tft.method()` always dereferences the
@@ -125,5 +142,20 @@ void formatAmsNumberLabel(char* out, size_t len, uint8_t unitIndex);   // "<base
 void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex);   // "<base> A".."D"
 void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
                       uint8_t dryDisplayIdx, uint8_t dryCount);        // "<base>[ HT] N  (x/y)"
+
+// Build the finish-time line shared by the printing, split, round and drying
+// screens, and return the color it should be drawn in.
+//   mode           - a dispSettings.timeDisplayMode value: 0 = wall-clock ETA,
+//                    1 = remaining duration, 2 = both on one line. Callers that
+//                    must pin one form (the drying screen, whose layout already
+//                    carries the duration) pass it literally instead of reading
+//                    the setting.
+//   labelRemaining - false emits a bare "2h 05m" for the tight split bands.
+//   maxW           - when > 0, step down to the most compact form that fits this
+//                    pixel budget at the currently loaded font. Only the curved
+//                    round skins need it; everyone else passes 0.
+// Falls back to the duration whenever NTP has not synced, whatever mode asks for.
+uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
+                       int16_t maxW, char* buf, size_t n);
 
 #endif // DISPLAY_UI_H

@@ -55,7 +55,7 @@ uint32_t   sPrevAirduct[2]  = { 0xFFFFFFFFu, 0xFFFFFFFFu };
 uint8_t    sPrevHdrState[2] = { 0xFF, 0xFF };
 uint8_t    sPrevBarProg[2]  = { 0xFF, 0xFF };
 char       sPrevFootCenter[2][20] = { { 0 }, { 0 } };
-char       sPrevEta[2][24] = { { 0 }, { 0 } };
+char       sPrevEta[2][40] = { { 0 }, { 0 } };
 BambuState sPrevState[2];
 
 // Drying-band state (index 0 = top/left band, 1 = bottom/right band). A band
@@ -78,37 +78,15 @@ const unsigned long DRY_ROT_MS = 60000;            // rotate drying units every 
 // (display_ui.cpp): wall-clock finish time when the user prefers it and NTP is
 // up, otherwise the remaining duration. Returns false when there is nothing to
 // show (not printing / no estimate) so the caller can render a dim placeholder.
-bool buildSplitEta(const BambuState& s, char* buf, size_t n) {
+bool buildSplitEta(const BambuState& s, char* buf, size_t n, int16_t maxW) {
   if (s.remainingMinutes == 0) return false;
-  time_t nowEpoch = time(nullptr);
-  struct tm now;
-  localtime_r(&nowEpoch, &now);
-  const bool ntpSynced = now.tm_year > (2020 - 1900);
-
-  if (!dispSettings.showTimeRemaining && ntpSynced) {
-    time_t etaEpoch = nowEpoch + (time_t)s.remainingMinutes * 60;
-    struct tm e;
-    localtime_r(&etaEpoch, &e);
-    int eh = e.tm_hour;
-    const char* ampm = "";
-    if (!netSettings.use24h) { ampm = eh < 12 ? "AM" : "PM"; eh %= 12; if (eh == 0) eh = 12; }
-    if (e.tm_yday != now.tm_yday || e.tm_year != now.tm_year) {
-      if (netSettings.use24h)
-        snprintf(buf, n, "ETA: %02d.%02d. %02d:%02d", e.tm_mday, e.tm_mon + 1, eh, e.tm_min);
-      else
-        snprintf(buf, n, "ETA: %02d/%02d %d:%02d%s", e.tm_mon + 1, e.tm_mday, eh, e.tm_min, ampm);
-    } else {
-      if (netSettings.use24h)
-        snprintf(buf, n, "ETA: %02d:%02d", eh, e.tm_min);
-      else
-        snprintf(buf, n, "ETA: %d:%02d %s", eh, e.tm_min, ampm);
-    }
-  } else {
-    // showTimeRemaining set, or NTP not synced yet: show the duration. No
-    // "Remaining:" prefix - the progress gauge already labels this context and
-    // the narrow landscape bands are tight.
-    snprintf(buf, n, "%dh %02dm", s.remainingMinutes / 60, s.remainingMinutes % 60);
-  }
+  // labelRemaining=false: no "Remaining:" prefix - the progress gauge already
+  // labels this context and the narrow landscape bands are tight. maxW is the
+  // band width, so formatEtaLine can step a long combined/cross-day value down
+  // to a form that fits instead of overrunning into the neighbouring band. The
+  // caller sets the ETA font before calling, so the width measurement is right.
+  formatEtaLine(s.remainingMinutes, dispSettings.timeDisplayMode,
+                /*labelRemaining=*/false, maxW, buf, n);
   return true;
 }
 
@@ -468,8 +446,9 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
       swType  = s.ams.vtType;
     }
 
-    char etaStr[24];
-    const bool hasEta = buildSplitEta(s, etaStr, sizeof(etaStr));
+    char etaStr[40];
+    setFont(tft, g.etaFont);   // set before building: formatEtaLine measures to fit
+    const bool hasEta = buildSplitEta(s, etaStr, sizeof(etaStr), g.w - 4);
     if (!hasEta) strlcpy(etaStr, "ETA: --", sizeof(etaStr));
     const uint16_t etaClr = hasEta ? CLR_GREEN : CLR_TEXT_DIM;
 
