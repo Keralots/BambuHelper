@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BambuHelper - Cloud Token Setup</title>
+  <meta name="description" content="How to get a Bambu Cloud access token and configure BambuHelper with it - Companion Tool or browser DevTools.">
+  <meta name="theme-color" content="#FAF8F6">
+
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    (function() {
+      try {
+        if (localStorage.getItem('bhTheme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (_) {}
+    })();
+  </script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ────────── topbar ────────── -->
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" type="button" aria-label="Toggle navigation" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+        </svg>
+      </button>
+      <div class="brand">
+        <span class="mark" aria-hidden="true">B</span>
+        <span>BambuHelper</span>
+      </div>
+      <span class="section-title">Cloud Token</span>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+        </button>
+        <a class="icon-btn" href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener" aria-label="GitHub repository">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/>
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- ────────── sidebar ────────── -->
+    <aside class="sidebar" id="sidebar">
+      <h4>On this page</h4>
+      <nav aria-label="On this page">
+        <a class="nav-item" href="#when-head" data-target="when-head">When you need a token</a>
+        <a class="nav-item" href="#tool-head" data-target="tool-head">Companion Tool</a>
+        <a class="nav-item" href="#manual-head" data-target="manual-head">Copy it from your browser</a>
+        <a class="nav-item" href="#region-head" data-target="region-head">Region and serial number</a>
+        <a class="nav-item" href="#expiry-head" data-target="expiry-head">When the token expires</a>
+        <a class="nav-item" href="#privacy-head" data-target="privacy-head">What is stored</a>
+      </nav>
+      <h4>Project</h4>
+      <nav aria-label="Project links">
+        <a class="nav-item" href="index.html">Web Flasher</a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">GitHub <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper#getting-a-cloud-token" target="_blank" rel="noopener">Documentation <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">Report a bug <span class="ext">&#8599;</span></a>
+      </nav>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- ────────── main ────────── -->
+    <main class="main">
+
+      <div class="section-intro">
+        <h2>Cloud Token Setup</h2>
+        <p>Cloud mode connects through Bambu Lab's own MQTT service using an access token from your account. Two ways to get one - a tool that does it for you, or a copy-paste from your browser.</p>
+      </div>
+
+      <!-- ────────── When you need a token ────────── -->
+      <section class="card" aria-labelledby="when-head">
+        <div class="card-head">
+          <div>
+            <h3 id="when-head">When you need a token</h3>
+            <p>Only Cloud mode uses one. LAN mode does not.</p>
+          </div>
+        </div>
+        <ul class="checklist">
+          <li><strong>Use Cloud mode</strong> if you would rather not turn on LAN/Developer mode, if the device is on a different network than the printer, or if your printer is cloud-only (P2S).</li>
+          <li><strong>Use LAN mode</strong> if the printer and device share a network - it needs the printer's IP and 8-character access code instead, and no token at all.</li>
+          <li><strong>H2 series in LAN mode</strong> (H2S, H2C, H2D) needs both LAN-only mode <em>and</em> Developer mode on the printer. If you would rather not enable those, Cloud mode is the way.</li>
+        </ul>
+      </section>
+
+      <!-- ────────── Companion Tool ────────── -->
+      <section class="card" aria-labelledby="tool-head">
+        <div class="card-head">
+          <div>
+            <h3 id="tool-head">Easiest: the Companion Tool</h3>
+            <p>Logs into your account, finds your printers, and pushes the token and serial straight to the device.</p>
+          </div>
+        </div>
+
+        <article class="path" aria-labelledby="path-tool">
+          <header class="path-head">
+            <span class="path-tag">
+              <span class="path-pulse" aria-hidden="true"></span>
+              recommended
+            </span>
+            <h4 id="path-tool">One tool, no copy-paste</h4>
+          </header>
+          <p class="path-body">
+            The tool handles the login (including 2FA), lists the printers on your
+            account, and sends the token plus the matching serial number to
+            BambuHelper over your LAN. Nothing is typed by hand, so there is no way
+            to mistype a serial or truncate a token.
+          </p>
+          <ol class="step-list">
+            <li>Download <a href="https://github.com/Keralots/BambuHelper/raw/main/tools/BambuHelper-CompanionTool.exe">BambuHelper-CompanionTool.exe</a> (Windows). On Mac or Linux, run <code>python tools/bambu_diag.py</code> from a clone of the repo.</li>
+            <li>Run it. Windows may warn about an unsigned tool - choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+            <li>Pick <strong>Configure BambuHelper device</strong> from the menu.</li>
+            <li>Log in with your Bambu account, pick the printer, and enter your device's IP address.</li>
+          </ol>
+          <p class="hint">Always download a fresh copy when something stops working. Bambu changes their login flow from time to time, and the fix ships inside the tool.</p>
+        </article>
+      </section>
+
+      <!-- ────────── Manual ────────── -->
+      <section class="card" aria-labelledby="manual-head">
+        <div class="card-head">
+          <div>
+            <h3 id="manual-head">Manual: copy the token from your browser</h3>
+            <p>Log into bambulab.com, then read one cookie out of the developer tools.</p>
+          </div>
+        </div>
+
+        <p class="help-text">Open <a href="https://bambulab.com" target="_blank" rel="noopener">bambulab.com</a> and sign in first - the cookie only exists once you are logged in. Then press <strong>F12</strong> and follow the path for your browser.</p>
+
+        <article class="path" aria-labelledby="path-chrome">
+          <header class="path-head">
+            <h4 id="path-chrome">Chrome / Edge</h4>
+          </header>
+          <ol class="step-list">
+            <li>Open the <strong>Application</strong> tab (click <code>&raquo;</code> if it is hidden).</li>
+            <li>In the sidebar expand <strong>Cookies</strong>, then click <strong>https://bambulab.com</strong>.</li>
+            <li>Find the row named <code>token</code>.</li>
+            <li>Double-click its <strong>Value</strong> cell and copy the whole string.</li>
+          </ol>
+        </article>
+
+        <div class="path-divider" role="separator"><span>or</span></div>
+
+        <article class="path" aria-labelledby="path-firefox">
+          <header class="path-head">
+            <h4 id="path-firefox">Firefox</h4>
+          </header>
+          <ol class="step-list">
+            <li>Open the <strong>Storage</strong> tab.</li>
+            <li>Expand <strong>Cookies</strong>, then click <strong>https://bambulab.com</strong>.</li>
+            <li>Find <code>token</code> and copy its value.</li>
+          </ol>
+        </article>
+
+        <div class="path-divider" role="separator"><span>or</span></div>
+
+        <article class="path" aria-labelledby="path-safari">
+          <header class="path-head">
+            <h4 id="path-safari">Safari</h4>
+          </header>
+          <ol class="step-list">
+            <li>Enable the Develop menu first: <strong>Settings &rarr; Advanced &rarr; Show features for web developers</strong>.</li>
+            <li>Open <strong>Develop &rarr; Show Web Inspector</strong>, then the <strong>Storage</strong> tab.</li>
+            <li>Expand <strong>Cookies &rarr; bambulab.com</strong>, find <code>token</code>, copy its value.</li>
+          </ol>
+        </article>
+
+        <p class="help-text" style="margin-top:16px">Then open your device's page in a browser, go to <strong>Printer &rarr; Cloud</strong>, paste the value into <strong>Access token</strong>, add the serial number, and save.</p>
+        <p class="hint">The token is long - a few hundred characters. Make sure you copied all of it; a truncated token connects and then silently fails.</p>
+      </section>
+
+      <!-- ────────── Region + serial ────────── -->
+      <section class="card" aria-labelledby="region-head">
+        <div class="card-head">
+          <div>
+            <h3 id="region-head">Region and serial number</h3>
+            <p>Two settings that quietly break Cloud mode when they are wrong.</p>
+          </div>
+        </div>
+        <ul class="checklist">
+          <li><strong>Server region</strong> must match the account the token came from - China accounts use a different MQTT host than US/EU. A mismatch fails authentication with a valid token.</li>
+          <li><strong>Serial number is not the printer name.</strong> It is a 15-character code like <code>01P00A000000000</code>, on the printer under <strong>Settings &rarr; Device</strong> or on the label. The name Bambu Studio shows (for example <code>3DP-01P-110</code>) will not work.</li>
+          <li><strong>Serials are uppercase.</strong> The MQTT topics are case-sensitive, so a lowercase serial connects but shows no data.</li>
+        </ul>
+        <p class="hint">The device can also find the serial for you: on the Cloud tab, use <strong>Scan local network</strong> when the printer is on the same WiFi.</p>
+      </section>
+
+      <!-- ────────── Expiry ────────── -->
+      <section class="card" aria-labelledby="expiry-head">
+        <div class="card-head">
+          <div>
+            <h3 id="expiry-head">When the token expires</h3>
+            <p>Roughly every three months, and sooner if you sign out everywhere or change your password.</p>
+          </div>
+        </div>
+        <p class="help-text">An expired token looks like a printer that will not connect: the device sits on "Connecting", and the <strong>Diagnostics</strong> page reports an MQTT authentication failure. Nothing is broken - the token simply needs replacing, using either method above.</p>
+        <ul class="checklist">
+          <li><strong>Tokens from the Companion Tool tend to last longer</strong> than ones lifted from a browser cookie, which can be invalidated as soon as the browser session ends.</li>
+          <li><strong>Nothing on the device needs reflashing</strong> - paste the new token over the old one and save.</li>
+        </ul>
+      </section>
+
+      <!-- ────────── Privacy ────────── -->
+      <section class="card" aria-labelledby="privacy-head">
+        <div class="card-head">
+          <div>
+            <h3 id="privacy-head">What is stored on the device</h3>
+            <p>The short version: the token, and nothing else.</p>
+          </div>
+        </div>
+        <ul class="checklist">
+          <li><strong>No account credentials.</strong> BambuHelper never asks for your email or password. The Companion Tool sends your login to Bambu's own servers and keeps nothing.</li>
+          <li><strong>Only the token</strong> lands in the ESP32's flash, alongside the printer serial.</li>
+          <li><strong>Read-only.</strong> The firmware subscribes to printer status. The only commands it can send are the chamber-light controls you trigger yourself.</li>
+        </ul>
+      </section>
+
+      <footer class="footer">
+        <span>BambuHelper. Open-source 3D printer monitor.</span>
+        <span>
+          <a href="index.html">web flasher</a>
+          &nbsp;·&nbsp;
+          <a href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">source</a>
+          &nbsp;·&nbsp;
+          <a href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">report a bug</a>
+        </span>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    // ── Theme toggle (mirrors the device web UI's data-theme mechanism) ──
+    (function() {
+      const root = document.documentElement;
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const dark = root.getAttribute('data-theme') === 'dark';
+        if (dark) root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', 'dark');
+        try { localStorage.setItem('bhTheme', dark ? 'light' : 'dark'); } catch (_) {}
+      });
+    })();
+
+    // ── Mobile sidebar ──
+    (function() {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const burger = document.getElementById('hamburger');
+      const close = () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+        burger.setAttribute('aria-expanded', 'false');
+      };
+      burger.addEventListener('click', () => {
+        const open = sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show', open);
+        burger.setAttribute('aria-expanded', String(open));
+      });
+      backdrop.addEventListener('click', close);
+      sidebar.querySelectorAll('a[data-target]').forEach(a => a.addEventListener('click', close));
+    })();
+
+    // ── Highlight the sidebar item matching the card currently in view ──
+    (function() {
+      const items = document.querySelectorAll('.nav-item[data-target]');
+      const headings = [...document.querySelectorAll('.card-head h3')];
+      if (!('IntersectionObserver' in window) || !headings.length) return;
+      let lastId = null;
+      const set = (id) => {
+        if (id === lastId) return;
+        lastId = id;
+        items.forEach(a => {
+          if (a.dataset.target === id) a.setAttribute('aria-current', 'true');
+          else a.removeAttribute('aria-current');
+        });
+      };
+      const io = new IntersectionObserver((entries) => {
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length) set(visible[0].target.id);
+      }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+      headings.forEach(h => io.observe(h));
+      set(headings[0].id);
+    })();
+  </script>
+</body>
+</html>
