@@ -550,6 +550,28 @@ _RC_TEXT = {
     3: "Server unavailable", 4: "Bad credentials", 5: "Not authorized",
 }
 
+# A Bambu printer with every local MQTT slot taken does not refuse the client,
+# it just stops servicing it. Confirmed on a P1S with three BambuHelper devices
+# connected: the fourth client either times out on the TCP connect or gets the
+# TCP session and then stalls in the TLS handshake. Both look like a dead
+# printer from the outside, so every LAN-side failure path says this.
+_SLOT_LIMIT_HINT = (
+    "Bambu printers accept only about 3 local MQTT clients at once, counting "
+    "every BambuHelper device, Panda Touch, Home Assistant and Bambu Studio "
+    "session in LAN mode. Once the slots are full the printer stops answering "
+    "on port 8883, which looks exactly like a printer that is switched off. "
+    "Disconnect one client and try again, or use Cloud mode - cloud "
+    "connections do not use the printer's local slots."
+)
+
+_SLOT_LIMIT_VERDICT = (
+    "The printer's local MQTT slots are probably full. Bambu printers take "
+    "only about 3 clients at once (BambuHelper devices, Panda Touch, Home "
+    "Assistant, Bambu Studio in LAN mode) and a full printer accepts the TCP "
+    "connection but never finishes the handshake. Disconnect one client, or "
+    "switch to Cloud mode."
+)
+
 
 def _make_mqtt_client(client_id):
     """paho Client on the v1 callback API, on both paho 1.x and 2.x.
@@ -640,6 +662,8 @@ class Diagnostic:
             else:
                 self.log("Check the printer is powered on, on the same network, "
                          "and not blocked by a firewall.", "info")
+                self.log("If the printer is definitely online: " + _SLOT_LIMIT_HINT,
+                         "info")
 
     def check_tls(self):
         self.log("STEP 3: TLS handshake", "step")
@@ -661,6 +685,9 @@ class Diagnostic:
             wrapped.close()
         except Exception as e:
             self.log(f"TLS handshake failed: {e}", "fail")
+            if self.cfg["mode"] == "lan" and self.result["tcp_ok"]:
+                self.log("The printer accepted the TCP connection but never "
+                         "completed the handshake. " + _SLOT_LIMIT_HINT, "info")
 
     # ── MQTT callbacks ─────────────────────────────────────────────────────
     def _on_connect(self, client, userdata, flags, rc):
@@ -801,6 +828,8 @@ class Diagnostic:
             client.connect(self.cfg["broker"], PORT, keepalive=60)
         except Exception as e:
             self.log(f"Connection error: {e}", "fail")
+            if self.cfg["mode"] == "lan" and self.result["tcp_ok"]:
+                self.log(_SLOT_LIMIT_HINT, "info")
             return
 
         self.log(f"Waiting for data ({self.listen_secs}s)...", "info")
@@ -847,7 +876,21 @@ class Diagnostic:
             if self.cfg["mode"] == "cloud":
                 return "fail", "The broker is not reachable. Check internet and DNS."
             return "fail", ("The printer is not reachable. Check the IP, that you are "
-                            "on the same subnet, and that the printer is powered on.")
+                            "on the same subnet, and that the printer is powered on. "
+                            "If it is online and other tools still talk to it, its "
+                            "local MQTT slots are probably full - Bambu printers take "
+                            "only about 3 clients at once, and a full printer stops "
+                            "answering on port 8883. Disconnect one client, or switch "
+                            "to Cloud mode.")
+        # TCP came up but the session died before MQTT ever reported a return
+        # code. On the LAN that is the slot limit far more often than anything
+        # else - a printer that is off never gets this far.
+        if self.cfg["mode"] == "lan" and d["mqtt_rc"] == -1:
+            return "fail", _SLOT_LIMIT_VERDICT
+        if not d["tls_ok"]:
+            return "fail", ("The TLS handshake to the broker failed. Check the "
+                            "system clock and that nothing is intercepting "
+                            "port 8883.")
         return "warn", "The run did not get far enough to reach a conclusion."
 
     def run(self):

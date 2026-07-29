@@ -344,6 +344,7 @@
         <div class="card-head"><div><h3>Diagnostic results</h3></div></div>
         <ul class="checklist">
           <li><strong>TCP fails.</strong> LAN mode: wrong IP, different subnet, or the printer is off. Cloud mode: no internet or DNS.</li>
+          <li><strong>TCP or TLS times out while the printer is definitely online.</strong> Its local MQTT slots are full. Bambu printers accept only about 3 local clients at once, counting every BambuHelper device, Panda Touch, Home Assistant and Bambu Studio session in LAN mode. Once they are all taken the printer either stops answering on port 8883 or accepts the TCP connection and then stalls in the handshake - both look like a printer that is switched off. Disconnect one client, or switch to Cloud mode: cloud connections do not use the printer's local slots.</li>
           <li><strong>MQTT rc=4 or rc=5.</strong> Bad credentials. LAN: re-check the Access Code. Cloud: the token has expired - they last about three months.</li>
           <li><strong>Connected but no messages.</strong> Almost always a serial number mismatch. Bambu's MQTT topics are case-sensitive and the serial must be uppercase.</li>
         </ul>

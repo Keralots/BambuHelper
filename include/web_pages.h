@@ -716,6 +716,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
         <div class="field">
           <label for="ip">Printer IP address</label>
           <input type="text" id="ip" class="mono" value="%IP%" placeholder="192.168.1.xxx">
+          <div class="hint">Bambu printers accept only ~3 LAN connections at once (other monitors, Panda Touch, Home Assistant, Bambu Studio). When full the printer stops answering and looks offline - free a slot or use Cloud mode.</div>
         </div>
       </div>
       <div class="row">
