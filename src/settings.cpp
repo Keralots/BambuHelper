@@ -626,17 +626,7 @@ void loadSettings() {
 
   // Re-resolve the index from the POSIX string (handles database reordering
   // across firmware updates without relying on a stored index value).
-  {
-    size_t cnt;
-    const TimezoneRegion* regions = getSupportedTimezones(&cnt);
-    netSettings.timezoneIndex = 14;  // default: CET (Amsterdam, Berlin, Rome)
-    for (size_t i = 0; i < cnt; i++) {
-      if (strcmp(regions[i].posixString, netSettings.timezoneStr) == 0) {
-        netSettings.timezoneIndex = (uint8_t)i;
-        break;
-      }
-    }
-  }
+  netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
 
   netSettings.use24h = prefs.getBool("net_24h", true);
   netSettings.dateFormat = prefs.getUChar("net_datefmt", 0);

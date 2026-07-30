@@ -1561,12 +1561,17 @@ static void handleSettingsImportFinish() {
     if (net["dns"].is<const char*>())         strlcpy(netSettings.dns, net["dns"], sizeof(netSettings.dns));
     if (net["timezoneStr"].is<const char*>()) {
       strlcpy(netSettings.timezoneStr, net["timezoneStr"], sizeof(netSettings.timezoneStr));
-      netSettings.timezoneIndex = net["timezoneIndex"] | (uint8_t)3;
+      // Derive the index from the string, never from the backup's stored index:
+      // a backup taken on an older firmware numbered the database differently.
+      netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
     } else if (net["gmtOffsetMin"].is<int16_t>()) {
       // Backward compat: import from old format
       int16_t oldOffset = net["gmtOffsetMin"].as<int16_t>();
       const char* migrated = getDefaultTimezoneForOffset(oldOffset);
-      if (migrated) strlcpy(netSettings.timezoneStr, migrated, sizeof(netSettings.timezoneStr));
+      if (migrated) {
+        strlcpy(netSettings.timezoneStr, migrated, sizeof(netSettings.timezoneStr));
+        netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
+      }
     }
     if (net["use24h"].is<bool>())             netSettings.use24h = net["use24h"].as<bool>();
     if (net["dateFormat"].is<uint8_t>())     netSettings.dateFormat = net["dateFormat"].as<uint8_t>();
