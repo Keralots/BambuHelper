@@ -159,6 +159,7 @@ static void readDisplayFromForm() {
     dpSettings.showClockAfterFinish = server.hasArg("clock");
   dpSettings.doorAckEnabled = server.hasArg("dack");
   dpSettings.keepPrintScreen = server.hasArg("kps");
+  dpSettings.finishShowTime = server.hasArg("fintm");
   dispSettings.animatedBar = server.hasArg("abar");
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
@@ -577,6 +578,7 @@ static void handleToggleSetting() {
   else if (key == "clock")   dpSettings.showClockAfterFinish = on;
   else if (key == "dack")    dpSettings.doorAckEnabled = on;
   else if (key == "kps")     dpSettings.keepPrintScreen = on;
+  else if (key == "fintm")   dpSettings.finishShowTime = on;
   else if (key == "abar")    dispSettings.animatedBar = on;
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
@@ -610,7 +612,11 @@ static void handleToggleSetting() {
   }
 
   saveSettings();
-  if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem") applyDisplaySettings();
+  // "fintm" joins these because it rewrites text already on screen: the finish
+  // headline is painted only under forceRedraw, so without a re-render the
+  // toggle would appear to do nothing until the next print.
+  if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem" ||
+      key == "fintm") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
@@ -1213,6 +1219,7 @@ static void handleSettingsExport() {
   dp["keepDisplayOn"] = dpSettings.keepDisplayOn;
   dp["showClockAfterFinish"] = dpSettings.showClockAfterFinish;
   dp["doorAckEnabled"] = dpSettings.doorAckEnabled;
+  dp["finishShowTime"] = dpSettings.finishShowTime;
   dp["nightModeEnabled"] = dpSettings.nightModeEnabled;
   dp["nightStartHour"] = dpSettings.nightStartHour;
   dp["nightEndHour"] = dpSettings.nightEndHour;
@@ -1570,6 +1577,7 @@ static void handleSettingsImportFinish() {
     if (dp["keepDisplayOn"].is<bool>())         dpSettings.keepDisplayOn = dp["keepDisplayOn"].as<bool>();
     if (dp["showClockAfterFinish"].is<bool>())  dpSettings.showClockAfterFinish = dp["showClockAfterFinish"].as<bool>();
     if (dp["doorAckEnabled"].is<bool>())        dpSettings.doorAckEnabled = dp["doorAckEnabled"].as<bool>();
+    if (dp["finishShowTime"].is<bool>())        dpSettings.finishShowTime = dp["finishShowTime"].as<bool>();
     if (dp["nightModeEnabled"].is<bool>())      dpSettings.nightModeEnabled = dp["nightModeEnabled"].as<bool>();
     if (dp["nightStartHour"].is<uint8_t>())     dpSettings.nightStartHour = dp["nightStartHour"].as<uint8_t>();
     if (dp["nightEndHour"].is<uint8_t>())       dpSettings.nightEndHour = dp["nightEndHour"].as<uint8_t>();

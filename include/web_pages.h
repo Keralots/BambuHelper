@@ -76,7 +76,7 @@ function saveWifi(){
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
 //              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
-//              fmins, dack, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
+//              fmins, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -830,7 +830,7 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       </div>
     </div>
 %EXTRAS_SECTIONS%
-    <div class="row-divider">&#9670; Ready / Print complete</div>
+    <div class="row-divider" id="idlePairDivider">&#9670; Ready / Print complete</div>
     <div class="gauge-grid">
       <div class="cell"><label>Left gauge</label><select id="is0" class="gauge-slot-sel"></select></div>
       <div class="cell"><label>Right gauge</label><select id="is1" class="gauge-slot-sel"></select></div>
@@ -973,6 +973,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="dack" value="1" %DACK% onchange="toggleSetting('dack',this.checked)">
       <label for="dack">Wait for door open before timeout</label>
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="fintm" value="1" %FINTM% onchange="toggleSetting('fintm',this.checked)">
+      <label for="fintm">Show the completion time on the finish screen</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Adds the clock time the print ended, e.g. <span class="mono">Print Complete! @ 14:32</span>. On 240 px wide screens the longer line is drawn in a smaller font - turn this off to keep the headline large.</div>
     <label class="check-row">
       <input type="checkbox" id="kps" value="1" %KPS% onchange="toggleSetting('kps',this.checked)">
       <label for="kps">Keep print status screen after completion</label>
@@ -1842,11 +1847,17 @@ rebuildGaugeOptions();
 /* Round boards (GC9A01): the printing dashboard has no 2x3 grid. Only the Rim
    skin renders gauges - three mini slots fed from gaugeSlots[0..2] - so the
    card re-labels itself and hides the bottom row. gs3-gs5 stay in the DOM
-   (hidden) so saveGaugeLayout keeps posting all six slots unchanged. */
+   (hidden) so saveGaugeLayout keeps posting all six slots unchanged.
+   The is0/is1 pair drives the round Ready screen only: the round Print
+   complete screen is a fixed layout (checkmark, headline, file name, energy)
+   with no room for the two gauges, so the divider says so rather than
+   promising a screen that ignores the setting. */
 var IS_ROUND = %ISROUND% === 1;
 if (IS_ROUND){
   var gd = document.getElementById('glDesc');
-  if (gd) gd.innerHTML = 'Per-printer mini gauges for the round <em>Rim</em> skin: left, center and right slot. The <em>Speedo</em> and <em>Rings</em> skins have fixed layouts. Set a slot to <em>Empty</em> to hide it.';
+  if (gd) gd.innerHTML = 'Per-printer mini gauges for the round <em>Rim</em> skin: left, center and right slot. The <em>Speedo</em> and <em>Rings</em> skins have fixed layouts. The last pair is the two gauges on the <em>Ready</em> screen - the round <em>Print complete</em> screen has a fixed layout and does not use them. Set a slot to <em>Empty</em> to hide it.';
+  var ipd = document.getElementById('idlePairDivider');
+  if (ipd) ipd.innerHTML = '&#9670; Ready screen';
   var roundLbls = ['Left gauge','Center gauge','Right gauge'];
   for (var ri = 0; ri < 3; ri++){
     var rsel = document.getElementById('gs' + ri);
@@ -2535,6 +2546,7 @@ function applyDisplay(){
   else if (ap === 'custom') { p.append('fmins', document.getElementById('fmins').value); if (afClock) p.append('clock', '1'); }
   else { p.append('fmins', ap); if (afClock) p.append('clock', '1'); }
   if (document.getElementById('dack').checked) p.append('dack', '1');
+  if (document.getElementById('fintm').checked) p.append('fintm', '1');
   if (document.getElementById('kps').checked) p.append('kps', '1');
   if (document.getElementById('abar').checked) p.append('abar', '1');
   if (document.getElementById('pong').checked) p.append('pong', '1');

@@ -661,6 +661,7 @@ void loadSettings() {
   dpSettings.showClockAfterFinish = prefs.getBool("dp_clock", true);
   dpSettings.doorAckEnabled = prefs.getBool("dp_dack", false);
   dpSettings.keepPrintScreen = prefs.getBool("dp_kps", false);
+  dpSettings.finishShowTime = prefs.getBool("dp_fintm", true);
   dpSettings.nightModeEnabled = prefs.getBool("dp_night", false);
   dpSettings.nightStartHour = prefs.getUChar("dp_nstart", 22);
   dpSettings.nightEndHour = prefs.getUChar("dp_nend", 7);
@@ -918,6 +919,7 @@ void saveSettings() {
   prefs.putBool("dp_clock", dpSettings.showClockAfterFinish);
   prefs.putBool("dp_dack", dpSettings.doorAckEnabled);
   prefs.putBool("dp_kps", dpSettings.keepPrintScreen);
+  prefs.putBool("dp_fintm", dpSettings.finishShowTime);
   prefs.putBool("dp_night", dpSettings.nightModeEnabled);
   prefs.putUChar("dp_nstart", dpSettings.nightStartHour);
   prefs.putUChar("dp_nend", dpSettings.nightEndHour);
