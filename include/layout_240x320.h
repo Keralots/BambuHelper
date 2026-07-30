@@ -205,14 +205,29 @@
 #define LY_FIN_WIFI_Y   308
 // --- Finished screen (landscape overrides - fit within 240px height, full 320 wide) ---
 // Gauges side-by-side, centered cluster on x=160 (32px gap between R=32 gauges).
-// Vertical layout: gauges 18..82, "Print Complete!" centered at 118, file 150,
-// kWh 178 (clear band 169..187 — does NOT touch file at 142..158), bot 216..236.
+//
+// Every Y below is a center (MC datum), so the real ink extent is +/- half the
+// font height. Measured VLW metrics (ascent+descent from the font headers):
+// FONT_SMALL 15, FONT_BODY 20, FONT_LARGE 28.
+//
+// The header bar fills y=7..27 (LY_LAND_HDR_Y/H). GY used to be 50, which put
+// the R=32 arcs at y=18..82 - nine pixels up inside the header, slicing through
+// the printer name (#158). The whole block moved down to clear it:
+//
+//   gauges      30..94   (GY 62 -/+ R 32, so 3px below the header band)
+//   gauge label 83..103  (drawGaugeLabel centers at cy + R - 1, FONT_BODY)
+//   "Print Complete!" 110..138  (TEXT_Y 124, FONT_LARGE)
+//   file name        142..162  (FILE_Y 152, FONT_BODY)
+//   kWh clear band   167..201  (KWH_Y 176; the band is 34px tall, not 18, once
+//                               a Tasmota tariff turns on the second cost line,
+//                               whose ink runs to 202)
+//   bottom bar       216..236
 #define LY_LAND_FIN_GL       112   // left gauge center X (left edge x=80)
 #define LY_LAND_FIN_GR       208   // right gauge center X (right edge x=240)
-#define LY_LAND_FIN_GY        50   // gauge row center Y (R=32 → spans 18..82)
-#define LY_LAND_FIN_TEXT_Y   118   // "Print Complete!" (font 4 ~26px tall)
-#define LY_LAND_FIN_FILE_Y   150   // file name (font 2 ~16px tall, spans 142..158)
-#define LY_LAND_FIN_KWH_Y    178   // kWh row (font 2) — clear band kwhY-9..kwhY+9 = 169..187
+#define LY_LAND_FIN_GY        62   // gauge row center Y (R=32 → spans 30..94)
+#define LY_LAND_FIN_TEXT_Y   124   // "Print Complete!" (FONT_LARGE, 28px tall)
+#define LY_LAND_FIN_FILE_Y   152   // file name (FONT_BODY, 20px tall)
+#define LY_LAND_FIN_KWH_Y    176   // kWh row (FONT_BODY) — clear band kwhY-9 .. kwhY+25
 #define LY_LAND_FIN_BOT_Y    216
 #define LY_LAND_FIN_BOT_H    20
 #define LY_LAND_FIN_WIFI_Y   228
