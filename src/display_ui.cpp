@@ -4412,6 +4412,9 @@ static void drawFinished() {
   const int16_t cx = scrW / 2;
 
   bool animating = tickGaugeSmooth(s, forceRedraw);
+  gaugesAnimating = animating;  // finished screen was the only gauge screen not
+                                // reporting this, so its arcs settled at the slow
+                                // DISPLAY_UPDATE_MS tick instead of GAUGE_ANIM_MS
   bool tempChanged = forceRedraw || animating ||
                      (s.nozzleTemp != prevState.nozzleTemp) ||
                      (s.nozzleTarget != prevState.nozzleTarget) ||
