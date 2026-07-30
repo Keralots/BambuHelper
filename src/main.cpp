@@ -15,6 +15,7 @@
 #include "camera_client.h"
 #include <esp_sleep.h>
 #include <driver/gpio.h>
+#include <time.h>
 
 static unsigned long splashEnd = 0;
 static unsigned long finishScreenStart = 0;
@@ -924,6 +925,21 @@ static void handleGcodeStateTransitions() {
         if (buzzerSettings.bedCooldownAlert) {
           ps.bedCooldownAlertArmed = true;
         }
+        // Completion time (#158). Only stamp a finish whose print start we
+        // actually saw - otherwise this edge could be a reconnect re-reporting
+        // an old FINISH, or the first report from a printer that was already
+        // done, and we would record "now" as the completion time. When we
+        // cannot date a finish, show nothing rather than the previous print's
+        // time. Deliberately not folded into the finishBuzzerPlayed latch
+        // below: updateDisplayedPrinterScreenState() runs earlier in the loop
+        // and has already set that flag for the printer that is on screen.
+        if (!ps.finishTimeLatched) {
+          time_t nowEpoch = time(nullptr);
+          ps.finishEpoch = (nowEpoch > NTP_SYNCED_EPOCH) ? (uint32_t)nowEpoch : 0;
+          ps.finishTimeLatched = true;
+        } else {
+          ps.finishEpoch = 0;
+        }
         // Announce the finish even if this slot is not the one on screen: fire the
         // one-shot per-slot alert, snap the display to the finished slot, and hold
         // it there for one rotation interval so the finish screen is seen. The
@@ -961,6 +977,8 @@ static void handleGcodeStateTransitions() {
           !isPrintingGcodeState(prevGcodeStateId[i])) {
         ps.bedCooldownAlertArmed = false;
         ps.finishBuzzerPlayed = false;  // per-slot reset so a hidden printer's next finish still beeps
+        ps.finishEpoch = 0;
+        ps.finishTimeLatched = false;   // arm: this print's finish is ours to stamp
         if (printers[i].config.lightFlags & LIGHT_ON_AT_START)
           requestLightCommand(i, true);  // also cancels any pending auto-off
       }

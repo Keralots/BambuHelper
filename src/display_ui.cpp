@@ -2894,6 +2894,49 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
   return clr;
 }
 
+// ---------------------------------------------------------------------------
+//  Finished screen headline
+// ---------------------------------------------------------------------------
+//  Sits beside formatEtaLine() - outside the DISPLAY_ROUND_240 block below - so
+//  the round finished screen links against it too.
+// ---------------------------------------------------------------------------
+void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s) {
+  static const char* kMsg = "Print Complete!";
+
+  char buf[40];
+  if (s.finishEpoch != 0) {
+    // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
+    // width does not depend on the toolchain.
+    time_t stamp = (time_t)s.finishEpoch;
+    struct tm ft;
+    localtime_r(&stamp, &ft);
+    int hour = ft.tm_hour;
+    if (netSettings.use24h) {
+      snprintf(buf, sizeof(buf), "%s @ %02d:%02d", kMsg, hour, ft.tm_min);
+    } else {
+      // Uppercase AM/PM to match every other 12h renderer (clock screen, ETA line)
+      const char* ampm = hour < 12 ? "AM" : "PM";
+      hour %= 12;
+      if (hour == 0) hour = 12;
+      snprintf(buf, sizeof(buf), "%s @ %d:%02d %s", kMsg, hour, ft.tm_min, ampm);
+    }
+  } else {
+    strlcpy(buf, kMsg, sizeof(buf));
+  }
+
+  // Largest font that fits. The time is the first thing sacrificed - the
+  // message itself always renders at full size on every layout profile.
+  setFont(tft, FONT_LARGE);
+  if (maxW > 0 && tft.textWidth(buf) > maxW) {
+    setFont(tft, FONT_BODY);
+    if (tft.textWidth(buf) > maxW) {
+      strlcpy(buf, kMsg, sizeof(buf));
+      setFont(tft, FONT_LARGE);
+    }
+  }
+  tft.drawString(buf, cx, y);
+}
+
 #if defined(DISPLAY_ROUND_240)
 // ===========================================================================
 //  Round display (GC9A01): printing screen. Three skins selectable from the
@@ -4310,9 +4353,9 @@ static void drawFinishedRound() {
     }
 
     tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.drawString("Print Complete!", cx, LY_RND_FIN_TEXT_Y);
+    // 150 is the same rim-safe width the file name below uses
+    drawFinishHeadline(cx, LY_RND_FIN_TEXT_Y, 150, s);
 
     const char* rndFinName = jobDisplayName(s);
     if (rndFinName[0] != '\0') {
@@ -4481,8 +4524,7 @@ static void drawFinished() {
     markFrameDirty();
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    setFont(tft, FONT_LARGE);
-    tft.drawString("Print Complete!", cx, finTextY);
+    drawFinishHeadline(cx, finTextY, scrW - 12, s);
   }
 
   // === File name ===

@@ -1678,6 +1678,7 @@ static void initConnSlot(uint8_t i) {
   BambuState& s = printers[i].state;
   memset(&s, 0, sizeof(BambuState));
   s.lightState = -1;  // unknown until lights_report arrives (memset would read as "off")
+  s.finishTimeLatched = true;  // see settings.cpp: only an observed print start arms it
   setPrinterGcodeStateCanonical(s, GCODE_UNKNOWN);
 
   if (isPrinterConfigured(i)) {

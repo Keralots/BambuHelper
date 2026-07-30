@@ -158,4 +158,10 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
 uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
                        int16_t maxW, char* buf, size_t n);
 
+// Draws the finished screen's headline, centered on (cx, y): "Print Complete!"
+// on its own, or with the completion time appended when the finish was dated
+// (#158). Picks the largest font that fits maxW, dropping the time before it
+// gives up the message. The caller has already cleared the band.
+void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s);
+
 #endif // DISPLAY_UI_H

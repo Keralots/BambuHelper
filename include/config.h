@@ -97,6 +97,10 @@
 // =============================================================================
 #define NVS_NAMESPACE       "bambu"
 
+// Any epoch below this means NTP has not answered yet and the RTC is still at
+// its power-on value, so a wall-clock reading must not be trusted or displayed.
+#define NTP_SYNCED_EPOCH    1704067200UL   // 2024-01-01 00:00:00 UTC
+
 // =============================================================================
 //  Multi-printer
 // =============================================================================

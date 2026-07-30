@@ -461,6 +461,9 @@ void loadSettings() {
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     printers[i].state.lightState = -1;  // unknown until lights_report arrives
+    // Latched, not armed: a printer that is already FINISH when we connect must
+    // not have the connection time recorded as its completion time
+    printers[i].state.finishTimeLatched = true;
     // 0 is a valid tray index (AMS 1 slot 1) - if the active tray is never
     // resolved the filament swatch would show that tray's data
     printers[i].state.ams.activeTray = 255;
