@@ -1463,6 +1463,11 @@ static bool useEnhancedPortraitAms(const AmsState& ams);
 #if defined(LAYOUT_HAS_AMS_STRIP)
 static void drawAmsZone(const BambuState& s, bool force);
 #endif
+// Defined next to drawGaugeTile(), used by both the Ready and Print Complete
+// screens - so it must sit outside every layout guard.
+static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
+                              int16_t leftX, int16_t rightX, int16_t cy, int16_t r,
+                              uint8_t* prevTypes, bool fr, bool* animatingOut);
 
 // Helper macro for the 240x240-only AMS-view feature (replaces gauge row 2
 // with an AMS strip). The HTML row, gauge gating, and dispatch are gated by
@@ -1561,16 +1566,12 @@ static void drawIdle() {
   const int16_t lyIdleGOffset   = LY_IDLE_G_OFFSET;
 #endif
 
-  bool animating = tickGaugeSmooth(s, forceRedraw);
-  gaugesAnimating = animating;
+  // Advances every smoother, which other screens rely on. gaugesAnimating is set
+  // further down from the two slots actually on screen.
+  tickGaugeSmooth(s, forceRedraw);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0);
-  bool tempChanged = forceRedraw || animating ||
-                     (s.nozzleTemp != prevState.nozzleTemp) ||
-                     (s.nozzleTarget != prevState.nozzleTarget) ||
-                     (s.bedTemp != prevState.bedTemp) ||
-                     (s.bedTarget != prevState.bedTarget);
   bool connChanged = forceRedraw || (s.connected != prevState.connected);
   bool wifiChanged = forceRedraw || (s.wifiSignal != prevState.wifiSignal);
 
@@ -1649,19 +1650,16 @@ static void drawIdle() {
     }
   }
 
-  // Nozzle temp gauge
-  if (tempChanged) {
-    markFrameDirty();
-    drawTempGauge(tft, cx - lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
-                  dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
-                  &dispSettings.nozzle, smoothNozzleTemp);
-
-    // Bed temp gauge
-    drawTempGauge(tft, cx + lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
-                  &dispSettings.bed, smoothBedTemp);
+  // The two configurable gauges (#158). Same pair as the Print Complete screen.
+  {
+    static uint8_t prevIdleTypes[IDLE_SLOT_COUNT] = { 0xFF, 0xFF };
+    bool slotsAnim = false;
+    if (drawIdlePairSlots(p.config, s, cx - lyIdleGOffset, cx + lyIdleGOffset,
+                          lyIdleGaugeY, lyIdleGaugeR, prevIdleTypes, forceRedraw,
+                          &slotsAnim)) {
+      markFrameDirty();
+    }
+    gaugesAnimating = slotsAnim;  // only the two shown gauges drive the tick rate
   }
 
   // AMS on idle (boards with permanent AMS strip)
@@ -2642,7 +2640,10 @@ void drawCameraGauge(int16_t, int16_t, int16_t, bool) {}
 bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p) {
   switch (gt) {
     case GAUGE_PROGRESS:      return s.progress != p.progress || s.remainingMinutes != p.remainingMinutes;
-    case GAUGE_NOZZLE:        return s.nozzleTemp != p.nozzleTemp || s.nozzleTarget != p.nozzleTarget;
+    // Dual nozzle also flips this tile's label between "Nozzle R" and "Nozzle L",
+    // so a side switch at a steady temperature still needs a repaint.
+    case GAUGE_NOZZLE:        return s.nozzleTemp != p.nozzleTemp || s.nozzleTarget != p.nozzleTarget ||
+                                     s.dualNozzle != p.dualNozzle || s.activeNozzle != p.activeNozzle;
     case GAUGE_NOZZLE_RIGHT:  return s.nozzleTempN[0] != p.nozzleTempN[0] || s.nozzleTargetN[0] != p.nozzleTargetN[0];
     case GAUGE_NOZZLE_LEFT:   return s.nozzleTempN[1] != p.nozzleTempN[1] || s.nozzleTargetN[1] != p.nozzleTargetN[1];
     case GAUGE_BED:           return s.bedTemp != p.bedTemp || s.bedTarget != p.bedTarget;
@@ -2687,6 +2688,69 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
     return false;
   }
   return false;
+}
+
+// True while this gauge type's own smoother is still interpolating. The Ready
+// and Print Complete screens need this rather than tickGaugeSmooth()'s return
+// value: that one aggregates every smoother, so a settling hidden fan would
+// repaint a steady slot - and repaint an AMS bars tile at the animation tick.
+static bool gaugeTypeAnimating(uint8_t gt, const BambuState& s) {
+  // Not named EPS: xtensa's specreg.h defines that as a register number.
+  const float ANIM_EPS = 0.01f;
+  switch (gt) {
+    case GAUGE_NOZZLE:        return fabsf(smoothNozzleTemp    - s.nozzleTemp)            > ANIM_EPS;
+    case GAUGE_NOZZLE_RIGHT:  return fabsf(smoothNozzleTempN[0] - s.nozzleTempN[0])       > ANIM_EPS;
+    case GAUGE_NOZZLE_LEFT:   return fabsf(smoothNozzleTempN[1] - s.nozzleTempN[1])       > ANIM_EPS;
+    case GAUGE_BED:           return fabsf(smoothBedTemp       - s.bedTemp)               > ANIM_EPS;
+    case GAUGE_CHAMBER_TEMP:  return fabsf(smoothChamberTemp   - s.chamberTemp)           > ANIM_EPS;
+    case GAUGE_PART_FAN:      return fabsf(smoothPartFan     - (float)s.coolingFanPct)    > ANIM_EPS;
+    case GAUGE_AUX_FAN:       return fabsf(smoothAuxFan      - (float)s.auxFanPct)        > ANIM_EPS;
+    case GAUGE_AUX_FAN_RIGHT: return fabsf(smoothAuxRightFan - (float)s.auxFanRightPct)   > ANIM_EPS;
+    case GAUGE_CHAMBER_FAN:   return fabsf(smoothChamberFan  - (float)s.chamberFanPct)    > ANIM_EPS;
+    case GAUGE_EXHAUST_FAN:   return fabsf(smoothExhaustFan  - (float)s.exhaustFanPct)    > ANIM_EPS;
+    case GAUGE_HEATBREAK:     return fabsf(smoothHeatbreakFan - (float)s.heatbreakFanPct) > ANIM_EPS;
+    default: return false;   // every other type renders straight from the value
+  }
+}
+
+// Draws the two configurable slots the Ready and Print Complete screens share.
+// Handles the type-change wipe: a layout saved from the web UI does not force a
+// redraw, so each screen keeps its own cache (0xFF = draw everything first time).
+// The clear is a square plus the label band, not a circle - AMS bars and
+// filament tiles paint into the corners of the slot box.
+// Returns true when anything was painted, and reports through animatingOut
+// whether either slot still needs the fast animation tick.
+static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
+                              int16_t leftX, int16_t rightX, int16_t cy, int16_t r,
+                              uint8_t* prevTypes, bool fr, bool* animatingOut) {
+  const int16_t xs[IDLE_SLOT_COUNT] = { leftX, rightX };
+  bool drew = false, anim = false;
+  for (uint8_t i = 0; i < IDLE_SLOT_COUNT; i++) {
+    uint8_t gt = cfg.idleSlots[i];
+    if (gt >= GAUGE_TYPE_COUNT) gt = GAUGE_EMPTY;
+    const bool typeChanged = (gt != prevTypes[i]);
+    if (typeChanged) {
+      if (!fr) {
+        const int16_t clearSz = r * 2 + 4;
+        tft.fillRect(xs[i] - r - 2, cy - r - 2, clearSz, clearSz, dispSettings.bgColor);
+        const bool sm = dispSettings.smallLabels;
+        const int16_t labelY = cy + r + (sm ? 3 : -1);
+        const int16_t lh = sm ? 18 : 24;
+        tft.fillRect(xs[i] - r - 2, labelY - lh / 2, clearSz, lh, dispSettings.bgColor);
+      }
+      prevTypes[i] = gt;
+      drew = true;
+    }
+    const bool slotAnim = gaugeTypeAnimating(gt, s);
+    if (slotAnim) anim = true;
+    if (fr || typeChanged || slotAnim || gaugeTileValueChanged(gt, s, prevState)) {
+      drawGaugeTile(gt, s, rotState.displayIndex, xs[i], cy, r, LY_GAUGE_T,
+                    fr || typeChanged, true);
+      drew = true;
+    }
+  }
+  if (animatingOut) *animatingOut = anim;
+  return drew;
 }
 
 // Reuses the shared gauge primitives. smooth=false: arcs snap to value (split -
@@ -4454,15 +4518,10 @@ static void drawFinished() {
 #endif
   const int16_t cx = scrW / 2;
 
-  bool animating = tickGaugeSmooth(s, forceRedraw);
-  gaugesAnimating = animating;  // finished screen was the only gauge screen not
-                                // reporting this, so its arcs settled at the slow
-                                // DISPLAY_UPDATE_MS tick instead of GAUGE_ANIM_MS
-  bool tempChanged = forceRedraw || animating ||
-                     (s.nozzleTemp != prevState.nozzleTemp) ||
-                     (s.nozzleTarget != prevState.nozzleTarget) ||
-                     (s.bedTemp != prevState.bedTemp) ||
-                     (s.bedTarget != prevState.bedTarget);
+  // Advances every smoother, which other screens rely on. gaugesAnimating is set
+  // further down from the two slots actually on screen - this screen used not to
+  // report it at all, so its arcs settled at the slow DISPLAY_UPDATE_MS tick.
+  tickGaugeSmooth(s, forceRedraw);
 
   // === H2-style LED progress bar at 100% (y=0-5) ===
   if (forceRedraw) {
@@ -4505,18 +4564,15 @@ static void drawFinished() {
     if (getActiveConnCount() > 1) drawPrinterDots(cx, finHdrDotCY);
   }
 
-  // === Row 1: Nozzle | Bed (two gauges centered) ===
-  if (tempChanged) {
-    markFrameDirty();
-    drawTempGauge(tft, gaugeLeft, gaugeY, gR,
-                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
-                  dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
-                  &dispSettings.nozzle, smoothNozzleTemp);
-
-    drawTempGauge(tft, gaugeRight, gaugeY, gR,
-                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
-                  &dispSettings.bed, smoothBedTemp);
+  // === Row 1: the two configurable gauges (#158), shared with the Ready screen ===
+  {
+    static uint8_t prevFinTypes[IDLE_SLOT_COUNT] = { 0xFF, 0xFF };
+    bool slotsAnim = false;
+    if (drawIdlePairSlots(p.config, s, gaugeLeft, gaugeRight, gaugeY, gR,
+                          prevFinTypes, forceRedraw, &slotsAnim)) {
+      markFrameDirty();
+    }
+    gaugesAnimating = slotsAnim;  // only the two shown gauges drive the tick rate
   }
 
   // === "Print Complete!" status ===

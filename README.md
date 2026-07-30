@@ -444,7 +444,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 | Sidebar section | What's inside |
 |---|---|
-| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code / cloud token), live status readout, per-printer gauge layout and AMS view, chamber light control |
+| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code / cloud token), live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
 | **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, custom labels (accented European characters supported) |
 | **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
 | **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |

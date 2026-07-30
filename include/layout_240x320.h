@@ -227,7 +227,7 @@
 #define LY_LAND_FIN_GY        62   // gauge row center Y (R=32 → spans 30..94)
 #define LY_LAND_FIN_TEXT_Y   124   // "Print Complete!" (FONT_LARGE, 28px tall)
 #define LY_LAND_FIN_FILE_Y   152   // file name (FONT_BODY, 20px tall)
-#define LY_LAND_FIN_KWH_Y    176   // kWh row (FONT_BODY) — clear band kwhY-9 .. kwhY+25
+#define LY_LAND_FIN_KWH_Y    176   // kWh row (FONT_BODY) - clear band kwhY-9 .. kwhY+25
 #define LY_LAND_FIN_BOT_Y    216
 #define LY_LAND_FIN_BOT_H    20
 #define LY_LAND_FIN_WIFI_Y   228

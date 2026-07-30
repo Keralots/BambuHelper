@@ -349,6 +349,13 @@ static void handleSaveGaugeLayout() {
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT;       g++) readSlotArg("gs", g, cfg.gaugeSlots[g]);
   for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT;  g++) readSlotArg("lx", g, cfg.landscapeExtras[g]);
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;   g++) readSlotArg("px", g, cfg.portraitExtras[g]);
+  for (uint8_t g = 0; g < IDLE_SLOT_COUNT;        g++) {
+    readSlotArg("is", g, cfg.idleSlots[g]);
+    // The Ready / Print Complete screens redraw only on change, while the
+    // camera tile paints on its own cadence and camera_client only streams for
+    // a type parked in gaugeSlots - it would sit there as a stale frame.
+    if (cfg.idleSlots[g] == GAUGE_CAMERA) cfg.idleSlots[g] = GAUGE_EMPTY;
+  }
   cfg.amsView = server.hasArg("amsv");
 
   savePrinterConfig(slot);
@@ -725,6 +732,8 @@ static void handlePrinterConfig() {
   for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) lext.add(cfg.landscapeExtras[g]);
   JsonArray pext = doc["portraitExtras"].to<JsonArray>();
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
+  JsonArray islot = doc["idleSlots"].to<JsonArray>();
+  for (uint8_t g = 0; g < IDLE_SLOT_COUNT;       g++) islot.add(cfg.idleSlots[g]);
   doc["amsView"] = cfg.amsView;
   doc["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
   doc["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
@@ -1122,6 +1131,8 @@ static void handleSettingsExport() {
     for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) lext.add(cfg.landscapeExtras[g]);
     JsonArray pext = p["portraitExtras"].to<JsonArray>();
     for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
+    JsonArray islot = p["idleSlots"].to<JsonArray>();
+    for (uint8_t g = 0; g < IDLE_SLOT_COUNT;       g++) islot.add(cfg.idleSlots[g]);
     p["amsView"] = cfg.amsView;
     p["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
     p["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
@@ -1437,6 +1448,21 @@ static void handleSettingsImportFinish() {
       };
       importExtras(p["landscapeExtras"].as<JsonArray>(), cfg.landscapeExtras, LANDSCAPE_EXTRA_COUNT);
       importExtras(p["portraitExtras"].as<JsonArray>(),  cfg.portraitExtras,  PORTRAIT_EXTRA_COUNT);
+      // Ready / Print Complete pair. Backups predating it have no field, so
+      // restore the nozzle+bed those screens used to draw rather than blanking
+      // them. Camera is refused here too - see handleSaveGaugeLayout.
+      {
+        JsonArray islot = p["idleSlots"].as<JsonArray>();
+        static const uint8_t defIdle[IDLE_SLOT_COUNT] = { GAUGE_NOZZLE, GAUGE_BED };
+        for (uint8_t g = 0; g < IDLE_SLOT_COUNT; g++) {
+          if (islot && g < islot.size()) {
+            uint8_t v = islot[g].as<uint8_t>();
+            cfg.idleSlots[g] = (v < GAUGE_TYPE_COUNT && v != GAUGE_CAMERA) ? v : GAUGE_EMPTY;
+          } else {
+            cfg.idleSlots[g] = defIdle[g];
+          }
+        }
+      }
       if (p["amsView"].is<bool>()) {
         cfg.amsView = p["amsView"].as<bool>();
       } else if (legacyAmsViewPresent) {

@@ -49,6 +49,10 @@ static const uint8_t GAUGE_SLOT_COUNT = 6;
 // type for "col 4 row 1" and "row 3 col 1" can be set independently.
 static const uint8_t LANDSCAPE_EXTRA_COUNT = 2;  // col 4 top, col 4 bot
 static const uint8_t PORTRAIT_EXTRA_COUNT  = 3;  // row 3 left, mid, right
+// The Ready and Print Complete screens show two gauges side by side, in their
+// own slots so they can differ from the print-screen grid (e.g. chamber temp
+// while a part cools). Shared by both screens - they never appear together.
+static const uint8_t IDLE_SLOT_COUNT = 2;        // left, right
 // Max slots displayed by any mode at once. Used to size per-frame slot caches
 // in display_ui.cpp (prevSlotTypes, SlotGrid arrays).
 static const uint8_t GAUGE_SLOT_MAX = GAUGE_SLOT_COUNT + PORTRAIT_EXTRA_COUNT;  // 9

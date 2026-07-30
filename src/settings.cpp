@@ -243,6 +243,13 @@ static void defaultGaugeSlots(uint8_t* slots) {
 #endif
 }
 
+// Default Ready / Print Complete pair: the nozzle and bed gauges those screens
+// drew before the slots became configurable.
+static void defaultIdleSlots(uint8_t* slots) {
+  slots[0] = GAUGE_NOZZLE;
+  slots[1] = GAUGE_BED;
+}
+
 // ---------------------------------------------------------------------------
 //  Save/load a single GaugeColors struct
 // ---------------------------------------------------------------------------
@@ -446,6 +453,20 @@ void loadSettings() {
     prefs.getBytes(key, cfg.portraitExtras, sizeof(cfg.portraitExtras));
     for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT; g++) {
       if (cfg.portraitExtras[g] >= GAUGE_TYPE_COUNT) cfg.portraitExtras[g] = GAUGE_EMPTY;
+    }
+
+    // Ready / Print Complete pair. A missing key means a config written before
+    // these were configurable, so fall back to the nozzle+bed those screens
+    // always drew.
+    snprintf(key, sizeof(key), "p%d_islot", i);
+    defaultIdleSlots(cfg.idleSlots);
+    prefs.getBytes(key, cfg.idleSlots, sizeof(cfg.idleSlots));
+    for (uint8_t g = 0; g < IDLE_SLOT_COUNT; g++) {
+      // GAUGE_CAMERA is rejected, not just range-checked: the camera tile
+      // renders on its own cadence and camera_client only starts a stream for
+      // types parked in gaugeSlots, so it would freeze as a stale still here.
+      if (cfg.idleSlots[g] >= GAUGE_TYPE_COUNT || cfg.idleSlots[g] == GAUGE_CAMERA)
+        cfg.idleSlots[g] = GAUGE_EMPTY;
     }
 
     // AMS view (per-printer): 240x240 only, replaces gauge row 2 with AMS strip
@@ -982,6 +1003,8 @@ void savePrinterConfig(uint8_t index) {
   prefs.putBytes(key, cfg.landscapeExtras, sizeof(cfg.landscapeExtras));
   snprintf(key, sizeof(key), "p%d_pext", index);
   prefs.putBytes(key, cfg.portraitExtras, sizeof(cfg.portraitExtras));
+  snprintf(key, sizeof(key), "p%d_islot", index);
+  prefs.putBytes(key, cfg.idleSlots, sizeof(cfg.idleSlots));
 
   snprintf(key, sizeof(key), "p%d_amsv", index);
   prefs.putBool(key, cfg.amsView);
@@ -1002,6 +1025,7 @@ void clearPrinterConfig(uint8_t index) {
   cfg.region = REGION_US;
   cfg.lightOffDelayMin = 5;  // sensible default after a slot is cleared
   defaultGaugeSlots(cfg.gaugeSlots);
+  defaultIdleSlots(cfg.idleSlots);
   memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
   memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
   savePrinterConfig(index);

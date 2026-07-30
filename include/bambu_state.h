@@ -227,6 +227,7 @@ struct PrinterConfig {
   uint8_t landscapeExtras[2];  // Col 4 (top, bot) - landscape 8-slot mode only.
   uint8_t portraitExtras[3];   // Row 3 (left, mid, right) - portrait 9-slot mode only.
   bool    amsView;             // 240x240: replace gauge row 2 with AMS strip (per-printer)
+  uint8_t idleSlots[2];        // Ready + Print Complete screens (left, right).
   uint8_t lightFlags;          // chamber-light automation bitmask (LIGHT_* flags), 0 = all off
   uint8_t lightOffDelayMin;    // minutes to wait before turning light off (0-60), default 5
 };
