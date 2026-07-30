@@ -1478,6 +1478,49 @@ static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
   #define LAYOUT_240x240_AMS_VIEW 1
 #endif
 
+// Renders the print completion time into buf, "" when there is nothing to show
+// (the user turned the timestamp off, or the print finished before NTP had a
+// valid clock). Shared by the finished-screen headline and the idle status
+// badge so both agree on the 12h/24h wording.
+static bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
+  buf[0] = '\0';
+  if (!dpSettings.finishShowTime || s.finishEpoch == 0) return false;
+  // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
+  // width does not depend on the toolchain.
+  time_t stamp = (time_t)s.finishEpoch;
+  struct tm ft;
+  localtime_r(&stamp, &ft);
+  int hour = ft.tm_hour;
+  if (netSettings.use24h) {
+    snprintf(buf, n, "%02d:%02d", hour, ft.tm_min);
+  } else {
+    // Uppercase AM/PM to match every other 12h renderer (clock screen, ETA line)
+    const char* ampm = hour < 12 ? "AM" : "PM";
+    hour %= 12;
+    if (hour == 0) hour = 12;
+    snprintf(buf, n, "%d:%02d %s", hour, ft.tm_min, ampm);
+  }
+  return true;
+}
+
+// Idle-screen wording for a printer still sitting in GCODE_FINISH. Steps down
+// until it fits maxW: full wording with the time -> short wording with the time
+// -> wording alone. The caller has already selected the badge font.
+static const char* formatIdleFinishBadge(char* buf, size_t n, const BambuState& s,
+                                         int16_t maxW) {
+  char clock[16];
+  if (!formatFinishClock(clock, sizeof(clock), s)) {
+    strlcpy(buf, "Print Complete", n);
+    return buf;
+  }
+  snprintf(buf, n, "Print Complete @ %s", clock);
+  if (maxW > 0 && tft.textWidth(buf) > maxW) {
+    snprintf(buf, n, "Complete @ %s", clock);
+    if (tft.textWidth(buf) > maxW) strlcpy(buf, "Print Complete", n);
+  }
+  return buf;
+}
+
 static void drawIdle() {
   if (!isAnyPrinterConfigured()) {
     wasNoPrinter = true;
@@ -1572,7 +1615,10 @@ static void drawIdle() {
   tickGaugeSmooth(s, forceRedraw);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // The completion stamp lands a loop iteration after the
+                      // FINISH edge, so the badge has to repaint on it too.
+                      (s.finishEpoch != prevState.finishEpoch);
   bool connChanged = forceRedraw || (s.connected != prevState.connected);
   bool wifiChanged = forceRedraw || (s.wifiSignal != prevState.wifiSignal);
 
@@ -1606,9 +1652,23 @@ static void drawIdle() {
     setFont(tft, FONT_BODY);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
+    char finishBadge[40];
     if (s.gcodeStateId == GCODE_IDLE) {
       stateColor = CLR_GREEN;
       stateStr = "Ready";
+    } else if (s.gcodeStateId == GCODE_FINISH) {
+      // The finished screen is one-shot: waking a slept display dismisses it
+      // (finishDismissedByWake in main.cpp) and lands here instead. Carry the
+      // completion wording and time on the badge so a print that finished while
+      // nobody was watching is still readable on wake, rather than the raw
+      // "FINISH" state word (#158).
+      stateColor = CLR_GREEN;
+#if defined(DISPLAY_ROUND_240)
+      const int16_t badgeMaxW = 200;   // rim-safe chord at the badge row
+#else
+      const int16_t badgeMaxW = scrW - 8;
+#endif
+      stateStr = formatIdleFinishBadge(finishBadge, sizeof(finishBadge), s, badgeMaxW);
     } else if (s.gcodeStateId == GCODE_FAILED) {
       stateColor = CLR_RED;
       stateStr = "ERROR";
@@ -3000,24 +3060,8 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
 
   // Empty when the user turned the timestamp off, or when the print finished
   // before NTP had a valid clock.
-  char clock[16] = "";
-  if (dpSettings.finishShowTime && s.finishEpoch != 0) {
-    // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
-    // width does not depend on the toolchain.
-    time_t stamp = (time_t)s.finishEpoch;
-    struct tm ft;
-    localtime_r(&stamp, &ft);
-    int hour = ft.tm_hour;
-    if (netSettings.use24h) {
-      snprintf(clock, sizeof(clock), "%02d:%02d", hour, ft.tm_min);
-    } else {
-      // Uppercase AM/PM to match every other 12h renderer (clock screen, ETA line)
-      const char* ampm = hour < 12 ? "AM" : "PM";
-      hour %= 12;
-      if (hour == 0) hour = 12;
-      snprintf(clock, sizeof(clock), "%d:%02d %s", hour, ft.tm_min, ampm);
-    }
-  }
+  char clock[16];
+  formatFinishClock(clock, sizeof(clock), s);
 
   char buf[40];
   if (clock[0] == '\0') {
