@@ -159,6 +159,7 @@ static void readDisplayFromForm() {
     dpSettings.showClockAfterFinish = server.hasArg("clock");
   dpSettings.doorAckEnabled = server.hasArg("dack");
   dpSettings.keepPrintScreen = server.hasArg("kps");
+  dpSettings.finishShowTime = server.hasArg("fintm");
   dispSettings.animatedBar = server.hasArg("abar");
   dispSettings.pongClock = server.hasArg("pong");
   dispSettings.smallLabels = server.hasArg("slbl");
@@ -349,6 +350,13 @@ static void handleSaveGaugeLayout() {
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT;       g++) readSlotArg("gs", g, cfg.gaugeSlots[g]);
   for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT;  g++) readSlotArg("lx", g, cfg.landscapeExtras[g]);
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;   g++) readSlotArg("px", g, cfg.portraitExtras[g]);
+  for (uint8_t g = 0; g < IDLE_SLOT_COUNT;        g++) {
+    readSlotArg("is", g, cfg.idleSlots[g]);
+    // The Ready / Print Complete screens redraw only on change, while the
+    // camera tile paints on its own cadence and camera_client only streams for
+    // a type parked in gaugeSlots - it would sit there as a stale frame.
+    if (cfg.idleSlots[g] == GAUGE_CAMERA) cfg.idleSlots[g] = GAUGE_EMPTY;
+  }
   cfg.amsView = server.hasArg("amsv");
 
   savePrinterConfig(slot);
@@ -570,6 +578,7 @@ static void handleToggleSetting() {
   else if (key == "clock")   dpSettings.showClockAfterFinish = on;
   else if (key == "dack")    dpSettings.doorAckEnabled = on;
   else if (key == "kps")     dpSettings.keepPrintScreen = on;
+  else if (key == "fintm")   dpSettings.finishShowTime = on;
   else if (key == "abar")    dispSettings.animatedBar = on;
   else if (key == "pong")    dispSettings.pongClock = on;
   else if (key == "slbl")    dispSettings.smallLabels = on;
@@ -603,7 +612,11 @@ static void handleToggleSetting() {
   }
 
   saveSettings();
-  if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem") applyDisplaySettings();
+  // "fintm" joins these because it rewrites text already on screen: the finish
+  // headline is painted only under forceRedraw, so without a re-render the
+  // toggle would appear to do nothing until the next print.
+  if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem" ||
+      key == "fintm") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
@@ -725,6 +738,8 @@ static void handlePrinterConfig() {
   for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) lext.add(cfg.landscapeExtras[g]);
   JsonArray pext = doc["portraitExtras"].to<JsonArray>();
   for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
+  JsonArray islot = doc["idleSlots"].to<JsonArray>();
+  for (uint8_t g = 0; g < IDLE_SLOT_COUNT;       g++) islot.add(cfg.idleSlots[g]);
   doc["amsView"] = cfg.amsView;
   doc["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
   doc["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
@@ -1122,6 +1137,8 @@ static void handleSettingsExport() {
     for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) lext.add(cfg.landscapeExtras[g]);
     JsonArray pext = p["portraitExtras"].to<JsonArray>();
     for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT;  g++) pext.add(cfg.portraitExtras[g]);
+    JsonArray islot = p["idleSlots"].to<JsonArray>();
+    for (uint8_t g = 0; g < IDLE_SLOT_COUNT;       g++) islot.add(cfg.idleSlots[g]);
     p["amsView"] = cfg.amsView;
     p["lightFlags"] = cfg.lightFlags;       // chamber-light automation bitmask
     p["lightDelay"] = cfg.lightOffDelayMin; // off delay (minutes)
@@ -1202,6 +1219,7 @@ static void handleSettingsExport() {
   dp["keepDisplayOn"] = dpSettings.keepDisplayOn;
   dp["showClockAfterFinish"] = dpSettings.showClockAfterFinish;
   dp["doorAckEnabled"] = dpSettings.doorAckEnabled;
+  dp["finishShowTime"] = dpSettings.finishShowTime;
   dp["nightModeEnabled"] = dpSettings.nightModeEnabled;
   dp["nightStartHour"] = dpSettings.nightStartHour;
   dp["nightEndHour"] = dpSettings.nightEndHour;
@@ -1437,6 +1455,21 @@ static void handleSettingsImportFinish() {
       };
       importExtras(p["landscapeExtras"].as<JsonArray>(), cfg.landscapeExtras, LANDSCAPE_EXTRA_COUNT);
       importExtras(p["portraitExtras"].as<JsonArray>(),  cfg.portraitExtras,  PORTRAIT_EXTRA_COUNT);
+      // Ready / Print Complete pair. Backups predating it have no field, so
+      // restore the nozzle+bed those screens used to draw rather than blanking
+      // them. Camera is refused here too - see handleSaveGaugeLayout.
+      {
+        JsonArray islot = p["idleSlots"].as<JsonArray>();
+        static const uint8_t defIdle[IDLE_SLOT_COUNT] = { GAUGE_NOZZLE, GAUGE_BED };
+        for (uint8_t g = 0; g < IDLE_SLOT_COUNT; g++) {
+          if (islot && g < islot.size()) {
+            uint8_t v = islot[g].as<uint8_t>();
+            cfg.idleSlots[g] = (v < GAUGE_TYPE_COUNT && v != GAUGE_CAMERA) ? v : GAUGE_EMPTY;
+          } else {
+            cfg.idleSlots[g] = defIdle[g];
+          }
+        }
+      }
       if (p["amsView"].is<bool>()) {
         cfg.amsView = p["amsView"].as<bool>();
       } else if (legacyAmsViewPresent) {
@@ -1544,6 +1577,7 @@ static void handleSettingsImportFinish() {
     if (dp["keepDisplayOn"].is<bool>())         dpSettings.keepDisplayOn = dp["keepDisplayOn"].as<bool>();
     if (dp["showClockAfterFinish"].is<bool>())  dpSettings.showClockAfterFinish = dp["showClockAfterFinish"].as<bool>();
     if (dp["doorAckEnabled"].is<bool>())        dpSettings.doorAckEnabled = dp["doorAckEnabled"].as<bool>();
+    if (dp["finishShowTime"].is<bool>())        dpSettings.finishShowTime = dp["finishShowTime"].as<bool>();
     if (dp["nightModeEnabled"].is<bool>())      dpSettings.nightModeEnabled = dp["nightModeEnabled"].as<bool>();
     if (dp["nightStartHour"].is<uint8_t>())     dpSettings.nightStartHour = dp["nightStartHour"].as<uint8_t>();
     if (dp["nightEndHour"].is<uint8_t>())       dpSettings.nightEndHour = dp["nightEndHour"].as<uint8_t>();
@@ -1561,12 +1595,17 @@ static void handleSettingsImportFinish() {
     if (net["dns"].is<const char*>())         strlcpy(netSettings.dns, net["dns"], sizeof(netSettings.dns));
     if (net["timezoneStr"].is<const char*>()) {
       strlcpy(netSettings.timezoneStr, net["timezoneStr"], sizeof(netSettings.timezoneStr));
-      netSettings.timezoneIndex = net["timezoneIndex"] | (uint8_t)3;
+      // Derive the index from the string, never from the backup's stored index:
+      // a backup taken on an older firmware numbered the database differently.
+      netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
     } else if (net["gmtOffsetMin"].is<int16_t>()) {
       // Backward compat: import from old format
       int16_t oldOffset = net["gmtOffsetMin"].as<int16_t>();
       const char* migrated = getDefaultTimezoneForOffset(oldOffset);
-      if (migrated) strlcpy(netSettings.timezoneStr, migrated, sizeof(netSettings.timezoneStr));
+      if (migrated) {
+        strlcpy(netSettings.timezoneStr, migrated, sizeof(netSettings.timezoneStr));
+        netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
+      }
     }
     if (net["use24h"].is<bool>())             netSettings.use24h = net["use24h"].as<bool>();
     if (net["dateFormat"].is<uint8_t>())     netSettings.dateFormat = net["dateFormat"].as<uint8_t>();

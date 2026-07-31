@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v3.7.7"
+#define FW_VERSION          "v3.7.8"
 
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
@@ -96,6 +96,10 @@
 //  NVS
 // =============================================================================
 #define NVS_NAMESPACE       "bambu"
+
+// Any epoch below this means NTP has not answered yet and the RTC is still at
+// its power-on value, so a wall-clock reading must not be trusted or displayed.
+#define NTP_SYNCED_EPOCH    1704067200UL   // 2024-01-01 00:00:00 UTC
 
 // =============================================================================
 //  Multi-printer

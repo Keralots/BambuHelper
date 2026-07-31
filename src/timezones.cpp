@@ -13,6 +13,7 @@ static const TimezoneRegion timezoneDatabase[] = {
   {"(UTC-09:00) Alaska",                                         "AKST9AKDT,M3.2.0/02:00,M11.1.0/02:00"},
   {"(UTC-08:00) Pacific Time (Los Angeles, Vancouver)",          "PST8PDT,M3.2.0/02:00,M11.1.0/02:00"},
   {"(UTC-07:00) Mountain Time (Denver, Edmonton)",               "MST7MDT,M3.2.0/02:00,M11.1.0/02:00"},
+  {"(UTC-07:00) Arizona (Phoenix)",                              "MST7"},
   {"(UTC-06:00) Central Time (Chicago, Winnipeg)",               "CST6CDT,M3.2.0/02:00,M11.1.0/02:00"},
   {"(UTC-06:00) Mexico City",                                    "CST6CDT,M4.1.0/02:00,M10.5.0/02:00"},
   {"(UTC-05:00) Eastern Time (New York, Toronto)",               "EST5EDT,M3.2.0/02:00,M11.1.0/02:00"},
@@ -57,6 +58,22 @@ static const size_t TIMEZONE_COUNT = sizeof(timezoneDatabase) / sizeof(TimezoneR
 const TimezoneRegion* getSupportedTimezones(size_t* count) {
   if (count) *count = TIMEZONE_COUNT;
   return timezoneDatabase;
+}
+
+uint8_t resolveTimezoneIndex(const char* posixString) {
+  if (posixString && posixString[0] != '\0') {
+    for (size_t i = 0; i < TIMEZONE_COUNT; i++) {
+      if (strcmp(timezoneDatabase[i].posixString, posixString) == 0) return (uint8_t)i;
+    }
+  }
+  // No match (empty value, or a string from a newer firmware). Fall back to CET
+  // by looking the entry up rather than hardcoding its position - the database
+  // is ordered by UTC offset, so any inserted region shifts every index after it.
+  for (size_t i = 0; i < TIMEZONE_COUNT; i++) {
+    if (strcmp(timezoneDatabase[i].posixString, "CET-1CEST,M3.5.0/02:00,M10.5.0/03:00") == 0)
+      return (uint8_t)i;
+  }
+  return 0;
 }
 
 const char* getDefaultTimezoneForOffset(int gmtOffsetMinutes) {

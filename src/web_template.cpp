@@ -227,6 +227,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // --- Display options ---
   if (strcmp(name, "DACK") == 0)   { out = dpSettings.doorAckEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "KPS") == 0)    { out = dpSettings.keepPrintScreen ? "checked" : ""; return true; }
+  if (strcmp(name, "FINTM") == 0)  { out = dpSettings.finishShowTime ? "checked" : ""; return true; }
   if (strcmp(name, "ABAR") == 0)   { out = dispSettings.animatedBar ? "checked" : ""; return true; }
   if (strcmp(name, "PONG") == 0)   { out = dispSettings.pongClock ? "checked" : ""; return true; }
   if (strcmp(name, "SLBL") == 0)   { out = dispSettings.smallLabels ? "checked" : ""; return true; }

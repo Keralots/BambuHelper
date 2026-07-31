@@ -243,6 +243,13 @@ static void defaultGaugeSlots(uint8_t* slots) {
 #endif
 }
 
+// Default Ready / Print Complete pair: the nozzle and bed gauges those screens
+// drew before the slots became configurable.
+static void defaultIdleSlots(uint8_t* slots) {
+  slots[0] = GAUGE_NOZZLE;
+  slots[1] = GAUGE_BED;
+}
+
 // ---------------------------------------------------------------------------
 //  Save/load a single GaugeColors struct
 // ---------------------------------------------------------------------------
@@ -448,6 +455,20 @@ void loadSettings() {
       if (cfg.portraitExtras[g] >= GAUGE_TYPE_COUNT) cfg.portraitExtras[g] = GAUGE_EMPTY;
     }
 
+    // Ready / Print Complete pair. A missing key means a config written before
+    // these were configurable, so fall back to the nozzle+bed those screens
+    // always drew.
+    snprintf(key, sizeof(key), "p%d_islot", i);
+    defaultIdleSlots(cfg.idleSlots);
+    prefs.getBytes(key, cfg.idleSlots, sizeof(cfg.idleSlots));
+    for (uint8_t g = 0; g < IDLE_SLOT_COUNT; g++) {
+      // GAUGE_CAMERA is rejected, not just range-checked: the camera tile
+      // renders on its own cadence and camera_client only starts a stream for
+      // types parked in gaugeSlots, so it would freeze as a stale still here.
+      if (cfg.idleSlots[g] >= GAUGE_TYPE_COUNT || cfg.idleSlots[g] == GAUGE_CAMERA)
+        cfg.idleSlots[g] = GAUGE_EMPTY;
+    }
+
     // AMS view (per-printer): 240x240 only, replaces gauge row 2 with AMS strip
     snprintf(key, sizeof(key), "p%d_amsv", i);
     cfg.amsView = prefs.getBool(key, false);
@@ -461,6 +482,9 @@ void loadSettings() {
     // Zero out state
     memset(&printers[i].state, 0, sizeof(BambuState));
     printers[i].state.lightState = -1;  // unknown until lights_report arrives
+    // Latched, not armed: a printer that is already FINISH when we connect must
+    // not have the connection time recorded as its completion time
+    printers[i].state.finishTimeLatched = true;
     // 0 is a valid tray index (AMS 1 slot 1) - if the active tray is never
     // resolved the filament swatch would show that tray's data
     printers[i].state.ams.activeTray = 255;
@@ -626,17 +650,7 @@ void loadSettings() {
 
   // Re-resolve the index from the POSIX string (handles database reordering
   // across firmware updates without relying on a stored index value).
-  {
-    size_t cnt;
-    const TimezoneRegion* regions = getSupportedTimezones(&cnt);
-    netSettings.timezoneIndex = 14;  // default: CET (Amsterdam, Berlin, Rome)
-    for (size_t i = 0; i < cnt; i++) {
-      if (strcmp(regions[i].posixString, netSettings.timezoneStr) == 0) {
-        netSettings.timezoneIndex = (uint8_t)i;
-        break;
-      }
-    }
-  }
+  netSettings.timezoneIndex = resolveTimezoneIndex(netSettings.timezoneStr);
 
   netSettings.use24h = prefs.getBool("net_24h", true);
   netSettings.dateFormat = prefs.getUChar("net_datefmt", 0);
@@ -647,6 +661,7 @@ void loadSettings() {
   dpSettings.showClockAfterFinish = prefs.getBool("dp_clock", true);
   dpSettings.doorAckEnabled = prefs.getBool("dp_dack", false);
   dpSettings.keepPrintScreen = prefs.getBool("dp_kps", false);
+  dpSettings.finishShowTime = prefs.getBool("dp_fintm", true);
   dpSettings.nightModeEnabled = prefs.getBool("dp_night", false);
   dpSettings.nightStartHour = prefs.getUChar("dp_nstart", 22);
   dpSettings.nightEndHour = prefs.getUChar("dp_nend", 7);
@@ -904,6 +919,7 @@ void saveSettings() {
   prefs.putBool("dp_clock", dpSettings.showClockAfterFinish);
   prefs.putBool("dp_dack", dpSettings.doorAckEnabled);
   prefs.putBool("dp_kps", dpSettings.keepPrintScreen);
+  prefs.putBool("dp_fintm", dpSettings.finishShowTime);
   prefs.putBool("dp_night", dpSettings.nightModeEnabled);
   prefs.putUChar("dp_nstart", dpSettings.nightStartHour);
   prefs.putUChar("dp_nend", dpSettings.nightEndHour);
@@ -989,6 +1005,8 @@ void savePrinterConfig(uint8_t index) {
   prefs.putBytes(key, cfg.landscapeExtras, sizeof(cfg.landscapeExtras));
   snprintf(key, sizeof(key), "p%d_pext", index);
   prefs.putBytes(key, cfg.portraitExtras, sizeof(cfg.portraitExtras));
+  snprintf(key, sizeof(key), "p%d_islot", index);
+  prefs.putBytes(key, cfg.idleSlots, sizeof(cfg.idleSlots));
 
   snprintf(key, sizeof(key), "p%d_amsv", index);
   prefs.putBool(key, cfg.amsView);
@@ -1009,6 +1027,7 @@ void clearPrinterConfig(uint8_t index) {
   cfg.region = REGION_US;
   cfg.lightOffDelayMin = 5;  // sensible default after a slot is cleared
   defaultGaugeSlots(cfg.gaugeSlots);
+  defaultIdleSlots(cfg.idleSlots);
   memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
   memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
   savePrinterConfig(index);

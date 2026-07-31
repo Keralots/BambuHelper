@@ -152,6 +152,12 @@
 #define LY_RND_FIN_CHK_Y     92    // checkmark circle center Y
 #define LY_RND_FIN_CHK_R     32
 #define LY_RND_FIN_TEXT_Y    156   // "Print Complete!" (center datum)
+// Rim-safe ink width for the headline. Derived, not guessed: the ring inner
+// edge is R - T = 111, the FONT_BODY line at y=156 reaches dy = 46 from the
+// center, so the usable chord is 2*sqrt(111^2 - 46^2) = 202. 190 keeps a
+// margin. The filename line below sits lower (dy = 68 -> chord 175) and uses
+// its own tighter 150.
+#define LY_RND_FIN_TEXT_MAXW 190
 #define LY_RND_FIN_FILE_Y    178   // filename (center datum)
 #define LY_RND_FIN_TIME_Y    198   // total time (center datum)
 

@@ -74,9 +74,9 @@ function saveWifi(){
 //
 //  Field IDs (audited against web_server.cpp, NOT the design handoff README):
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
-//              cl_pname, dualp, gs0..gs5, amsv
+//              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
-//              fmins, dack, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
+//              fmins, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -810,19 +810,19 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. Set any slot to <em>Empty</em> to hide it.</p>
+        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown while printing. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. The last pair is the two gauges on the Ready and Print complete screens - handy for watching chamber temperature while a part cools. That pair is not used when <em>Keep print status screen after completion</em> is on, since the print grid stays up instead. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
 %AMSV_ROW%
-    <div class="row-divider" style="margin-top:var(--sp-3)" id="topRowDivider">&#9650; Top row</div>
+    <div class="row-divider" style="margin-top:var(--sp-3)" id="topRowDivider">&#9650; Print screen - top row</div>
     <div class="gauge-grid">
       <div class="cell"><label>Top-left</label><select id="gs0" class="gauge-slot-sel"></select></div>
       <div class="cell"><label>Top-center</label><select id="gs1" class="gauge-slot-sel"></select></div>
       <div class="cell"><label>Top-right</label><select id="gs2" class="gauge-slot-sel"></select></div>
     </div>
     <div id="bottomRowGroup">
-      <div class="row-divider">&#9660; Bottom row</div>
+      <div class="row-divider">&#9660; Print screen - bottom row</div>
       <div class="gauge-grid">
         <div class="cell"><label>Bot-left</label><select id="gs3" class="gauge-slot-sel"></select></div>
         <div class="cell"><label>Bot-center</label><select id="gs4" class="gauge-slot-sel"></select></div>
@@ -830,6 +830,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       </div>
     </div>
 %EXTRAS_SECTIONS%
+    <div class="row-divider" id="idlePairDivider">&#9670; Ready / Print complete</div>
+    <div class="gauge-grid">
+      <div class="cell"><label>Left gauge</label><select id="is0" class="gauge-slot-sel"></select></div>
+      <div class="cell"><label>Right gauge</label><select id="is1" class="gauge-slot-sel"></select></div>
+    </div>
     <div class="action-bar">
       <button type="button" class="btn btn-primary" onclick="saveGaugeLayout()">Save Gauge Layout</button>
     </div>
@@ -968,6 +973,11 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <input type="checkbox" id="dack" value="1" %DACK% onchange="toggleSetting('dack',this.checked)">
       <label for="dack">Wait for door open before timeout</label>
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="fintm" value="1" %FINTM% onchange="toggleSetting('fintm',this.checked)">
+      <label for="fintm">Show the completion time on the finish screen</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Adds the clock time the print ended, e.g. <span class="mono">Print Complete! @ 14:32</span>. On 240 px wide screens the longer line is drawn in a smaller font - turn this off to keep the headline large.</div>
     <label class="check-row">
       <input type="checkbox" id="kps" value="1" %KPS% onchange="toggleSetting('kps',this.checked)">
       <label for="kps">Keep print status screen after completion</label>
@@ -1790,6 +1800,7 @@ function gaugeAllowed(idx){
   if (req) return !!gaugeCaps[req];
   return true;
 }
+var GAUGE_CAMERA_ID = 32;  // keep in sync with GAUGE_CAMERA in settings.h
 function rebuildGaugeOptions(){
   // Build ungrouped + groups once, then clone into each <select>.
   // groups[] preserves first-seen order; groupMembers[g] is a list of {i, name}.
@@ -1804,9 +1815,15 @@ function rebuildGaugeOptions(){
   });
   var sels = document.querySelectorAll('.gauge-slot-sel');
   sels.forEach(function(sel){
+    // Ready / Print complete slots cannot host the camera: that tile paints on
+    // its own cadence and the stream only starts for a print-grid slot, so it
+    // would sit frozen. Filtered here because this runs again on every capability
+    // refresh and tab switch - removing the option once would not stick.
+    var isIdleSel = (sel.id === 'is0' || sel.id === 'is1');
     var cur = sel.value;
     sel.innerHTML = '';
     ungrouped.forEach(function(e){
+      if (isIdleSel && e.i === GAUGE_CAMERA_ID) return;
       var o = document.createElement('option');
       o.value = e.i; o.textContent = e.name;
       sel.appendChild(o);
@@ -1815,11 +1832,12 @@ function rebuildGaugeOptions(){
       var og = document.createElement('optgroup');
       og.label = g;
       groupMembers[g].forEach(function(e){
+        if (isIdleSel && e.i === GAUGE_CAMERA_ID) return;
         var o = document.createElement('option');
         o.value = e.i; o.textContent = e.name;
         og.appendChild(o);
       });
-      sel.appendChild(og);
+      if (og.children.length) sel.appendChild(og);
     });
     if (cur !== '') sel.value = cur;
   });
@@ -1829,11 +1847,17 @@ rebuildGaugeOptions();
 /* Round boards (GC9A01): the printing dashboard has no 2x3 grid. Only the Rim
    skin renders gauges - three mini slots fed from gaugeSlots[0..2] - so the
    card re-labels itself and hides the bottom row. gs3-gs5 stay in the DOM
-   (hidden) so saveGaugeLayout keeps posting all six slots unchanged. */
+   (hidden) so saveGaugeLayout keeps posting all six slots unchanged.
+   The is0/is1 pair drives the round Ready screen only: the round Print
+   complete screen is a fixed layout (checkmark, headline, file name, energy)
+   with no room for the two gauges, so the divider says so rather than
+   promising a screen that ignores the setting. */
 var IS_ROUND = %ISROUND% === 1;
 if (IS_ROUND){
   var gd = document.getElementById('glDesc');
-  if (gd) gd.innerHTML = 'Per-printer mini gauges for the round <em>Rim</em> skin: left, center and right slot. The <em>Speedo</em> and <em>Rings</em> skins have fixed layouts. Set a slot to <em>Empty</em> to hide it.';
+  if (gd) gd.innerHTML = 'Per-printer mini gauges for the round <em>Rim</em> skin: left, center and right slot. The <em>Speedo</em> and <em>Rings</em> skins have fixed layouts. The last pair is the two gauges on the <em>Ready</em> screen - the round <em>Print complete</em> screen has a fixed layout and does not use them. Set a slot to <em>Empty</em> to hide it.';
+  var ipd = document.getElementById('idlePairDivider');
+  if (ipd) ipd.innerHTML = '&#9670; Ready screen';
   var roundLbls = ['Left gauge','Center gauge','Right gauge'];
   for (var ri = 0; ri < 3; ri++){
     var rsel = document.getElementById('gs' + ri);
@@ -1855,7 +1879,7 @@ function refreshGaugeCaps(){
     });
     arr.forEach(function(d){
       if (!d) return;
-      ['gaugeSlots','landscapeExtras','portraitExtras'].forEach(function(key){
+      ['gaugeSlots','landscapeExtras','portraitExtras','idleSlots'].forEach(function(key){
         if (!Array.isArray(d[key])) return;
         d[key].forEach(function(v){
           if (!persistedGauges[v]) { persistedGauges[v] = true; changed = true; }
@@ -1876,6 +1900,9 @@ function resetGaugeLayout(){
   var lx = ['lx0','lx1'], px = ['px0','px1','px2'];
   lx.forEach(function(id){ var s = document.getElementById(id); if (s) s.value = 0; });
   px.forEach(function(id){ var s = document.getElementById(id); if (s) s.value = 0; });
+  // Ready / Print complete -> Nozzle/Bed, what those screens always drew.
+  var di = [2,3];
+  for (var i = 0; i < 2; i++) { var s = document.getElementById('is' + i); if (s) s.value = di[i]; }
   showToast('Restored layout defaults');
 }
 function saveGaugeLayout(){
@@ -1884,6 +1911,7 @@ function saveGaugeLayout(){
   for (var g = 0; g < 6; g++) { var s = document.getElementById('gs' + g); if (s) p.append('gs' + g, s.value); }
   for (var g = 0; g < 2; g++) { var s = document.getElementById('lx' + g); if (s) p.append('lx' + g, s.value); }
   for (var g = 0; g < 3; g++) { var s = document.getElementById('px' + g); if (s) p.append('px' + g, s.value); }
+  for (var g = 0; g < 2; g++) { var s = document.getElementById('is' + g); if (s) p.append('is' + g, s.value); }
   var av = document.getElementById('amsv');
   if (av && av.checked) p.append('amsv', '1');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
@@ -1954,15 +1982,20 @@ function selectPrinterTab(slot){
       var capName = GAUGE_REQUIRES[idx];
       if (d[capName] && !gaugeCaps[capName]){ gaugeCaps[capName] = true; capsChanged = true; }
     });
-    if (d.gaugeSlots){
-      d.gaugeSlots.forEach(function(v){
+    // Keep options for gauges this printer has saved even when it is offline and
+    // its capability flags say otherwise - otherwise the select renders empty and
+    // the next save silently downgrades the slot to Empty.
+    ['gaugeSlots','idleSlots'].forEach(function(key){
+      if (!d[key]) return;
+      d[key].forEach(function(v){
         if (!persistedGauges[v]){ persistedGauges[v] = true; capsChanged = true; }
       });
-    }
+    });
     if (capsChanged) rebuildGaugeOptions();
     if (d.gaugeSlots) { for (var g = 0; g < 6; g++) { var sel = document.getElementById('gs' + g); if (sel) sel.value = d.gaugeSlots[g] || 0; } }
     if (d.landscapeExtras) { for (var g = 0; g < 2; g++) { var sel = document.getElementById('lx' + g); if (sel) sel.value = d.landscapeExtras[g] || 0; } }
     if (d.portraitExtras)  { for (var g = 0; g < 3; g++) { var sel = document.getElementById('px' + g); if (sel) sel.value = d.portraitExtras[g] || 0; } }
+    if (d.idleSlots)       { for (var g = 0; g < 2; g++) { var sel = document.getElementById('is' + g); if (sel) sel.value = d.idleSlots[g] || 0; } }
     var av = document.getElementById('amsv');
     if (av) { av.checked = !!d.amsView; syncAmsView(); }
     var lf = d.lightFlags || 0;
@@ -2513,6 +2546,7 @@ function applyDisplay(){
   else if (ap === 'custom') { p.append('fmins', document.getElementById('fmins').value); if (afClock) p.append('clock', '1'); }
   else { p.append('fmins', ap); if (afClock) p.append('clock', '1'); }
   if (document.getElementById('dack').checked) p.append('dack', '1');
+  if (document.getElementById('fintm').checked) p.append('fintm', '1');
   if (document.getElementById('kps').checked) p.append('kps', '1');
   if (document.getElementById('abar').checked) p.append('abar', '1');
   if (document.getElementById('pong').checked) p.append('pong', '1');

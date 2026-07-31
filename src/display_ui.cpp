@@ -1463,6 +1463,12 @@ static bool useEnhancedPortraitAms(const AmsState& ams);
 #if defined(LAYOUT_HAS_AMS_STRIP)
 static void drawAmsZone(const BambuState& s, bool force);
 #endif
+// Defined next to drawGaugeTile(), used by both the Ready and Print Complete
+// screens - so it must sit outside every layout guard.
+static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
+                              int16_t leftX, int16_t rightX, int16_t cy, int16_t r,
+                              uint8_t* prevTypes, uint32_t* prevAirduct, bool fr,
+                              bool* animatingOut);
 
 // Helper macro for the 240x240-only AMS-view feature (replaces gauge row 2
 // with an AMS strip). The HTML row, gauge gating, and dispatch are gated by
@@ -1471,6 +1477,49 @@ static void drawAmsZone(const BambuState& s, bool force);
 #if !defined(LAYOUT_HAS_AMS_STRIP) && !defined(DISPLAY_480x480)
   #define LAYOUT_240x240_AMS_VIEW 1
 #endif
+
+// Renders the print completion time into buf, "" when there is nothing to show
+// (the user turned the timestamp off, or the print finished before NTP had a
+// valid clock). Shared by the finished-screen headline and the idle status
+// badge so both agree on the 12h/24h wording.
+static bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
+  buf[0] = '\0';
+  if (!dpSettings.finishShowTime || s.finishEpoch == 0) return false;
+  // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
+  // width does not depend on the toolchain.
+  time_t stamp = (time_t)s.finishEpoch;
+  struct tm ft;
+  localtime_r(&stamp, &ft);
+  int hour = ft.tm_hour;
+  if (netSettings.use24h) {
+    snprintf(buf, n, "%02d:%02d", hour, ft.tm_min);
+  } else {
+    // Uppercase AM/PM to match every other 12h renderer (clock screen, ETA line)
+    const char* ampm = hour < 12 ? "AM" : "PM";
+    hour %= 12;
+    if (hour == 0) hour = 12;
+    snprintf(buf, n, "%d:%02d %s", hour, ft.tm_min, ampm);
+  }
+  return true;
+}
+
+// Idle-screen wording for a printer still sitting in GCODE_FINISH. Steps down
+// until it fits maxW: full wording with the time -> short wording with the time
+// -> wording alone. The caller has already selected the badge font.
+static const char* formatIdleFinishBadge(char* buf, size_t n, const BambuState& s,
+                                         int16_t maxW) {
+  char clock[16];
+  if (!formatFinishClock(clock, sizeof(clock), s)) {
+    strlcpy(buf, "Print Complete", n);
+    return buf;
+  }
+  snprintf(buf, n, "Print Complete @ %s", clock);
+  if (maxW > 0 && tft.textWidth(buf) > maxW) {
+    snprintf(buf, n, "Complete @ %s", clock);
+    if (tft.textWidth(buf) > maxW) strlcpy(buf, "Print Complete", n);
+  }
+  return buf;
+}
 
 static void drawIdle() {
   if (!isAnyPrinterConfigured()) {
@@ -1561,16 +1610,15 @@ static void drawIdle() {
   const int16_t lyIdleGOffset   = LY_IDLE_G_OFFSET;
 #endif
 
-  bool animating = tickGaugeSmooth(s, forceRedraw);
-  gaugesAnimating = animating;
+  // Advances every smoother, which other screens rely on. gaugesAnimating is set
+  // further down from the two slots actually on screen.
+  tickGaugeSmooth(s, forceRedraw);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
-  bool tempChanged = forceRedraw || animating ||
-                     (s.nozzleTemp != prevState.nozzleTemp) ||
-                     (s.nozzleTarget != prevState.nozzleTarget) ||
-                     (s.bedTemp != prevState.bedTemp) ||
-                     (s.bedTarget != prevState.bedTarget);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // The completion stamp lands a loop iteration after the
+                      // FINISH edge, so the badge has to repaint on it too.
+                      (s.finishEpoch != prevState.finishEpoch);
   bool connChanged = forceRedraw || (s.connected != prevState.connected);
   bool wifiChanged = forceRedraw || (s.wifiSignal != prevState.wifiSignal);
 
@@ -1604,9 +1652,23 @@ static void drawIdle() {
     setFont(tft, FONT_BODY);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
+    char finishBadge[40];
     if (s.gcodeStateId == GCODE_IDLE) {
       stateColor = CLR_GREEN;
       stateStr = "Ready";
+    } else if (s.gcodeStateId == GCODE_FINISH) {
+      // The finished screen is one-shot: waking a slept display dismisses it
+      // (finishDismissedByWake in main.cpp) and lands here instead. Carry the
+      // completion wording and time on the badge so a print that finished while
+      // nobody was watching is still readable on wake, rather than the raw
+      // "FINISH" state word (#158).
+      stateColor = CLR_GREEN;
+#if defined(DISPLAY_ROUND_240)
+      const int16_t badgeMaxW = 200;   // rim-safe chord at the badge row
+#else
+      const int16_t badgeMaxW = scrW - 8;
+#endif
+      stateStr = formatIdleFinishBadge(finishBadge, sizeof(finishBadge), s, badgeMaxW);
     } else if (s.gcodeStateId == GCODE_FAILED) {
       stateColor = CLR_RED;
       stateStr = "ERROR";
@@ -1649,19 +1711,17 @@ static void drawIdle() {
     }
   }
 
-  // Nozzle temp gauge
-  if (tempChanged) {
-    markFrameDirty();
-    drawTempGauge(tft, cx - lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
-                  dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
-                  &dispSettings.nozzle, smoothNozzleTemp);
-
-    // Bed temp gauge
-    drawTempGauge(tft, cx + lyIdleGOffset, lyIdleGaugeY, lyIdleGaugeR,
-                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
-                  &dispSettings.bed, smoothBedTemp);
+  // The two configurable gauges (#158). Same pair as the Print Complete screen.
+  {
+    static uint8_t  prevIdleTypes[IDLE_SLOT_COUNT] = { 0xFF, 0xFF };
+    static uint32_t prevIdleAirduct = 0;
+    bool slotsAnim = false;
+    if (drawIdlePairSlots(p.config, s, cx - lyIdleGOffset, cx + lyIdleGOffset,
+                          lyIdleGaugeY, lyIdleGaugeR, prevIdleTypes,
+                          &prevIdleAirduct, forceRedraw, &slotsAnim)) {
+      markFrameDirty();
+    }
+    gaugesAnimating = slotsAnim;  // only the two shown gauges drive the tick rate
   }
 
   // AMS on idle (boards with permanent AMS strip)
@@ -2642,7 +2702,10 @@ void drawCameraGauge(int16_t, int16_t, int16_t, bool) {}
 bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p) {
   switch (gt) {
     case GAUGE_PROGRESS:      return s.progress != p.progress || s.remainingMinutes != p.remainingMinutes;
-    case GAUGE_NOZZLE:        return s.nozzleTemp != p.nozzleTemp || s.nozzleTarget != p.nozzleTarget;
+    // Dual nozzle also flips this tile's label between "Nozzle R" and "Nozzle L",
+    // so a side switch at a steady temperature still needs a repaint.
+    case GAUGE_NOZZLE:        return s.nozzleTemp != p.nozzleTemp || s.nozzleTarget != p.nozzleTarget ||
+                                     s.dualNozzle != p.dualNozzle || s.activeNozzle != p.activeNozzle;
     case GAUGE_NOZZLE_RIGHT:  return s.nozzleTempN[0] != p.nozzleTempN[0] || s.nozzleTargetN[0] != p.nozzleTargetN[0];
     case GAUGE_NOZZLE_LEFT:   return s.nozzleTempN[1] != p.nozzleTempN[1] || s.nozzleTargetN[1] != p.nozzleTargetN[1];
     case GAUGE_BED:           return s.bedTemp != p.bedTemp || s.bedTarget != p.bedTarget;
@@ -2675,7 +2738,12 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
     uint8_t ui = isBars ? (gt - GAUGE_AMS_BARS_1) : (gt - GAUGE_AMS_FILAMENT_1);
     if (s.ams.present != p.ams.present || s.ams.unitCount != p.ams.unitCount) return true;
     const AmsUnit& cu = s.ams.units[ui]; const AmsUnit& pu = p.ams.units[ui];
-    if (cu.present != pu.present || (!isBars && cu.humidity != pu.humidity) ||
+    // humidityRaw as well as the legacy level: the filament tile tints its
+    // humidity dot through amsHumidityColor(), which prefers the raw RH when
+    // it is 1..100. A drift across a threshold (35/50/65) recolors the tile
+    // while the coarse level stays put.
+    if (cu.present != pu.present ||
+        (!isBars && (cu.humidity != pu.humidity || cu.humidityRaw != pu.humidityRaw)) ||
         cu.trayCount != pu.trayCount) return true;
     if (isBars && s.ams.activeTray != p.ams.activeTray) return true;
     for (int tr = 0; tr < AMS_TRAYS_PER_UNIT; tr++) {
@@ -2687,6 +2755,88 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
     return false;
   }
   return false;
+}
+
+// True while this gauge type's own smoother is still interpolating. The Ready
+// and Print Complete screens need this rather than tickGaugeSmooth()'s return
+// value: that one aggregates every smoother, so a settling hidden fan would
+// repaint a steady slot - and repaint an AMS bars tile at the animation tick.
+static bool gaugeTypeAnimating(uint8_t gt, const BambuState& s) {
+  // Not named EPS: xtensa's specreg.h defines that as a register number.
+  const float ANIM_EPS = 0.01f;
+  switch (gt) {
+    case GAUGE_NOZZLE:        return fabsf(smoothNozzleTemp    - s.nozzleTemp)            > ANIM_EPS;
+    case GAUGE_NOZZLE_RIGHT:  return fabsf(smoothNozzleTempN[0] - s.nozzleTempN[0])       > ANIM_EPS;
+    case GAUGE_NOZZLE_LEFT:   return fabsf(smoothNozzleTempN[1] - s.nozzleTempN[1])       > ANIM_EPS;
+    case GAUGE_BED:           return fabsf(smoothBedTemp       - s.bedTemp)               > ANIM_EPS;
+    case GAUGE_CHAMBER_TEMP:  return fabsf(smoothChamberTemp   - s.chamberTemp)           > ANIM_EPS;
+    case GAUGE_PART_FAN:      return fabsf(smoothPartFan     - (float)s.coolingFanPct)    > ANIM_EPS;
+    case GAUGE_AUX_FAN:       return fabsf(smoothAuxFan      - (float)s.auxFanPct)        > ANIM_EPS;
+    case GAUGE_AUX_FAN_RIGHT: return fabsf(smoothAuxRightFan - (float)s.auxFanRightPct)   > ANIM_EPS;
+    case GAUGE_CHAMBER_FAN:   return fabsf(smoothChamberFan  - (float)s.chamberFanPct)    > ANIM_EPS;
+    case GAUGE_EXHAUST_FAN:   return fabsf(smoothExhaustFan  - (float)s.exhaustFanPct)    > ANIM_EPS;
+    case GAUGE_HEATBREAK:     return fabsf(smoothHeatbreakFan - (float)s.heatbreakFanPct) > ANIM_EPS;
+    default: return false;   // every other type renders straight from the value
+  }
+}
+
+// Draws the two configurable slots the Ready and Print Complete screens share.
+// Handles the type-change wipe: a layout saved from the web UI does not force a
+// redraw, so each screen keeps its own cache (0xFF = draw everything first time).
+// The clear is a square plus the label band, not a circle - AMS bars and
+// filament tiles paint into the corners of the slot box.
+// Returns true when anything was painted, and reports through animatingOut
+// whether either slot still needs the fast animation tick.
+// prevAirduct is caller-owned for the same reason prevTypes is: the Ready and
+// Print Complete screens each keep their own cache, and a file-scope static
+// would let whichever screen ran first swallow the change.
+static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
+                              int16_t leftX, int16_t rightX, int16_t cy, int16_t r,
+                              uint8_t* prevTypes, uint32_t* prevAirduct, bool fr,
+                              bool* animatingOut) {
+  const int16_t xs[IDLE_SLOT_COUNT] = { leftX, rightX };
+  bool drew = false, anim = false;
+  // GAUGE_AUX_FAN and GAUGE_CHAMBER_FAN pick their default label from
+  // s.airductFuncs (Aux vs L.Aux, Chamber vs Exhaust). The mask starts at 0 and
+  // only fills in on the first pushall carrying device.airduct.parts, so a
+  // label drawn on boot would stick: drawFanGauge repaints the label only
+  // inside its gaugeTextChanged() guard, which watches the percentage, and an
+  // idle chamber fan sits at 0 forever. Force those tiles through a full
+  // redraw when the mask moves (once per session in practice). Mirrors the
+  // printing grid's own invalidation.
+  const bool airductChanged = (*prevAirduct != s.airductFuncs);
+  *prevAirduct = s.airductFuncs;
+  for (uint8_t i = 0; i < IDLE_SLOT_COUNT; i++) {
+    uint8_t gt = cfg.idleSlots[i];
+    if (gt >= GAUGE_TYPE_COUNT) gt = GAUGE_EMPTY;
+    const bool labelStale = airductChanged &&
+                            (gt == GAUGE_AUX_FAN || gt == GAUGE_CHAMBER_FAN);
+    const bool typeChanged = (gt != prevTypes[i]);
+    if (typeChanged) {
+      if (!fr) {
+        const int16_t clearSz = r * 2 + 4;
+        tft.fillRect(xs[i] - r - 2, cy - r - 2, clearSz, clearSz, dispSettings.bgColor);
+        const bool sm = dispSettings.smallLabels;
+        const int16_t labelY = cy + r + (sm ? 3 : -1);
+        const int16_t lh = sm ? 18 : 24;
+        tft.fillRect(xs[i] - r - 2, labelY - lh / 2, clearSz, lh, dispSettings.bgColor);
+      }
+      prevTypes[i] = gt;
+      drew = true;
+    }
+    const bool slotAnim = gaugeTypeAnimating(gt, s);
+    if (slotAnim) anim = true;
+    if (fr || typeChanged || labelStale || slotAnim ||
+        gaugeTileValueChanged(gt, s, prevState)) {
+      // labelStale forces the full-redraw path: drawGaugeLabel() clears its own
+      // band, so no separate wipe is needed for the wider replacement string.
+      drawGaugeTile(gt, s, rotState.displayIndex, xs[i], cy, r, LY_GAUGE_T,
+                    fr || typeChanged || labelStale, true);
+      drew = true;
+    }
+  }
+  if (animatingOut) *animatingOut = anim;
+  return drew;
 }
 
 // Reuses the shared gauge primitives. smooth=false: arcs snap to value (split -
@@ -2892,6 +3042,50 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
     clr = duration();   // strips its own label when even that overflows
   }
   return clr;
+}
+
+// ---------------------------------------------------------------------------
+//  Finished screen headline
+// ---------------------------------------------------------------------------
+//  Sits beside formatEtaLine() - outside the DISPLAY_ROUND_240 block below - so
+//  the round finished screen links against it too.
+// ---------------------------------------------------------------------------
+void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s) {
+  static const char* kMsg = "Print Complete!";
+  // Shorter wording, used only when the full headline plus the timestamp still
+  // overflows the budget at the small font (the round 240 screen in 12h mode:
+  // 213 px vs a 190 px rim-safe span). Keeping the time is worth more there
+  // than the longer phrasing, and it is the last step before the time is cut.
+  static const char* kMsgShort = "Completed";
+
+  // Empty when the user turned the timestamp off, or when the print finished
+  // before NTP had a valid clock.
+  char clock[16];
+  formatFinishClock(clock, sizeof(clock), s);
+
+  char buf[40];
+  if (clock[0] == '\0') {
+    setFont(tft, FONT_LARGE);
+    tft.drawString(kMsg, cx, y);
+    return;
+  }
+
+  // Step down until it fits: full wording large -> full wording small ->
+  // short wording small -> no time, back to the full wording at full size.
+  // The message itself always renders on every layout profile.
+  snprintf(buf, sizeof(buf), "%s @ %s", kMsg, clock);
+  setFont(tft, FONT_LARGE);
+  if (maxW > 0 && tft.textWidth(buf) > maxW) {
+    setFont(tft, FONT_BODY);
+    if (tft.textWidth(buf) > maxW) {
+      snprintf(buf, sizeof(buf), "%s @ %s", kMsgShort, clock);
+      if (tft.textWidth(buf) > maxW) {
+        strlcpy(buf, kMsg, sizeof(buf));
+        setFont(tft, FONT_LARGE);
+      }
+    }
+  }
+  tft.drawString(buf, cx, y);
 }
 
 #if defined(DISPLAY_ROUND_240)
@@ -3863,9 +4057,11 @@ static void drawPrinting() {
               if (!needDraw) {
                 const AmsUnit &cu = s.ams.units[ui], &pu = prevState.ams.units[ui];
                 // Bars gauge does not show humidity, so skip the humidity diff
-                // to avoid redundant redraws.
+                // to avoid redundant redraws. The filament tile needs the raw
+                // RH too - its humidity dot is colored by amsHumidityColor(),
+                // which prefers humidityRaw over the coarse level.
                 if (cu.present != pu.present
-                    || (!isBars && cu.humidity != pu.humidity)
+                    || (!isBars && (cu.humidity != pu.humidity || cu.humidityRaw != pu.humidityRaw))
                     || cu.trayCount != pu.trayCount) needDraw = true;
               }
               if (!needDraw && isBars && s.ams.activeTray != prevState.ams.activeTray) {
@@ -4310,9 +4506,8 @@ static void drawFinishedRound() {
     }
 
     tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_LARGE);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    tft.drawString("Print Complete!", cx, LY_RND_FIN_TEXT_Y);
+    drawFinishHeadline(cx, LY_RND_FIN_TEXT_Y, LY_RND_FIN_TEXT_MAXW, s);
 
     const char* rndFinName = jobDisplayName(s);
     if (rndFinName[0] != '\0') {
@@ -4411,12 +4606,10 @@ static void drawFinished() {
 #endif
   const int16_t cx = scrW / 2;
 
-  bool animating = tickGaugeSmooth(s, forceRedraw);
-  bool tempChanged = forceRedraw || animating ||
-                     (s.nozzleTemp != prevState.nozzleTemp) ||
-                     (s.nozzleTarget != prevState.nozzleTarget) ||
-                     (s.bedTemp != prevState.bedTemp) ||
-                     (s.bedTarget != prevState.bedTarget);
+  // Advances every smoother, which other screens rely on. gaugesAnimating is set
+  // further down from the two slots actually on screen - this screen used not to
+  // report it at all, so its arcs settled at the slow DISPLAY_UPDATE_MS tick.
+  tickGaugeSmooth(s, forceRedraw);
 
   // === H2-style LED progress bar at 100% (y=0-5) ===
   if (forceRedraw) {
@@ -4459,18 +4652,16 @@ static void drawFinished() {
     if (getActiveConnCount() > 1) drawPrinterDots(cx, finHdrDotCY);
   }
 
-  // === Row 1: Nozzle | Bed (two gauges centered) ===
-  if (tempChanged) {
-    markFrameDirty();
-    drawTempGauge(tft, gaugeLeft, gaugeY, gR,
-                  s.nozzleTemp, s.nozzleTarget, (float)dispSettings.nozzleScaleMax,
-                  dispSettings.nozzle.arc, nozzleLabel(s), nullptr, forceRedraw,
-                  &dispSettings.nozzle, smoothNozzleTemp);
-
-    drawTempGauge(tft, gaugeRight, gaugeY, gR,
-                  s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                  dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, forceRedraw,
-                  &dispSettings.bed, smoothBedTemp);
+  // === Row 1: the two configurable gauges (#158), shared with the Ready screen ===
+  {
+    static uint8_t  prevFinTypes[IDLE_SLOT_COUNT] = { 0xFF, 0xFF };
+    static uint32_t prevFinAirduct = 0;
+    bool slotsAnim = false;
+    if (drawIdlePairSlots(p.config, s, gaugeLeft, gaugeRight, gaugeY, gR,
+                          prevFinTypes, &prevFinAirduct, forceRedraw, &slotsAnim)) {
+      markFrameDirty();
+    }
+    gaugesAnimating = slotsAnim;  // only the two shown gauges drive the tick rate
   }
 
   // === "Print Complete!" status ===
@@ -4478,8 +4669,7 @@ static void drawFinished() {
     markFrameDirty();
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    setFont(tft, FONT_LARGE);
-    tft.drawString("Print Complete!", cx, finTextY);
+    drawFinishHeadline(cx, finTextY, scrW - 12, s);
   }
 
   // === File name ===

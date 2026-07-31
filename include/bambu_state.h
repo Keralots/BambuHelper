@@ -109,6 +109,11 @@ struct BambuState {
   unsigned long lastUpdate;       // millis() of last MQTT message (any)
   unsigned long lastPrintDataMs;  // millis() of last core print data (temps, fans, progress, state)
   bool finishBuzzerPlayed;    // true after FINISH buzzer played (reset on next print)
+  uint32_t finishEpoch;       // wall-clock time the print finished (epoch secs), 0 = unknown
+  bool finishTimeLatched;     // true once this print's finish has been stamped. Starts SET
+                              // after a state wipe: the first FINISH report from a printer
+                              // that was already done reads as an edge, and stamping that
+                              // would record boot time. Armed by an observed print start.
   bool doorAcknowledged;      // true after door opened on FINISH screen (print removed)
   bool bedCooldownAlertArmed; // armed on FINISH transition, fired when bedTemp <= threshold
   int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
@@ -222,6 +227,7 @@ struct PrinterConfig {
   uint8_t landscapeExtras[2];  // Col 4 (top, bot) - landscape 8-slot mode only.
   uint8_t portraitExtras[3];   // Row 3 (left, mid, right) - portrait 9-slot mode only.
   bool    amsView;             // 240x240: replace gauge row 2 with AMS strip (per-printer)
+  uint8_t idleSlots[2];        // Ready + Print Complete screens (left, right).
   uint8_t lightFlags;          // chamber-light automation bitmask (LIGHT_* flags), 0 = all off
   uint8_t lightOffDelayMin;    // minutes to wait before turning light off (0-60), default 5
 };
