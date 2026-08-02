@@ -235,8 +235,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = dispSettings.timeDisplayMode == (uint8_t)(name[5] - '0') ? "selected" : "";
     return true;
   }
-  // Edge glow: mode/style/duration selects + reveal states. The whole block is
-  // hidden on round panels (no border band there yet).
+  // Edge glow: mode/style/duration selects + reveal states. Shown on every
+  // layout - round panels render the glow as a rim ring.
   if (strncmp(name, "GLOWM", 5) == 0 && name[5] >= '0' && name[5] <= '2' && name[6] == '\0') {
     out = dispSettings.glowMode == (uint8_t)(name[5] - '0') ? "selected" : "";
     return true;
@@ -250,11 +250,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "GLOW_DISP") == 0) {
-#if defined(DISPLAY_ROUND_240)
-    out = "display:none";
-#else
     out = "";
-#endif
     return true;
   }
   if (strcmp(name, "GLOWF_DISP") == 0) { out = dispSettings.glowMode != 0 ? "block" : "none"; return true; }

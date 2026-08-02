@@ -181,9 +181,11 @@
 // =============================================================================
 //  Edge glow (border light effect on print complete / failed)
 // =============================================================================
-#define GLOW_THICKNESS_PX        8         // border band thickness
+#define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
 #if defined(BOARD_IS_JC3248W535)
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
+#elif defined(DISPLAY_ROUND_240)
+#define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges over SPI, 25 fps fine
 #else
 #define GLOW_ANIM_MS             40        // ~25 fps band animation
 #endif
@@ -194,6 +196,18 @@
 #define GLOW_REMIND_ON_MS        5000UL    // reminder pulse length
 #define GLOW_REMIND_EVERY_MS     300000UL  // reminder interval (5 min)
 #define GLOW_CONT_CEILING_MS     1800000UL // until-dismissed degrades to reminder after 30 min
+
+// Round ring variant (DISPLAY_ROUND_240): the glow owns an annular band at the
+// panel rim (a full circle) instead of four straight edge strips. Sweep is a
+// single-pass per-pixel band rasterizer (no fillArc, so no angular-seam specks
+// and no whole-ring strobe); Pulse and Storm use native fillArc. fillArc scans
+// its full bounding box per call (~O(r^2)), so those keep their fill count low.
+// Outer radius reaches the panel edge to fully cover the finished screen's gold
+// rim and its anti-aliased fringe (drawn at r118, AA out to ~r119); a shy ring
+// leaves single gold pixels peeking through the moving sweep.
+#define GLOW_RING_MARGIN         0         // px from panel edge to ring outer radius
+#define GLOW_RING_T              11        // ring thickness (outer 120 -> inner 109 on 240 round)
+#define GLOW_SWEEP_TAIL_DEG      90        // sweep comet tail length (deg of the circle)
 
 // =============================================================================
 //  Buzzer (optional passive buzzer)

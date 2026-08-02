@@ -4494,7 +4494,12 @@ static void drawFinishedRound() {
 
   if (forceRedraw) {
     markFrameDirty();
-    drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T, 100, CLR_GOLD, true);
+    // Skip the gold rim while the glow owns the ring band - otherwise a
+    // mid-glow forceRedraw repaints gold under the sweep, which its dark
+    // remainder then lets peek through as specks. Cleanup (glow end) clears
+    // glowIsActive() and the next forceRedraw restores the rim.
+    if (!glowIsActive())
+      drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T, 100, CLR_GOLD, true);
 
     // Checkmark in a green circle outline
     tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R, CLR_GREEN);
@@ -5060,7 +5065,8 @@ void updateDisplay() {
 #if defined(DISPLAY_ROUND_240)
   // Experimental progress-arc shimmer, per skin: Rim + Rings sweep the full
   // circle (Rings on its outer progress ring), Speedo sweeps its 240-deg arc.
-  if (currentScreen == SCREEN_PRINTING) {
+  // Suppressed while the glow owns the rim ring - both draw the outer band.
+  if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
     BambuState& sh = displayedPrinter().state;
     uint16_t ringColor = roundProgressColor(sh);
     const int16_t cx = SCREEN_W / 2;
@@ -5082,6 +5088,22 @@ void updateDisplay() {
                        sh.progress, ringColor, true);
         break;
     }
+    markFrameDirty();
+  }
+
+  // Edge glow ring - same eligibility + dismissal contract as the rectangular
+  // panels (see the !DISPLAY_ROUND_240 block above). Drawn after the shimmer so
+  // it owns the rim band while active; cleanup forces a base repaint that
+  // restores the gold rim / progress ring underneath.
+  if (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
+      glowTestRunning()) {
+    if (glowTick(tft, rotState.displayIndex, false)) markFrameDirty();
+  } else if (glowIsArmed()) {
+    glowDismiss();
+  }
+  if (glowConsumeCleanup()) {
+    forceRedraw = true;
+    lastDisplayUpdate = 0;
     markFrameDirty();
   }
 #endif

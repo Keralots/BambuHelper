@@ -2,21 +2,11 @@
 #include "config.h"
 #include "settings.h"
 
-#if defined(DISPLAY_ROUND_240)
-
-// Round panels: no rectangular border to glow. Ring variant is a follow-up;
-// until then the controller is inert so shared call sites need no guards.
-void glowNotifyEvent(uint8_t, GlowEvent) {}
-void glowClearSlot(uint8_t) {}
-void glowDismiss() {}
-bool glowIsActive() { return false; }
-bool glowIsArmed() { return false; }
-bool glowTick(lgfx::LovyanGFX&, uint8_t, bool) { return false; }
-bool glowConsumeCleanup() { return false; }
-void glowStartTest(uint8_t) {}
-bool glowTestRunning() { return false; }
-
-#else
+// The controller logic (latching, phases, dismissal, timing) is identical on
+// every panel; only the renderer differs. Rectangular panels push full-width
+// line buffers for four straight strips; round panels fill an annular ring with
+// native fillArc wedges. drawBand()/clearBand() are the two platform-specific
+// hooks, selected by DISPLAY_ROUND_240 below; everything else is shared.
 
 static const uint8_t GLOW_MAX_SLOTS = 4;
 
@@ -37,9 +27,7 @@ static unsigned long phaseStartMs = 0;
 static unsigned long lastFrameMs = 0;
 static bool      cleanupPending = false;
 static bool      testMode = false;                 // web-UI preview episode
-
-// Widest supported panel dimension (320x480 layouts).
-static uint16_t lineBuf[480];
+static bool      primeBand = false;                // erase the base ring once at episode start
 
 static inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t alpha) {
   uint32_t fr = (fg >> 11) & 0x1F, fgg = (fg >> 5) & 0x3F, fb = fg & 0x1F;
@@ -72,6 +60,7 @@ static void startEpisode(uint8_t slot, bool remind) {
   phase = PHASE_ACTIVE;
   phaseStartMs = millis();
   lastFrameMs = 0;  // draw on the next tick
+  primeBand = true; // wipe the base ring (e.g. the gold finished rim) on frame 1
 }
 
 static void stopDrawing(bool armReminder) {
@@ -123,6 +112,201 @@ void glowStartTest(uint8_t slot) {
 }
 
 bool glowTestRunning() { return testMode; }
+
+// ---------------------------------------------------------------------------
+//  Renderer: round ring (DISPLAY_ROUND_240)
+// ---------------------------------------------------------------------------
+#if defined(DISPLAY_ROUND_240)
+
+// Integer sqrt / atan2 - the C3 (RISC-V) has no FPU, so the per-pixel band
+// rasterizer below must avoid sqrtf/atan2f. isqrt32 gives the row half-widths;
+// iatan2deg gives each pixel's angle (0..359, ~+-2 deg, plenty for a glow).
+static inline uint16_t isqrt32(uint32_t x) {
+  uint32_t r = 0, b = 1u << 30;
+  while (b > x) b >>= 2;
+  while (b) {
+    if (x >= r + b) { x -= r + b; r = (r >> 1) + b; }
+    else            { r >>= 1; }
+    b >>= 2;
+  }
+  return (uint16_t)r;
+}
+static inline int iatan2deg(int dy, int dx) {
+  if (dx == 0 && dy == 0) return 0;
+  int ax = dx < 0 ? -dx : dx;
+  int ay = dy < 0 ? -dy : dy;
+  int a = (ax >= ay) ? (45 * ay) / (ax ? ax : 1)
+                     : 90 - (45 * ax) / (ay ? ay : 1);
+  if (dx >= 0) return (dy >= 0) ? a         : 360 - a;
+  else         return (dy >= 0) ? 180 - a   : 180 + a;
+}
+
+// Sweep and Storm, rasterized in a SINGLE band pass. fillArc cannot do this
+// cleanly: a partial arc's angular boundary drops slivers that the dark bg
+// remainder does not reliably re-cover, so bright pixels accumulate at the
+// band's inner edge every lap (the growing specks); a full-ring bg clear
+// removes them but strobes the bright comet. Coloring each band pixel exactly
+// once from a continuous function has neither failure: no seams, no
+// double-paint, and nothing stale survives a frame.
+//
+// Head laps clockwise; `d` is a pixel's angular distance behind it.
+//   Sweep: brightness fades quadratically over the tail.
+//   Storm: the rectangular Storm's bolt model in polar coordinates - the pixel's
+//          arc length along the rim is the perimeter coordinate q, its distance
+//          from the outer radius is the band row t. Two bolts pick a random row
+//          per 8 px of rim and jump every segment, giving jagged streaks that
+//          run parallel to the edge with a bright core, a dim halo and a
+//          linearly decaying tail. Reseeded ~20 Hz so they crackle.
+static void drawBandRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
+                         int16_t ir, int16_t orr, uint16_t bg, bool rainbow,
+                         uint16_t baseColor, uint16_t hueShift,
+                         int head, int tail, uint8_t fade,
+                         bool storm, uint32_t stormSeed) {
+  static uint16_t rowBuf[248];
+  const int32_t orr2 = (int32_t)orr * orr;
+  const int32_t ir2  = (int32_t)ir * ir;
+  // Row boundaries as squared radii: band row t covers [orr-t-1 .. orr-t], so a
+  // pixel's row is the first t whose inner bound its r^2 still clears. Cheaper
+  // than an isqrt per pixel.
+  const int16_t T = (int16_t)(orr - ir);
+  int32_t rowR2[GLOW_RING_T + 1];
+  for (int16_t k = 0; k <= T && k <= GLOW_RING_T; k++) {
+    int32_t rad = orr - k;
+    rowR2[k] = rad * rad;
+  }
+  // Arc length per degree at the band's mid radius, x1000: q = a * degToPx.
+  const int32_t degToPx1000 = ((int32_t)(ir + orr) * 8727) / 1000;  // (pi/360)*1e6
+  const bool oldSwap = gfx.getSwapBytes();
+  gfx.setSwapBytes(true);   // rowBuf is native LE; panel wants byte-swapped
+  for (int16_t y = (int16_t)(cy - orr); y <= (int16_t)(cy + orr); y++) {
+    int32_t dy  = y - cy;
+    int32_t dy2 = dy * dy;
+    if (dy2 > orr2) continue;
+    int16_t dxo = (int16_t)isqrt32((uint32_t)(orr2 - dy2));
+    int16_t dxi = (dy2 < ir2) ? (int16_t)isqrt32((uint32_t)(ir2 - dy2)) : -1;
+    // Up to two horizontal runs per row: [cx-dxo..cx-dxi] and [cx+dxi..cx+dxo];
+    // one wide run [cx-dxo..cx+dxo] where the row clears the inner hole.
+    for (int side = 0; side < 2; side++) {
+      int16_t xs, xe;
+      if (dxi < 0) { if (side) continue; xs = cx - dxo; xe = cx + dxo; }
+      else if (side == 0) { xs = cx - dxo; xe = cx - dxi; }
+      else                { xs = cx + dxi; xe = cx + dxo; }
+      int len = 0;
+      // The angle changes monotonically along a run, so the bolt hashes only
+      // need recomputing when the 8 px rim segment changes.
+      int32_t  lastSeg = INT32_MIN;
+      uint32_t h1 = 0, h2 = 0;
+      for (int16_t x = xs; x <= xe; x++) {
+        int dx = (int)(x - cx);
+        int a = iatan2deg((int)dy, dx);
+        int d = head - a; if (d < 0) d += 360;
+        uint16_t px;
+        if (d > tail) {
+          px = bg;
+        } else if (!storm) {
+          uint32_t f = 255 - (uint32_t)d * 255 / (uint32_t)tail;  // 255 at head
+          uint32_t br = (f * f) >> 8;
+          br = (br * fade) >> 8;
+          uint16_t col = rainbow ? hueToRgb565((uint16_t)((a + hueShift) % 360))
+                                 : baseColor;
+          px = blend565(col, bg, (uint8_t)br);
+        } else {
+          int32_t seg = ((int32_t)a * degToPx1000 / 1000) >> 3;
+          if (seg != lastSeg) {
+            lastSeg = seg;
+            h1 = ((uint32_t)seg * 2654435761u) ^ stormSeed;
+            h1 ^= h1 >> 15; h1 *= 0x85EBCA6Bu; h1 ^= h1 >> 13;
+            h2 = ((uint32_t)seg * 0x9E3779B9u) ^ (stormSeed * 3u);
+            h2 ^= h2 >> 15; h2 *= 0x85EBCA6Bu; h2 ^= h2 >> 13;
+          }
+          int32_t r2 = (int32_t)dx * dx + dy2;
+          int16_t t = 0;
+          while (t < T - 1 && r2 < rowR2[t + 1]) t++;
+          int b1 = t - (int)(h1 % (uint32_t)T); if (b1 < 0) b1 = -b1;
+          int b2 = t - (int)(h2 % (uint32_t)T); if (b2 < 0) b2 = -b2;
+          uint32_t nearHash = (b1 <= b2) ? h1 : h2;
+          int dmin = (b1 <= b2) ? b1 : b2;
+          uint32_t bolt = (dmin == 0) ? 255u : (dmin == 1) ? 130u : 20u;
+          uint32_t tailA = (uint32_t)(tail - d) * 255 / (uint32_t)tail;
+          uint32_t br = (tailA * bolt) >> 8;
+          br = (br * fade) >> 8;
+          uint16_t col = rainbow ? hueToRgb565((uint16_t)(nearHash % 360))
+                                 : baseColor;
+          px = blend565(col, bg, (uint8_t)br);
+        }
+        rowBuf[len++] = px;
+      }
+      if (len) gfx.pushImage(xs, y, len, 1, rowBuf);
+    }
+  }
+  gfx.setSwapBytes(oldSwap);
+}
+
+// The glow owns an annular band at the panel rim. Solid fillArc wedges only -
+// no per-pixel gradient like the rectangular strips - so each style is a small
+// number of fills per frame. The band is fully repainted every frame: it owns
+// its pixels while active, whatever the base screen drew under it.
+static void drawBand(lgfx::LovyanGFX& gfx, unsigned long now, uint8_t fade) {
+  const int16_t w   = (int16_t)gfx.width();
+  const int16_t h   = (int16_t)gfx.height();
+  const int16_t cx  = w / 2;
+  const int16_t cy  = h / 2;
+  const int16_t orr = (int16_t)(w / 2 - GLOW_RING_MARGIN);
+  const int16_t ir  = (int16_t)(orr - GLOW_RING_T);
+  const uint16_t bg = dispSettings.bgColor;
+
+  const bool rainbow = (activeEvent == GLOW_EV_FINISH) && (dispSettings.glowMode == 2);
+  const uint16_t baseColor = (activeEvent == GLOW_EV_FAILED) ? CLR_RED
+                                                             : dispSettings.glowColor;
+  const uint8_t style = dispSettings.glowStyle;  // 0 Sweep, 1 Pulse, 2 Storm
+  const uint16_t hueShift = (uint16_t)((now / 16) % 360);
+
+  gfx.startWrite();
+  if (style == 1) {
+    // Pulse: the whole ring breathes. One full-circle fill.
+    float ph = (float)(now % GLOW_PULSE_PERIOD_MS) / (float)GLOW_PULSE_PERIOD_MS;
+    uint8_t pulseA = (uint8_t)(40.0f + 215.0f * (0.5f - 0.5f * cosf(ph * 2.0f * (float)M_PI)));
+    uint8_t a = (uint8_t)(((uint16_t)pulseA * fade) >> 8);
+    uint16_t col = rainbow ? hueToRgb565(hueShift) : baseColor;
+    gfx.fillArc(cx, cy, ir, orr, 0.0f, 360.0f, blend565(col, bg, a));
+  } else {
+    // Sweep and Storm: single-pass band rasterizer (see drawBandRing) - no
+    // fillArc, so no angular-seam specks and no whole-ring strobe. Both are the
+    // same travelling comet window; Storm shatters the tail into bolts. Head
+    // laps every LAP_MS.
+    // On the episode's first frame, wipe the whole band once with a full-circle
+    // fillArc: the finished screen painted a gold rim under our band, and the
+    // sweep's dark remainder must not let it peek through. A one-shot wipe (not
+    // per frame) leaves nothing gold to show, without the per-frame strobe.
+    if (primeBand) gfx.fillArc(cx, cy, ir, orr, 0.0f, 360.0f, bg);
+    int head = (int)((now % GLOW_SWEEP_LAP_MS) * 360UL / GLOW_SWEEP_LAP_MS);
+    drawBandRing(gfx, cx, cy, ir, orr, bg, rainbow, baseColor, hueShift,
+                 head, GLOW_SWEEP_TAIL_DEG, fade, style == 2,
+                 (uint32_t)(now / 50) * 0x9E3779B9u);
+  }
+  primeBand = false;  // one-shot: consumed on the first frame of the episode
+  gfx.endWrite();
+}
+
+// Repaint the ring band to the background so the cleanup repaint (which redraws
+// the gold rim / progress ring on top) starts from a clean base.
+static void clearBand(lgfx::LovyanGFX& gfx) {
+  const int16_t w   = (int16_t)gfx.width();
+  const int16_t h   = (int16_t)gfx.height();
+  const int16_t orr = (int16_t)(w / 2 - GLOW_RING_MARGIN);
+  const int16_t ir  = (int16_t)(orr - GLOW_RING_T);
+  gfx.startWrite();
+  gfx.fillArc(w / 2, h / 2, ir, orr, 0.0f, 360.0f, dispSettings.bgColor);
+  gfx.endWrite();
+}
+
+// ---------------------------------------------------------------------------
+//  Renderer: rectangular border strips (all non-round layouts)
+// ---------------------------------------------------------------------------
+#else
+
+// Widest supported panel dimension (320x480 layouts).
+static uint16_t lineBuf[480];
 
 // Draw the four border strips. Perimeter coordinate q runs clockwise from the
 // top-left corner along the outer edge; sweep intensity is a decaying tail
@@ -246,6 +430,8 @@ static void clearBand(lgfx::LovyanGFX& gfx) {
   gfx.endWrite();
 }
 
+#endif // DISPLAY_ROUND_240
+
 bool glowTick(lgfx::LovyanGFX& gfx, uint8_t slot, bool force) {
   unsigned long now = millis();
 
@@ -314,5 +500,3 @@ bool glowTick(lgfx::LovyanGFX& gfx, uint8_t slot, bool force) {
   drawBand(gfx, now, fade);
   return true;
 }
-
-#endif // DISPLAY_ROUND_240
