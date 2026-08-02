@@ -2,6 +2,7 @@
 #include "display_gauges.h"
 #include "display_split.h"
 #include "display_anim.h"
+#include "display_edge_glow.h"
 #include "clock_mode.h"
 #include "clock_pong.h"
 #include "icons.h"
@@ -3846,7 +3847,7 @@ static void drawPrinting() {
 #endif
 
   // === H2-style LED progress bar (y=0-5) ===
-  if (progChanged) {
+  if (progChanged && !glowIsActive()) {  // glow band owns the top edge
     markFrameDirty();
     drawLedProgressBar(tft, 0, s.progress);
   }
@@ -4612,7 +4613,7 @@ static void drawFinished() {
   tickGaugeSmooth(s, forceRedraw);
 
   // === H2-style LED progress bar at 100% (y=0-5) ===
-  if (forceRedraw) {
+  if (forceRedraw && !glowIsActive()) {  // glow band owns the top edge
     markFrameDirty();
     drawLedProgressBar(tft, 0, 100);
   }
@@ -5008,7 +5009,8 @@ void updateDisplay() {
 #if !defined(DISPLAY_ROUND_240)
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
-  if (currentScreen == SCREEN_PRINTING) {
+  if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
+    // The glow band owns the top edge while it runs - shimmer would fight it.
     BambuState& sh = displayedPrinter().state;
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
     markFrameDirty();
@@ -5031,6 +5033,26 @@ void updateDisplay() {
   // Pong clock runs at ~50fps, independent of display refresh
   if (currentScreen == SCREEN_CLOCK && dispSettings.pongClock) {
     tickPongClock();
+    markFrameDirty();
+  }
+
+  // Edge glow: animates on the finished screen and on the printing screen
+  // (kept up after finish via kps, or showing FAILED). Paces itself like the
+  // shimmer; any other screen dismisses it (sleep, clock, modals, dry peek).
+  // The web-UI test preview runs on whatever screen is up.
+  if (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
+      glowTestRunning()) {
+    if (glowTick(tft, rotState.displayIndex, false)) markFrameDirty();
+  } else if (glowIsArmed()) {
+    // Armed covers the dark reminder pause: leaving the eligible screens
+    // cancels the whole reminder cycle, not just a band mid-draw.
+    glowDismiss();
+  }
+  if (glowConsumeCleanup()) {
+    // Band pixels were handed back - repaint the base screen underneath,
+    // bypassing the throttle so the edges don't sit blank for a tick.
+    forceRedraw = true;
+    lastDisplayUpdate = 0;
     markFrameDirty();
   }
 #endif // !DISPLAY_ROUND_240
@@ -5188,6 +5210,16 @@ void updateDisplay() {
       }
       break;
   }
+
+#if !defined(DISPLAY_ROUND_240)
+  // The base screen may have just repainted over the band (forceRedraw, gauge
+  // updates) - put it back in the same frame so the glow keeps the edge.
+  if (glowIsActive() &&
+      (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
+       glowTestRunning())) {
+    if (glowTick(tft, rotState.displayIndex, true)) markFrameDirty();
+  }
+#endif
 
   // Save state for next smart-redraw comparison
   memcpy(&prevState, &displayedPrinter().state, sizeof(BambuState));

@@ -10,6 +10,7 @@
 #include "button.h"
 #include "buzzer.h"
 #include "led.h"
+#include "display_edge_glow.h"
 #include "tasmota.h"
 #include "battery.h"
 #include "camera_client.h"
@@ -271,6 +272,10 @@ static void doTapActions() {
         isAnyPrinterConfigured() && isWiFiConnected() && !isAPMode()) {
       if (displayedPrinter().state.gcodeStateId == GCODE_FINISH) {
         finishDismissedByWake = true;
+        // Waking dismissed the finish banner - a glow latched while the
+        // display slept must not fire later for this slot. keepPrintScreen
+        // never reaches here, so its glow-on-wake behavior is untouched.
+        glowClearSlot(rotState.displayIndex);
       }
     }
     return;
@@ -425,6 +430,12 @@ static void handleWakeButton() {
   // own debounce + held-state machine, and skipping a call would freeze it.
   bool touchPress = wasButtonPressed();
   bool boardPress = wasBoardButtonPressed();
+
+  // Any press acknowledges the edge glow on the raw edge, before tap/hold
+  // decoding - the press still performs its normal action below. Armed, not
+  // active: a press during the dark reminder pause must cancel the reminder
+  // cycle too, not just a band that is currently drawing.
+  if ((touchPress || boardPress) && glowIsArmed()) glowDismiss();
 
   bool held = isButtonHeld() || isBoardButtonHeld();
   uint32_t touchHoldMs = buttonHoldDurationMs();
@@ -596,6 +607,7 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
     finishScreenStart = millis();  // restart timeout from door open moment
     finishActive = true;
     ledStopFinishEffect();  // user came to grab the print, kill the alert
+    glowDismiss();
     Serial.println("Door opened - print removal acknowledged, starting timeout");
   }
 
@@ -919,9 +931,18 @@ static void handleGcodeStateTransitions() {
     if (prevGcodeStateSeen[i]) {
       if (ps.gcodeStateId == GCODE_FAILED && prevGcodeStateId[i] != GCODE_FAILED) {
         buzzerPlay(BUZZ_ERROR);
+        glowNotifyEvent(i, GLOW_EV_FAILED);
         scheduleLightOff(i, LIGHT_OFF_ON_FAILED);
       }
       if (ps.gcodeStateId == GCODE_FINISH && prevGcodeStateId[i] != GCODE_FINISH) {
+        // Edge glow arms on this per-slot FINISH edge. This includes the first
+        // real report after boot (UNKNOWN -> FINISH) for a printer already
+        // sitting in FINISH at power-on: that fires the glow intentionally, to
+        // match the LED + buzzer finish announce, which the screen path
+        // (handleDisplayedPrinterFinishState, via finishBuzzerPlayed) already
+        // fires on boot-on-finished. Boot celebration is consistent across all
+        // three, not a stale-state bug.
+        glowNotifyEvent(i, GLOW_EV_FINISH);
         if (buzzerSettings.bedCooldownAlert) {
           ps.bedCooldownAlertArmed = true;
         }
@@ -972,6 +993,10 @@ static void handleGcodeStateTransitions() {
           rotState.displayHoldUntilMs = millis() + rotState.intervalMs;
         }
         scheduleLightOff(i, LIGHT_OFF_ON_FINISH);
+      }
+      if ((prevGcodeStateId[i] == GCODE_FINISH || prevGcodeStateId[i] == GCODE_FAILED) &&
+          ps.gcodeStateId != GCODE_FINISH && ps.gcodeStateId != GCODE_FAILED) {
+        glowClearSlot(i);  // printer moved on - drop its pending/active glow
       }
       if (isPrintingGcodeState(ps.gcodeStateId) &&
           !isPrintingGcodeState(prevGcodeStateId[i])) {

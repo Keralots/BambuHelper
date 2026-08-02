@@ -235,6 +235,30 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = dispSettings.timeDisplayMode == (uint8_t)(name[5] - '0') ? "selected" : "";
     return true;
   }
+  // Edge glow: mode/style/duration selects + reveal states. The whole block is
+  // hidden on round panels (no border band there yet).
+  if (strncmp(name, "GLOWM", 5) == 0 && name[5] >= '0' && name[5] <= '2' && name[6] == '\0') {
+    out = dispSettings.glowMode == (uint8_t)(name[5] - '0') ? "selected" : "";
+    return true;
+  }
+  if (strncmp(name, "GLOWS", 5) == 0 && name[5] >= '0' && name[5] <= '2' && name[6] == '\0') {
+    out = dispSettings.glowStyle == (uint8_t)(name[5] - '0') ? "selected" : "";
+    return true;
+  }
+  if (strncmp(name, "GLOWD", 5) == 0 && name[5] >= '0' && name[5] <= '2' && name[6] == '\0') {
+    out = dispSettings.glowDuration == (uint8_t)(name[5] - '0') ? "selected" : "";
+    return true;
+  }
+  if (strcmp(name, "GLOW_DISP") == 0) {
+#if defined(DISPLAY_ROUND_240)
+    out = "display:none";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "GLOWF_DISP") == 0) { out = dispSettings.glowMode != 0 ? "block" : "none"; return true; }
+  if (strcmp(name, "GLOWC_DISP") == 0) { out = dispSettings.glowMode == 1 ? "block" : "none"; return true; }
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "HIDELP") == 0) { out = dispSettings.hideStatusReadout ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
@@ -402,6 +426,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "CLR_BG") == 0)    { rgb565ToHtml(dispSettings.bgColor, buf); out = buf; return true; }
   if (strcmp(name, "CLR_TRACK") == 0) { rgb565ToHtml(dispSettings.trackColor, buf); out = buf; return true; }
   if (strcmp(name, "CLR_PBAR") == 0)  { rgb565ToHtml(dispSettings.progressBarColor, buf); out = buf; return true; }
+  if (strcmp(name, "GLOW_CLR") == 0)  { rgb565ToHtml(dispSettings.glowColor, buf); out = buf; return true; }
   if (strcmp(name, "CLK_TIME") == 0)  { rgb565ToHtml(dispSettings.clockTimeColor, buf); out = buf; return true; }
   if (strcmp(name, "CLK_DATE") == 0)  { rgb565ToHtml(dispSettings.clockDateColor, buf); out = buf; return true; }
   {

@@ -7,6 +7,7 @@
 #include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
+#include "display_edge_glow.h"
 #include "config.h"
 #include "button.h"
 #include "buzzer.h"
@@ -168,6 +169,22 @@ static void readDisplayFromForm() {
     if (tm >= 0 && tm <= 2) dispSettings.timeDisplayMode = (uint8_t)tm;
   }
   dispSettings.fanMatchPrinter = server.hasArg("fanmp");
+
+  // Edge glow
+  if (server.hasArg("glowm")) {
+    int gm = server.arg("glowm").toInt();
+    if (gm >= 0 && gm <= 2) dispSettings.glowMode = (uint8_t)gm;
+    if (dispSettings.glowMode == 0) glowDismiss();  // switched off mid-animation
+  }
+  if (server.hasArg("glow_clr")) dispSettings.glowColor = htmlToRgb565(server.arg("glow_clr").c_str());
+  if (server.hasArg("glows")) {
+    int gs = server.arg("glows").toInt();
+    if (gs >= 0 && gs <= 2) dispSettings.glowStyle = (uint8_t)gs;
+  }
+  if (server.hasArg("glowd")) {
+    int gd = server.arg("glowd").toInt();
+    if (gd >= 0 && gd <= 2) dispSettings.glowDuration = (uint8_t)gd;
+  }
 
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {
@@ -594,6 +611,12 @@ static void handleToggleSetting() {
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
   else if (key == "btnpwr")  dispSettings.buttonPowerControl = on;
+  else if (key == "glowm") {
+    dispSettings.glowMode = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+    if (dispSettings.glowMode == 0) glowDismiss();  // switched off mid-animation
+  }
+  else if (key == "glows")   dispSettings.glowStyle = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+  else if (key == "glowd")   dispSettings.glowDuration = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
   else if (key == "rotsplit")  rotState.splitEnabled = on;
@@ -665,6 +688,15 @@ static void handleToggleSetting() {
 
 static void handleCloudLogout() {
   clearCloudToken();
+  server.send(200, "text/plain", "OK");
+}
+
+// "Test" button next to the edge-glow settings: preview the configured effect
+// for ~5 s on whatever screen is up. Accepts the picker's current color so the
+// preview matches even before the user hits Save (applied live, not persisted).
+static void handleGlowTest() {
+  if (server.hasArg("clr")) dispSettings.glowColor = htmlToRgb565(server.arg("clr").c_str());
+  glowStartTest(rotState.displayIndex);
   server.send(200, "text/plain", "OK");
 }
 
@@ -1178,6 +1210,10 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.warnColor, buf); disp["warnColor"] = String(buf);
   disp["warnThresholdPct"] = dispSettings.warnThresholdPct;
   disp["roundSkin"] = dispSettings.roundSkin;
+  disp["glowMode"] = dispSettings.glowMode;
+  rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
+  disp["glowStyle"] = dispSettings.glowStyle;
+  disp["glowDuration"] = dispSettings.glowDuration;
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1219,6 +1255,7 @@ static void handleSettingsExport() {
   dp["keepDisplayOn"] = dpSettings.keepDisplayOn;
   dp["showClockAfterFinish"] = dpSettings.showClockAfterFinish;
   dp["doorAckEnabled"] = dpSettings.doorAckEnabled;
+  dp["keepPrintScreen"] = dpSettings.keepPrintScreen;
   dp["finishShowTime"] = dpSettings.finishShowTime;
   dp["nightModeEnabled"] = dpSettings.nightModeEnabled;
   dp["nightStartHour"] = dpSettings.nightStartHour;
@@ -1525,6 +1562,10 @@ static void handleSettingsImportFinish() {
     if (disp["warnColor"].is<const char*>()) dispSettings.warnColor = htmlToRgb565(disp["warnColor"]);
     if (disp["warnThresholdPct"].is<int>()) dispSettings.warnThresholdPct = constrain(disp["warnThresholdPct"].as<int>(), 0, 100);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
+    if (disp["glowMode"].is<int>())  { int gm = disp["glowMode"].as<int>();  dispSettings.glowMode = (gm >= 0 && gm <= 2) ? (uint8_t)gm : 0; }
+    if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
+    if (disp["glowStyle"].is<int>()) { int gs = disp["glowStyle"].as<int>(); dispSettings.glowStyle = (gs >= 0 && gs <= 2) ? (uint8_t)gs : 0; }
+    if (disp["glowDuration"].is<int>()) { int gd = disp["glowDuration"].as<int>(); dispSettings.glowDuration = (gd >= 0 && gd <= 2) ? (uint8_t)gd : 0; }
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 
@@ -1577,6 +1618,7 @@ static void handleSettingsImportFinish() {
     if (dp["keepDisplayOn"].is<bool>())         dpSettings.keepDisplayOn = dp["keepDisplayOn"].as<bool>();
     if (dp["showClockAfterFinish"].is<bool>())  dpSettings.showClockAfterFinish = dp["showClockAfterFinish"].as<bool>();
     if (dp["doorAckEnabled"].is<bool>())        dpSettings.doorAckEnabled = dp["doorAckEnabled"].as<bool>();
+    if (dp["keepPrintScreen"].is<bool>())       dpSettings.keepPrintScreen = dp["keepPrintScreen"].as<bool>();
     if (dp["finishShowTime"].is<bool>())        dpSettings.finishShowTime = dp["finishShowTime"].as<bool>();
     if (dp["nightModeEnabled"].is<bool>())      dpSettings.nightModeEnabled = dp["nightModeEnabled"].as<bool>();
     if (dp["nightStartHour"].is<uint8_t>())     dpSettings.nightStartHour = dp["nightStartHour"].as<uint8_t>();
@@ -2024,6 +2066,7 @@ void initWebServer() {
   server.on("/debug", HTTP_GET, handleDebug);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
+  server.on("/glow/test", HTTP_POST, handleGlowTest);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
   server.on("/lan/scan", HTTP_POST, handleLanScan);
   server.on("/lan/scan", HTTP_GET, handleLanScan);

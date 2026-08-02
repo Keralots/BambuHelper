@@ -983,6 +983,40 @@ html[data-theme="dark"] .topbar::after { opacity: 0.5; }
       <label for="kps">Keep print status screen after completion</label>
     </label>
     <div class="help-text" style="padding-left:28px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
+    <div style="%GLOW_DISP%">
+      <div class="field" style="margin-top:var(--sp-4)">
+        <label for="glowm">Edge glow light effect</label>
+        <select id="glowm" onchange="toggleGlowFields();toggleSetting('glowm',this.value)">
+          <option value="0" %GLOWM0%>Off</option>
+          <option value="1" %GLOWM1%>Single color</option>
+          <option value="2" %GLOWM2%>Rainbow</option>
+        </select>
+        <div class="hint">Animated light around the screen border when a print completes. A failed print always glows red.</div>
+      </div>
+      <div id="glowFields" style="display:%GLOWF_DISP%">
+        <div class="field" id="glowClrWrap" style="display:%GLOWC_DISP%">
+          <label for="glow_clr">Glow color</label>
+          <input type="color" id="glow_clr" value="%GLOW_CLR%">
+        </div>
+        <div class="field">
+          <label for="glows">Animation style</label>
+          <select id="glows" onchange="toggleSetting('glows',this.value)">
+            <option value="0" %GLOWS0%>Sweep (light travels around the border)</option>
+            <option value="1" %GLOWS1%>Pulse (whole border breathes)</option>
+            <option value="2" %GLOWS2%>Storm (shattered, flickering shards)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="glowd">Duration</label>
+          <select id="glowd" onchange="toggleSetting('glowd',this.value)">
+            <option value="0" %GLOWD0%>One-minute burst</option>
+            <option value="1" %GLOWD1%>Until dismissed (button, touch or door)</option>
+            <option value="2" %GLOWD2%>Burst + short reminder every 5 minutes</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="glowTestNow()">Test effect on device (5 s)</button>
+      </div>
+    </div>
     <div class="field" style="margin-top:var(--sp-4);%BL_DISP%">
       <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
       <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
@@ -2553,6 +2587,10 @@ function applyDisplay(){
   if (document.getElementById('slbl').checked) p.append('slbl', '1');
   p.append('timem', document.getElementById('timem').value);
   if (document.getElementById('fanmp').checked) p.append('fanmp', '1');
+  p.append('glowm', document.getElementById('glowm').value);
+  p.append('glow_clr', document.getElementById('glow_clr').value);
+  p.append('glows', document.getElementById('glows').value);
+  p.append('glowd', document.getElementById('glowd').value);
   p.append('tz', document.getElementById('tz').value);
   if (document.getElementById('use24h').checked) p.append('use24h', '1');
   p.append('datefmt', document.getElementById('datefmt').value);
@@ -2944,6 +2982,19 @@ function toggleAfterPrint(){
   var showClock = (v !== 'keepon') && document.getElementById('afterfin').value !== 'off';
   pong.disabled = !showClock;
   if (row) row.style.opacity = showClock ? '1' : '0.4';
+}
+
+/* ============ Edge glow reveal ============ */
+function toggleGlowFields(){
+  var m = document.getElementById('glowm').value;
+  document.getElementById('glowFields').style.display = (m === '0') ? 'none' : 'block';
+  document.getElementById('glowClrWrap').style.display = (m === '1') ? 'block' : 'none';
+}
+function glowTestNow(){
+  /* Send the current picker color so the preview matches even before Save. */
+  var p = new URLSearchParams();
+  p.append('clr', document.getElementById('glow_clr').value);
+  fetch('/glow/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()});
 }
 
 /* ============ Timezone list (AJAX-loaded to keep PROGMEM small) ============ */

@@ -179,6 +179,23 @@
 #define DISPLAY_STATE_TIMEOUT_MS   60000  // 60s timeout for intermediate display states
 
 // =============================================================================
+//  Edge glow (border light effect on print complete / failed)
+// =============================================================================
+#define GLOW_THICKNESS_PX        8         // border band thickness
+#if defined(BOARD_IS_JC3248W535)
+#define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
+#else
+#define GLOW_ANIM_MS             40        // ~25 fps band animation
+#endif
+#define GLOW_SWEEP_LAP_MS        1200UL    // sweep head: one full lap around the border
+#define GLOW_PULSE_PERIOD_MS     2000UL    // pulse breathing cycle
+#define GLOW_FADE_MS             500UL     // fade-out when a burst ends
+#define GLOW_BURST_MS            60000UL   // burst duration
+#define GLOW_REMIND_ON_MS        5000UL    // reminder pulse length
+#define GLOW_REMIND_EVERY_MS     300000UL  // reminder interval (5 min)
+#define GLOW_CONT_CEILING_MS     1800000UL // until-dismissed degrades to reminder after 30 min
+
+// =============================================================================
 //  Buzzer (optional passive buzzer)
 // =============================================================================
 #if defined(BOARD_IS_DIY)

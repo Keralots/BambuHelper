@@ -103,6 +103,12 @@ struct DisplaySettings {
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
   bool     buttonPowerControl; // #136: double/triple-click device button opens plug on/off confirm
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
+  // Edge glow: animated border light announcing print complete / print failed
+  uint8_t  glowMode;       // 0 = Off, 1 = Single color, 2 = Rainbow
+  uint16_t glowColor;      // Single-color mode band color (RGB565)
+  uint8_t  glowStyle;      // 0 = Sweep (traveling head + tail), 1 = Pulse (breathing),
+                           // 2 = Storm (shattered flickering shards)
+  uint8_t  glowDuration;   // 0 = Burst, 1 = Until dismissed, 2 = Burst + reminder
   // Gauge full-scale ranges (arc maxima). Lowering a scale makes the arc sweep
   // fuller for a printer's normal range. Defaults suit any Bambu printer.
   uint16_t nozzleScaleMax;   // C

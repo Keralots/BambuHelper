@@ -187,6 +187,10 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.buttonPowerControl = false;  // #136: default OFF (opt-in per device)
   ds.showBatteryIndicator = false;  // default OFF on all boards; enable per device
+  ds.glowMode = 0;             // edge glow off
+  ds.glowColor = CLR_GREEN;
+  ds.glowStyle = 0;            // Sweep
+  ds.glowDuration = 0;         // Burst
   ds.hideStatusReadout = false; // default ON-screen readout stays visible
   ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
   ds.bedScaleMax     = GAUGE_BED_SCALE_DEFAULT;
@@ -549,6 +553,15 @@ void loadSettings() {
   dispSettings.buttonPowerControl = prefs.getBool("dsp_btpw", def.buttonPowerControl);
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
+  {
+    uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
+    dispSettings.glowMode = (gm <= 2) ? gm : 0;
+    dispSettings.glowColor = prefs.getUShort("dsp_glowc", def.glowColor);
+    uint8_t gs = prefs.getUChar("dsp_glows", def.glowStyle);
+    dispSettings.glowStyle = (gs <= 2) ? gs : 0;
+    uint8_t gd = prefs.getUChar("dsp_glowd", def.glowDuration);
+    dispSettings.glowDuration = (gd <= 2) ? gd : 0;
+  }
   dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
                                            GAUGE_NOZZLE_SCALE_MIN, GAUGE_NOZZLE_SCALE_MAX);
   dispSettings.bedScaleMax     = constrain((int)prefs.getUShort("dsp_bedmx", def.bedScaleMax),
@@ -866,6 +879,10 @@ void saveSettings() {
   prefs.putUChar("dsp_smooth", dispSettings.gaugeSmoothing);
   prefs.putUShort("dsp_wclr", dispSettings.warnColor);
   prefs.putUChar("dsp_wthr", dispSettings.warnThresholdPct);
+  prefs.putUChar("dsp_glowm", dispSettings.glowMode);
+  prefs.putUShort("dsp_glowc", dispSettings.glowColor);
+  prefs.putUChar("dsp_glows", dispSettings.glowStyle);
+  prefs.putUChar("dsp_glowd", dispSettings.glowDuration);
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);
