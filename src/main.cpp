@@ -342,7 +342,7 @@ static void openPowerConfirm(uint8_t slot) {
   pcPlug = tasmotaControlPlugForSlot(slot);
   TasmotaPlugStatsView v;
   tasmotaGetStats(pcPlug, &v);
-  // Mirror the web-UI inference: Shelly reports relay state, Tasmota infers from watts.
+  // Mirror the web-UI inference: Shelly/Kasa report relay state; Tasmota infers from watts.
   bool currentOn = v.powerStateKnown ? v.powerOn : (v.online && v.watts > 0.5f);
   pcDesiredOn      = !currentOn;
   pcWasPrinting    = isPrintingGcodeState(printers[slot].state.gcodeStateId);

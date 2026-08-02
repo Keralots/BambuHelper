@@ -1555,7 +1555,7 @@ R"rawliteral(
 <div class="section" id="sec-power" hidden>
   <div class="section-intro">
     <h2>Power Monitoring</h2>
-    <p>Show live power consumption from Tasmota smart plug(s) on the display. Configure auto power-off and energy tariff per plug.</p>
+    <p>Show live power consumption from Tasmota, Shelly, or TP-Link Kasa smart plugs. Configure auto power-off and energy tariff per plug.</p>
   </div>
 
   <div class="card">
@@ -1584,9 +1584,10 @@ R"rawliteral(
     <div id="plugDeps1">
     <div class="field" style="margin-top:var(--sp-3)">
       <label for="tsm_pt">Power plug type</label>
-      <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option></select>
+      <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option><option value="2">TP-Link Kasa (KP115/legacy)</option></select>
     </div>
     <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
+    <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs using the legacy local protocol on TCP port 9999, including KP115 and HS110. No TP-Link credentials or cloud connection are used. Newer KLAP/Matter models are not supported. Kasa reports live watts, relay state, and cumulative Total, but not Today's energy.</div>
     <div class="row" style="margin-top:var(--sp-3)">
       <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
@@ -2404,7 +2405,7 @@ function selectPowerTab(plug){
   fetch('/power/config?plug=' + plug).then(function(r){return r.json();}).then(function(d){
     if (plug !== currentPowerPlug) return;
     document.getElementById('tsm_en').checked = !!d.enabled;
-    document.getElementById('tsm_pt').value = (d.plugType === 1) ? '1' : '0';
+    document.getElementById('tsm_pt').value = (d.plugType >= 0 && d.plugType <= 2) ? String(d.plugType) : '0';
     onPlugTypeChange();
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
@@ -2422,14 +2423,18 @@ function selectPowerTab(plug){
   }).catch(function(e){console.warn('selectPowerTab:',e);});
 }
 function onPlugTypeChange(){
-  var shelly = (document.getElementById('tsm_pt').value === '1');
+  var type = document.getElementById('tsm_pt').value;
+  var shelly = (type === '1');
+  var kasa = (type === '2');
   var hint = document.getElementById('tsm_shelly_hint');
   if (hint) hint.style.display = shelly ? '' : 'none';
-  // Shelly has no Today odometer - hide the row (label + value) for it.
+  var kasaHint = document.getElementById('tsm_kasa_hint');
+  if (kasaHint) kasaHint.style.display = kasa ? '' : 'none';
+  // Shelly and Kasa realtime APIs have no Today odometer.
   var tdLbl = document.getElementById('ptTodayLabel');
   var tdVal = document.getElementById('ptToday');
-  if (tdLbl) tdLbl.style.display = shelly ? 'none' : '';
-  if (tdVal) tdVal.style.display = shelly ? 'none' : '';
+  if (tdLbl) tdLbl.style.display = (shelly || kasa) ? 'none' : '';
+  if (tdVal) tdVal.style.display = (shelly || kasa) ? 'none' : '';
 }
 function fmtKwh(v){ return (v >= 0) ? (v.toFixed(3) + ' kWh') : '-'; }
 function fmtMoney(v, cur){ if (!(v >= 0) || !cur) return ''; return ' (' + v.toFixed(2) + ' ' + cur + ')'; }
@@ -2446,7 +2451,7 @@ function refreshPowerStats(){
     document.getElementById('ptToday').textContent = fmtKwh(s.today) + (s.today >= 0 ? fmtMoney(s.today * tar, cur) : '');
     document.getElementById('ptTotal').textContent = fmtKwh(s.total) + (s.total >= 0 ? fmtMoney(s.total * tar, cur) : '');
     document.getElementById('ptWatts').textContent = (s.online && s.watts >= 0) ? (s.watts.toFixed(0) + ' W') : '-';
-    // Prefer the real relay state when the plug reports it (Shelly output);
+    // Prefer the real relay state when the plug reports it (Shelly/Kasa output);
     // otherwise fall back to watt inference (Tasmota has no state field).
     var on = s.stateKnown ? !!s.on : (s.online && s.watts > 0.5);
     document.getElementById('btnPowerOn').style.display = on ? 'none' : '';
