@@ -6,17 +6,28 @@
 #include "config.h"
 #include <Arduino.h>
 #include <HTTPClient.h>
+#include <WiFiClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <math.h>
+#include <memory>
+#include <new>
 
 #define TASMOTA_TIMEOUT_MS              1500
 #define TASMOTA_TIMEOUT_FAST_MS          700
 #define TASMOTA_STALE_MS               90000UL
 #define TASMOTA_DEFAULT_INTERVAL_S       10
 #define TASMOTA_FAILS_BEFORE_OFFLINE      3
+
+#define PLUG_TYPE_TASMOTA                  0
+#define PLUG_TYPE_SHELLY                   1
+#define PLUG_TYPE_KASA                     2
+
+#define KASA_PORT                       9999
+#define KASA_MAX_COMMAND_BYTES            192
+#define KASA_MAX_RESPONSE_BYTES          4096
 
 // Auto-off temperature threshold (Celsius). Hardcoded per design ("Time +
 // nozzle only"); bed temp intentionally not checked.
@@ -40,7 +51,7 @@ struct TasmotaPlugRuntime {
   uint8_t  failCount;
   bool     plugOffline;
   bool     kwhChanged;
-  bool     powerStateKnown;  // true when the plug reports relay state directly (Shelly)
+  bool     powerStateKnown;  // true when the plug reports relay state directly (Shelly/Kasa)
   bool     powerOn;          // valid only when powerStateKnown
   uint32_t finishEnteredMs; // millis() when this plug's printer entered FINISH
   bool     autoOffFired;    // latch: true once Power Off has succeeded for this cycle
@@ -126,7 +137,7 @@ static void markPollFailure(uint8_t i) {
   }
 }
 
-// Common post-parse update shared by the Tasmota and Shelly pollers. Negative
+// Common post-parse update shared by all smart-plug pollers. Negative
 // values mean "not reported" and leave the corresponding field untouched.
 static void applyReadings(uint8_t i, float watts, float todayKwh,
                           float yestKwh, float totalKwh) {
@@ -280,11 +291,147 @@ static void pollShelly(uint8_t i) {
                 i, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
 }
 
+// TP-Link Kasa legacy local protocol (KP115/HS110 family): TCP port 9999,
+// 4-byte big-endian payload length, then autokey-XOR encrypted JSON.
+static bool kasaReadExact(WiFiClient& client, uint8_t* dst, size_t len,
+                          uint32_t timeoutMs) {
+  size_t received = 0;
+  uint32_t started = millis();
+  while (received < len && (millis() - started) < timeoutMs) {
+    int available = client.available();
+    if (available > 0) {
+      size_t wanted = len - received;
+      if ((size_t)available < wanted) wanted = (size_t)available;
+      int n = client.read(dst + received, wanted);
+      if (n > 0) {
+        received += (size_t)n;
+        continue;
+      }
+    }
+    if (!client.connected() && client.available() == 0) break;
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  return received == len;
+}
+
+static bool kasaRequest(const char* host, const char* command, JsonDocument& doc,
+                        uint32_t timeoutMs) {
+  size_t commandLen = strlen(command);
+  if (commandLen == 0 || commandLen > KASA_MAX_COMMAND_BYTES) return false;
+
+  WiFiClient client;
+  client.setTimeout(timeoutMs);
+  if (!client.connect(host, KASA_PORT, (int32_t)timeoutMs)) return false;
+
+  uint8_t header[4] = {
+    (uint8_t)(commandLen >> 24), (uint8_t)(commandLen >> 16),
+    (uint8_t)(commandLen >> 8),  (uint8_t)commandLen
+  };
+  if (client.write(header, sizeof(header)) != sizeof(header)) {
+    client.stop();
+    return false;
+  }
+
+  uint8_t encrypted[KASA_MAX_COMMAND_BYTES];
+  uint8_t key = 0xAB;
+  for (size_t n = 0; n < commandLen; ++n) {
+    encrypted[n] = key ^ (uint8_t)command[n];
+    key = encrypted[n];
+  }
+  if (client.write(encrypted, commandLen) != commandLen) {
+    client.stop();
+    return false;
+  }
+
+  if (!kasaReadExact(client, header, sizeof(header), timeoutMs)) {
+    client.stop();
+    return false;
+  }
+  uint32_t responseLen = ((uint32_t)header[0] << 24) |
+                         ((uint32_t)header[1] << 16) |
+                         ((uint32_t)header[2] << 8)  |
+                         (uint32_t)header[3];
+  if (responseLen == 0 || responseLen > KASA_MAX_RESPONSE_BYTES) {
+    client.stop();
+    return false;
+  }
+
+  std::unique_ptr<uint8_t[]> response(new (std::nothrow) uint8_t[responseLen + 1]);
+  if (!response || !kasaReadExact(client, response.get(), responseLen, timeoutMs)) {
+    client.stop();
+    return false;
+  }
+  client.stop();
+
+  key = 0xAB;
+  for (uint32_t n = 0; n < responseLen; ++n) {
+    uint8_t cipher = response[n];
+    response[n] = key ^ cipher;
+    key = cipher;
+  }
+  response[responseLen] = '\0';
+
+  DeserializationError err = deserializeJson(doc, response.get(), responseLen);
+  if (err) {
+    Serial.printf("[Kasa] JSON parse error: %s\n", err.c_str());
+    return false;
+  }
+  return true;
+}
+
+static float kasaReading(JsonVariantConst values, const char* regularKey,
+                         const char* milliKey) {
+  JsonVariantConst regular = values[regularKey];
+  if (!regular.isNull()) return regular.as<float>();
+  JsonVariantConst milli = values[milliKey];
+  if (!milli.isNull()) return milli.as<float>() / 1000.0f;
+  return -1.0f;
+}
+
+static void pollKasa(uint8_t i) {
+  TasmotaSettings& s = tasmotaSettings[i];
+  JsonDocument doc;
+  uint32_t timeout = g_rt[i].plugOffline ? TASMOTA_TIMEOUT_FAST_MS : TASMOTA_TIMEOUT_MS;
+  if (!kasaRequest(s.ip,
+      "{\"system\":{\"get_sysinfo\":{}},\"emeter\":{\"get_realtime\":{}}}",
+      doc, timeout)) {
+    Serial.printf("[Kasa %u] No response from %s:%u\n", i, s.ip, KASA_PORT);
+    markPollFailure(i);
+    return;
+  }
+
+  JsonVariantConst system = doc["system"]["get_sysinfo"];
+  JsonVariantConst emeter = doc["emeter"]["get_realtime"];
+  if (system.isNull() || emeter.isNull() ||
+      system["err_code"].as<int>() != 0 || emeter["err_code"].as<int>() != 0) {
+    Serial.printf("[Kasa %u] Status or energy object missing/error\n", i);
+    markPollFailure(i);
+    return;
+  }
+
+  float newWatts = kasaReading(emeter, "power", "power_mw");
+  float newTotal = kasaReading(emeter, "total", "total_wh");
+  if (newWatts < 0.0f) {
+    Serial.printf("[Kasa %u] Power field missing\n", i);
+    markPollFailure(i);
+    return;
+  }
+
+  g_rt[i].powerStateKnown = !system["relay_state"].isNull();
+  g_rt[i].powerOn         = system["relay_state"].as<int>() != 0;
+  // The local realtime endpoint provides a cumulative total, not Today/Yesterday.
+  applyReadings(i, newWatts, -1.0f, -1.0f, newTotal);
+
+  Serial.printf("[Kasa %u] Power=%.0fW Total=%.3fkWh Output=%d\n",
+                i, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
+}
+
 static void pollOne(uint8_t i) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (!s.enabled || s.ip[0] == '\0') return;
-  if (s.plugType == 1) pollShelly(i);
-  else                 pollTasmota(i);
+  if (s.plugType == PLUG_TYPE_SHELLY)    pollShelly(i);
+  else if (s.plugType == PLUG_TYPE_KASA) pollKasa(i);
+  else                                   pollTasmota(i);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,9 +441,30 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (s.ip[0] == '\0') return false;
 
-  const char* tag = (s.plugType == 1) ? "Shelly" : "Tasmota";
+  const char* tag = s.plugType == PLUG_TYPE_SHELLY ? "Shelly" :
+                    (s.plugType == PLUG_TYPE_KASA ? "Kasa" : "Tasmota");
+  if (s.plugType == PLUG_TYPE_KASA) {
+    char command[80];
+    snprintf(command, sizeof(command),
+             "{\"system\":{\"set_relay_state\":{\"state\":%u}}}", on ? 1 : 0);
+    JsonDocument doc;
+    if (!kasaRequest(s.ip, command, doc, TASMOTA_TIMEOUT_MS)) {
+      Serial.printf("[Kasa %u] Power %s request failed\n", i, on ? "On" : "Off");
+      return false;
+    }
+    int error = doc["system"]["set_relay_state"]["err_code"] | -1;
+    if (error == 0) {
+      g_rt[i].powerStateKnown = true;
+      g_rt[i].powerOn = on;
+      Serial.printf("[Kasa %u] Power %s sent successfully\n", i, on ? "On" : "Off");
+      return true;
+    }
+    Serial.printf("[Kasa %u] Power %s error %d\n", i, on ? "On" : "Off", error);
+    return false;
+  }
+
   char url[64];
-  if (s.plugType == 1) {
+  if (s.plugType == PLUG_TYPE_SHELLY) {
     // Shelly Gen2: GET /rpc/Switch.Set?id=0&on=true|false (issue #115 Gen1
     // equivalent was /relay/0?turn=on|off).
     snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=0&on=%s", s.ip, on ? "true" : "false");
@@ -349,7 +517,7 @@ static void evaluateAutoOff(uint8_t i) {
   if (ps.gcodeStateId == GCODE_FINISH && mqttFresh) {
     if (g_rt[i].finishEnteredMs == 0) {
       g_rt[i].finishEnteredMs = now;
-      Serial.printf("[Tasmota %u] FINISH detected on slot %u, auto-off timer armed\n", i, slot);
+      Serial.printf("[Power %u] FINISH detected on slot %u, auto-off timer armed\n", i, slot);
     }
     // Door-open cancel: user is at the printer, abort this auto-off cycle.
     // Latch via autoOffFired so we don't re-evaluate; new print resets both.
@@ -358,7 +526,7 @@ static void evaluateAutoOff(uint8_t i) {
         && !g_rt[i].autoOffFired
         && ps.doorSensorPresent
         && ps.doorOpen) {
-      Serial.printf("[Tasmota %u] Auto-off cancelled: door opened on slot %u\n", i, slot);
+      Serial.printf("[Power %u] Auto-off cancelled: door opened on slot %u\n", i, slot);
       g_rt[i].autoOffFired = true;
     }
     // Calibration cancel: Bambu Studio still needs the printer after a
@@ -379,7 +547,7 @@ static void evaluateAutoOff(uint8_t i) {
         && !ps.ams.anyDrying
         && !g_rt[i].plugOffline
         && g_rt[i].lastOkMs > 0) {
-      Serial.printf("[Tasmota %u] Auto-off conditions met (elapsed=%u min, nozzle=%.1fC)\n",
+      Serial.printf("[Power %u] Auto-off conditions met (elapsed=%u min, nozzle=%.1fC)\n",
                     i, (unsigned)elapsedMin, ps.nozzleTemp);
       if (sendPowerOff(i)) {
         g_rt[i].autoOffFired = true;
@@ -388,7 +556,7 @@ static void evaluateAutoOff(uint8_t i) {
   } else if (isPrintingGcodeState(ps.gcodeStateId)) {
     // New print -> reset timer and latch
     if (g_rt[i].finishEnteredMs != 0 || g_rt[i].autoOffFired) {
-      Serial.printf("[Tasmota %u] New print detected on slot %u, auto-off reset\n", i, slot);
+      Serial.printf("[Power %u] New print detected on slot %u, auto-off reset\n", i, slot);
     }
     g_rt[i].finishEnteredMs = 0;
     g_rt[i].autoOffFired = false;
@@ -432,7 +600,7 @@ static void maybeWattTriggerRefresh(uint8_t i) {
   if (g_rt[i].wattHighSinceMs == 0) g_rt[i].wattHighSinceMs = now;
   if (!g_rt[i].wattRefreshFired &&
       (now - g_rt[i].wattHighSinceMs) >= TASMOTA_PRINT_START_SUSTAIN_MS) {
-    Serial.printf("[Tasmota %u] %.0fW sustained -> cloud print-start nudge (slot %u)\n",
+    Serial.printf("[Power %u] %.0fW sustained -> cloud print-start nudge (slot %u)\n",
                   i, w, slot);
     requestCloudRefreshFromTask(slot);
     g_rt[i].wattRefreshFired = true;
@@ -525,12 +693,12 @@ void tasmotaMarkPrintStart(uint8_t i) {
     // and skip persisting a bogus 0-kWh print.
     g_rt[i].printStartTotalKwh = -1.0f;
     g_rt[i].printUsedKwh = -1.0f;
-    Serial.printf("[Tasmota %u] Print start: no poll yet, baseline unknown\n", i);
+    Serial.printf("[Power %u] Print start: no poll yet, baseline unknown\n", i);
     return;
   }
   g_rt[i].printStartTotalKwh = g_rt[i].totalKwh;
   g_rt[i].printUsedKwh = -1.0f;
-  Serial.printf("[Tasmota %u] Print start marked, Total=%.3fkWh\n", i, g_rt[i].totalKwh);
+  Serial.printf("[Power %u] Print start marked, Total=%.3fkWh\n", i, g_rt[i].totalKwh);
 }
 
 void tasmotaMarkPrintEnd(uint8_t i) {
@@ -539,14 +707,14 @@ void tasmotaMarkPrintEnd(uint8_t i) {
   float start = g_rt[i].printStartTotalKwh;
   float total = g_rt[i].totalKwh;
   if (start < 0.0f || total < 0.0f) {
-    Serial.printf("[Tasmota %u] Print end: no baseline, keeping previous lpk\n", i);
+    Serial.printf("[Power %u] Print end: no baseline, keeping previous lpk\n", i);
     return;
   }
   if (total >= start) {
     g_rt[i].printUsedKwh = total - start;
     g_rt[i].kwhChanged   = true;
     persistLastPrintKwh(i, g_rt[i].printUsedKwh);
-    Serial.printf("[Tasmota %u] Print end marked, used=%.3fkWh\n", i, g_rt[i].printUsedKwh);
+    Serial.printf("[Power %u] Print end marked, used=%.3fkWh\n", i, g_rt[i].printUsedKwh);
   }
 }
 
