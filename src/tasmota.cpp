@@ -294,10 +294,9 @@ static void pollShelly(uint8_t i) {
 // TP-Link Kasa legacy local protocol (KP115/HS110 family): TCP port 9999,
 // 4-byte big-endian payload length, then autokey-XOR encrypted JSON.
 static bool kasaReadExact(WiFiClient& client, uint8_t* dst, size_t len,
-                          uint32_t timeoutMs) {
+                          uint32_t deadline) {
   size_t received = 0;
-  uint32_t started = millis();
-  while (received < len && (millis() - started) < timeoutMs) {
+  while (received < len && (int32_t)(deadline - millis()) > 0) {
     int available = client.available();
     if (available > 0) {
       size_t wanted = len - received;
@@ -319,8 +318,11 @@ static bool kasaRequest(const char* host, const char* command, JsonDocument& doc
   size_t commandLen = strlen(command);
   if (commandLen == 0 || commandLen > KASA_MAX_COMMAND_BYTES) return false;
 
+  // One shared deadline bounds connect + both reads by timeoutMs total, not 3x
+  // it. (A setTimeout(timeoutMs) here was a dead no-op: WiFiClient::setTimeout
+  // takes seconds, and connect() below overwrites the timeout regardless.)
+  uint32_t deadline = millis() + timeoutMs;
   WiFiClient client;
-  client.setTimeout(timeoutMs);
   if (!client.connect(host, KASA_PORT, (int32_t)timeoutMs)) return false;
 
   uint8_t header[4] = {
@@ -343,7 +345,7 @@ static bool kasaRequest(const char* host, const char* command, JsonDocument& doc
     return false;
   }
 
-  if (!kasaReadExact(client, header, sizeof(header), timeoutMs)) {
+  if (!kasaReadExact(client, header, sizeof(header), deadline)) {
     client.stop();
     return false;
   }
@@ -357,7 +359,7 @@ static bool kasaRequest(const char* host, const char* command, JsonDocument& doc
   }
 
   std::unique_ptr<uint8_t[]> response(new (std::nothrow) uint8_t[responseLen + 1]);
-  if (!response || !kasaReadExact(client, response.get(), responseLen, timeoutMs)) {
+  if (!response || !kasaReadExact(client, response.get(), responseLen, deadline)) {
     client.stop();
     return false;
   }
