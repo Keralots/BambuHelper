@@ -17,7 +17,4 @@ float getPulseFactor();
 void drawSlideBar(lgfx::LovyanGFX& gfx, int16_t x, int16_t y, int16_t w, int16_t h,
                   uint16_t color, uint16_t trackColor);
 
-// Completion animation: expanding checkmark ring
-void drawCompletionAnim(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, bool reset);
-
 #endif // DISPLAY_ANIM_H
