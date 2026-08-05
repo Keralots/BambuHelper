@@ -14,16 +14,11 @@ enum LedActivity : uint8_t {
 
 // Lifecycle
 void initLed();
-void shutdownLed();
 void ledTick();
-
-// Configured-brightness path (slider Save). Persists in caller via saveLedSettings().
-void commitLedBrightness(uint8_t brightness);
 
 // Transient-duty path (used by effect engine internally).
 // Public for backward compat with any future direct callers.
 void applyLedDuty(uint8_t duty);
-void restoreLedDuty();
 
 // Pin validation. sanitizeLedPin() is called from saveLedSettings() before NVS write.
 void sanitizeLedPin();
@@ -36,7 +31,6 @@ void previewLed(bool enabled, uint8_t pin, uint8_t brightness);
 void ledSetActivity(LedActivity act);
 void ledStartFinishEffect();
 void ledStopFinishEffect();
-bool ledFinishEffectActive();
 
 // Triggered from web UI "Test effect" button. Plays the chosen mode for
 // LED_TEST_DURATION_S seconds without waiting for a real print finish.

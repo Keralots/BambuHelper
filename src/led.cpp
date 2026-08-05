@@ -32,7 +32,7 @@ static bool          errorStrobeDismissed = false;
 // Live-preview override. While set, ledTick() uses previewBrightness as the
 // resting/peak duty instead of ledSettings.brightness, so the 60Hz tick stops
 // fighting rapid slider previews with the stale saved value. Cleared on
-// initLed() (called after save) and shutdownLed().
+// initLed() (called after save).
 static bool          previewActive        = false;
 static uint8_t       previewBrightness    = 0;
 
@@ -326,25 +326,8 @@ void initLed() {
   writeDuty(ledSettings.brightness);
 }
 
-void shutdownLed() {
-  finishEffectActive = false;
-  previewActive = false;
-  detachAndForceLow();
-}
-
-void commitLedBrightness(uint8_t brightness) {
-  ledSettings.brightness = brightness;
-  // Don't fight an active effect - tick will use the new brightness once effect ends.
-  if (finishEffectActive) return;
-  if (attachedPin >= 0 && ledSettings.enabled) writeDuty(brightness);
-}
-
 void applyLedDuty(uint8_t duty) {
   if (attachedPin >= 0 && ledSettings.enabled) writeDuty(duty);
-}
-
-void restoreLedDuty() {
-  if (attachedPin >= 0 && ledSettings.enabled) writeDuty(ledSettings.brightness);
 }
 
 void previewLed(bool enabled, uint8_t pin, uint8_t brightness) {
@@ -394,10 +377,6 @@ void ledStopFinishEffect() {
   finishEffectActive = false;
   // Force tick to recompute resting duty (idle/auto-on/etc.) on next call.
   lastWrittenDuty = -1;
-}
-
-bool ledFinishEffectActive() {
-  return finishEffectActive;
 }
 
 bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness) {

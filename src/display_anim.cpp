@@ -78,13 +78,3 @@ void drawSlideBar(lgfx::LovyanGFX& gfx, int16_t x, int16_t y, int16_t w, int16_t
 
   gfx.fillRoundRect(segX, y, segW, h, h / 2, color);
 }
-
-// ---------------------------------------------------------------------------
-//  Pulse factor for glow effects
-// ---------------------------------------------------------------------------
-float getPulseFactor() {
-  unsigned long ms = millis();
-  float t = (ms % 2000) / 2000.0f;
-  float sine = sinf(t * 2.0f * PI);
-  return 0.75f + 0.25f * sine;
-}

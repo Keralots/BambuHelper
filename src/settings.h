@@ -313,11 +313,9 @@ void saveWifiTxCapped();
 void resetSettings();
 
 // Cloud token persistence (shared across printer slots)
-extern char cloudEmail[64];
 void saveCloudToken(const char* token);
 bool loadCloudToken(char* buf, size_t bufLen);
 void clearCloudToken();
-void saveCloudEmail(const char* email);
 
 // RGB565 <-> HTML hex conversion
 uint16_t htmlToRgb565(const char* hex);

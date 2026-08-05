@@ -18,7 +18,6 @@ DisplaySettings dispSettings;
 GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
 DisplayPowerSettings dpSettings;
-char cloudEmail[64] = {0};
 ButtonType buttonType = BTN_DISABLED;
 uint8_t buttonPin = BUTTON_DEFAULT_PIN;
 BuzzerSettings buzzerSettings = { false, BUZZER_DEFAULT_PIN, 0, 0, false, false, 35 };
@@ -739,9 +738,6 @@ void loadSettings() {
   ledSettings.errorStrobe         = prefs.getBool("led_err",     false);
   ledSettings.errorStrobeSeconds  = prefs.getUShort("led_err_sec", LED_ERROR_STROBE_DEFAULT_S);
 
-  // Cloud email (display only)
-  strlcpy(cloudEmail, prefs.getString("cl_email", "").c_str(), sizeof(cloudEmail));
-
   // Tasmota power monitoring — array of N plugs with numbered NVS keys
   // One-shot migration from legacy singleton keys (tsm_en/ip/dm/pi/slot) into
   // numbered keys (tsm0_*, tsm1_*). Runs once when legacy keys exist and
@@ -1116,7 +1112,6 @@ void saveWifiTxCapped() {
 void resetSettings() {
   // Clear sensitive data from RAM before wiping NVS
   memset(wifiPass, 0, sizeof(wifiPass));
-  memset(cloudEmail, 0, sizeof(cloudEmail));
   for (int i = 0; i < MAX_PRINTERS; i++) {
     memset(printers[i].config.accessCode, 0, sizeof(printers[i].config.accessCode));
     memset(printers[i].config.cloudUserId, 0, sizeof(printers[i].config.cloudUserId));
@@ -1149,14 +1144,8 @@ bool loadCloudToken(char* buf, size_t bufLen) {
 void clearCloudToken() {
   prefs.begin(NVS_NAMESPACE, false);
   prefs.remove("cl_token");
+  // cl_email: stale key written by old firmware's on-device cloud login;
+  // kept here so upgraded devices get it purged on logout.
   prefs.remove("cl_email");
-  prefs.end();
-  cloudEmail[0] = '\0';
-}
-
-void saveCloudEmail(const char* email) {
-  strlcpy(cloudEmail, email, sizeof(cloudEmail));
-  prefs.begin(NVS_NAMESPACE, false);
-  prefs.putString("cl_email", email);
   prefs.end();
 }
