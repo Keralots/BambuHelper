@@ -13,11 +13,11 @@ static bool improvSucceeded = false;
 static uint32_t improvDeadline = 0;
 
 static ImprovTypes::ChipFamily detectChipFamily() {
-#if CONFIG_IDF_TARGET_ESP32S3
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
   return ImprovTypes::ChipFamily::CF_ESP32_S3;
-#elif CONFIG_IDF_TARGET_ESP32C3
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
   return ImprovTypes::ChipFamily::CF_ESP32_C3;
-#elif CONFIG_IDF_TARGET_ESP32S2
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
   return ImprovTypes::ChipFamily::CF_ESP32_S2;
 #else
   return ImprovTypes::ChipFamily::CF_ESP32;
@@ -50,7 +50,7 @@ static void onImprovConnected(const char *ssid, const char *password) {
 static bool improvCustomConnect(const char *ssid, const char *password) {
   Serial.printf("Improv: attempting STA connect to %s\n", ssid);
   WiFi.begin(ssid, password);
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
   // C3 antenna workaround (issue #146): some C3 SuperMini batches only work at
   // reduced TX power. Setup always runs capped (the user is at arm's length);
   // the normal boot path after the Improv restart re-detects whether the cap

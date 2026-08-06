@@ -281,7 +281,7 @@ static void doTapActions() {
     return;
   }
 
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
   // Camera tap toggle (#120). On a multi-printer setup the camera sits in the
   // tap cycle for the printer that carries the tile: tapping that printer opens
   // fullscreen, and tapping out advances to the next printer (so the cycle keeps
@@ -697,7 +697,7 @@ static void updateDisplayedPrinterScreenState() {
   // so an auto-OTA still preempts it.
   if (current == SCREEN_POWER_CONFIRM) return;
 
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
   // Camera fullscreen (#120) is sticky: entered/exited only by tap. Hold it
   // until the user taps out or the printer can no longer stream, then drop back
   // to the normal flow (which re-derives the screen next loop).
@@ -1224,7 +1224,7 @@ void loop() {
   ledTick();
   checkNightMode();
 
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
   // Camera (#120) lifecycle (cheap, non-blocking): open the 2nd TLS socket only
   // while the camera UI is on screen (fullscreen, or printing screen with a
   // visible camera tile) and the printer can stream; close it otherwise so heap
@@ -1264,7 +1264,7 @@ void loop() {
   // flushFrame() for the same reason cameraService() does.
   handlePowerConfirmService();
 
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
   // Blocking camera socket work (connect can stall up to the TLS timeout) runs
   // dead last - AFTER flushFrame() - so on the framebuffer board (JC3248W535,
   // where draws are only visible once pushed) a stalled connect never delays the
