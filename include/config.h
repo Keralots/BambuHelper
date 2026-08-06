@@ -128,6 +128,49 @@
 // compiled behind BOARD_HAS_CAMERA; other boards link no-op stubs.
 #if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_WS350)
 #define BOARD_HAS_CAMERA      1
+#else
+#define BOARD_HAS_CAMERA      0
+#endif
+
+// =============================================================================
+//  Board capability derivation
+// =============================================================================
+// Logic files test these capabilities, never board names. The board -> capability
+// mapping lives ONLY here (plus lgfx_boards.h / diy_display_config.h and the named
+// resolver blocks). Each new capability is ALWAYS defined 0/1 and tested with
+// `#if CAP`, so a typo in a consumer resolves to 0 at build time and the full-env
+// build matrix exercises both branches. See the "Board capability macros" section
+// in CLAUDE.md. (Pre-existing presence-only macros such as BOARD_HAS_PSRAM /
+// BOARD_HAS_BATTERY / BOARD_HAS_*_AUDIO are grandfathered - do not blanket-convert.)
+
+// JC3248W535 AXS15231B QSPI panel cannot address an arbitrary Y per draw, so all
+// drawing renders into a full-frame PSRAM sprite flushed once per loop tick. The
+// guarded code is AXS-typed (Panel_AXS15231B_AGFX, fixed 320x480) and is 1:1 with
+// JC today - a different full-frame panel (e.g. the CO5300 AMOLED) needs its own
+// path, not this one.
+#if defined(BOARD_IS_JC3248W535)
+#define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
+#else
+#define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
+#endif
+
+// Display reset/control routed through an I2C IO expander instead of GPIOs:
+// SenseCAP (PCA9535) and ws_lcd_350 (TCA9554). This cap only signals "bring up
+// Wire.h for the expander"; the per-chip register bring-up stays board-specific
+// (different chip, address and pins - see initDisplay()).
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350)
+#define PANEL_HAS_IO_EXPANDER  1
+#else
+#define PANEL_HAS_IO_EXPANDER  0
+#endif
+
+// ESP32-C3 radio: capping AP/STA TX power works around a C3 range/brownout issue
+// (see wifi_manager.cpp). Expressed as a capability so the workaround is portable
+// if another board ever needs it.
+#if defined(BOARD_IS_C3)
+#define BOARD_NEEDS_WIFI_TX_LIMIT  1
+#else
+#define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
 // =============================================================================

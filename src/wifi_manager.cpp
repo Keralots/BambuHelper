@@ -31,7 +31,7 @@ static unsigned long splashStaStartMs = 0;
 // first and falls back to capped on the last attempt - a capped success is
 // persisted (wifiTxCapped) so every later connect starts capped. Healthy
 // boards keep full power and range.
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
 static void capTxPower() {
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
 }
@@ -69,7 +69,7 @@ static void startAP() {
   // Use AP+STA so we can probe STA while serving the config portal
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ssidBuf, WIFI_AP_PASSWORD);
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
   capTxPower();
   Serial.println("WiFi: TX power capped to 8.5 dBm in AP mode (C3 antenna workaround)");
 #endif
@@ -179,7 +179,7 @@ static void beginStaConnectAttempt() {
   WiFi.mode(WIFI_STA);
   applyStaticNetworkConfig();
   WiFi.begin(wifiSSID, wifiPass);
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
   if (wifiTxCapped) capTxPower();
 #endif
 }
@@ -215,7 +215,7 @@ void initWiFi() {
         beginStaConnectAttempt();
       }
 
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
       // Last attempt: retry at reduced power in case this board's antenna
       // cannot handle full TX power (see capTxPower above). If it works,
       // remember it so every future connect skips the doomed full-power tries.
@@ -234,7 +234,7 @@ void initWiFi() {
         flushFrame();  // JC3248W535: push sprite to panel during blocking loop
       }
       if (WiFi.status() == WL_CONNECTED) {
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
         if (cappedAttempt) {
           wifiTxCapped = true;
           saveWifiTxCapped();
@@ -322,7 +322,7 @@ void handleWiFi() {
                       WiFi.localIP().toString().c_str());
         stopAP();
         WiFi.mode(WIFI_STA);
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
         // AP mode capped the shared radio; healthy boards get full power back
         // for normal operation, capped boards stay at 8.5 dBm.
         if (!wifiTxCapped) WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -385,7 +385,7 @@ void handleWiFi() {
 
       WiFi.disconnect();
       WiFi.begin(wifiSSID, wifiPass);
-#ifdef BOARD_IS_C3
+#if BOARD_NEEDS_WIFI_TX_LIMIT
       if (wifiTxCapped) capTxPower();
 #endif
     }

@@ -17,7 +17,7 @@
 #include "camera_client.h"
 #include <WiFi.h>
 #include <time.h>
-#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350)
+#if PANEL_HAS_IO_EXPANDER
 #include <Wire.h>     // SenseCAP: PCA9535PW IO expander / ws_lcd_350: TCA9554 LCD reset
 #endif
 #include <new>   // placement new for CYD panel variant selection
@@ -66,7 +66,7 @@ lgfx::LovyanGFX* tft_ptr = &_tft_instance;
 
 // Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
 // other boards so the extern declaration in display_ui.h is always satisfied.
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
 
 // Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
@@ -88,13 +88,13 @@ lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
 
 void markFrameDirty() {
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   g_frame_dirty = true;
 #endif
 }
 
 void flushFrame() {
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   if (!g_axs_panel || !_frame_sprite.getBuffer()) return;
   unsigned long now = millis();
   bool keepalive_due = (now - g_last_flush_ms) >= FRAME_KEEPALIVE_MS;
@@ -429,7 +429,7 @@ void initDisplay() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   // Panel MADCTL stays at 0 forever — RASET-skip + LSB-first byte-order
   // invariants in pushRawPixels depend on native orientation. User-facing
   // rotation is applied to the PSRAM sprite after tft_ptr is redirected.
@@ -442,7 +442,7 @@ void initDisplay() {
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
 
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   // Allocate 320x480x16bpp PSRAM sprite (300 KB) and redirect tft_ptr so all
   // subsequent draws (splash, UI, refreshes) render into the sprite buffer.
   // Panel cannot address arbitrary Y in QSPI mode — instead we flush the
@@ -519,7 +519,7 @@ void applyDisplaySettings() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   // Sprite path: panel MADCTL stays at 0, but the 320x480 PSRAM sprite has
   // stale pixels at the "extra" edge when flipping between portrait and
   // landscape. Wipe the whole sprite at the current rotation before applying
@@ -2624,7 +2624,7 @@ static void computeSlotGrid(SlotGrid& g, const PrinterConfig& cfg, bool landscap
 //  Screen: Printing (main dashboard)
 //  Layout: LED bar | header | 2x3 gauge grid | info line
 // ---------------------------------------------------------------------------
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
 // ===========================================================================
 //  Camera (#120): thumbnail tile + fullscreen. Source = P1/A1 chamber image
 //  (~1280x720, 16:9). Tile shows a periodic still; fullscreen is live.
@@ -4034,7 +4034,7 @@ static void drawPrinting() {
           case GAUGE_HEATBREAK:     needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_POWER:       needDraw = true; break;  // watts live in tasmota runtime; text cache + incremental arc gate the redraw
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
           case GAUGE_CAMERA:      needDraw = cameraTileNeedsRedraw(); break;
 #endif
           case GAUGE_LAYER:       needDraw = s.layerNum != prevState.layerNum || s.totalLayers != prevState.totalLayers; break;
@@ -5199,7 +5199,7 @@ void updateDisplay() {
       break;
 
     case SCREEN_CAMERA:
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
       drawCameraFullscreen();
 #endif
       break;

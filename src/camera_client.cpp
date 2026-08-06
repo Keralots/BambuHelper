@@ -5,7 +5,7 @@
 #include "camera_client.h"
 #include "config.h"
 
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
 
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>

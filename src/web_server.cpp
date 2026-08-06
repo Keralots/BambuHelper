@@ -751,7 +751,7 @@ static void handlePrinterConfig() {
   doc["hasExhaustFan"]  = (st.airductFuncs & (1u << 2)) != 0;  // X2D + H2C
   doc["hasDualNozzle"]  = st.dualNozzle;                       // H2D/H2C/X2D per-nozzle temp gauges
   doc["hasTasmota"]     = tasmotaConfiguredForSlot(slot);      // gates the Power gauge option
-#if defined(BOARD_HAS_CAMERA)
+#if BOARD_HAS_CAMERA
   // Camera gauge: only LAN-mode P1/A1 with an access code serve the port-6000
   // chamber image. (P1S=01P, P1P=01S, A1=039, A1mini=030.)
   {
