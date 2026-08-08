@@ -5114,6 +5114,7 @@ static void drawPowerConfirm() {
 #if HAS_HMS_UI
 
 bool hmsScreenAvailable() {
+  if (!dispSettings.hmsEnabled) return false;
   if (!isPrinterConfigured(rotState.displayIndex)) return false;
   const BambuState& s = displayedPrinter().state;
   // Anything listable counts, not just what raised the badge: a standing

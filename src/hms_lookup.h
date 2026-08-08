@@ -77,15 +77,12 @@ struct ErrorBadge {
 
 #if HAS_HMS_UI
 
-// Severity filter. Becomes the user-facing "all priorities" vs "important only"
-// setting in the settings phase; until then this is the plan's documented
-// default. Baseline codes (standing at connect) never reach the badge either
-// way - that rule is orthogonal and always on.
-#define ERROR_BADGE_SEVERITY_ALL  0
-
-// Worst error worth showing on this slot, or an inactive badge. print_error
-// outranks HMS: it means the job actually stopped. A cancel is deliberately not
-// an error badge - it gets the CANCELED state word instead.
+// Worst error worth showing on this slot, or an inactive badge. Reads the
+// master opt-out and the severity filter, so a settings change is reflected
+// without waiting for the next report. Baseline codes (standing at connect)
+// never reach the badge whatever the filter says - that rule is orthogonal and
+// always on. print_error outranks HMS: it means the job actually stopped. A
+// cancel is deliberately not an error badge - it gets the CANCELED state word.
 ErrorBadge errorBadgeFor(const BambuState& s);
 
 // Stable identity of the badge above, packed so a redraw predicate is one

@@ -215,8 +215,23 @@
 #define HAS_FULL_HMS_TABLE  0
 #endif
 
+// The portal's "Printer Errors" section is markup, and markup is flash: it
+// costs ~7 KB, the same on every board. The C3 family has single-digit KB of
+// app slot left, so those boards keep the parts that matter on a device with no
+// keyboard - the badge, the error screen, the cancel wording - and drop the
+// settings page. They run on the defaults (reporting on, important-only, no
+// alert channels), which a settings import can still override.
+#if HAS_HMS_UI && !defined(BOARD_IS_C3)
+#define HAS_HMS_WEB_UI  1
+#else
+#define HAS_HMS_WEB_UI  0
+#endif
+
 #if HAS_FULL_HMS_TABLE && !HAS_HMS_UI
 #error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
+#endif
+#if HAS_HMS_WEB_UI && !HAS_HMS_UI
+#error "HAS_HMS_WEB_UI requires HAS_HMS_UI"
 #endif
 
 // =============================================================================

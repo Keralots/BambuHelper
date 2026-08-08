@@ -187,6 +187,23 @@ static void readDisplayFromForm() {
     if (gd >= 0 && gd <= 2) dispSettings.glowDuration = (uint8_t)gd;
   }
 
+  // Printer errors. "hmsauto" is always posted when the section exists, so it
+  // doubles as the presence marker: without it the whole block is left alone,
+  // which is what a board that never renders the section must do (otherwise the
+  // two checkbox reads below would clear settings nobody touched). The four
+  // alert checkboxes ride one mask that is always sent, zero included - four
+  // unchecked boxes posting nothing would leave stale bits behind.
+#if HAS_HMS_WEB_UI
+  if (server.hasArg("hmsauto")) {
+    int ap = server.arg("hmsauto").toInt();
+    if (ap >= 0 && ap <= 2) dispSettings.hmsAutoPresent = (uint8_t)ap;
+    dispSettings.hmsEnabled = server.hasArg("hmsen");
+    dispSettings.hmsSeverityAll = server.hasArg("hmssev");
+    if (server.hasArg("hmsmask"))
+      dispSettings.hmsAlertMask = (uint8_t)(server.arg("hmsmask").toInt() & 0x0F);
+  }
+#endif
+
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {
     size_t tzCount;
@@ -661,6 +678,12 @@ static void handleToggleSetting() {
   }
   else if (key == "glows")   dispSettings.glowStyle = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "glowd")   dispSettings.glowDuration = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+#if HAS_HMS_WEB_UI
+  else if (key == "hmsen")   dispSettings.hmsEnabled = on;
+  else if (key == "hmssev")  dispSettings.hmsSeverityAll = on;
+  else if (key == "hmsauto") dispSettings.hmsAutoPresent = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+  else if (key == "hmsmask") dispSettings.hmsAlertMask = (uint8_t)(constrain(server.arg("val").toInt(), 0, 15));
+#endif
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
   else if (key == "rotsplit")  rotState.splitEnabled = on;
@@ -682,8 +705,10 @@ static void handleToggleSetting() {
   // "fintm" joins these because it rewrites text already on screen: the finish
   // headline is painted only under forceRedraw, so without a re-render the
   // toggle would appear to do nothing until the next print.
+  // "hmsen" / "hmssev" join these because they change what the state badge
+  // says without any printer state moving, and every badge site is cached.
   if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem" ||
-      key == "fintm") applyDisplaySettings();
+      key == "fintm" || key == "hmsen" || key == "hmssev") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
@@ -1261,6 +1286,12 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
   disp["glowStyle"] = dispSettings.glowStyle;
   disp["glowDuration"] = dispSettings.glowDuration;
+#if HAS_HMS_UI
+  disp["hmsEnabled"] = dispSettings.hmsEnabled;
+  disp["hmsSeverityAll"] = dispSettings.hmsSeverityAll;
+  disp["hmsAlertMask"] = dispSettings.hmsAlertMask;
+  disp["hmsAutoPresent"] = dispSettings.hmsAutoPresent;
+#endif
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1613,6 +1644,12 @@ static void handleSettingsImportFinish() {
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
     if (disp["glowStyle"].is<int>()) { int gs = disp["glowStyle"].as<int>(); dispSettings.glowStyle = (gs >= 0 && gs <= 2) ? (uint8_t)gs : 0; }
     if (disp["glowDuration"].is<int>()) { int gd = disp["glowDuration"].as<int>(); dispSettings.glowDuration = (gd >= 0 && gd <= 2) ? (uint8_t)gd : 0; }
+#if HAS_HMS_UI
+    if (disp["hmsEnabled"].is<bool>())     dispSettings.hmsEnabled = disp["hmsEnabled"].as<bool>();
+    if (disp["hmsSeverityAll"].is<bool>()) dispSettings.hmsSeverityAll = disp["hmsSeverityAll"].as<bool>();
+    if (disp["hmsAlertMask"].is<int>())    dispSettings.hmsAlertMask = (uint8_t)(disp["hmsAlertMask"].as<int>() & 0x0F);
+    if (disp["hmsAutoPresent"].is<int>())  { int ap = disp["hmsAutoPresent"].as<int>(); dispSettings.hmsAutoPresent = (ap >= 0 && ap <= 2) ? (uint8_t)ap : 0; }
+#endif
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 

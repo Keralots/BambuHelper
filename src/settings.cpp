@@ -190,6 +190,12 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.glowColor = CLR_GREEN;
   ds.glowStyle = 0;            // Sweep
   ds.glowDuration = 0;         // Burst
+#if HAS_HMS_UI
+  ds.hmsEnabled = true;        // printer errors on by default - the whole point
+  ds.hmsSeverityAll = false;   // important only: severity 1+2
+  ds.hmsAlertMask = 0;         // opt in to buzzer/glow/LED/wake individually
+  ds.hmsAutoPresent = 0;       // badge only; the screen is a deliberate tap
+#endif
   ds.hideStatusReadout = false; // default ON-screen readout stays visible
   ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
   ds.bedScaleMax     = GAUGE_BED_SCALE_DEFAULT;
@@ -561,6 +567,15 @@ void loadSettings() {
     uint8_t gd = prefs.getUChar("dsp_glowd", def.glowDuration);
     dispSettings.glowDuration = (gd <= 2) ? gd : 0;
   }
+#if HAS_HMS_UI
+  {
+    dispSettings.hmsEnabled = prefs.getBool("dsp_hmsen", def.hmsEnabled);
+    dispSettings.hmsSeverityAll = prefs.getBool("dsp_hmssev", def.hmsSeverityAll);
+    dispSettings.hmsAlertMask = prefs.getUChar("dsp_hmsmask", def.hmsAlertMask) & 0x0F;
+    uint8_t ap = prefs.getUChar("dsp_hmsauto", def.hmsAutoPresent);
+    dispSettings.hmsAutoPresent = (ap <= 2) ? ap : 0;
+  }
+#endif
   dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
                                            GAUGE_NOZZLE_SCALE_MIN, GAUGE_NOZZLE_SCALE_MAX);
   dispSettings.bedScaleMax     = constrain((int)prefs.getUShort("dsp_bedmx", def.bedScaleMax),
@@ -879,6 +894,12 @@ void saveSettings() {
   prefs.putUShort("dsp_glowc", dispSettings.glowColor);
   prefs.putUChar("dsp_glows", dispSettings.glowStyle);
   prefs.putUChar("dsp_glowd", dispSettings.glowDuration);
+#if HAS_HMS_UI
+  prefs.putBool("dsp_hmsen", dispSettings.hmsEnabled);
+  prefs.putBool("dsp_hmssev", dispSettings.hmsSeverityAll);
+  prefs.putUChar("dsp_hmsmask", dispSettings.hmsAlertMask);
+  prefs.putUChar("dsp_hmsauto", dispSettings.hmsAutoPresent);
+#endif
 
   saveGaugeColors("gc_prg", dispSettings.progress);
   saveGaugeColors("gc_noz", dispSettings.nozzle);

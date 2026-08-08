@@ -1,4 +1,5 @@
 #include "hms_lookup.h"
+#include "settings.h"   // dispSettings: master opt-out + severity filter
 
 #if HAS_HMS_UI
 
@@ -125,6 +126,7 @@ uint16_t errorSeverityColor(uint8_t sev) {
 
 ErrorBadge errorBadgeFor(const BambuState& s) {
   ErrorBadge b = { false, 0, 0, 0 };
+  if (!dispSettings.hmsEnabled) return b;
 
   // print_error first: the job has stopped, which outranks any advisory HMS
   // still standing. A cancel is the user's own doing and never lights the
@@ -141,9 +143,7 @@ ErrorBadge errorBadgeFor(const BambuState& s) {
   for (uint8_t i = 0; i < s.hmsCount; i++) {
     const uint8_t sev = hmsSeverityOf(s.hms[i].code);
     if (sev < 1 || sev > 3) continue;                       // info/unknown: listed only
-#if !ERROR_BADGE_SEVERITY_ALL
-    if (sev == 3) continue;                                 // "important only"
-#endif
+    if (sev == 3 && !dispSettings.hmsSeverityAll) continue;  // "important only"
     if (hmsIsBaseline(s, s.hms[i].attr, s.hms[i].code)) continue;
     b.active = true;
     b.severity = sev;
