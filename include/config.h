@@ -173,6 +173,52 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
+// HMS / print_error reporting. Three independent capabilities:
+//
+//   HAS_HMS_UI           the feature exists at all - state fields, parser,
+//                        badge, error screen, alerts
+//   HAS_ERROR_TEXT_TABLE embedded print_error sentences (~36 KB flash)
+//   HAS_FULL_HMS_TABLE   embedded HMS sentences (~400 KB flash)
+//
+// Without a text table a board still shows "<MODULE> <SEVERITY>" plus the
+// formatted code (~100 bytes); the full sentence comes from the web portal.
+//
+// BOARD_IS_C3 alone cannot express "stock esp32c3": esp32c3_round and
+// diy_round240 set it too, so those two are excluded by their own macros.
+// The whole C3 family is off the print_error table - the stock env has ~5 KB
+// of app slot left and the round variant ~15 KB.
+#if defined(BOARD_IS_C3) && !defined(BOARD_IS_C3_ROUND) && !defined(BOARD_IS_DIY)
+#define HAS_HMS_UI  0
+#else
+#define HAS_HMS_UI  1
+#endif
+
+#if defined(BOARD_IS_C3)
+#define HAS_ERROR_TEXT_TABLE  0
+#else
+#define HAS_ERROR_TEXT_TABLE  1
+#endif
+
+// The full HMS table only fits envs built on the 8 MB / 16 MB partition
+// tables, and no flash-size macro exists to key off - so this is enumerated
+// per board, which is exactly what this block is the allowed site for.
+// Fielded 16 MB devices never reflashed since v3.7.4 still carry the old
+// 1.75 MB OTA slot and will be told to repartition by the portal's update
+// checker; that is a known, accepted one-time migration.
+#if defined(BOARD_IS_WS154) || defined(BOARD_IS_WS200) || \
+    defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
+    defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
+    defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
+    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216)
+#define HAS_FULL_HMS_TABLE  1
+#else
+#define HAS_FULL_HMS_TABLE  0
+#endif
+
+#if HAS_FULL_HMS_TABLE && !HAS_HMS_UI
+#error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
+#endif
+
 // =============================================================================
 //  Display rotation (multi-printer)
 // =============================================================================

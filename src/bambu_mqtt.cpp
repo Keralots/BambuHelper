@@ -34,6 +34,15 @@ struct MqttConn {
   unsigned long lastRecoveryResolvedMs;  // when last recovery resolved (cooldown timer)
   bool hotFinishArmed;       // FINISH cycle observed cold targets at least once
   bool hotFinishHintConsumed;// FINISH-hot recovery pushall already sent this cycle
+#if HAS_HMS_UI
+  // HMS baseline window. Codes reported while open are the printer's standing
+  // complaints, not news. The window runs from connect until, and including,
+  // the first report that arrives after the pushall carrying the full snapshot
+  // was published — there is no snapshot-vs-delta marker on the wire, so a
+  // delta landing between that publish and its reply is a known, accepted race.
+  bool hmsBaselineOpen;
+  bool hmsBaselineSeal;      // the baseline pushall is out: next report closes
+#endif
 };
 
 static MqttConn conns[MAX_ACTIVE_PRINTERS];
@@ -276,6 +285,17 @@ static void clearLiveMetrics(BambuState& s) {
   s.ams.anyDrying = false;
   for (uint8_t i = 0; i < AMS_MAX_UNITS; i++)
     s.ams.units[i].dryRemainMin = 0;
+#if HAS_HMS_UI
+  // The printer is gone; a live error badge must not outlive it. The baseline
+  // set deliberately survives - those codes will still be standing when the
+  // printer comes back, and the re-baseline window extends it if they changed.
+  s.printError = 0;
+  s.printErrorSeen = false;
+  s.hmsCount = 0;
+  s.hmsTotal = 0;
+  s.hmsOverflow = false;
+  s.hmsWorstSeverity = 0;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -352,11 +372,80 @@ static uint8_t normalizeTrayIndex(const AmsState& ams,
   return 255;
 }
 
+#if HAS_HMS_UI
+// ---------------------------------------------------------------------------
+//  HMS list maintenance
+// ---------------------------------------------------------------------------
+
+// Record a code as standing. Only called inside the connect baseline window:
+// whatever the printer is already complaining about when we arrive is its
+// normal state, not news, and must never light the badge or fire an alert.
+static void hmsAddBaseline(BambuState& s, uint32_t attr, uint32_t code) {
+  if (s.hmsBaselineSaturated) return;
+  for (uint8_t i = 0; i < s.hmsBaselineCount; i++)
+    if (s.hmsBaseline[i].attr == attr && s.hmsBaseline[i].code == code) return;
+
+  if (s.hmsBaselineCount < HMS_BASELINE_MAX) {
+    s.hmsBaseline[s.hmsBaselineCount].attr = attr;
+    s.hmsBaseline[s.hmsBaselineCount].code = code;
+    s.hmsBaselineCount++;
+    return;
+  }
+
+  // Full: evict a severity-3-or-unknown member to make room. Those never alert
+  // under the default severity setting, so losing their baseline status is the
+  // cheapest thing we can give up.
+  for (uint8_t i = 0; i < s.hmsBaselineCount; i++) {
+    if (hmsSeverityRank(s.hmsBaseline[i].code) >= 2) {
+      s.hmsBaseline[i].attr = attr;
+      s.hmsBaseline[i].code = code;
+      return;
+    }
+  }
+
+  // Nothing cheap left to drop. See BambuState.hmsBaselineSaturated.
+  s.hmsBaselineSaturated = true;
+  Serial.printf("MQTT: HMS baseline saturated (>%d standing codes) — "
+                "treating all codes on this connection as baseline\n",
+                HMS_BASELINE_MAX);
+}
+
+// Insert into the kept subset, held sorted by (severity rank, key). Sorting by
+// content rather than arrival order means a printer reshuffling its array does
+// not read as a change, and hms[0] is always the worst entry.
+static void hmsInsertSorted(BambuState& s, uint32_t attr, uint32_t code) {
+  uint8_t  rank = hmsSeverityRank(code);
+  uint64_t key  = hmsKeyOf(attr, code);
+
+  uint8_t pos = 0;
+  while (pos < s.hmsCount) {
+    uint8_t otherRank = hmsSeverityRank(s.hms[pos].code);
+    if (rank < otherRank) break;
+    if (rank == otherRank && key < hmsKeyOf(s.hms[pos].attr, s.hms[pos].code)) break;
+    pos++;
+  }
+  if (pos >= HMS_MAX_ENTRIES) return;  // ranks below everything we already keep
+
+  uint8_t last = (s.hmsCount < HMS_MAX_ENTRIES) ? s.hmsCount
+                                                : (uint8_t)(HMS_MAX_ENTRIES - 1);
+  for (uint8_t i = last; i > pos; i--) s.hms[i] = s.hms[i - 1];
+  s.hms[pos].attr = attr;
+  s.hms[pos].code = code;
+  if (s.hmsCount < HMS_MAX_ENTRIES) s.hmsCount++;
+}
+#endif  // HAS_HMS_UI
+
 // ---------------------------------------------------------------------------
 //  Parse MQTT payload into a BambuState (extracted for routing)
 // ---------------------------------------------------------------------------
-static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, const char* serial) {
+// baselineWindow: this report still counts as "what was already wrong when we
+// connected" — see the MqttConn.hmsBaseline* flags.
+static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
+                             const char* serial, bool baselineWindow) {
   const char* payloadEnd = (const char*)payload + length;
+#if !HAS_HMS_UI
+  (void)baselineWindow;
+#endif
 
   // Filter document to reduce parse memory
   JsonDocument filter;
@@ -387,6 +476,13 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
   pf["home_flag"] = true;  // X1 series door sensor (int, bit 23 = door open)
   pf["lights_report"][0]["node"] = true;  // chamber_light on/off/flashing state
   pf["lights_report"][0]["mode"] = true;
+#if HAS_HMS_UI
+  pf["print_error"] = true;             // single uint32, 0 = no error
+  pf["hms"][0]["attr"] = true;          // array-of-object form, as lights_report above
+  pf["hms"][0]["code"] = true;          // ts_boot/ts_unix deliberately not kept:
+                                        // they change on every report and would
+                                        // make the array look different each time
+#endif
   // Note: H2D/H2C extruder data is parsed separately from raw payload (see below)
 
   JsonDocument doc;
@@ -1121,6 +1217,57 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s, 
     }
   }
 
+#if HAS_HMS_UI
+  // print.print_error: single uint32, 0 = none. An absent key preserves the
+  // previous value. printErrorSeen exists so booting straight into an error
+  // initializes quietly instead of reading as a 0 -> nonzero edge.
+  if (print["print_error"].is<unsigned int>()) {
+    uint32_t pe = print["print_error"].as<unsigned int>();
+    if (mqttDebugLog && (!s.printErrorSeen || pe != s.printError))
+      Serial.printf("MQTT: print_error %08X -> %08X%s\n",
+                    s.printErrorSeen ? s.printError : 0u, pe,
+                    s.printErrorSeen ? "" : " (first sight)");
+    s.printError = pe;
+    s.printErrorSeen = true;
+  }
+
+  // print.hms: array of {attr, code, ts_boot, ts_unix}. ts_* change on every
+  // report, so identity is the (attr, code) pair alone — never compare the
+  // array by raw equality. Absent key preserves state, empty array clears it.
+  if (print["hms"].is<JsonArray>()) {
+    JsonArray hmsArr = print["hms"].as<JsonArray>();
+    s.hmsCount = 0;
+    s.hmsTotal = 0;
+    for (JsonObject e : hmsArr) {
+      if (!e["attr"].is<unsigned int>() || !e["code"].is<unsigned int>()) continue;
+      uint32_t attr = e["attr"].as<unsigned int>();
+      uint32_t code = e["code"].as<unsigned int>();
+      if (s.hmsTotal < 255) s.hmsTotal++;
+      // Every entry is scanned, not just the ones we keep: the baseline set and
+      // the worst-severity ranking must see the whole report.
+      if (baselineWindow) hmsAddBaseline(s, attr, code);
+      hmsInsertSorted(s, attr, code);
+    }
+    s.hmsOverflow = s.hmsTotal > s.hmsCount;
+    // The subset is sorted worst-first, so hms[0] is the worst of the whole
+    // report even when the tail was dropped.
+    s.hmsWorstSeverity = s.hmsCount > 0 ? hmsSeverityOf(s.hms[0].code) : 0;
+
+    if (mqttDebugLog && s.hmsTotal > 0) {
+      Serial.printf("MQTT: hms %u entr%s (kept %u%s)%s\n",
+                    s.hmsTotal, s.hmsTotal == 1 ? "y" : "ies", s.hmsCount,
+                    s.hmsOverflow ? ", overflow" : "",
+                    baselineWindow ? " [baseline window]" : "");
+      for (uint8_t i = 0; i < s.hmsCount; i++)
+        Serial.printf("MQTT:   %04X_%04X_%04X_%04X sev=%u%s\n",
+                      (unsigned)(s.hms[i].attr >> 16), (unsigned)(s.hms[i].attr & 0xFFFF),
+                      (unsigned)(s.hms[i].code >> 16), (unsigned)(s.hms[i].code & 0xFFFF),
+                      hmsSeverityOf(s.hms[i].code),
+                      hmsIsBaseline(s, s.hms[i].attr, s.hms[i].code) ? " baseline" : "");
+    }
+  }
+#endif  // HAS_HMS_UI
+
   s.lastUpdate = millis();
   if (corePrintData) s.lastPrintDataMs = millis();
 }
@@ -1149,7 +1296,24 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   c->gotDataSinceConnect = true;
   BambuState& s = printers[c->slotIndex].state;
   const char* cfgSerial = printers[c->slotIndex].config.serial;
-  parseMqttPayload(payload, length, s, cfgSerial);
+
+  bool baselineWindow = false;
+#if HAS_HMS_UI
+  baselineWindow = c->hmsBaselineOpen;
+#endif
+
+  parseMqttPayload(payload, length, s, cfgSerial, baselineWindow);
+
+#if HAS_HMS_UI
+  // Close the window on the first report after the baseline pushall went out —
+  // that report is itself still baseline (see the MqttConn comment).
+  if (c->hmsBaselineOpen && c->hmsBaselineSeal) {
+    c->hmsBaselineOpen = false;
+    c->hmsBaselineSeal = false;
+    MQTT_LOG("[%d] HMS baseline window closed, %u standing code(s)%s",
+             c->slotIndex, s.hmsBaselineCount, s.hmsBaselineSaturated ? " (saturated)" : "");
+  }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -1284,6 +1448,18 @@ static void reconnectConn(MqttConn& c) {
     c.diag.connectTime = c.connectTime;
     c.initialPushallSent = false;
     c.gotDataSinceConnect = false;
+#if HAS_HMS_UI
+    // BambuState is NOT wiped on reconnect (only initConnSlot and settings load
+    // memset it), so the baseline has to be rebuilt explicitly here.
+    {
+      BambuState& bs = printers[c.slotIndex].state;
+      bs.hmsBaselineCount = 0;
+      bs.hmsBaselineSaturated = false;
+      bs.printErrorSeen = false;
+    }
+    c.hmsBaselineOpen = true;
+    c.hmsBaselineSeal = false;
+#endif
     if (!quickDisconnect) {
       c.consecutiveFails = 0;  // only reset backoff on stable connections
     } else {
@@ -1364,8 +1540,12 @@ static void handleConn(MqttConn& c) {
     if (!c.initialPushallSent && c.connectTime > 0 &&
         millis() - c.connectTime > BAMBU_PUSHALL_INITIAL_DELAY) {
       esp_task_wdt_reset();
-      if (requestPushall(c, PUSHALL_INITIAL))
+      if (requestPushall(c, PUSHALL_INITIAL)) {
         c.initialPushallSent = true;
+#if HAS_HMS_UI
+        c.hmsBaselineSeal = true;  // its reply is the last baseline report
+#endif
+      }
     }
 
     // Periodic pushall and retry: LAN only.
@@ -1558,8 +1738,20 @@ static void handleConn(MqttConn& c) {
       MQTT_LOG("[%d] UNKNOWN + data flowing - sending %s pushall",
                c.slotIndex, firstAttempt ? "bootstrap" : "retry");
       esp_task_wdt_reset();
-      if (requestPushall(c, PUSHALL_RECOVERY_IDLE))
+      if (requestPushall(c, PUSHALL_RECOVERY_IDLE)) {
         c.stalePushallSentMs = millis();
+#if HAS_HMS_UI
+        // A cloud MQTT session is to Bambu's broker, so it survives the printer
+        // power-cycling and the per-connection reset above never fires. This
+        // bootstrap pushall carries the printer's standing codes, which would
+        // otherwise all read as new. Re-open the window so they are re-adopted
+        // as baseline. Deliberately only here: the mid-session recovery
+        // pushalls (stale print data, FAILED-on-cloud) must NOT re-baseline or
+        // they would swallow a live alert.
+        c.hmsBaselineOpen = true;
+        c.hmsBaselineSeal = true;
+#endif
+      }
     }
 
   // --- FAILED on cloud: cloud broker stops pushing state changes ---
@@ -1674,6 +1866,10 @@ static void initConnSlot(uint8_t i) {
   c.wasConnected = false;
   c.stalePushallSentMs = 0;
   c.lastRecoveryResolvedMs = 0;
+#if HAS_HMS_UI
+  c.hmsBaselineOpen = false;  // opened on successful subscribe
+  c.hmsBaselineSeal = false;
+#endif
 
   BambuState& s = printers[i].state;
   memset(&s, 0, sizeof(BambuState));

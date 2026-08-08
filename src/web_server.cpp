@@ -16,6 +16,7 @@
 #include "tasmota.h"
 #include "clock_mode.h"
 #include "clock_pong.h"
+#include "hms_lookup.h"
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
@@ -564,12 +565,47 @@ static void handleDebug() {
     p["last_pushall_age_s"] = d.lastPushallMs > 0 ? (now - d.lastPushallMs) / 1000UL : 0;
     p["last_update_age_s"] = st.lastUpdate > 0 ? (now - st.lastUpdate) / 1000UL : 0;
     p["last_print_data_age_s"] = st.lastPrintDataMs > 0 ? (now - st.lastPrintDataMs) / 1000UL : 0;
+#if HAS_HMS_UI
+    // Printer errors. The portal card and /status get their own shaped fields
+    // later; this is the raw diagnostic view.
+    char codeBuf[HMS_CODE_STR_LEN];
+    if (st.printError != 0) {
+      printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
+      p["print_error"] = codeBuf;
+      const char* peText = printErrorLookupText(st.printError);
+      if (peText) p["print_error_text"] = peText;
+    }
+    if (st.hmsCount > 0) {
+      JsonArray hmsArr = p["hms"].to<JsonArray>();
+      for (uint8_t k = 0; k < st.hmsCount; k++) {
+        JsonObject e = hmsArr.add<JsonObject>();
+        hmsFormatCode(st.hms[k].attr, st.hms[k].code, codeBuf, sizeof(codeBuf));
+        e["code"] = codeBuf;
+        e["sev"] = hmsSeverityOf(st.hms[k].code);
+        e["module"] = hmsModuleLabel(st.hms[k].attr);
+        e["baseline"] = hmsIsBaseline(st, st.hms[k].attr, st.hms[k].code);
+        const char* text = hmsLookupText(st.hms[k].attr, st.hms[k].code);
+        if (text) e["text"] = text;
+      }
+      p["hms_total"] = st.hmsTotal;
+      p["hms_overflow"] = st.hmsOverflow;
+      p["hms_worst_sev"] = st.hmsWorstSeverity;
+    }
+    p["hms_baseline_n"] = st.hmsBaselineCount;
+    if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
+#endif
   }
 
   doc["heap"] = ESP.getFreeHeap();
   doc["uptime"] = millis() / 1000;
   doc["rssi"] = WiFi.RSSI();
   doc["debug_log"] = mqttDebugLog;
+#if HAS_HMS_UI
+  {
+    const char* tv = hmsTableVersion();
+    doc["hms_table_ver"] = tv ? tv : "none";
+  }
+#endif
 
   String json;
   serializeJson(doc, json);
