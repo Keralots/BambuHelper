@@ -4,6 +4,9 @@
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
 #include "bambu_cloud.h"
+// Gzipped portal assets, generated at build time from web/app.css and
+// web/app.js. Included here and nowhere else - the arrays are static.
+#include "web_assets_gz.h"
 #include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
@@ -685,6 +688,26 @@ static void handleToggleSetting() {
   }
   server.send(200, "text/plain", "OK");
 }
+
+// ---------------------------------------------------------------------------
+//  Static portal assets
+//
+//  Served straight from PROGMEM, still gzipped - the browser inflates them. The
+//  URLs carry a hash of the file's own bytes, so `immutable` is safe: any change
+//  to the asset changes its URL and the cached copy is simply never asked for
+//  again.
+// ---------------------------------------------------------------------------
+const char* webAssetCssVersion() { return WEB_APP_CSS_VER; }
+const char* webAssetJsVersion()  { return WEB_APP_JS_VER; }
+
+static void sendGzipAsset(const char* contentType, const uint8_t* data, size_t len) {
+  server.sendHeader("Content-Encoding", "gzip");
+  server.sendHeader("Cache-Control", "public, max-age=31536000, immutable");
+  server.send_P(200, contentType, (PGM_P)data, len);
+}
+
+static void handleAppCss() { sendGzipAsset("text/css", WEB_APP_CSS_GZ, WEB_APP_CSS_GZ_LEN); }
+static void handleAppJs()  { sendGzipAsset("application/javascript", WEB_APP_JS_GZ, WEB_APP_JS_GZ_LEN); }
 
 static void handleCloudLogout() {
   clearCloudToken();
@@ -2070,6 +2093,8 @@ void initWebServer() {
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);
+  server.on("/app.css", HTTP_GET, handleAppCss);
+  server.on("/app.js", HTTP_GET, handleAppJs);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
   server.on("/lan/scan", HTTP_POST, handleLanScan);
   server.on("/lan/scan", HTTP_GET, handleLanScan);

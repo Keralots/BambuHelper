@@ -62,6 +62,10 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
 
+  // Cache-busting hashes for the gzipped assets the page pulls in.
+  if (strcmp(name, "CSSVER") == 0)          { out = webAssetCssVersion(); return true; }
+  if (strcmp(name, "JSVER") == 0)           { out = webAssetJsVersion(); return true; }
+
   // --- Brightness / Night mode ---
   if (strcmp(name, "BL_DISP") == 0) {
     // Inline style for the Brightness card and the screensaver-brightness
