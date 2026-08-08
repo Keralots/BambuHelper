@@ -2,6 +2,7 @@
 #define LED_H
 
 #include <Arduino.h>
+#include "config.h"   // HAS_HMS_UI
 
 // Printer activity for state-driven LED behaviors (auto on/off, pause, error)
 enum LedActivity : uint8_t {
@@ -31,6 +32,14 @@ void previewLed(bool enabled, uint8_t pin, uint8_t brightness);
 void ledSetActivity(LedActivity act);
 void ledStartFinishEffect();
 void ledStopFinishEffect();
+
+#if HAS_HMS_UI
+// One-shot error strobe for a printer error report. The existing strobe is
+// level-driven off LED_ACT_FAILED, which a printer raising an HMS mid-print
+// never enters, so this arms the same pattern for a bounded window instead.
+// Silenced early by ledOnUserInteraction(), like the FAILED strobe.
+void ledStartErrorEpisode();
+#endif
 
 // Triggered from web UI "Test effect" button. Plays the chosen mode for
 // LED_TEST_DURATION_S seconds without waiting for a real print finish.

@@ -19,6 +19,8 @@ enum GlowPhase : uint8_t {
 
 static uint8_t   latchMask = 0;                    // bit per slot: event pending
 static GlowEvent latchEvent[GLOW_MAX_SLOTS];
+static uint16_t  latchColor[GLOW_MAX_SLOTS];       // GLOW_EV_ERROR severity colour
+static uint16_t  activeColor = 0;
 static GlowPhase phase = PHASE_IDLE;
 static uint8_t   activeSlot = 0xFF;
 static GlowEvent activeEvent = GLOW_EV_FINISH;
@@ -71,11 +73,20 @@ static void stopDrawing(bool armReminder) {
   testMode = false;
 }
 
-void glowNotifyEvent(uint8_t slot, GlowEvent ev) {
+void glowNotifyEvent(uint8_t slot, GlowEvent ev, uint16_t color) {
   if (dispSettings.glowMode == 0) return;
   if (slot >= GLOW_MAX_SLOTS) return;
+  // A print outcome outranks an error report: never let a new error overwrite
+  // a FINISH or FAILED that has not been shown yet.
+  if (ev == GLOW_EV_ERROR && (latchMask & (1u << slot)) &&
+      latchEvent[slot] != GLOW_EV_ERROR) return;
   latchMask |= (uint8_t)(1u << slot);
   latchEvent[slot] = ev;
+  latchColor[slot] = color;
+}
+
+bool glowIsErrorEpisode() {
+  return phase != PHASE_IDLE && activeEvent == GLOW_EV_ERROR;
 }
 
 void glowClearSlot(uint8_t slot) {
@@ -257,6 +268,7 @@ static void drawBand(lgfx::LovyanGFX& gfx, unsigned long now, uint8_t fade) {
 
   const bool rainbow = (activeEvent == GLOW_EV_FINISH) && (dispSettings.glowMode == 2);
   const uint16_t baseColor = (activeEvent == GLOW_EV_FAILED) ? CLR_RED
+                           : (activeEvent == GLOW_EV_ERROR)  ? activeColor
                                                              : dispSettings.glowColor;
   const uint8_t style = dispSettings.glowStyle;  // 0 Sweep, 1 Pulse, 2 Storm
   const uint16_t hueShift = (uint16_t)((now / 16) % 360);
@@ -322,6 +334,7 @@ static void drawBand(lgfx::LovyanGFX& gfx, unsigned long now, uint8_t fade) {
 
   const bool rainbow = (activeEvent == GLOW_EV_FINISH) && (dispSettings.glowMode == 2);
   const uint16_t baseColor = (activeEvent == GLOW_EV_FAILED) ? CLR_RED
+                           : (activeEvent == GLOW_EV_ERROR)  ? activeColor
                                                              : dispSettings.glowColor;
   const uint8_t style = dispSettings.glowStyle;  // 0 Sweep, 1 Pulse, 2 Storm
 
@@ -451,6 +464,7 @@ bool glowTick(lgfx::LovyanGFX& gfx, uint8_t slot, bool force) {
   if (phase == PHASE_IDLE && slot < GLOW_MAX_SLOTS && (latchMask & (1u << slot))) {
     latchMask &= (uint8_t)~(1u << slot);
     activeEvent = latchEvent[slot];
+    activeColor = latchColor[slot];
     startEpisode(slot, false);
   }
 

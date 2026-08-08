@@ -29,6 +29,16 @@ static bool          errorStrobeArmed     = false;
 static unsigned long errorStrobeEndMs     = 0;
 static bool          errorStrobeDismissed = false;
 
+#if HAS_HMS_UI
+// One-shot episode for a printer error report (ledStartErrorEpisode). Separate
+// from the state above because it is not tied to an activity level: the printer
+// keeps printing while the code stands, so there is no episode to leave.
+static unsigned long errorEpisodeEndMs    = 0;   // 0 = no episode
+// Used when the user set the strobe to "until dismissed" (0). An error report
+// is not a stopped print, so it gets a bounded window regardless.
+static const uint16_t LED_ERROR_EPISODE_S = 20;
+#endif
+
 // Live-preview override. While set, ledTick() uses previewBrightness as the
 // resting/peak duty instead of ledSettings.brightness, so the 60Hz tick stops
 // fighting rapid slider previews with the stale saved value. Cleared on
@@ -396,8 +406,26 @@ bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness
   return true;
 }
 
+#if HAS_HMS_UI
+void ledStartErrorEpisode() {
+  if (!ledSettings.enabled || attachedPin < 0) return;
+  if (!ledSettings.errorStrobe) return;   // same opt-out as the FAILED strobe
+  const uint16_t secs = ledSettings.errorStrobeSeconds ? ledSettings.errorStrobeSeconds
+                                                       : LED_ERROR_EPISODE_S;
+  errorEpisodeEndMs = millis() + (unsigned long)secs * 1000UL;
+  if (errorEpisodeEndMs == 0) errorEpisodeEndMs = 1;   // 0 is the "none" sentinel
+  lastWrittenDuty = -1;
+}
+#endif  // HAS_HMS_UI
+
 void ledOnUserInteraction() {
   if (finishEffectActive) ledStopFinishEffect();
+#if HAS_HMS_UI
+  if (errorEpisodeEndMs != 0) {
+    errorEpisodeEndMs = 0;
+    lastWrittenDuty = -1;
+  }
+#endif
   // Button / touch / wake also silences an active error strobe - user has seen
   // the fault. Stays dismissed until the activity leaves FAILED and a new fault
   // re-arms it.
@@ -491,7 +519,19 @@ void ledTick() {
     errorStrobeArmed = false;
   }
 
+#if HAS_HMS_UI
+  if (errorEpisodeEndMs != 0 && (long)(now - errorEpisodeEndMs) >= 0) {
+    errorEpisodeEndMs = 0;
+    lastWrittenDuty = -1;
+  }
+#endif
+
   uint8_t baseBrightness = restingBrightness();
+#if HAS_HMS_UI
+  if (errorEpisodeEndMs != 0) {
+    duty = patternStrobe(now, LED_ERROR_STROBE_MS, baseBrightness);
+  } else
+#endif
   if (ledSettings.errorStrobe && currentActivity == LED_ACT_FAILED && !errorStrobeDismissed) {
     duty = patternStrobe(now, LED_ERROR_STROBE_MS, baseBrightness);
   } else if (finishEffectActive) {

@@ -32,6 +32,10 @@ enum ScreenState {
 // not leave the panel parked on it.
 static const uint32_t HMS_SCREEN_MS = 30000;
 
+// Auto-present window for "show briefly, then go back". Shorter than a tap:
+// the user did not ask for this screen, so it gets out of the way sooner.
+static const uint32_t HMS_AUTO_PRESENT_MS = 10000;
+
 // True when the displayed printer has an error worth opening SCREEN_HMS for.
 // main.cpp uses it to decide whether the tap has that job, and to drop the
 // screen again once the condition clears. Inline-false where the feature is

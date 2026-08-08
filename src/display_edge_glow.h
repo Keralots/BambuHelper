@@ -14,10 +14,21 @@
 enum GlowEvent : uint8_t {
   GLOW_EV_FINISH = 0,   // color from settings (single color / rainbow)
   GLOW_EV_FAILED = 1,   // always red, settings only pick style/duration
+  GLOW_EV_ERROR  = 2,   // printer error; caller passes the severity colour
 };
 
 // Latch an event for a printer slot. No-op when the effect is disabled.
-void glowNotifyEvent(uint8_t slot, GlowEvent ev);
+// `color` is only read for GLOW_EV_ERROR, whose hue is the error's severity
+// rather than anything the user picked. A pending FINISH or FAILED is never
+// downgraded to an error - those announce the outcome of a whole print and
+// are the rarer, bigger news.
+void glowNotifyEvent(uint8_t slot, GlowEvent ev, uint16_t color = 0);
+
+// True while the armed or animating episode is a printer error. The eligible
+// screen set is wider for those: an error can be raised on a printer that is
+// merely idle, and opening the error screen must not cancel the very glow that
+// announced it.
+bool glowIsErrorEpisode();
 
 // Drop a slot's latch (its printer left FINISH/FAILED); also stops the
 // animation if that slot is the one on screen.

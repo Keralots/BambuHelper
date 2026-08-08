@@ -5335,6 +5335,17 @@ static void drawHmsScreen() {
 
 #endif  // HAS_HMS_UI
 
+// Screens the edge glow may animate on. Finish and failure announcements are
+// tied to the print dashboard, but an error can be raised on a printer that is
+// merely idle - and opening the error screen must not cancel the very glow that
+// announced the error. So an error episode gets those two screens as well.
+static bool glowScreenEligible() {
+  if (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING) return true;
+  if (glowTestRunning()) return true;
+  return glowIsErrorEpisode() &&
+         (currentScreen == SCREEN_IDLE || currentScreen == SCREEN_HMS);
+}
+
 // ---------------------------------------------------------------------------
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
@@ -5373,8 +5384,7 @@ void updateDisplay() {
   // (kept up after finish via kps, or showing FAILED). Paces itself like the
   // shimmer; any other screen dismisses it (sleep, clock, modals, dry peek).
   // The web-UI test preview runs on whatever screen is up.
-  if (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
-      glowTestRunning()) {
+  if (glowScreenEligible()) {
     if (glowTick(tft, rotState.displayIndex, false)) markFrameDirty();
   } else if (glowIsArmed()) {
     // Armed covers the dark reminder pause: leaving the eligible screens
@@ -5423,8 +5433,7 @@ void updateDisplay() {
   // panels (see the !DISPLAY_ROUND_240 block above). Drawn after the shimmer so
   // it owns the rim band while active; cleanup forces a base repaint that
   // restores the gold rim / progress ring underneath.
-  if (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
-      glowTestRunning()) {
+  if (glowScreenEligible()) {
     if (glowTick(tft, rotState.displayIndex, false)) markFrameDirty();
   } else if (glowIsArmed()) {
     glowDismiss();
@@ -5570,9 +5579,7 @@ void updateDisplay() {
 #if !defined(DISPLAY_ROUND_240)
   // The base screen may have just repainted over the band (forceRedraw, gauge
   // updates) - put it back in the same frame so the glow keeps the edge.
-  if (glowIsActive() &&
-      (currentScreen == SCREEN_FINISHED || currentScreen == SCREEN_PRINTING ||
-       glowTestRunning())) {
+  if (glowIsActive() && glowScreenEligible()) {
     if (glowTick(tft, rotState.displayIndex, true)) markFrameDirty();
   }
 #endif

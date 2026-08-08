@@ -11,6 +11,7 @@
 #include "buzzer.h"
 #include "led.h"
 #include "display_edge_glow.h"
+#include "hms_lookup.h"
 #include "tasmota.h"
 #include "battery.h"
 #include "camera_client.h"
@@ -254,12 +255,21 @@ static void closeDryPeek() {
 // Sticky against the auto state machine while it is up; closes on tap, on the
 // error clearing, or on the window running out.
 static uint32_t hmsScreenUntilMs = 0;
+static bool     hmsScreenHold = false;   // "until dismissed": no window at all
 
-static bool openHmsScreen() {
+// windowMs == 0 means hold until the user taps out or the error clears.
+static bool openHmsScreen(uint32_t windowMs) {
   if (!hmsScreenAvailable()) return false;
-  hmsScreenUntilMs = millis() + HMS_SCREEN_MS;
+  hmsScreenHold = (windowMs == 0);
+  hmsScreenUntilMs = millis() + windowMs;
   setScreenState(SCREEN_HMS);
   return true;
+}
+
+// True once the tapped-up window has run out. Held screens never expire on
+// time - they still close when the error clears or the user taps.
+static bool hmsScreenExpired() {
+  return !hmsScreenHold && (long)(millis() - hmsScreenUntilMs) >= 0;
 }
 
 // Same rotation reset as the drying peek: auto-rotation is frozen while this is
@@ -319,7 +329,7 @@ static void doTapActions() {
     return;
   }
   if ((cur == SCREEN_PRINTING || cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
-      openHmsScreen()) return;
+      openHmsScreen(HMS_SCREEN_MS)) return;
 
 #if BOARD_HAS_CAMERA
   // Camera tap toggle (#120). On a multi-printer setup the camera sits in the
@@ -744,7 +754,7 @@ static void updateDisplayedPrinterScreenState() {
   // handleDisplaySleepTimeouts() runs even when WiFi is down, where this
   // function is never called at all.
   if (current == SCREEN_HMS) {
-    if ((long)(millis() - hmsScreenUntilMs) < 0 && hmsScreenAvailable()) {
+    if (!hmsScreenExpired() && hmsScreenAvailable()) {
       // Override the LED_ACT_IDLE default set at the top of this function: a
       // print may still be running behind the screen.
       BambuState& hs = displayedPrinter().state;
@@ -901,8 +911,7 @@ static void handleDisplaySleepTimeouts() {
   }
 
   // Same for the error screen, and for the same reason.
-  if (cur == SCREEN_HMS &&
-      ((long)(millis() - hmsScreenUntilMs) >= 0 || !hmsScreenAvailable())) {
+  if (cur == SCREEN_HMS && (hmsScreenExpired() || !hmsScreenAvailable())) {
     closeHmsScreen();
     cur = getScreenState();
   }
@@ -986,6 +995,81 @@ static void processLightTimers() {
     }
   }
 }
+
+#if HAS_HMS_UI
+// Per-slot error-alert edge tracking. Deliberately not folded into
+// handleGcodeStateTransitions(): an error appears and clears with gcode_state
+// parked on RUNNING, so it is a different axis with a different edge.
+static uint32_t prevErrorBadgeId[MAX_ACTIVE_PRINTERS] = { 0 };
+static bool     prevErrorBadgeSeen[MAX_ACTIVE_PRINTERS] = { false };
+
+// Alert channels + auto-present. Fires once per new error, across all slots,
+// not just the one on screen - the alert hardware is global and an error on the
+// printer you are not looking at is exactly the one you need told about.
+static void handleErrorAlerts() {
+  if (!dispSettings.hmsEnabled) return;
+
+  uint8_t  alertSlot  = 0xFF;
+  uint8_t  alertSev   = 0xFF;   // lower is worse: 1 fatal .. 3 common
+  uint16_t alertColor = CLR_RED;
+
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+    if (!isPrinterConfigured(i)) continue;
+    const BambuState& ps = printers[i].state;
+    const uint32_t id = errorBadgeId(ps);
+
+    // First sight initialises without firing. Booting, or reconnecting, into a
+    // standing error is not news - the HMS domain has the baseline rule for
+    // this, and print_error has nothing else.
+    if (!prevErrorBadgeSeen[i]) {
+      prevErrorBadgeSeen[i] = true;
+      prevErrorBadgeId[i] = id;
+      continue;
+    }
+
+    const ErrorBadge b = errorBadgeFor(ps);
+    const bool isNew = b.active && id != prevErrorBadgeId[i];
+    prevErrorBadgeId[i] = id;
+    if (!isNew) continue;
+
+    // Worst severity wins; a tie goes to the lower slot.
+    if (alertSlot == 0xFF || b.severity < alertSev) {
+      alertSlot  = i;
+      alertSev   = b.severity;
+      alertColor = errorSeverityColor(b.severity);
+    }
+  }
+  if (alertSlot == 0xFF) return;
+
+  const uint8_t mask = dispSettings.hmsAlertMask;
+  // Dropped silently if another melody is already playing (buzzer.cpp) - an
+  // error landing inside a finish jingle loses, which is the right way round.
+  if (mask & 0x02) buzzerPlay(BUZZ_ERROR);
+  if (mask & 0x01) glowNotifyEvent(alertSlot, GLOW_EV_ERROR, alertColor);
+  if (mask & 0x04) ledStartErrorEpisode();
+
+  if (dispSettings.hmsAutoPresent == 0) return;
+  const ScreenState cur = getScreenState();
+  // OTA and the power-confirm modal are not interruptible: one is writing
+  // flash, the other is holding a frozen target the user is confirming.
+  if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM) return;
+  // Leaving SCREEN_OFF / SCREEN_CLOCK restores the backlight unconditionally,
+  // so the wake bit cannot gate the backlight - it gates whether we change
+  // screens from a sleeping display at all.
+  const bool asleep = isSleepStickyScreen(cur);
+  if (asleep && !(mask & 0x08)) return;
+
+  if (rotState.displayIndex != alertSlot) {
+    rotState.displayIndex = alertSlot;
+    triggerDisplayTransition();
+  }
+  // Hold the slot so auto-rotation does not pull the erroring printer out from
+  // under the screen the moment it closes.
+  rotState.displayHoldUntilMs = millis() + rotState.intervalMs;
+  if (asleep) setBacklight(getEffectiveBrightness());
+  openHmsScreen(dispSettings.hmsAutoPresent == 2 ? 0 : HMS_AUTO_PRESENT_MS);
+}
+#endif  // HAS_HMS_UI
 
 static void handleGcodeStateTransitions() {
   // Per-slot transition tracking. All transition checks must happen BEFORE
@@ -1275,6 +1359,9 @@ void loop() {
   handleDisplaySleepTimeouts();
   handleConnectingScreenRecovery();
   handleGcodeStateTransitions();
+#if HAS_HMS_UI
+  handleErrorAlerts();
+#endif
   processLightTimers();
   handleBedCooldownBuzzers();
 
