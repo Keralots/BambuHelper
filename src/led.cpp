@@ -420,12 +420,6 @@ void ledStartErrorEpisode() {
 
 void ledOnUserInteraction() {
   if (finishEffectActive) ledStopFinishEffect();
-#if HAS_HMS_UI
-  if (errorEpisodeEndMs != 0) {
-    errorEpisodeEndMs = 0;
-    lastWrittenDuty = -1;
-  }
-#endif
   // Button / touch / wake also silences an active error strobe - user has seen
   // the fault. Stays dismissed until the activity leaves FAILED and a new fault
   // re-arms it.
@@ -433,6 +427,14 @@ void ledOnUserInteraction() {
     errorStrobeDismissed = true;
     lastWrittenDuty = -1;  // force resting duty recompute on next tick
   }
+#if HAS_HMS_UI
+  // Same for a one-shot error episode - it just ends, there is nothing to
+  // re-arm.
+  if (errorEpisodeEndMs != 0) {
+    errorEpisodeEndMs = 0;
+    lastWrittenDuty = -1;
+  }
+#endif
 }
 
 // ---------------------------------------------------------------------------

@@ -36,15 +36,26 @@ static const uint32_t HMS_SCREEN_MS = 30000;
 // the user did not ask for this screen, so it gets out of the way sooner.
 static const uint32_t HMS_AUTO_PRESENT_MS = 10000;
 
-// True when the displayed printer has an error worth opening SCREEN_HMS for.
-// main.cpp uses it to decide whether the tap has that job, and to drop the
-// screen again once the condition clears. Inline-false where the feature is
-// compiled out, so main.cpp's branches fold away instead of costing a call and
-// their own code on the board with the least flash left.
+// Two different questions, deliberately.
+//
+// hmsScreenAvailable(): the displayed printer has something to list at all,
+// including standing codes that never alert. Keeps an open screen open.
+//
+// hmsScreenAlerting(): the badge is actually up. Only this opens the screen on
+// a tap. A printer with a permanently open door reports a code forever, and
+// letting that own the button would push the camera and the drying peek out of
+// the tap cycle for good - the same "becomes wallpaper" failure the baseline
+// rule exists to prevent. No badge, no reason to tap.
+//
+// Inline-false where the feature is compiled out, so main.cpp's branches fold
+// away instead of costing a call and their own code on the board with the
+// least flash left.
 #if HAS_HMS_UI
 bool hmsScreenAvailable();
+bool hmsScreenAlerting();
 #else
 inline bool hmsScreenAvailable() { return false; }
+inline bool hmsScreenAlerting() { return false; }
 #endif
 
 // Read-only snapshot of the plug power-confirm modal, filled by main.cpp so the

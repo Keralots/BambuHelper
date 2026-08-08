@@ -329,7 +329,7 @@ static void doTapActions() {
     return;
   }
   if ((cur == SCREEN_PRINTING || cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
-      openHmsScreen(HMS_SCREEN_MS)) return;
+      hmsScreenAlerting() && openHmsScreen(HMS_SCREEN_MS)) return;
 
 #if BOARD_HAS_CAMERA
   // Camera tap toggle (#120). On a multi-printer setup the camera sits in the

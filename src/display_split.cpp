@@ -354,8 +354,10 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
   if (modeNow == 1) { drawDryingBand(s, cfg, g, bandIdx, force); return; }
 
   // --- Header: printer name (left) + state dot (right) ---
-  // print_error lands a report after gcode_state goes FAILED, so "Failed" only
-  // becomes "Canceled" if the badge identity is part of the predicate too.
+  // An error appears and clears with gcode_state parked on RUNNING, and
+  // print_error lands a report after gcode_state goes FAILED - so neither ERR
+  // nor "Canceled" would ever paint without the badge identity in the
+  // predicate as well.
   const uint32_t hdrErrId = errorBadgeId(s);
   if (force || s.gcodeStateId != sPrevHdrState[bandIdx] ||
       hdrErrId != sPrevHdrErrId[bandIdx]) {
@@ -365,13 +367,23 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     if (!force) tft.fillRect(g.x, g.hdrCY - 9, g.w, 18, CLR_BG);
 
     // Right: state dot + status word ("Printing" / "Idle" / "Preparing" ...).
-    // A cancel reports FAILED with a cancel-class print_error - saying "Failed"
-    // there sends people looking for a fault that does not exist.
+    // Two overrides, in priority order:
+    //   * an active error takes the slot entirely, as ERR in the severity
+    //     colour. A band is one line tall - there is no room for a code, let
+    //     alone a sentence, so this is a pointer at the error screen and the
+    //     portal rather than a report in itself.
+    //   * a cancel reports FAILED with a cancel-class print_error, and saying
+    //     "Failed" there sends people looking for a fault that does not exist.
+    const ErrorBadge badge = errorBadgeFor(s);
     const bool     canceled = printerWasCanceled(s);
-    const uint16_t stClr = canceled ? CLR_YELLOW : stateColor(s.gcodeStateId);
+    const uint16_t stClr = badge.active ? errorSeverityColor(badge.severity)
+                         : canceled     ? CLR_YELLOW
+                                        : stateColor(s.gcodeStateId);
     const int16_t dotCX = g.x + g.w - g.margin - 5;
     tft.fillCircle(dotCX, g.hdrCY, 5, stClr);
-    const char* st = canceled ? "Canceled" : stateLabel(s.gcodeStateId);
+    const char* st = badge.active ? ERROR_BADGE_TEXT
+                   : canceled     ? "Canceled"
+                                  : stateLabel(s.gcodeStateId);
     int16_t stLeft = dotCX - 10;   // name still clears the dot when status is empty
     if (st[0] != '\0') {
       setFont(tft, FONT_SMALL);

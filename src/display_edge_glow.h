@@ -4,12 +4,14 @@
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
 
-// Edge glow: animated border light announcing print complete / print failed.
-// The controller latches per-slot events from the gcode-edge handler and only
-// animates while the display loop reports that slot on an eligible screen
-// (finished, or the printing screen kept up after finish / showing FAILED).
-// Round displays get no border band; the whole module compiles to no-ops
-// there (ring variant is a planned follow-up).
+// Edge glow: animated border light announcing print complete, print failed, or
+// a printer error. The controller latches per-slot events from the edge
+// handlers and only animates while the display loop reports that slot on an
+// eligible screen - the finished screen, the printing screen kept up after
+// finish / showing FAILED, and for an error episode also the idle and error
+// screens (glowScreenEligible() in display_ui.cpp owns that set).
+// Round displays draw a rim ring instead of a border band; the renderers are
+// two whole-file #if branches in display_edge_glow.cpp, not no-ops.
 
 enum GlowEvent : uint8_t {
   GLOW_EV_FINISH = 0,   // color from settings (single color / rainbow)

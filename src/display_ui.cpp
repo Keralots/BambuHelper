@@ -5117,9 +5117,15 @@ bool hmsScreenAvailable() {
   if (!dispSettings.hmsEnabled) return false;
   if (!isPrinterConfigured(rotState.displayIndex)) return false;
   const BambuState& s = displayedPrinter().state;
-  // Anything listable counts, not just what raised the badge: a standing
-  // baseline code is exactly what someone taps in to read about.
+  // Anything listable counts, not just what raised the badge: once the screen
+  // is up, a standing code alongside the real one is worth reading.
   return s.printError != 0 || s.hmsCount > 0;
+}
+
+bool hmsScreenAlerting() {
+  if (!dispSettings.hmsEnabled) return false;
+  if (!isPrinterConfigured(rotState.displayIndex)) return false;
+  return errorBadgeActive(displayedPrinter().state);
 }
 
 // Greedy word wrap at the current font. Breaks on spaces; a single word wider
