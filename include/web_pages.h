@@ -1176,6 +1176,11 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
+    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert.</p></div></div>
+    <div class="card-body"><div id="hmsLive"><span class="text-dim">Loading...</span></div></div>
+  </div>
+
+  <div class="card">
     <div class="card-head"><div><h3>Reporting</h3><p>An active error replaces the status badge with a red ERR. Tap the button to read the details.</p></div></div>
     <div class="card-body">
       <label class="check-row">
@@ -1200,26 +1205,27 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
           </select>
         </div>
 
-        <div class="field" style="margin-top:var(--sp-4)">
-          <label>Alert on a new error</label>
-          <label class="check-row">
-            <input type="checkbox" id="hmsm0" value="1" %HMSM0% onchange="applyHmsMask()">
-            <label for="hmsm0">Edge glow</label>
-          </label>
-          <label class="check-row">
-            <input type="checkbox" id="hmsm1" value="1" %HMSM1% onchange="applyHmsMask()">
-            <label for="hmsm1">Buzzer</label>
-          </label>
-          <label class="check-row">
-            <input type="checkbox" id="hmsm2" value="1" %HMSM2% onchange="applyHmsMask()">
-            <label for="hmsm2">Status LED</label>
-          </label>
-          <label class="check-row">
-            <input type="checkbox" id="hmsm3" value="1" %HMSM3% onchange="applyHmsMask()">
-            <label for="hmsm3">Wake a sleeping screen</label>
-          </label>
-          <div class="hint">Without "wake", the error screen never comes up on its own while the display is asleep - you see the badge when you wake it yourself.</div>
-        </div>
+        <!-- The check-rows are siblings of the caption, not children of the
+             .field: ".field > label" forces display:block and would break the
+             check-row flex layout, dropping each caption under its box. -->
+        <div class="field" style="margin:var(--sp-4) 0 0"><label>Alert on a new error</label></div>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm0" value="1" %HMSM0% onchange="applyHmsMask()">
+          <label for="hmsm0">Edge glow</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm1" value="1" %HMSM1% onchange="applyHmsMask()">
+          <label for="hmsm1">Buzzer</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm2" value="1" %HMSM2% onchange="applyHmsMask()">
+          <label for="hmsm2">Status LED</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm3" value="1" %HMSM3% onchange="applyHmsMask()">
+          <label for="hmsm3">Wake a sleeping screen</label>
+        </label>
+        <div class="hint" style="padding-left:28px">Without "wake", the error screen never comes up on its own while the display is asleep - you see the badge when you wake it yourself.</div>
       </div>
     </div>
   </div>
@@ -1850,6 +1856,9 @@ function startPolling(id){
   stopPolling();
   if (id === 'diag') { refreshDiag(); diagTimer = setInterval(refreshDiag, 5000); }
   if (id === 'printer') { refreshLiveStats(); statsTimer = setInterval(refreshLiveStats, 3000); }
+  /* Errors move on their own schedule, not the user's - 5 s is plenty, and it
+     is four slot fetches per tick. */
+  if (id === 'errors') { refreshErrorCard(); statsTimer = setInterval(refreshErrorCard, 5000); }
   if (id === 'power') { refreshPowerStats(); powerTimer = setInterval(refreshPowerStats, 5000); }
   if (id === 'hardware' || id === 'wifi') { refreshHwInfo(); hwTimer = setInterval(refreshHwInfo, 5000); }
 }

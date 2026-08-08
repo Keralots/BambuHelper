@@ -26,13 +26,24 @@ Processing rules:
     carries fullwidth commas, ideographic stops, curly quotes and a degree sign
   * text is truncated to 200 chars on a word boundary, ellipsis included
 
+Also writes the portal's text mirror:
+
+    docs/errors/hms_en.json     {"ver": ..., "hms": {...}, "err": {...}}
+
+The portal page reads that from GitHub Pages in the user's browser. It cannot
+read Bambu's feed directly - e.bambulab.com sends no Access-Control-Allow-Origin
+header at all - and the device cannot resolve text it has no table for. The
+mirror keeps the untruncated, unfolded strings: the browser has none of the
+322-glyph VLW limits the embedded tables are shaped around.
+
 Never hand-edit the output. Re-run this script; the feed's `ver` stamp is
-written into each header so refreshes diff cleanly.
+written into each header and into the mirror so refreshes diff cleanly.
 
 Usage:
-    python tools/gen_error_tables.py                  # fetch + write headers
+    python tools/gen_error_tables.py                  # fetch + write everything
     python tools/gen_error_tables.py --input feed.json
     python tools/gen_error_tables.py --dry-run        # stats only
+    python tools/gen_error_tables.py --mirror-only    # refresh docs/ mirror only
 """
 
 import argparse
@@ -227,6 +238,35 @@ def build_header(domain, ver, best, key_bits):
     return "\n".join(lines), stats
 
 
+def collect_raw(entries):
+    """ecode -> best text, unfolded and untruncated. For the browser mirror."""
+    best = {}
+    for entry in entries:
+        ecode = entry["ecode"].strip().upper()
+        text = " ".join((entry.get("intro") or "").split())
+        if not text:
+            continue
+        prev = best.get(ecode)
+        # Same tie-break as the embedded tables so the two never disagree about
+        # which variant of a duplicated code is the real one.
+        if prev is None or (len(text), text) > (len(prev), prev):
+            best[ecode] = text
+    return best
+
+
+def write_mirror(path, ver, data):
+    doc = {
+        "ver": ver,
+        "hms": collect_raw(data["device_hms"]["en"]),
+        "err": collect_raw(data["device_error"]["en"]),
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Sorted keys and no spaces: stable diffs, smallest download.
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return doc, os.path.getsize(path)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -234,10 +274,13 @@ def main():
     ap.add_argument("--out-dir", default=None,
                     help="output directory (default: <repo>/include/error_tables)")
     ap.add_argument("--dry-run", action="store_true", help="print stats, write nothing")
+    ap.add_argument("--mirror-only", action="store_true",
+                    help="refresh docs/errors/hms_en.json and skip the headers")
     args = ap.parse_args()
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = args.out_dir or os.path.join(repo, "include", "error_tables")
+    mirror_path = os.path.join(repo, "docs", "errors", "hms_en.json")
 
     print("Loading feed...")
     feed = load_feed(args.input)
@@ -254,6 +297,14 @@ def main():
 
     if not args.dry_run:
         os.makedirs(out_dir, exist_ok=True)
+
+    if not args.dry_run:
+        doc, size = write_mirror(mirror_path, ver, data)
+        print("mirror       %u hms + %u print_error strings, %.1f KB"
+              % (len(doc["hms"]), len(doc["err"]), size / 1024.0))
+        print("             -> %s" % mirror_path)
+    if args.mirror_only:
+        return
 
     for domain, entries, key_bits, filename in targets:
         best, conflicts = collect(entries)

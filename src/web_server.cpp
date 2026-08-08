@@ -487,6 +487,43 @@ static void handleStatus() {
   doc["name"] = printers[slot].config.name;
   doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
   doc["cali"] = isCalibrationPrint(st);  // current/last job is a calibration print (issue #149)
+#if HAS_HMS_UI
+  // Printer errors. Emitted only when there is something to report, so the 3 s
+  // poll stays small on a healthy printer. The portal card consumes these -
+  // keep the names stable.
+  //
+  // Baseline membership rides each entry rather than a second array: it is the
+  // same information in fewer bytes, and the card wants it per row anyway.
+  if (dispSettings.hmsEnabled && (st.printError != 0 || st.hmsCount > 0)) {
+    char codeBuf[HMS_CODE_STR_LEN];
+    if (st.printError != 0) {
+      printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
+      doc["printError"] = codeBuf;
+      const char* peText = printErrorLookupText(st.printError);
+      if (peText) doc["printErrorText"] = peText;
+      // The card says "Canceled", not "error", for a stop the user asked for.
+      if (printErrorIsCancel(st.printError)) doc["printErrorCancel"] = true;
+    }
+    if (st.hmsCount > 0) {
+      JsonArray arr = doc["hms"].to<JsonArray>();
+      for (uint8_t i = 0; i < st.hmsCount; i++) {
+        JsonObject e = arr.add<JsonObject>();
+        hmsFormatCode(st.hms[i].attr, st.hms[i].code, codeBuf, sizeof(codeBuf));
+        e["code"] = codeBuf;
+        e["sev"] = hmsSeverityOf(st.hms[i].code);
+        e["module"] = hmsModuleLabel(st.hms[i].attr);
+        if (hmsIsBaseline(st, st.hms[i].attr, st.hms[i].code)) e["baseline"] = true;
+        // Only on boards carrying the table. Elsewhere the card falls back to
+        // the published mirror, which the browser can reach and we cannot.
+        const char* text = hmsLookupText(st.hms[i].attr, st.hms[i].code);
+        if (text) e["text"] = text;
+      }
+      if (st.hmsOverflow) doc["hmsOverflow"] = (uint8_t)(st.hmsTotal - st.hmsCount);
+    }
+    const ErrorBadge badge = errorBadgeFor(st);
+    if (badge.active) doc["errSev"] = badge.severity;
+  }
+#endif
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;

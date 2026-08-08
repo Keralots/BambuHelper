@@ -281,10 +281,61 @@ static bool resolvePlaceholder(const char* name, String& out) {
             "if(en&&en.checked)p.append('hmsen','1');"
             "if(sv&&sv.checked)p.append('hmssev','1');"
             "p.append('hmsauto',a.value);p.append('hmsmask',String(hmsMaskValue()));}\n");
+    // Live card. Text comes from the device where a table is compiled in; the
+    // rest is looked up in the published mirror, which the browser can reach
+    // and the firmware cannot (e.bambulab.com sends no CORS header, and the
+    // feed is 750 KB). Fetched once per page load, never inside the poll.
+    out += F("var HMS_MIRROR='" HMS_MIRROR_URL "';\n"
+             "var _hmsMirror=null,_hmsTexts=null,_hmsLast=null;\n"
+             "function hmsMirror(){if(!_hmsMirror)_hmsMirror=fetch(HMS_MIRROR)"
+             ".then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});"
+             "return _hmsMirror;}\n"
+             "function hmsSevName(s){return ['Info','Fatal','Serious','Common'][s]||'Info';}\n"
+             "function hmsSevClr(s){return ['var(--text-dim)','var(--danger)','var(--warn)','var(--warn)'][s]"
+             "||'var(--text-dim)';}\n"
+             // lbl overrides the severity word: a print_error carries no
+             // severity of its own, and a cancel is not an error at all.
+             "function hmsRow(code,sev,mod,text,base,wiki,lbl){"
+             "var h='<div style=\"padding:8px 0;border-top:1px solid var(--line-soft)\">'"
+             "+'<div class=\"hstack\" style=\"flex-wrap:wrap\">'"
+             "+'<span style=\"font-weight:600;color:'+hmsSevClr(sev)+'\">'+(lbl||hmsSevName(sev))+'</span>'"
+             "+(mod?'<span class=\"text-dim small\">'+esc(mod)+'</span>':'')"
+             "+'<span class=\"mono small\">'+esc(code)+'</span>';"
+             "if(base)h+='<span class=\"text-dim small\" title=\"Already active when the device connected"
+             " - listed, never alerts\">standing</span>';"
+             "if(wiki)h+='<a class=\"small\" target=\"_blank\" rel=\"noopener\" href=\"'+wiki+'\">wiki</a>';"
+             "h+='</div>';"
+             "if(text)h+='<div class=\"small\" style=\"margin-top:2px;color:var(--text-mid)\">'+esc(text)+'</div>';"
+             "return h+'</div>';}\n");
+    out += F("function hmsText(map,code,dev){if(dev)return dev;"
+             "if(!map)return '';var k=code.replace(/_/g,'');return map[k]||map[k.toUpperCase()]||'';}\n"
+             "function hmsRender(){var el=document.getElementById('hmsLive');if(!el||!_hmsLast)return;"
+             "var h='',need=false,m=_hmsTexts||{};\n"
+             "for(var i=0;i<_hmsLast.length;i++){var d=_hmsLast[i];"
+             "if(!d||!d.configured)continue;"
+             "var rows='';\n"
+             "if(d.printError){var t=hmsText(m.err,d.printError,d.printErrorText);"
+             "if(!t&&!d.printErrorText)need=true;"
+             "rows+=hmsRow(d.printError,d.printErrorCancel?0:1,'',t,false,'',"
+             "d.printErrorCancel?'Canceled':'Print error');}\n"
+             "var a=d.hms||[];"
+             "for(var j=0;j<a.length;j++){var e=a[j],tx=hmsText(m.hms,e.code,e.text);"
+             "if(!tx&&!e.text)need=true;"
+             "rows+=hmsRow(e.code,e.sev,e.module,tx,e.baseline,"
+             "'https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/'+e.code.toLowerCase());}\n"
+             "if(d.hmsOverflow)rows+='<div class=\"small text-dim\" style=\"padding-top:6px\">+'"
+             "+d.hmsOverflow+' more not kept</div>';\n"
+             "if(rows)h+='<div style=\"margin-bottom:var(--sp-3)\"><strong>'+esc(d.name||('Printer '+(i+1)))"
+             "+'</strong>'+rows+'</div>';}\n"
+             "el.innerHTML=h||'<span class=\"text-dim\">No errors reported.</span>';\n"
+             "if(need&&!_hmsTexts)hmsMirror().then(function(j){if(j){_hmsTexts=j;hmsRender();}});}\n"
+             "function refreshErrorCard(){var q=[];for(var s=0;s<4;s++){q.push("
+             "fetch('/status?slot='+s).then(function(r){return r.json();}).catch(function(){return null;}));}"
+             "Promise.all(q).then(function(all){_hmsLast=all;hmsRender();});}\n");
 #else
-    // Only appendHmsSettings() is called from shared code, so it is the one
-    // stub that still has to exist.
-    out = F("function appendHmsSettings(p){}\n");
+    // appendHmsSettings() and refreshErrorCard() are called from shared code,
+    // so those two stubs still have to exist.
+    out = F("function appendHmsSettings(p){}\nfunction refreshErrorCard(){}\n");
 #endif
     return true;
   }
