@@ -111,6 +111,64 @@ const char* hmsLookupText(uint32_t attr, uint32_t code) {
   return NULL;
 }
 
+// ---------------------------------------------------------------------------
+//  Error badge
+// ---------------------------------------------------------------------------
+uint16_t errorSeverityColor(uint8_t sev) {
+  switch (sev) {
+    case 1:  return CLR_RED;      // fatal
+    case 2:  return CLR_ORANGE;   // serious
+    case 3:  return CLR_YELLOW;   // common
+    default: return CLR_TEXT_DIM; // info / unknown - listed, never urgent
+  }
+}
+
+ErrorBadge errorBadgeFor(const BambuState& s) {
+  ErrorBadge b = { false, 0, 0, 0 };
+
+  // print_error first: the job has stopped, which outranks any advisory HMS
+  // still standing. A cancel is the user's own doing and never lights the
+  // badge - printerWasCanceled() turns it into a state word instead.
+  if (s.printError != 0 && !printErrorIsCancel(s.printError)) {
+    b.active = true;
+    b.severity = 1;   // print_error carries no severity field; it stopped a print
+    b.code = s.printError;
+    return b;
+  }
+
+  // hms[] is sorted worst-first, so the first entry that survives both filters
+  // is the worst one worth showing - no second pass needed.
+  for (uint8_t i = 0; i < s.hmsCount; i++) {
+    const uint8_t sev = hmsSeverityOf(s.hms[i].code);
+    if (sev < 1 || sev > 3) continue;                       // info/unknown: listed only
+#if !ERROR_BADGE_SEVERITY_ALL
+    if (sev == 3) continue;                                 // "important only"
+#endif
+    if (hmsIsBaseline(s, s.hms[i].attr, s.hms[i].code)) continue;
+    b.active = true;
+    b.severity = sev;
+    b.attr = s.hms[i].attr;
+    b.code = s.hms[i].code;
+    return b;
+  }
+  return b;
+}
+
+uint32_t errorBadgeId(const BambuState& s) {
+  const ErrorBadge b = errorBadgeFor(s);
+  // The cancel word is part of the badge's visible identity, so it has to move
+  // the id too - print_error lands one report after gcode_state goes FAILED,
+  // and without this the badge would keep saying FAILED.
+  const uint32_t cancelBit = printerWasCanceled(s) ? 0x40000000UL : 0;
+  if (!b.active) return cancelBit;
+  // Severity in the top nibble, the code folded into the rest. A collision
+  // costs at most one missed repaint between two errors of equal severity.
+  const uint32_t key = b.attr ^ b.code;
+  return 0x80000000UL | cancelBit |
+         ((uint32_t)(b.severity & 0x07) << 28) |
+         ((key ^ (key >> 28)) & 0x0FFFFFFFUL);
+}
+
 const char* hmsTableVersion(void) {
 #if HAS_FULL_HMS_TABLE
   return HMS_TABLE_VER;

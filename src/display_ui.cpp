@@ -15,6 +15,7 @@
 #include "fonts.h"
 #include "battery.h"
 #include "camera_client.h"
+#include "hms_lookup.h"
 #include <WiFi.h>
 #include <time.h>
 #if PANEL_HAS_IO_EXPANDER
@@ -48,6 +49,42 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
   else
     snprintf(out, len, "%s %u", pfx, displayNum);
   utf8TrimPartial(out);
+}
+
+// --- Status badge wording / colour ------------------------------------------
+// Every status surface used to open-code the same gcode-state ladder. Both
+// overrides that sit on top of it are shared, so they live here once:
+//
+//   * an active error replaces the state word with ERR in the severity colour
+//   * a cancel is not a fault - the printer reports FAILED plus a cancel-class
+//     print_error, and saying CANCELED is the honest reading of that
+//
+// On boards without the HMS feature both collapse to constant false and the
+// ladder is what is left.
+static const char* stateBadgeText(const BambuState& s) {
+  if (errorBadgeActive(s))   return ERROR_BADGE_TEXT;
+  if (printerWasCanceled(s)) return CANCELED_STATE_TEXT;
+  return s.gcodeState;
+}
+
+// Writes the error / cancel colour and returns true when one applies. Surfaces
+// with their own state ladder (the round rim line) call this first and keep
+// their ladder for everything else.
+static bool stateBadgeOverrideColor(const BambuState& s, uint16_t& out) {
+  const ErrorBadge b = errorBadgeFor(s);
+  if (b.active)              { out = errorSeverityColor(b.severity); return true; }
+  if (printerWasCanceled(s)) { out = CLR_YELLOW; return true; }  // stop, not a fault
+  return false;
+}
+
+static uint16_t stateBadgeColor(const BambuState& s) {
+  uint16_t override_;
+  if (stateBadgeOverrideColor(s, override_)) return override_;
+  if (s.gcodeStateId == GCODE_RUNNING) return CLR_GREEN;
+  if (s.gcodeStateId == GCODE_PAUSE)   return CLR_YELLOW;
+  if (s.gcodeStateId == GCODE_FAILED)  return CLR_RED;
+  if (s.gcodeStateId == GCODE_PREPARE) return CLR_BLUE;
+  return CLR_TEXT_DIM;
 }
 
 // LovyanGFX board-specific configurations - the 12 LGFX device classes and the
@@ -1619,7 +1656,10 @@ static void drawIdle() {
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
                       // The completion stamp lands a loop iteration after the
                       // FINISH edge, so the badge has to repaint on it too.
-                      (s.finishEpoch != prevState.finishEpoch);
+                      (s.finishEpoch != prevState.finishEpoch) ||
+                      // print_error lands a report after gcode_state goes
+                      // FAILED, so ERROR -> CANCELED needs its own trigger.
+                      (errorBadgeId(s) != errorBadgeId(prevState));
   bool connChanged = forceRedraw || (s.connected != prevState.connected);
   bool wifiChanged = forceRedraw || (s.wifiSignal != prevState.wifiSignal);
 
@@ -1671,8 +1711,11 @@ static void drawIdle() {
 #endif
       stateStr = formatIdleFinishBadge(finishBadge, sizeof(finishBadge), s, badgeMaxW);
     } else if (s.gcodeStateId == GCODE_FAILED) {
-      stateColor = CLR_RED;
-      stateStr = "ERROR";
+      // A cancel reports FAILED too. Calling that an error sends people looking
+      // for a fault that does not exist.
+      const bool canceled = printerWasCanceled(s);
+      stateColor = canceled ? CLR_YELLOW : CLR_RED;
+      stateStr   = canceled ? "CANCELED" : "ERROR";
     } else if (s.gcodeStateId == GCODE_UNKNOWN) {
       stateStr = "Waiting...";
     }
@@ -2278,9 +2321,14 @@ static void drawAmsZone(const BambuState& s, bool force) {
   // In landscape the right column also hosts the gcode-state badge — track
   // it so the badge refreshes on state transition even without a global
   // forceRedraw.
-  static uint8_t prevAmsGcodeStateId = 0xFF;
-  static char    prevAmsGcodeStateText[16] = "";
+  static uint8_t  prevAmsGcodeStateId = 0xFF;
+  static char     prevAmsGcodeStateText[16] = "";
+  static uint32_t prevAmsErrorBadgeId = 0;
+  // The error badge replaces the state word without gcode_state moving at all,
+  // so its identity has to be part of this cache too.
+  const uint32_t errorBadgeIdNow = errorBadgeId(s);
   bool badgeChanged = landscape && (prevAmsGcodeStateId != s.gcodeStateId ||
+                                    prevAmsErrorBadgeId != errorBadgeIdNow ||
                                     strncmp(prevAmsGcodeStateText, s.gcodeState, 15) != 0);
 
   bool unitLayoutChanged = (s.ams.unitCount != prevAmsUnitCount);
@@ -2310,6 +2358,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
   markFrameDirty();
 
   prevAmsGcodeStateId = s.gcodeStateId;
+  prevAmsErrorBadgeId = errorBadgeIdNow;
   strncpy(prevAmsGcodeStateText, s.gcodeState, 15);
   prevAmsGcodeStateText[15] = '\0';
 
@@ -2348,24 +2397,36 @@ static void drawAmsZone(const BambuState& s, bool force) {
     // When units == 0 the header takes over the badge (right-aligned), so
     // skip drawing it here to avoid two badges colliding.
     if (units >= 1) {
-      uint16_t badgeColor = CLR_TEXT_DIM;
-      if (s.gcodeStateId == GCODE_RUNNING)      badgeColor = CLR_GREEN;
-      else if (s.gcodeStateId == GCODE_PAUSE)   badgeColor = CLR_YELLOW;
-      else if (s.gcodeStateId == GCODE_FAILED)  badgeColor = CLR_RED;
-      else if (s.gcodeStateId == GCODE_PREPARE) badgeColor = CLR_BLUE;
+      const uint16_t badgeColor = stateBadgeColor(s);
+      const char*    badgeText  = stateBadgeText(s);
 
       const int16_t bx = LY_LAND_AMS_X - 4;
       const int16_t bw = LY_LAND_AMS_W + 8;
       tft.fillRect(bx, LY_LAND_BADGE_Y, bw, LY_LAND_BADGE_H, dispSettings.bgColor);
 
-      tft.setTextDatum(MC_DATUM);
-      setFont(tft, FONT_BODY);
       tft.setTextColor(badgeColor, dispSettings.bgColor);
-      const int16_t cx = LY_LAND_AMS_X + LY_LAND_AMS_W / 2;
-      // Dot + label centered in the right column.
-      int16_t tw = tft.textWidth(s.gcodeState);
-      tft.fillCircle(cx - tw / 2 - 6, LY_LAND_BADGE_CY, 3, badgeColor);
-      tft.drawString(s.gcodeState, cx + 4, LY_LAND_BADGE_CY);
+      // Dot + gap + label drawn as one group, centered in and clamped to the
+      // cleared band. CANCELED overflows this column at FONT_BODY on 240x320,
+      // and anything painted outside the band is never cleared again - it
+      // strands over the gauge area on the next state change.
+      const int16_t dotW = 6, gapW = 6;
+      setFont(tft, FONT_BODY);
+      int16_t tw = tft.textWidth(badgeText);
+      if (tw + dotW + gapW > bw) {          // step down before truncating
+        setFont(tft, FONT_SMALL);
+        tw = tft.textWidth(badgeText);
+      }
+      char fit[24];
+      const char* label = badgeText;
+      if (tw + dotW + gapW > bw) {
+        label = ellipsizeToWidth(tft, badgeText, bw - dotW - gapW, fit, sizeof(fit));
+        tw = tft.textWidth(label);
+      }
+      const int16_t gx = LY_LAND_AMS_X + LY_LAND_AMS_W / 2 - (tw + dotW + gapW) / 2;
+      tft.fillCircle(gx + dotW / 2, LY_LAND_BADGE_CY, dotW / 2, badgeColor);
+      tft.setTextDatum(ML_DATUM);
+      tft.drawString(label, gx + dotW + gapW, LY_LAND_BADGE_CY);
+      tft.setTextDatum(MC_DATUM);           // restore what this block used to leave set
     }
 
     // --- AMS bars area ---
@@ -3107,9 +3168,22 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
 // Speedo's sector is only ~131px, which the labelled "Remaining: 2h 05m" form
 // (146px at FONT_BODY) already overflows today. Rings draws straight but into a
 // fixed 116px rect, so it passes its own budget at its FONT_SMALL fallback.
+// showError: Rings has no rim status line, so its alert line is the only place
+// an active error can appear on that skin (§5.3). Speedo and Rim already carry
+// ERR on their curved status line and keep a usable ETA here instead - an HMS
+// can stand while the print runs on perfectly well.
 static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
-                                  int16_t maxW, FontID measureFont) {
+                                  int16_t maxW, FontID measureFont,
+                                  bool showError = false) {
   if (s.gcodeStateId == GCODE_PAUSE)  { strlcpy(buf, "PAUSED", bufLen); return CLR_YELLOW; }
+  if (showError) {
+    const ErrorBadge eb = errorBadgeFor(s);
+    if (eb.active) {
+      strlcpy(buf, ERROR_BADGE_TEXT, bufLen);
+      return errorSeverityColor(eb.severity);
+    }
+  }
+  if (printerWasCanceled(s))          { strlcpy(buf, "CANCELED", bufLen); return CLR_YELLOW; }
   if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
   if (s.remainingMinutes == 0) { strlcpy(buf, "ETA: ---", bufLen); return CLR_TEXT_DIM; }
 
@@ -3152,6 +3226,7 @@ static void drawTempReadout(int16_t x, int16_t y, float temp, float target,
 static uint16_t roundProgressColor(const BambuState& s) {
   uint16_t c = dispSettings.progress.arc;
   if (s.gcodeStateId == GCODE_PAUSE)       c = CLR_YELLOW;
+  else if (printerWasCanceled(s))          c = CLR_YELLOW;   // stopped on purpose
   else if (s.gcodeStateId == GCODE_FAILED) c = CLR_RED;
   return c;
 }
@@ -3412,7 +3487,10 @@ static void drawPrintingSpeedo() {
                       (s.remainingMinutes != prevState.remainingMinutes);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // An error appears and clears with gcode_state parked on
+                      // RUNNING, so the badge needs its own identity here.
+                      (errorBadgeId(s) != errorBadgeId(prevState));
   bool layerChanged = forceRedraw ||
                       (s.layerNum != prevState.layerNum) ||
                       (s.totalLayers != prevState.totalLayers);
@@ -3454,13 +3532,18 @@ static void drawPrintingSpeedo() {
   if (stateChanged) {
     markFrameDirty();
     setFont(tft, FONT_BODY);
+    // The round skins have no badge slot, so the rim status line carries the
+    // error word and its severity colour instead (§5.3). Without an error the
+    // skin keeps its own dimmer ladder - RUNNING stays neutral here.
     uint16_t stColor = CLR_TEXT_DIM;
-    if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
-    else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
-    else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    if (!stateBadgeOverrideColor(s, stColor)) {
+      if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
+      else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
+      else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    }
     char line[48], clipped[48];
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
-    snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
+    snprintf(line, sizeof(line), "%s  %s", name, stateBadgeText(s));
     drawCurvedString(tft,
                      ellipsizeToWidth(tft, line, 150, clipped, sizeof(clipped)),
                      cx, cx, LY_RND_SPD_STATUS_R, false, stColor, FONT_BODY,
@@ -3517,7 +3600,10 @@ static void drawPrintingRings() {
                       (s.remainingMinutes != prevState.remainingMinutes);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // An error appears and clears with gcode_state parked on
+                      // RUNNING, so the badge needs its own identity here.
+                      (errorBadgeId(s) != errorBadgeId(prevState));
   bool tempChanged  = forceRedraw || animating ||
                       (s.nozzleTemp != prevState.nozzleTemp) ||
                       (s.bedTemp != prevState.bedTemp);
@@ -3590,7 +3676,8 @@ static void drawPrintingRings() {
     // the widest form this skin can still render - so the font fallback below
     // stays the first line of defence and the string only shortens when even
     // FONT_SMALL would spill (mode 2 with a cross-day date).
-    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf), 116, FONT_SMALL);
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf), 116, FONT_SMALL,
+                                     /*showError=*/true);
     tft.fillRect(cx - 58, LY_RND_RGS_ETA_Y - 11, 116, 22, CLR_BG);
     // FONT_BODY when it fits the chord; the long date+time ETA form drops
     // to FONT_SMALL instead of clipping.
@@ -3619,7 +3706,10 @@ static void drawPrintingRound() {
                       (s.remainingMinutes != prevState.remainingMinutes);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // An error appears and clears with gcode_state parked on
+                      // RUNNING, so the badge needs its own identity here.
+                      (errorBadgeId(s) != errorBadgeId(prevState));
   bool layerChanged = forceRedraw ||
                       (s.layerNum != prevState.layerNum) ||
                       (s.totalLayers != prevState.totalLayers);
@@ -3639,13 +3729,18 @@ static void drawPrintingRound() {
   if (stateChanged) {
     markFrameDirty();
     setFont(tft, FONT_BODY);
+    // The round skins have no badge slot, so the rim status line carries the
+    // error word and its severity colour instead (§5.3). Without an error the
+    // skin keeps its own dimmer ladder - RUNNING stays neutral here.
     uint16_t stColor = CLR_TEXT_DIM;
-    if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
-    else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
-    else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    if (!stateBadgeOverrideColor(s, stColor)) {
+      if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
+      else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
+      else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
+    }
     char line[48], clipped[48];
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
-    snprintf(line, sizeof(line), "%s  %s", name, s.gcodeState);
+    snprintf(line, sizeof(line), "%s  %s", name, stateBadgeText(s));
     drawCurvedString(tft,
                      ellipsizeToWidth(tft, line, LY_RND_ARC_STATUS_MAXW,
                                       clipped, sizeof(clipped)),
@@ -3752,7 +3847,10 @@ static void drawPrinting() {
                      (s.remainingMinutes != prevState.remainingMinutes);
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
-                      (strcmp(s.gcodeState, prevState.gcodeState) != 0);
+                      (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // An error appears and clears with gcode_state parked on
+                      // RUNNING, so the badge needs its own identity here.
+                      (errorBadgeId(s) != errorBadgeId(prevState));
 
   // Track AMS unit-count transitions that change layout zones (badge moves
   // between header and right column at units 0↔1; bottom bar width flips at
@@ -3887,19 +3985,18 @@ static void drawPrinting() {
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, LY_HDR_NAME_X, hdrCY);
 
-    // State badge (right) — only when right column not used for it
+    // State badge (right) — only when right column not used for it.
+    // While an error is active this slot carries ERR in the severity colour
+    // instead of the gcode state (§5.3); same geometry either way.
     if (!landAmsCol) {
-      uint16_t badgeColor = CLR_TEXT_DIM;
-      if (s.gcodeStateId == GCODE_RUNNING) badgeColor = CLR_GREEN;
-      else if (s.gcodeStateId == GCODE_PAUSE) badgeColor = CLR_YELLOW;
-      else if (s.gcodeStateId == GCODE_FAILED) badgeColor = CLR_RED;
-      else if (s.gcodeStateId == GCODE_PREPARE) badgeColor = CLR_BLUE;
+      const uint16_t badgeColor = stateBadgeColor(s);
+      const char*    badgeText  = stateBadgeText(s);
 
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(badgeColor, hdrBg);
       setFont(tft, FONT_BODY);
-      tft.fillCircle(hdrW - LY_HDR_BADGE_RX - tft.textWidth(s.gcodeState) - 10, hdrCY, 4, badgeColor);
-      tft.drawString(s.gcodeState, hdrW - LY_HDR_BADGE_RX, hdrCY);
+      tft.fillCircle(hdrW - LY_HDR_BADGE_RX - tft.textWidth(badgeText) - 10, hdrCY, 4, badgeColor);
+      tft.drawString(badgeText, hdrW - LY_HDR_BADGE_RX, hdrCY);
     }
 
     // Printer indicator dots (multi-printer) — centered on the visible
@@ -4281,6 +4378,10 @@ static void drawPrinting() {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString("PAUSED", etaCx, eff_etaTextY);
+    } else if (printerWasCanceled(s)) {
+      setFont(tft, FONT_LARGE);
+      tft.setTextColor(CLR_YELLOW, CLR_BG);
+      tft.drawString("CANCELED", etaCx, eff_etaTextY);
     } else if (s.gcodeStateId == GCODE_FAILED) {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_RED, CLR_BG);

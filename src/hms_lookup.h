@@ -45,4 +45,78 @@ const char* hmsTableVersion(void);
 
 #endif  // HAS_HMS_UI
 
+// ---------------------------------------------------------------------------
+//  Cancel is not a failure
+// ---------------------------------------------------------------------------
+// A user-initiated cancel drives gcode_state to FAILED and raises print_error
+// like any real fault, so every status surface reads "FAILED" / "ERROR!" for
+// something the user did on purpose. These are the only two cancel-class codes
+// in Bambu's feed; matching on the code rather than the text keeps this working
+// on boards that carry no text table.
+//
+//   0300400C  "The task was canceled."     (seen on an H2 manual cancel)
+//   0500400E  "Printing was cancelled."
+#define PRINT_ERROR_CANCEL_MC    0x0300400CUL
+#define PRINT_ERROR_CANCEL_MAIN  0x0500400EUL
+
+// ---------------------------------------------------------------------------
+//  Error badge
+// ---------------------------------------------------------------------------
+// The header state badge is replaced by this while an error is active. Severity
+// drives the colour; the code identifies which error, so a repaint predicate can
+// tell one error from the next without diffing the whole array.
+#define ERROR_BADGE_TEXT   "ERR"
+#define CANCELED_STATE_TEXT "CANCELED"
+
+struct ErrorBadge {
+  bool     active;
+  uint8_t  severity;   // 1 fatal, 2 serious, 3 common; 0 = print_error/unknown
+  uint32_t attr;       // 0 on a print_error badge
+  uint32_t code;       // HMS code, or the print_error value
+};
+
+#if HAS_HMS_UI
+
+// Severity filter. Becomes the user-facing "all priorities" vs "important only"
+// setting in the settings phase; until then this is the plan's documented
+// default. Baseline codes (standing at connect) never reach the badge either
+// way - that rule is orthogonal and always on.
+#define ERROR_BADGE_SEVERITY_ALL  0
+
+// Worst error worth showing on this slot, or an inactive badge. print_error
+// outranks HMS: it means the job actually stopped. A cancel is deliberately not
+// an error badge - it gets the CANCELED state word instead.
+ErrorBadge errorBadgeFor(const BambuState& s);
+
+// Stable identity of the badge above, packed so a redraw predicate is one
+// comparison and prevState carries it for free. 0 = nothing to show.
+uint32_t errorBadgeId(const BambuState& s);
+
+// Severity colour from the existing RGB565 palette.
+uint16_t errorSeverityColor(uint8_t sev);
+
+inline bool printErrorIsCancel(uint32_t err) {
+  return err == PRINT_ERROR_CANCEL_MC || err == PRINT_ERROR_CANCEL_MAIN;
+}
+
+// The printer stopped, and the reason is a cancel rather than a fault.
+inline bool printerWasCanceled(const BambuState& s) {
+  return s.gcodeStateId == GCODE_FAILED && printErrorIsCancel(s.printError);
+}
+
+inline bool errorBadgeActive(const BambuState& s) {
+  return errorBadgeFor(s).active;
+}
+
+#else   // !HAS_HMS_UI - nothing is parsed, so nothing can be shown
+
+inline ErrorBadge errorBadgeFor(const BambuState&) { return ErrorBadge{}; }
+inline uint32_t   errorBadgeId(const BambuState&)  { return 0; }
+inline uint16_t   errorSeverityColor(uint8_t)      { return CLR_RED; }
+inline bool       printErrorIsCancel(uint32_t)     { return false; }
+inline bool       printerWasCanceled(const BambuState&) { return false; }
+inline bool       errorBadgeActive(const BambuState&)   { return false; }
+
+#endif  // HAS_HMS_UI
+
 #endif  // HMS_LOOKUP_H

@@ -593,6 +593,14 @@ static void handleDebug() {
     }
     p["hms_baseline_n"] = st.hmsBaselineCount;
     if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
+    // What the on-screen badge resolves to, so a "why is nothing showing"
+    // report can be answered without a panel in front of you.
+    {
+      const ErrorBadge eb = errorBadgeFor(st);
+      p["badge_active"] = eb.active;
+      if (eb.active) p["badge_sev"] = eb.severity;
+      if (printerWasCanceled(st)) p["canceled"] = true;
+    }
 #endif
   }
 

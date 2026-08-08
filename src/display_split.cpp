@@ -11,6 +11,7 @@
 #include "bambu_state.h"     // printers[], rotState, BambuState
 #include "fonts.h"           // setFont, FontID
 #include "tasmota.h"         // tasmotaGetWattsForSlot / tasmotaIsActiveForSlot
+#include "hms_lookup.h"      // errorBadgeId, printerWasCanceled
 #include <string.h>
 #include <time.h>
 
@@ -53,6 +54,7 @@ uint8_t    sPrevTypes[2][6] = { { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
                                 { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
 uint32_t   sPrevAirduct[2]  = { 0xFFFFFFFFu, 0xFFFFFFFFu };
 uint8_t    sPrevHdrState[2] = { 0xFF, 0xFF };
+uint32_t   sPrevHdrErrId[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };
 uint8_t    sPrevBarProg[2]  = { 0xFF, 0xFF };
 char       sPrevFootCenter[2][20] = { { 0 }, { 0 } };
 char       sPrevEta[2][40] = { { 0 }, { 0 } };
@@ -352,17 +354,24 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
   if (modeNow == 1) { drawDryingBand(s, cfg, g, bandIdx, force); return; }
 
   // --- Header: printer name (left) + state dot (right) ---
-  if (force || s.gcodeStateId != sPrevHdrState[bandIdx]) {
+  // print_error lands a report after gcode_state goes FAILED, so "Failed" only
+  // becomes "Canceled" if the badge identity is part of the predicate too.
+  const uint32_t hdrErrId = errorBadgeId(s);
+  if (force || s.gcodeStateId != sPrevHdrState[bandIdx] ||
+      hdrErrId != sPrevHdrErrId[bandIdx]) {
     markFrameDirty();
     // On a force frame the whole screen was just cleared; otherwise wipe the
     // text strip so the new name/dot does not overprint the old.
     if (!force) tft.fillRect(g.x, g.hdrCY - 9, g.w, 18, CLR_BG);
 
     // Right: state dot + status word ("Printing" / "Idle" / "Preparing" ...).
-    const uint16_t stClr = stateColor(s.gcodeStateId);
+    // A cancel reports FAILED with a cancel-class print_error - saying "Failed"
+    // there sends people looking for a fault that does not exist.
+    const bool     canceled = printerWasCanceled(s);
+    const uint16_t stClr = canceled ? CLR_YELLOW : stateColor(s.gcodeStateId);
     const int16_t dotCX = g.x + g.w - g.margin - 5;
     tft.fillCircle(dotCX, g.hdrCY, 5, stClr);
-    const char* st = stateLabel(s.gcodeStateId);
+    const char* st = canceled ? "Canceled" : stateLabel(s.gcodeStateId);
     int16_t stLeft = dotCX - 10;   // name still clears the dot when status is empty
     if (st[0] != '\0') {
       setFont(tft, FONT_SMALL);
@@ -381,6 +390,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     const int16_t nameMaxW = stLeft - 4 - (g.x + g.margin);
     drawClippedName(name, g.x + g.margin, g.hdrCY, nameMaxW);
     sPrevHdrState[bandIdx] = s.gcodeStateId;
+    sPrevHdrErrId[bandIdx] = hdrErrId;
   }
 
   // --- Thin progress bar under the header ---
