@@ -5109,6 +5109,232 @@ static void drawPowerConfirm() {
 }
 
 // ---------------------------------------------------------------------------
+//  SCREEN_HMS: printer error detail
+// ---------------------------------------------------------------------------
+#if HAS_HMS_UI
+
+bool hmsScreenAvailable() {
+  if (!isPrinterConfigured(rotState.displayIndex)) return false;
+  const BambuState& s = displayedPrinter().state;
+  // Anything listable counts, not just what raised the badge: a standing
+  // baseline code is exactly what someone taps in to read about.
+  return s.printError != 0 || s.hmsCount > 0;
+}
+
+// Greedy word wrap at the current font. Breaks on spaces; a single word wider
+// than the line is hard-cut rather than dropped. Table text is ASCII-folded by
+// the generator, so this never has to think about multi-byte characters.
+// Returns the number of lines drawn.
+static uint8_t drawWrappedText(const char* text, int16_t x, int16_t y,
+                               int16_t maxW, int16_t lineH, uint8_t maxLines,
+                               uint16_t color, uint16_t bg, bool centered) {
+  if (!text || !*text || maxLines == 0) return 0;
+  char line[80];
+  uint8_t drawn = 0;
+  const char* p = text;
+  tft.setTextDatum(centered ? TC_DATUM : TL_DATUM);
+  // Opaque background on purpose: the VLW glyphs are antialiased and a
+  // transparent draw would have to read the panel back to blend, which several
+  // of our panels cannot do.
+  tft.setTextColor(color, bg);
+
+  while (*p && drawn < maxLines) {
+    while (*p == ' ') p++;
+    if (!*p) break;
+
+    size_t fit = 0, probe = 0;
+    while (p[probe]) {
+      while (p[probe] && p[probe] != ' ') probe++;   // extend by one word
+      if (probe >= sizeof(line)) break;
+      memcpy(line, p, probe);
+      line[probe] = '\0';
+      if ((int16_t)tft.textWidth(line) > maxW) break;
+      fit = probe;
+      while (p[probe] == ' ') probe++;
+    }
+    if (fit == 0) {                                  // word wider than the line
+      while (p[fit] && fit < sizeof(line) - 1) {
+        memcpy(line, p, fit + 1);
+        line[fit + 1] = '\0';
+        if ((int16_t)tft.textWidth(line) > maxW) break;
+        fit++;
+      }
+      if (fit == 0) fit = 1;
+    }
+    memcpy(line, p, fit);
+    line[fit] = '\0';
+    tft.drawString(line, x, y + drawn * lineH);
+    drawn++;
+    p += fit;
+  }
+  return drawn;
+}
+
+// Official sentence for an entry, or the generic line when this board carries
+// no table for the domain and when Bambu ships the code blank.
+static const char* hmsEntryText(uint32_t attr, uint32_t code) {
+  const char* t = attr ? hmsLookupText(attr, code) : printErrorLookupText(code);
+  return t ? t : HMS_FALLBACK_TEXT;
+}
+
+// One entry as the screen shows it: severity tag, "<MODULE> <SEVERITY>", the
+// formatted code, and the sentence. attr == 0 means the print_error domain,
+// which has no module or severity of its own.
+static void hmsEntryHeadline(uint32_t attr, uint32_t code,
+                             char* out, size_t outLen, uint16_t* colorOut) {
+  char codeBuf[HMS_CODE_STR_LEN];
+  if (attr) {
+    hmsFormatCode(attr, code, codeBuf, sizeof(codeBuf));
+    const uint8_t sev = hmsSeverityOf(code);
+    snprintf(out, outLen, "%s %s  %s", hmsModuleLabel(attr),
+             hmsSeverityLabel(sev), codeBuf);
+    *colorOut = errorSeverityColor(sev);
+  } else {
+    printErrorFormatCode(code, codeBuf, sizeof(codeBuf));
+    snprintf(out, outLen, "PRINT ERROR  %s", codeBuf);
+    *colorOut = CLR_RED;
+  }
+}
+
+static void drawHmsScreen() {
+  PrinterSlot& p = displayedPrinter();
+  BambuState& s = p.state;
+
+  // Only the error set and the printer name can change under this screen, and
+  // both move the badge identity - so one comparison covers the whole page.
+  static uint32_t prevHmsPageId = 0;
+  static uint8_t  prevHmsCount = 0xFF;
+  const uint32_t pageId = errorBadgeId(s) ^ ((uint32_t)s.hmsCount << 8) ^ s.printError;
+  if (!forceRedraw && pageId == prevHmsPageId && s.hmsCount == prevHmsCount) return;
+  prevHmsPageId = pageId;
+  prevHmsCount  = s.hmsCount;
+
+  const uint16_t bg = dispSettings.bgColor;
+  tft.fillScreen(bg);
+  markFrameDirty();
+
+  const int16_t W = uiW(), H = uiH();
+  const int16_t cx = W / 2;
+  const bool hasPrintError = (s.printError != 0);
+  const uint8_t total = (uint8_t)(s.hmsCount + (hasPrintError ? 1 : 0));
+
+  setFont(tft, FONT_SMALL);
+  const int16_t smallH = (int16_t)tft.fontHeight();
+  setFont(tft, FONT_BODY);
+  const int16_t bodyH = (int16_t)tft.fontHeight();
+
+#if defined(DISPLAY_ROUND_240)
+  // Round: no room for a list. Worst entry only, centered inside a chord-safe
+  // band, with the count of everything else below it.
+  const int16_t maxW = 170;
+  uint32_t attr = 0, code = s.printError;
+  if (!hasPrintError && s.hmsCount > 0) { attr = s.hms[0].attr; code = s.hms[0].code; }
+
+  tft.setTextDatum(TC_DATUM);
+  setFont(tft, FONT_BODY);
+  tft.setTextColor(CLR_TEXT, bg);
+  tft.drawString("Printer error", cx, cx - 78);
+
+  if (total > 0) {
+    char headline[64];
+    uint16_t hlColor = CLR_RED;
+    hmsEntryHeadline(attr, code, headline, sizeof(headline), &hlColor);
+    setFont(tft, FONT_SMALL);
+    char clipped[64];
+    tft.setTextColor(hlColor, bg);
+    tft.drawString(ellipsizeToWidth(tft, headline, maxW, clipped, sizeof(clipped)),
+                   cx, cx - 78 + bodyH + 4);
+    drawWrappedText(hmsEntryText(attr, code), cx, cx - 78 + bodyH + 6 + smallH * 2,
+                    maxW, smallH + 2, 3, CLR_TEXT, bg, /*centered=*/true);
+    if (total > 1) {
+      char more[16];
+      snprintf(more, sizeof(more), "+%u more", (unsigned)(total - 1));
+      tft.setTextDatum(TC_DATUM);
+      tft.setTextColor(CLR_TEXT_DIM, bg);
+      tft.drawString(more, cx, cx + 46);
+    }
+  }
+  drawCurvedString(tft, "tap to close", cx, cx, LY_RND_ARC_R, true,
+                   CLR_TEXT_DIM, FONT_SMALL, LY_RND_ARC_ETA_HDEG);
+#else
+  const int16_t margin = 6;
+  const int16_t maxW = W - 2 * margin;
+  int16_t y = 4;
+
+  tft.setTextDatum(TC_DATUM);
+  setFont(tft, FONT_BODY);
+  tft.setTextColor(CLR_TEXT, bg);
+  tft.drawString("Printer error", cx, y);
+  y += bodyH + 1;
+
+  setFont(tft, FONT_SMALL);
+  tft.setTextColor(CLR_TEXT_DIM, bg);
+  char clipped[48];
+  const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+  tft.drawString(ellipsizeToWidth(tft, name, maxW, clipped, sizeof(clipped)), cx, y);
+  y += smallH + 3;
+  tft.drawFastHLine(margin, y, maxW, CLR_TRACK);
+  y += 5;
+
+  // Footer first: the entry loop needs to know where it must stop.
+  const int16_t footY = H - smallH - 3;
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(CLR_TEXT_DIM, bg);
+  tft.drawString("tap to close", cx, footY);
+
+  uint8_t shown = 0;
+  for (uint8_t i = 0; i < total; i++) {
+    const bool isPe = hasPrintError && i == 0;
+    const uint32_t attr = isPe ? 0 : s.hms[hasPrintError ? i - 1 : i].attr;
+    const uint32_t code = isPe ? s.printError : s.hms[hasPrintError ? i - 1 : i].code;
+
+    // A block is only worth starting if its headline and at least one line of
+    // text fit above the footer; otherwise it belongs in the "+N more" count.
+    if (y + 2 * (smallH + 2) > footY - smallH) break;
+
+    char headline[64];
+    uint16_t hlColor = CLR_RED;
+    hmsEntryHeadline(attr, code, headline, sizeof(headline), &hlColor);
+
+    tft.fillRect(margin, y + 3, 4, smallH - 5, hlColor);
+    setFont(tft, FONT_SMALL);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(hlColor, bg);
+    char hlClip[64];
+    tft.drawString(ellipsizeToWidth(tft, headline, maxW - 10, hlClip, sizeof(hlClip)),
+                   margin + 8, y);
+    y += smallH + 1;
+
+    // Cap the wrap at whatever is left above the footer, never past 4 lines -
+    // one long sentence must not push every other entry off the screen.
+    int16_t roomLines = (footY - smallH - y) / (smallH + 2);
+    if (roomLines > 4) roomLines = 4;
+    if (roomLines > 0) {
+      const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
+                                            maxW - 10, smallH + 2, (uint8_t)roomLines,
+                                            CLR_TEXT, bg, /*centered=*/false);
+      y += lines * (smallH + 2);
+    }
+    y += 4;
+    shown++;
+  }
+
+  const uint8_t hidden = (uint8_t)(total - shown + (s.hmsOverflow ? s.hmsTotal - s.hmsCount : 0));
+  if (hidden > 0 && y < footY - smallH) {
+    char more[20];
+    snprintf(more, sizeof(more), "+%u more", (unsigned)hidden);
+    setFont(tft, FONT_SMALL);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString(more, margin + 8, y);
+  }
+#endif
+  tft.setTextDatum(MC_DATUM);
+}
+
+#endif  // HAS_HMS_UI
+
+// ---------------------------------------------------------------------------
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
@@ -5307,6 +5533,12 @@ void updateDisplay() {
 
     case SCREEN_POWER_CONFIRM:
       drawPowerConfirm();
+      break;
+
+    case SCREEN_HMS:
+#if HAS_HMS_UI
+      drawHmsScreen();
+#endif
       break;
 
     case SCREEN_FINISHED:

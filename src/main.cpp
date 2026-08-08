@@ -249,6 +249,27 @@ static void closeDryPeek() {
   setScreenState(SCREEN_PRINTING);
 }
 
+// --- Printer error detail (SCREEN_HMS) --------------------------------------
+// Tapped up while the displayed printer has an HMS entry or a print_error.
+// Sticky against the auto state machine while it is up; closes on tap, on the
+// error clearing, or on the window running out.
+static uint32_t hmsScreenUntilMs = 0;
+
+static bool openHmsScreen() {
+  if (!hmsScreenAvailable()) return false;
+  hmsScreenUntilMs = millis() + HMS_SCREEN_MS;
+  setScreenState(SCREEN_HMS);
+  return true;
+}
+
+// Same rotation reset as the drying peek: auto-rotation is frozen while this is
+// up but lastRotateMs keeps aging, so without it the user taps out of an error
+// and immediately lands on a different printer.
+static void closeHmsScreen() {
+  rotState.lastRotateMs = millis();
+  setScreenState(SCREEN_PRINTING);
+}
+
 // Existing on-press behavior, factored out so it can be invoked either on
 // press-edge (LED disabled path: unchanged behavior) or on release-edge
 // (LED enabled path: deferred until tap/hold disambiguation completes).
@@ -280,6 +301,25 @@ static void doTapActions() {
     }
     return;
   }
+
+  // Printer error detail. First stop in the tap cycle while an error stands -
+  // it is the thing the user reached for the button about - and tapping out of
+  // it continues into camera / drying rather than dead-ending, so those stay
+  // reachable on a printer sitting on a permanent code.
+  if (cur == SCREEN_HMS) {
+#if BOARD_HAS_CAMERA
+    if (cameraDisplayedHasCameraTile() && cameraCanStreamDisplayedPrinter()) {
+      setScreenState(SCREEN_CAMERA);
+      return;
+    }
+#endif
+    if (openDryPeek()) return;
+    closeHmsScreen();
+    if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
+    return;
+  }
+  if ((cur == SCREEN_PRINTING || cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
+      openHmsScreen()) return;
 
 #if BOARD_HAS_CAMERA
   // Camera tap toggle (#120). On a multi-printer setup the camera sits in the
@@ -697,6 +737,26 @@ static void updateDisplayedPrinterScreenState() {
   // so an auto-OTA still preempts it.
   if (current == SCREEN_POWER_CONFIRM) return;
 
+  // Printer error detail is sticky for its window: hold it against the auto
+  // state machine until the user taps out, the error clears, or the window runs
+  // down. Above camera and the drying peek so neither steals it; below OTA and
+  // power-confirm, which both outrank it. Not the only expiry check -
+  // handleDisplaySleepTimeouts() runs even when WiFi is down, where this
+  // function is never called at all.
+  if (current == SCREEN_HMS) {
+    if ((long)(millis() - hmsScreenUntilMs) < 0 && hmsScreenAvailable()) {
+      // Override the LED_ACT_IDLE default set at the top of this function: a
+      // print may still be running behind the screen.
+      BambuState& hs = displayedPrinter().state;
+      if (hs.printing)
+        ledSetActivity(hs.gcodeStateId == GCODE_PAUSE ? LED_ACT_PAUSED
+                                                      : LED_ACT_PRINTING);
+      return;
+    }
+    closeHmsScreen();
+    return;
+  }
+
 #if BOARD_HAS_CAMERA
   // Camera fullscreen (#120) is sticky: entered/exited only by tap. Hold it
   // until the user taps out or the printer can no longer stream, then drop back
@@ -837,6 +897,13 @@ static void handleDisplaySleepTimeouts() {
   // away, so without this the peek would sit there for the whole outage.
   if (cur == SCREEN_DRY_PEEK && (long)(millis() - dryPeekUntilMs) >= 0) {
     closeDryPeek();
+    cur = getScreenState();
+  }
+
+  // Same for the error screen, and for the same reason.
+  if (cur == SCREEN_HMS &&
+      ((long)(millis() - hmsScreenUntilMs) >= 0 || !hmsScreenAvailable())) {
+    closeHmsScreen();
     cur = getScreenState();
   }
 
@@ -985,6 +1052,9 @@ static void handleGcodeStateTransitions() {
           // printer's drying data under it. Close it and let the state machine
           // land on the finish screen.
           if (getScreenState() == SCREEN_DRY_PEEK) closeDryPeek();
+          // Same for the error screen: it is bound to the printer that was on
+          // screen when it opened, and this branch is about to move away.
+          if (getScreenState() == SCREEN_HMS) closeHmsScreen();
           if (rotState.displayIndex != i) {
             rotState.displayIndex = i;
             triggerDisplayTransition();
@@ -1251,6 +1321,7 @@ void loop() {
     // is up so the displayed printer (and its stream / target) does not drift.
     if (getScreenState() != SCREEN_CAMERA &&
         getScreenState() != SCREEN_POWER_CONFIRM &&
+        getScreenState() != SCREEN_HMS &&
         getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 
