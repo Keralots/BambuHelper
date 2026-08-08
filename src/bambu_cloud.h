@@ -16,4 +16,8 @@ bool cloudExtractUserId(const char* token, char* userId, size_t len);
 // Populates userId with "u_{uid}" format string.
 bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion region);
 
+// Fetch the raw device-bind JSON for the account behind `token`. The caller
+// picks the fields it needs; the payload lists every printer bound to it.
+bool cloudFetchDeviceList(const char* token, CloudRegion region, String& response);
+
 #endif // BAMBU_CLOUD_H

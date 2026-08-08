@@ -4,6 +4,7 @@
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
 #include "bambu_cloud.h"
+#include "cloud_login.h"
 // Gzipped portal assets, generated at build time from web/app.css and
 // web/app.js. Included here and nowhere else - the arrays are static.
 #include "web_assets_gz.h"
@@ -713,6 +714,176 @@ static void handleCloudLogout() {
   clearCloudToken();
   server.send(200, "text/plain", "OK");
 }
+
+// List the printers bound to the stored token's account, so the portal can
+// offer a picker instead of a serial the user has to transcribe. Available with
+// a pasted token too, not only after an on-device sign-in.
+static void handleCloudPrinters() {
+  char token[1200];
+  if (!loadCloudToken(token, sizeof(token))) {
+    server.send(200, "application/json",
+                "{\"printers\":[],\"message\":\"Sign in or paste a token first.\"}");
+    return;
+  }
+
+  CloudRegion region = printers[0].config.region;
+  if (server.hasArg("region")) {
+    String r = server.arg("region");
+    region = (r == "cn") ? REGION_CN : (r == "eu" ? REGION_EU : REGION_US);
+  }
+
+  String response;
+  if (!cloudFetchDeviceList(token, region, response)) {
+    server.send(200, "application/json",
+                "{\"printers\":[],\"message\":\"Bambu refused the request - the token may have expired.\"}");
+    return;
+  }
+
+  // The bind payload carries far more per device than the picker needs, and a
+  // busy account can make it big, so only the four fields are parsed out.
+  JsonDocument filter;
+  filter["devices"][0]["dev_id"] = true;
+  filter["devices"][0]["name"] = true;
+  filter["devices"][0]["dev_product_name"] = true;
+  filter["devices"][0]["dev_model_name"] = true;
+  filter["devices"][0]["online"] = true;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, response, DeserializationOption::Filter(filter))) {
+    server.send(200, "application/json",
+                "{\"printers\":[],\"message\":\"Could not read the account's printer list.\"}");
+    return;
+  }
+
+  JsonDocument out;
+  JsonArray arr = out["printers"].to<JsonArray>();
+  for (JsonObject dev : doc["devices"].as<JsonArray>()) {
+    const char* serial = dev["dev_id"];
+    if (!serial || strlen(serial) == 0) continue;
+    JsonObject p = arr.add<JsonObject>();
+    p["serial"] = serial;
+    p["name"]   = dev["name"].is<const char*>() ? (const char*)dev["name"] : serial;
+    const char* model = dev["dev_product_name"].is<const char*>()
+                          ? (const char*)dev["dev_product_name"]
+                          : (const char*)dev["dev_model_name"];
+    p["model"]  = model ? model : "";
+    p["online"] = dev["online"].as<bool>();
+  }
+
+  String body;
+  serializeJson(out, body);
+  server.send(200, "application/json", body);
+}
+
+#if HAS_CLOUD_LOGIN
+
+// Signing in mints a fresh token, so every cloud slot needs its userId derived
+// again - it is part of the MQTT topic.
+static void refreshCloudUserIds() {
+  char tokenBuf[1200];
+  if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) return;
+
+  for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
+    PrinterConfig& cfg = printers[i].config;
+    if (!isCloudMode(cfg.mode)) continue;
+    if (!cloudExtractUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId))) {
+      cloudFetchUserId(tokenBuf, cfg.cloudUserId, sizeof(cfg.cloudUserId), cfg.region);
+    }
+  }
+  saveSettings();
+}
+
+static const char* cloudLoginStateName() {
+  switch (cloudLoginState()) {
+    case CLOUD_LOGIN_NEED_TFA:        return "need_tfa";
+    case CLOUD_LOGIN_NEED_EMAIL_CODE: return "need_email_code";
+    case CLOUD_LOGIN_OK:              return "ok";
+    case CLOUD_LOGIN_FAILED:          return "failed";
+    default:                          return "idle";
+  }
+}
+
+static void sendCloudLoginState() {
+  JsonDocument doc;
+  doc["state"]   = cloudLoginStateName();
+  doc["message"] = cloudLoginMessage();
+
+  char email[96];
+  doc["email"] = loadCloudEmail(email, sizeof(email)) ? email : "";
+  doc["saved_password"] = cloudLoginCanAutoRefresh();
+
+  char token[1200];
+  doc["has_token"] = loadCloudToken(token, sizeof(token));
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+}
+
+// Step 1. `mode=code` mails a code and never sees a password; `mode=password`
+// posts the password once. It is only persisted when the caller asked for it
+// AND the account signed in without a second factor - a stored password is
+// useless for silent refresh otherwise.
+static void handleCloudLoginStart() {
+  String email = server.arg("email");
+  email.trim();
+  if (email.length() == 0) {
+    server.send(200, "application/json",
+                "{\"state\":\"failed\",\"message\":\"Enter your Bambu account email.\"}");
+    return;
+  }
+
+  if (server.arg("mode") == "code") {
+    cloudLoginRequestEmailCode(email.c_str());
+    sendCloudLoginState();
+    return;
+  }
+
+  String password = server.arg("password");
+  if (password.length() == 0) {
+    server.send(200, "application/json",
+                "{\"state\":\"failed\",\"message\":\"Enter your password.\"}");
+    return;
+  }
+
+  cloudLoginWithPassword(email.c_str(), password.c_str());
+
+  if (cloudLoginState() == CLOUD_LOGIN_OK) {
+    if (server.arg("save") == "1") saveCloudPassword(password.c_str());
+    refreshCloudUserIds();
+  }
+  sendCloudLoginState();
+}
+
+// Step 2: the authenticator code or the emailed one, whichever is pending.
+static void handleCloudLoginCode() {
+  String code = server.arg("code");
+  code.trim();
+  if (code.length() == 0) {
+    sendCloudLoginState();
+    return;
+  }
+
+  cloudLoginSubmitCode(code.c_str());
+  if (cloudLoginState() == CLOUD_LOGIN_OK) refreshCloudUserIds();
+  sendCloudLoginState();
+}
+
+static void handleCloudLoginStatus() {
+  sendCloudLoginState();
+}
+
+// Reachability check for support: proves whether this device can talk to the
+// Bambu sign-in service, using throwaway credentials only.
+static void handleCloudSelfTest() {
+  String result;
+  cloudLoginSelfTest(result);
+  Serial.print("CLOUD selftest: ");
+  Serial.println(result);
+  server.send(200, "application/json", result);
+}
+
+#endif // HAS_CLOUD_LOGIN
 
 // "Test" button next to the edge-glow settings: preview the configured effect
 // for ~5 s on whatever screen is up. Accepts the picker's current color so the
@@ -2096,6 +2267,13 @@ void initWebServer() {
   server.on("/app.css", HTTP_GET, handleAppCss);
   server.on("/app.js", HTTP_GET, handleAppJs);
   server.on("/cloud/logout", HTTP_POST, handleCloudLogout);
+  server.on("/cloud/printers", HTTP_GET, handleCloudPrinters);
+#if HAS_CLOUD_LOGIN
+  server.on("/cloud/login", HTTP_POST, handleCloudLoginStart);
+  server.on("/cloud/login/code", HTTP_POST, handleCloudLoginCode);
+  server.on("/cloud/login/status", HTTP_GET, handleCloudLoginStatus);
+  server.on("/cloud/login/selftest", HTTP_GET, handleCloudSelfTest);
+#endif
   server.on("/lan/scan", HTTP_POST, handleLanScan);
   server.on("/lan/scan", HTTP_GET, handleLanScan);
   server.on("/settings/export", HTTP_GET, handleSettingsExport);

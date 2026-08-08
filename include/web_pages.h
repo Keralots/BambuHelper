@@ -19,6 +19,10 @@
 // =============================================================================
 #pragma once
 
+// HAS_CLOUD_LOGIN gates the on-device sign-in block; flash-poor boards ship the
+// page without it.
+#include "config.h"
+
 #include <Arduino.h>
 
 // -----------------------------------------------------------------------------
@@ -220,14 +224,6 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
     </div>
 
     <div id="cloudFields" style="display:none;margin-top:var(--sp-3)">
-      <div class="banner">
-        <span class="dot" style="background:var(--info)"></span>
-        <div>
-          <strong>Token-based access.</strong>
-          <div class="small text-dim" style="margin-top:4px">Token expires after ~90 days. It can also be invalidated earlier if you "log out everywhere" or change your password - paste a fresh one when that happens. Your password is NEVER stored on the device.</div>
-        </div>
-      </div>
-
       <div class="row">
         <div class="field">
           <label for="region">Server region</label>
@@ -239,45 +235,110 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
         </div>
         <div class="field">
           <label>Cloud status</label>
-          <div id="cloudStatus" class="hstack" style="height:36px;font-size:13px;color:var(--text-mid)">%CLOUD_STATUS%</div>
+          <div class="hstack" style="height:36px;gap:var(--sp-3)">
+            <span id="cloudStatus" style="font-size:13px;color:var(--text-mid)">%CLOUD_STATUS%</span>
+            <button type="button" class="btn btn-danger btn-sm" id="cloudLogoutBtn" onclick="cloudLogout()" title="Removes the token, the account email and any stored password">Sign out</button>
+          </div>
         </div>
       </div>
 
-      <details open>
-        <summary>How to get your access token</summary>
-        <div>
-          <ol style="margin:0;padding-left:20px;font-size:12.5px;color:var(--text-mid);line-height:1.7">
-            <li>Open <a href="https://bambulab.com" target="_blank" style="color:var(--accent)">bambulab.com</a> and log in.</li>
-            <li>Press <span class="mono" style="border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;background:var(--bg-sub)">F12</span> to open DevTools.</li>
-            <li>Go to <strong>Application</strong> (Chrome/Edge) or <strong>Storage</strong> (Firefox).</li>
-            <li>Expand <strong>Cookies</strong> -&gt; click <strong>bambulab.com</strong>.</li>
-            <li>Find the cookie named <span class="mono">token</span> and copy its value.</li>
-            <li>Paste it below and save.</li>
-          </ol>
-          <p style="margin:var(--sp-3) 0 0;font-size:12.5px;color:var(--text-mid);line-height:1.6">Rather skip all that? The <strong>Companion Tool</strong> logs into your Bambu account, finds your printers, and pushes the token and serial straight to this device over your network.</p>
-          <a href="https://keralots.github.io/BambuHelper/cloud-token.html" target="_blank" class="small" style="display:inline-block;margin-top:var(--sp-2);color:var(--accent)">Both methods, step by step</a>
-        </div>
-      </details>
-
-      <div class="field" style="margin-top:var(--sp-4)">
-        <label for="cl_token">Access token</label>
-        <textarea id="cl_token" rows="3" placeholder="Paste your Bambu Cloud token here..."></textarea>
+)rawliteral"
+#if HAS_CLOUD_LOGIN
+R"rawliteral(
+      <div class="field" style="margin-top:var(--sp-3)">
+        <label for="cl_method">Account access</label>
+        <select id="cl_method" onchange="clSetAuthMethod(this.value)">
+          <option value="signin">Sign in with your Bambu account</option>
+          <option value="token">Paste an access token</option>
+        </select>
       </div>
-      <div class="row">
+
+      <div id="cl_signinWrap" style="margin-top:var(--sp-3)">
+        <p class="small text-dim" style="margin:0 0 var(--sp-3);line-height:1.6">The device signs in and fetches the token itself. This page has no password and runs over plain HTTP, so what you type here crosses your network unencrypted - use it on a network you trust.</p>
+
+        <div class="seg" style="margin-bottom:var(--sp-3)">
+          <button type="button" id="cl-mode-pass-btn" aria-pressed="true" onclick="clSetLoginMode('password')">Password</button>
+          <button type="button" id="cl-mode-code-btn" aria-pressed="false" onclick="clSetLoginMode('code')">Email code</button>
+        </div>
+
+        <div class="field">
+          <label for="cl_email">Bambu account email</label>
+          <input type="email" id="cl_email" placeholder="you@example.com" autocomplete="username">
+        </div>
+
+        <div id="cl_passWrap">
+          <div class="field" style="margin-top:var(--sp-3)">
+            <label for="cl_pass">Password</label>
+            <input type="password" id="cl_pass" autocomplete="current-password">
+          </div>
+          <label class="hstack" style="gap:var(--sp-2);margin-top:var(--sp-2);font-size:12.5px;color:var(--text-mid)">
+            <input type="checkbox" id="cl_savePass">
+            <span>Remember the password so the device can renew the token by itself. Only works on accounts without two-factor authentication - with 2FA on the password is discarded and you sign in again when the token expires.</span>
+          </label>
+        </div>
+
+        <div class="hstack" style="gap:var(--sp-3);margin-top:var(--sp-3);flex-wrap:wrap">
+          <button type="button" class="btn btn-primary btn-sm" id="cl_signinBtn" onclick="cloudSignIn()">Sign in</button>
+          <span id="cl_loginMsg" class="small text-dim" role="status" aria-live="polite"></span>
+        </div>
+
+        <div id="cl_codeWrap" style="display:none;margin-top:var(--sp-3);padding:var(--sp-3);background:var(--bg-sub);border:1px solid var(--line-soft);border-radius:var(--radius-s)">
+          <label for="cl_code" id="cl_codeLabel">Verification code</label>
+          <div class="hstack" style="gap:var(--sp-3);margin-top:var(--sp-2);flex-wrap:wrap">
+            <input type="text" id="cl_code" class="mono" inputmode="numeric" maxlength="8" style="max-width:140px" placeholder="000000">
+            <button type="button" class="btn btn-primary btn-sm" onclick="cloudSubmitCode()">Verify</button>
+          </div>
+        </div>
+      </div>
+)rawliteral"
+#endif
+R"rawliteral(
+      <div id="cl_tokenWrap" style="margin-top:var(--sp-3)">
+        <div class="banner">
+          <span class="dot" style="background:var(--info)"></span>
+          <div>
+            <strong>Token-based access.</strong>
+            <div class="small text-dim" style="margin-top:4px">A token expires after ~90 days, and sooner if you "log out everywhere" or change your password. Paste a fresh one when that happens.</div>
+          </div>
+        </div>
+
+        <details>
+          <summary>How to get your access token</summary>
+          <div>
+            <ol style="margin:0;padding-left:20px;font-size:12.5px;color:var(--text-mid);line-height:1.7">
+              <li>Open <a href="https://bambulab.com" target="_blank" style="color:var(--accent)">bambulab.com</a> and log in.</li>
+              <li>Press <span class="mono" style="border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;background:var(--bg-sub)">F12</span> to open DevTools.</li>
+              <li>Go to <strong>Application</strong> (Chrome/Edge) or <strong>Storage</strong> (Firefox).</li>
+              <li>Expand <strong>Cookies</strong> -&gt; click <strong>bambulab.com</strong>.</li>
+              <li>Find the cookie named <span class="mono">token</span> and copy its value.</li>
+              <li>Paste it below and save.</li>
+            </ol>
+            <p style="margin:var(--sp-3) 0 0;font-size:12.5px;color:var(--text-mid);line-height:1.6">The <strong>Companion Tool</strong> can do this for you and push the token straight to this device. <a href="https://keralots.github.io/BambuHelper/cloud-token.html" target="_blank" style="color:var(--accent)">Both methods, step by step</a></p>
+          </div>
+        </details>
+
+        <div class="field" style="margin-top:var(--sp-3)">
+          <label for="cl_token">Access token</label>
+          <textarea id="cl_token" rows="3" placeholder="Paste your Bambu Cloud token here..."></textarea>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:var(--sp-4)">
         <div class="field">
           <label for="cl_serial">Printer serial number</label>
           <input type="text" id="cl_serial" class="mono" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
-          <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')" style="margin-top:var(--sp-2)">Scan local network</button>
+          <div class="hstack" style="gap:var(--sp-2);margin-top:var(--sp-2);flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost btn-sm" id="cl_acctBtn" onclick="loadAccountPrinters()">My printers</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')">Scan local network</button>
+          </div>
+          <select id="cl_acctsel" onchange="pickAccountPrinter()" style="display:none;margin-top:var(--sp-2);width:100%"></select>
           <select id="cl_devsel" onchange="pickLanDevice('cloud')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
-          <div class="hint">Must match exactly (UPPERCASE). Scan finds it if the printer is on the same Wi-Fi; otherwise use Bambu Handy, the printer label, or the Companion Tool. A wrong serial connects but shows no data.</div>
+          <div class="hint">Must match exactly (UPPERCASE). <strong>My printers</strong> lists everything bound to your account - needs a working token or sign-in. Scan finds printers on the same Wi-Fi. A wrong serial connects but shows no data.</div>
         </div>
         <div class="field">
           <label for="cl_pname">Printer name</label>
           <input type="text" id="cl_pname" value="%PNAME%" placeholder="My Printer" maxlength="23">
         </div>
-      </div>
-      <div style="margin-top:var(--sp-3)">
-        <button type="button" class="btn btn-danger btn-sm" id="cloudLogoutBtn" onclick="cloudLogout()">Clear Token</button>
       </div>
     </div>
 

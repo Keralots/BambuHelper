@@ -57,8 +57,10 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "REGION_CN") == 0)       { out = cfg.region == REGION_CN ? "selected" : ""; return true; }
   if (strcmp(name, "CLOUD_STATUS") == 0) {
     char tokenBuf[32];
-    bool hasToken = loadCloudToken(tokenBuf, sizeof(tokenBuf));
-    out = hasToken ? "Token active" : "No token set";
+    if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) { out = "No token set"; return true; }
+    out = "Token active";
+    char email[96];
+    if (loadCloudEmail(email, sizeof(email))) { out += " ("; out += email; out += ")"; }
     return true;
   }
 

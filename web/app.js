@@ -443,8 +443,153 @@ function cloudLogout(){
     var cs = document.getElementById('cloudStatus');
     cs.style.color = 'var(--text-mid)'; cs.textContent = 'No token set';
     document.getElementById('cl_token').value = '';
+    var pw = document.getElementById('cl_pass');
+    if (pw) { pw.value = ''; document.getElementById('cl_savePass').checked = false; }
+    var msg = document.getElementById('cl_loginMsg');
+    if (msg) { msg.textContent = 'Signed out.'; msg.style.color = 'var(--text-mid)'; }
+    var wrap = document.getElementById('cl_codeWrap');
+    if (wrap) wrap.style.display = 'none';
   });
 }
+
+
+
+var clLoginMode = 'password';
+
+/* This file is shared by every board, but the sign-in markup is not: boards
+   without the flow render the token block alone and no method picker. Bail out
+   whenever the picker is absent, or the token block - the only way in on those
+   boards - would get hidden with nothing to replace it. */
+function clHasSignIn(){ return !!document.getElementById('cl_method'); }
+
+function clSetAuthMethod(m){
+  if (!clHasSignIn()) return;
+  document.getElementById('cl_signinWrap').style.display = (m === 'signin') ? '' : 'none';
+  document.getElementById('cl_tokenWrap').style.display  = (m === 'signin') ? 'none' : '';
+}
+
+function clInitAuthUi(){
+  if (!clHasSignIn()) return;
+  clSetAuthMethod('signin');
+  fetch('/cloud/login/status').then(function(r){return r.json();}).then(function(d){
+    if (d.email) document.getElementById('cl_email').value = d.email;
+    if (d.saved_password) document.getElementById('cl_savePass').checked = true;
+    if (d.has_token && d.email){
+      document.getElementById('cl_loginMsg').textContent = 'Signed in as ' + d.email;
+    }
+  }).catch(function(){});
+}
+
+function clSetLoginMode(m){
+  clLoginMode = m;
+  document.getElementById('cl-mode-pass-btn').setAttribute('aria-pressed', m === 'password');
+  document.getElementById('cl-mode-code-btn').setAttribute('aria-pressed', m === 'code');
+  document.getElementById('cl_passWrap').style.display = (m === 'password') ? '' : 'none';
+  document.getElementById('cl_signinBtn').textContent = (m === 'password') ? 'Sign in' : 'Email me a code';
+}
+
+// One place decides what the sign-in box shows, so the password step and the
+// code step cannot disagree about the current state.
+function clApplyLoginState(d){
+  var msg = document.getElementById('cl_loginMsg');
+  var wrap = document.getElementById('cl_codeWrap');
+  msg.textContent = d.message || '';
+  msg.style.color = (d.state === 'failed') ? 'var(--warn)' : 'var(--text-mid)';
+
+  if (d.state === 'need_tfa' || d.state === 'need_email_code'){
+    wrap.style.display = '';
+    document.getElementById('cl_codeLabel').textContent =
+      (d.state === 'need_tfa') ? 'Authenticator code' : 'Code from your email';
+    document.getElementById('cl_code').focus();
+    return;
+  }
+
+  wrap.style.display = 'none';
+  if (d.state === 'ok'){
+    document.getElementById('cl_pass').value = '';
+    document.getElementById('cl_code').value = '';
+    var cs = document.getElementById('cloudStatus');
+    cs.style.color = 'var(--success)';
+    cs.textContent = 'Token active' + (d.email ? ' (' + d.email + ')' : '');
+    showToast('Signed in to Bambu Cloud');
+    // The account's printer list is the whole point of being signed in - offer
+    // it straight away instead of making the user hunt for the button.
+    loadAccountPrinters();
+  }
+}
+
+function cloudSignIn(){
+  var p = new URLSearchParams();
+  p.append('email', document.getElementById('cl_email').value.trim());
+  p.append('mode', clLoginMode);
+  if (clLoginMode === 'password'){
+    p.append('password', document.getElementById('cl_pass').value);
+    p.append('save', document.getElementById('cl_savePass').checked ? '1' : '0');
+  }
+  document.getElementById('cl_loginMsg').textContent = 'Contacting Bambu...';
+  fetch('/cloud/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(clApplyLoginState)
+    .catch(function(){document.getElementById('cl_loginMsg').textContent = 'Sign-in request failed.';});
+}
+
+function cloudSubmitCode(){
+  var p = new URLSearchParams();
+  p.append('code', document.getElementById('cl_code').value.trim());
+  document.getElementById('cl_loginMsg').textContent = 'Checking the code...';
+  fetch('/cloud/login/code',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(clApplyLoginState)
+    .catch(function(){document.getElementById('cl_loginMsg').textContent = 'Verification request failed.';});
+}
+
+
+
+/* Every printer bound to the account, straight from the cloud - so the serial
+   is picked from a list instead of copied off a label. Works with a pasted
+   token too, which is why it is not tied to the sign-in flow. */
+function loadAccountPrinters(){
+  var btn = document.getElementById('cl_acctBtn');
+  var sel = document.getElementById('cl_acctsel');
+  btn.disabled = true; btn.textContent = 'Loading...';
+  fetch('/cloud/printers?region=' + document.getElementById('region').value)
+    .then(function(r){return r.json();})
+    .then(function(d){
+      btn.disabled = false; btn.textContent = 'My printers';
+      sel.innerHTML = '';
+      if (!d.printers || !d.printers.length){
+        sel.style.display = 'none';
+        showToast(d.message || 'No printers found on this account');
+        return;
+      }
+      var head = document.createElement('option');
+      head.value = ''; head.textContent = 'Select a printer (' + d.printers.length + ')';
+      sel.appendChild(head);
+      for (var i = 0; i < d.printers.length; i++){
+        var pr = d.printers[i];
+        var o = document.createElement('option');
+        o.value = pr.serial;
+        o.setAttribute('data-name', pr.name || '');
+        o.textContent = (pr.name || pr.serial) + ' - ' + (pr.model || '?') + (pr.online ? '' : ' (offline)');
+        sel.appendChild(o);
+      }
+      sel.style.display = '';
+    })
+    .catch(function(){
+      btn.disabled = false; btn.textContent = 'My printers';
+      showToast('Could not reach the Bambu account service');
+    });
+}
+
+function pickAccountPrinter(){
+  var sel = document.getElementById('cl_acctsel');
+  var o = sel.options[sel.selectedIndex];
+  if (!o || !o.value) return;
+  document.getElementById('cl_serial').value = o.value;
+  var nm = document.getElementById('cl_pname');
+  if (!nm.value) nm.value = (o.getAttribute('data-name') || '').substring(0, 23);
+}
+
 
 function clearPrinter(){
   if (!confirm('Clear all settings for printer ' + (currentSlot + 1) + '? Connection details are removed and the gauge layout resets to defaults. The cloud token is shared and stays (use Clear Token to remove it).')) return;
@@ -1329,6 +1474,13 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
 
 (function boot(){
   // First-time setup that runs once
+
+
+
+  clInitAuthUi();
+
+
+
   toggleConnMode();
   toggleStatic();
   toggleBtnPin();
