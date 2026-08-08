@@ -1253,7 +1253,11 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     // report even when the tail was dropped.
     s.hmsWorstSeverity = s.hmsCount > 0 ? hmsSeverityOf(s.hms[0].code) : 0;
 
-    if (mqttDebugLog && s.hmsTotal > 0) {
+    // Logged even when empty, and deliberately so: "hms: []" and an omitted
+    // hms key are different answers to how this printer clears a condition,
+    // and the callback line above already proves a report arrived. No line
+    // here after a callback line means the key was absent.
+    if (mqttDebugLog) {
       Serial.printf("MQTT: hms %u entr%s (kept %u%s)%s\n",
                     s.hmsTotal, s.hmsTotal == 1 ? "y" : "ies", s.hmsCount,
                     s.hmsOverflow ? ", overflow" : "",
