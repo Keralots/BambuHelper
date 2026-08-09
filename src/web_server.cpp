@@ -463,7 +463,12 @@ static void handleApply() {
 static void handleStatus() {
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
-  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+  // Bound by the config array, not by MAX_ACTIVE_PRINTERS: the two differ on a
+  // low-RAM board, which still keeps MAX_PRINTERS NVS slots but only runs two
+  // MQTT connections. Clamping to 0 made /status?slot=2 there answer about slot
+  // 0, and the portal's error card - which polls 0..3 blind, having no way to
+  // see a board-specific limit - listed the same printer three times.
+  if (slot >= MAX_PRINTERS) slot = 0;
 
   BambuState& st = printers[slot].state;
 
