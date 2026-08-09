@@ -369,7 +369,11 @@ static bool handleLoginReply(const CloudResponse& r) {
   if (strcmp(loginType, "tfa") == 0 || (loginType[0] == '\0' && tfaKey[0] != '\0')) {
     if (tfaKey[0] == '\0') {
       // Without the key the verify call can only ever be refused, so asking for
-      // a code would trap the user in a step that cannot succeed.
+      // a code would trap the user in a step that cannot succeed. Still record
+      // that a second factor was demanded - a stored password cannot satisfy
+      // this account either, and the refresh path reads that flag to stop
+      // retrying a login that can only fail.
+      g_neededTwoFactor = true;
       Serial.println("CLOUD: 2FA demanded but no tfaKey came with it");
       g_message = "Bambu asked for a 2FA code but sent no challenge. Try again.";
       g_state = CLOUD_LOGIN_FAILED;
@@ -559,7 +563,11 @@ bool cloudLoginRefreshStored() {
   bool ok = cloudLoginWithPassword(email, pw);
   memset(pw, 0, sizeof(pw));
 
-  if (ok && g_state != CLOUD_LOGIN_OK) {
+  // Key this on "a second factor was demanded", not on the call's return value:
+  // a malformed 2FA challenge fails the call outright, and testing `ok` there
+  // would keep the password and re-run the same doomed login every 15 minutes.
+  // A transport failure sets no such flag, so a Wi-Fi blip still keeps it.
+  if (g_neededTwoFactor && g_state != CLOUD_LOGIN_OK) {
     // A code prompt cannot be answered without a human, so a 2FA account can
     // never refresh silently. Drop the password rather than keep asking - and
     // clear the pending step, or the portal would poll this background attempt
