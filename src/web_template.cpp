@@ -259,6 +259,44 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = "";
     return true;
   }
+  // Printer errors. The nav entry is a placeholder rather than page markup so
+  // it disappears along with the section itself where the feature is compiled
+  // out. The section's JS lives in web/app.js and guards on its markup being
+  // present, since that file is shared by every board and sees no #if.
+  if (strcmp(name, "HMS_NAV") == 0) {
+#if HAS_HMS_WEB_UI
+    out = F("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\">"
+            "<span>Printer Errors</span></button>");
+#else
+    out = "";
+#endif
+    return true;
+  }
+#if HAS_HMS_WEB_UI
+  // HMSA<n> is the auto-present mode; HMSM<n> the four alert checkboxes, one
+  // bit each (0 glow, 1 buzzer, 2 LED, 3 wake).
+  if (strncmp(name, "HMSA", 4) == 0 && name[4] >= '0' && name[4] <= '2' && name[5] == '\0') {
+    out = dispSettings.hmsAutoPresent == (uint8_t)(name[4] - '0') ? "selected" : "";
+    return true;
+  }
+  if (strncmp(name, "HMSM", 4) == 0 && name[4] >= '0' && name[4] <= '3' && name[5] == '\0') {
+    out = (dispSettings.hmsAlertMask & (1 << (name[4] - '0'))) ? "checked" : "";
+    return true;
+  }
+  if (strcmp(name, "HMS_EN") == 0)  { out = dispSettings.hmsEnabled ? "checked" : ""; return true; }
+  if (strcmp(name, "HMS_SEV") == 0) { out = dispSettings.hmsSeverityAll ? "checked" : ""; return true; }
+  if (strcmp(name, "HMS_DISP") == 0) { out = dispSettings.hmsEnabled ? "block" : "none"; return true; }
+  if (strcmp(name, "HMS_ONL") == 0) { out = dispSettings.hmsLookupOnline ? "checked" : ""; return true; }
+  if (strcmp(name, "HMS_ONL_DISP") == 0) {
+    // Nothing to look up where the sentences are compiled in.
+#if HAS_FULL_HMS_TABLE
+    out = "none";
+#else
+    out = "block";
+#endif
+    return true;
+  }
+#endif  // HAS_HMS_WEB_UI
   if (strcmp(name, "GLOWF_DISP") == 0) { out = dispSettings.glowMode != 0 ? "block" : "none"; return true; }
   if (strcmp(name, "GLOWC_DISP") == 0) { out = dispSettings.glowMode == 1 ? "block" : "none"; return true; }
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
@@ -403,6 +441,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // JS board flag: the Gauge Layout card re-labels itself for round boards
     // (3 Rim-skin mini slots, no bottom row / AMS view / extras).
 #if defined(DISPLAY_ROUND_240)
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
+  if (strcmp(name, "HMSFULL") == 0) {
+    // JS board flag: this device carries the full HMS sentence table, so the
+    // error card must not fetch the published mirror. A code that has no text
+    // here is blank in Bambu's feed, and the mirror is generated from that same
+    // feed with the same blanks dropped - the download could only ever fail to
+    // help, at 500+ KB a page load.
+#if HAS_FULL_HMS_TABLE
     out = "1";
 #else
     out = "0";
@@ -632,7 +683,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
 //  buffer; sendContent() flushes only when full, minimizing TCP writes.
 //  Peak heap during render is the 2 KB buffer plus any per-placeholder String.
 // ---------------------------------------------------------------------------
-static void streamTemplate(const char* tmpl, size_t tmplLen) {
+// One piece of the page. The page is split so a board without the printer-error
+// feature never links its markup; the pieces stream back to back into a single
+// chunked response, so a split is invisible to the browser.
+struct TemplateSegment {
+  const char* data;
+  size_t      len;
+};
+
+static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   static const size_t BUF_SIZE = 2048;
   char* buf = (char*)malloc(BUF_SIZE + 1);
   if (!buf) {
@@ -666,9 +725,10 @@ static void streamTemplate(const char* tmpl, size_t tmplLen) {
   };
 
   // On ESP32, PROGMEM is directly memory-mapped and readable as const char*.
-  const char* end = tmpl + tmplLen;
-  const char* pos = tmpl;
-  const char* literalStart = tmpl;
+  for (uint8_t seg = 0; seg < segCount; seg++) {
+  const char* end = segs[seg].data + segs[seg].len;
+  const char* pos = segs[seg].data;
+  const char* literalStart = pos;
 
   while (pos < end) {
     if (*pos != '%') { pos++; continue; }
@@ -704,6 +764,7 @@ static void streamTemplate(const char* tmpl, size_t tmplLen) {
   }
 
   if (end > literalStart) emit(literalStart, end - literalStart);
+  }
   flush();
   server.sendContent("");
   free(buf);
@@ -713,7 +774,14 @@ static void streamTemplate(const char* tmpl, size_t tmplLen) {
 //  Public entry points
 // ---------------------------------------------------------------------------
 void serveMainPage() {
-  streamTemplate(PAGE_HTML, sizeof(PAGE_HTML) - 1);
+  const TemplateSegment segs[] = {
+    { PAGE_HTML_1, sizeof(PAGE_HTML_1) - 1 },
+#if HAS_HMS_WEB_UI
+    { PAGE_HTML_ERRORS, sizeof(PAGE_HTML_ERRORS) - 1 },
+#endif
+    { PAGE_HTML_2, sizeof(PAGE_HTML_2) - 1 },
+  };
+  streamTemplate(segs, (uint8_t)(sizeof(segs) / sizeof(segs[0])));
 }
 
 void serveApPage() {

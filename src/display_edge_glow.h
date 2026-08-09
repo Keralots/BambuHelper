@@ -4,20 +4,33 @@
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
 
-// Edge glow: animated border light announcing print complete / print failed.
-// The controller latches per-slot events from the gcode-edge handler and only
-// animates while the display loop reports that slot on an eligible screen
-// (finished, or the printing screen kept up after finish / showing FAILED).
-// Round displays get no border band; the whole module compiles to no-ops
-// there (ring variant is a planned follow-up).
+// Edge glow: animated border light announcing print complete, print failed, or
+// a printer error. The controller latches per-slot events from the edge
+// handlers and only animates while the display loop reports that slot on an
+// eligible screen - the finished screen, the printing screen kept up after
+// finish / showing FAILED, and for an error episode also the idle and error
+// screens (glowScreenEligible() in display_ui.cpp owns that set).
+// Round displays draw a rim ring instead of a border band; the renderers are
+// two whole-file #if branches in display_edge_glow.cpp, not no-ops.
 
 enum GlowEvent : uint8_t {
   GLOW_EV_FINISH = 0,   // color from settings (single color / rainbow)
   GLOW_EV_FAILED = 1,   // always red, settings only pick style/duration
+  GLOW_EV_ERROR  = 2,   // printer error; caller passes the severity colour
 };
 
 // Latch an event for a printer slot. No-op when the effect is disabled.
-void glowNotifyEvent(uint8_t slot, GlowEvent ev);
+// `color` is only read for GLOW_EV_ERROR, whose hue is the error's severity
+// rather than anything the user picked. A pending FINISH or FAILED is never
+// downgraded to an error - those announce the outcome of a whole print and
+// are the rarer, bigger news.
+void glowNotifyEvent(uint8_t slot, GlowEvent ev, uint16_t color = 0);
+
+// True while the armed or animating episode is a printer error. The eligible
+// screen set is wider for those: an error can be raised on a printer that is
+// merely idle, and opening the error screen must not cancel the very glow that
+// announced it.
+bool glowIsErrorEpisode();
 
 // Drop a slot's latch (its printer left FINISH/FAILED); also stops the
 // animation if that slot is the one on screen.

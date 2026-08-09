@@ -2,6 +2,7 @@
 #define DISPLAY_UI_H
 
 #include <LovyanGFX.hpp>
+#include "config.h"   // HAS_HMS_UI, so the error-screen stub can fold away
 
 // Forward-declare the panel type so callers can use the pointer without
 // pulling in the full header (which includes Arduino_GFX headers).
@@ -22,8 +23,40 @@ enum ScreenState {
   SCREEN_SPLIT,         // two printers side-by-side (top/bottom bands)
   SCREEN_CAMERA,        // fullscreen P1/A1 chamber image (#120); tap to exit
   SCREEN_POWER_CONFIRM, // fullscreen plug on/off confirmation (#136); hold to confirm
-  SCREEN_DRY_PEEK       // AMS drying view tapped up during a print (#150); auto-closes
+  SCREEN_DRY_PEEK,      // AMS drying view tapped up during a print (#150); auto-closes
+  SCREEN_HMS            // printer error detail; tap to open while one is active
 };
+
+// How long a tapped-up error screen stays before it drops back on its own.
+// Long enough to read a wrapped sentence, short enough that walking away does
+// not leave the panel parked on it.
+static const uint32_t HMS_SCREEN_MS = 30000;
+
+// Auto-present window for "show briefly, then go back". Shorter than a tap:
+// the user did not ask for this screen, so it gets out of the way sooner.
+static const uint32_t HMS_AUTO_PRESENT_MS = 10000;
+
+// Two different questions, deliberately.
+//
+// hmsScreenAvailable(): the displayed printer has something to list at all,
+// including standing codes that never alert. Keeps an open screen open.
+//
+// hmsScreenAlerting(): the badge is actually up. Only this opens the screen on
+// a tap. A printer with a permanently open door reports a code forever, and
+// letting that own the button would push the camera and the drying peek out of
+// the tap cycle for good - the same "becomes wallpaper" failure the baseline
+// rule exists to prevent. No badge, no reason to tap.
+//
+// Inline-false where the feature is compiled out, so main.cpp's branches fold
+// away instead of costing a call and their own code on the board with the
+// least flash left.
+#if HAS_HMS_UI
+bool hmsScreenAvailable();
+bool hmsScreenAlerting();
+#else
+inline bool hmsScreenAvailable() { return false; }
+inline bool hmsScreenAlerting() { return false; }
+#endif
 
 // Read-only snapshot of the plug power-confirm modal, filled by main.cpp so the
 // renderer (display_ui.cpp) never reaches into main's statics. phase mirrors the

@@ -20,6 +20,7 @@
 #include "tasmota.h"
 #include "clock_mode.h"
 #include "clock_pong.h"
+#include "hms_lookup.h"
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
@@ -189,6 +190,24 @@ static void readDisplayFromForm() {
     int gd = server.arg("glowd").toInt();
     if (gd >= 0 && gd <= 2) dispSettings.glowDuration = (uint8_t)gd;
   }
+
+  // Printer errors. "hmsauto" is always posted when the section exists, so it
+  // doubles as the presence marker: without it the whole block is left alone,
+  // which is what a board that never renders the section must do (otherwise the
+  // two checkbox reads below would clear settings nobody touched). The four
+  // alert checkboxes ride one mask that is always sent, zero included - four
+  // unchecked boxes posting nothing would leave stale bits behind.
+#if HAS_HMS_WEB_UI
+  if (server.hasArg("hmsauto")) {
+    int ap = server.arg("hmsauto").toInt();
+    if (ap >= 0 && ap <= 2) dispSettings.hmsAutoPresent = (uint8_t)ap;
+    dispSettings.hmsEnabled = server.hasArg("hmsen");
+    dispSettings.hmsSeverityAll = server.hasArg("hmssev");
+    dispSettings.hmsLookupOnline = server.hasArg("hmsonl");
+    if (server.hasArg("hmsmask"))
+      dispSettings.hmsAlertMask = (uint8_t)(server.arg("hmsmask").toInt() & 0x0F);
+  }
+#endif
 
   // Clock settings (timezone, 24h)
   if (server.hasArg("tz")) {
@@ -444,7 +463,12 @@ static void handleApply() {
 static void handleStatus() {
   uint8_t slot = 0;
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
-  if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
+  // Bound by the config array, not by MAX_ACTIVE_PRINTERS: the two differ on a
+  // low-RAM board, which still keeps MAX_PRINTERS NVS slots but only runs two
+  // MQTT connections. Clamping to 0 made /status?slot=2 there answer about slot
+  // 0, and the portal's error card - which polls 0..3 blind, having no way to
+  // see a board-specific limit - listed the same printer three times.
+  if (slot >= MAX_PRINTERS) slot = 0;
 
   BambuState& st = printers[slot].state;
 
@@ -473,6 +497,43 @@ static void handleStatus() {
   doc["name"] = printers[slot].config.name;
   doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
   doc["cali"] = isCalibrationPrint(st);  // current/last job is a calibration print (issue #149)
+#if HAS_HMS_UI
+  // Printer errors. Emitted only when there is something to report, so the 3 s
+  // poll stays small on a healthy printer. The portal card consumes these -
+  // keep the names stable.
+  //
+  // Baseline membership rides each entry rather than a second array: it is the
+  // same information in fewer bytes, and the card wants it per row anyway.
+  if (dispSettings.hmsEnabled && (st.printError != 0 || st.hmsCount > 0)) {
+    char codeBuf[HMS_CODE_STR_LEN];
+    if (st.printError != 0) {
+      printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
+      doc["printError"] = codeBuf;
+      const char* peText = printErrorLookupText(st.printError);
+      if (peText) doc["printErrorText"] = peText;
+      // The card says "Canceled", not "error", for a stop the user asked for.
+      if (printErrorIsCancel(st.printError)) doc["printErrorCancel"] = true;
+    }
+    if (st.hmsCount > 0) {
+      JsonArray arr = doc["hms"].to<JsonArray>();
+      for (uint8_t i = 0; i < st.hmsCount; i++) {
+        JsonObject e = arr.add<JsonObject>();
+        hmsFormatCode(st.hms[i].attr, st.hms[i].code, codeBuf, sizeof(codeBuf));
+        e["code"] = codeBuf;
+        e["sev"] = hmsSeverityOf(st.hms[i].code);
+        e["module"] = hmsModuleLabel(st.hms[i].attr);
+        if (hmsIsBaseline(st, st.hms[i].attr, st.hms[i].code)) e["baseline"] = true;
+        // Only on boards carrying the table. Elsewhere the card falls back to
+        // the published mirror, which the browser can reach and we cannot.
+        const char* text = hmsLookupText(st.hms[i].attr, st.hms[i].code);
+        if (text) e["text"] = text;
+      }
+      if (st.hmsOverflow) doc["hmsOverflow"] = (uint8_t)(st.hmsTotal - st.hmsCount);
+    }
+    const ErrorBadge badge = errorBadgeFor(st);
+    if (badge.active) doc["errSev"] = badge.severity;
+  }
+#endif
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;
@@ -568,12 +629,55 @@ static void handleDebug() {
     p["last_pushall_age_s"] = d.lastPushallMs > 0 ? (now - d.lastPushallMs) / 1000UL : 0;
     p["last_update_age_s"] = st.lastUpdate > 0 ? (now - st.lastUpdate) / 1000UL : 0;
     p["last_print_data_age_s"] = st.lastPrintDataMs > 0 ? (now - st.lastPrintDataMs) / 1000UL : 0;
+#if HAS_HMS_UI
+    // Printer errors. The portal card and /status get their own shaped fields
+    // later; this is the raw diagnostic view.
+    char codeBuf[HMS_CODE_STR_LEN];
+    if (st.printError != 0) {
+      printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
+      p["print_error"] = codeBuf;
+      const char* peText = printErrorLookupText(st.printError);
+      if (peText) p["print_error_text"] = peText;
+    }
+    if (st.hmsCount > 0) {
+      JsonArray hmsArr = p["hms"].to<JsonArray>();
+      for (uint8_t k = 0; k < st.hmsCount; k++) {
+        JsonObject e = hmsArr.add<JsonObject>();
+        hmsFormatCode(st.hms[k].attr, st.hms[k].code, codeBuf, sizeof(codeBuf));
+        e["code"] = codeBuf;
+        e["sev"] = hmsSeverityOf(st.hms[k].code);
+        e["module"] = hmsModuleLabel(st.hms[k].attr);
+        e["baseline"] = hmsIsBaseline(st, st.hms[k].attr, st.hms[k].code);
+        const char* text = hmsLookupText(st.hms[k].attr, st.hms[k].code);
+        if (text) e["text"] = text;
+      }
+      p["hms_total"] = st.hmsTotal;
+      p["hms_overflow"] = st.hmsOverflow;
+      p["hms_worst_sev"] = st.hmsWorstSeverity;
+    }
+    p["hms_baseline_n"] = st.hmsBaselineCount;
+    if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
+    // What the on-screen badge resolves to, so a "why is nothing showing"
+    // report can be answered without a panel in front of you.
+    {
+      const ErrorBadge eb = errorBadgeFor(st);
+      p["badge_active"] = eb.active;
+      if (eb.active) p["badge_sev"] = eb.severity;
+      if (printerWasCanceled(st)) p["canceled"] = true;
+    }
+#endif
   }
 
   doc["heap"] = ESP.getFreeHeap();
   doc["uptime"] = millis() / 1000;
   doc["rssi"] = WiFi.RSSI();
   doc["debug_log"] = mqttDebugLog;
+#if HAS_HMS_UI
+  {
+    const char* tv = hmsTableVersion();
+    doc["hms_table_ver"] = tv ? tv : "none";
+  }
+#endif
 
   String json;
   serializeJson(doc, json);
@@ -621,6 +725,15 @@ static void handleToggleSetting() {
   }
   else if (key == "glows")   dispSettings.glowStyle = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "glowd")   dispSettings.glowDuration = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+#if HAS_HMS_WEB_UI
+  else if (key == "hmsen")   dispSettings.hmsEnabled = on;
+  else if (key == "hmssev")  dispSettings.hmsSeverityAll = on;
+  else if (key == "hmsauto") dispSettings.hmsAutoPresent = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+  else if (key == "hmsmask") dispSettings.hmsAlertMask = (uint8_t)(constrain(server.arg("val").toInt(), 0, 15));
+  // Browser-side only - the device never fetches the list, so nothing on the
+  // panel has to be repainted for this one.
+  else if (key == "hmsonl")  dispSettings.hmsLookupOnline = on;
+#endif
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;
   else if (key == "rotsplit")  rotState.splitEnabled = on;
@@ -642,8 +755,10 @@ static void handleToggleSetting() {
   // "fintm" joins these because it rewrites text already on screen: the finish
   // headline is painted only under forceRedraw, so without a re-render the
   // toggle would appear to do nothing until the next print.
+  // "hmsen" / "hmssev" join these because they change what the state badge
+  // says without any printer state moving, and every badge site is cached.
   if (key == "invcol" || key == "slbl" || key == "abar" || key == "timem" ||
-      key == "fintm") applyDisplaySettings();
+      key == "fintm" || key == "hmsen" || key == "hmssev") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
@@ -1442,6 +1557,13 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
   disp["glowStyle"] = dispSettings.glowStyle;
   disp["glowDuration"] = dispSettings.glowDuration;
+#if HAS_HMS_UI
+  disp["hmsEnabled"] = dispSettings.hmsEnabled;
+  disp["hmsSeverityAll"] = dispSettings.hmsSeverityAll;
+  disp["hmsAlertMask"] = dispSettings.hmsAlertMask;
+  disp["hmsAutoPresent"] = dispSettings.hmsAutoPresent;
+  disp["hmsLookupOnline"] = dispSettings.hmsLookupOnline;
+#endif
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
   JsonObject gPrg = gauges["progress"].to<JsonObject>(); gaugeColorsToJson(gPrg, dispSettings.progress);
@@ -1794,6 +1916,13 @@ static void handleSettingsImportFinish() {
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
     if (disp["glowStyle"].is<int>()) { int gs = disp["glowStyle"].as<int>(); dispSettings.glowStyle = (gs >= 0 && gs <= 2) ? (uint8_t)gs : 0; }
     if (disp["glowDuration"].is<int>()) { int gd = disp["glowDuration"].as<int>(); dispSettings.glowDuration = (gd >= 0 && gd <= 2) ? (uint8_t)gd : 0; }
+#if HAS_HMS_UI
+    if (disp["hmsEnabled"].is<bool>())     dispSettings.hmsEnabled = disp["hmsEnabled"].as<bool>();
+    if (disp["hmsSeverityAll"].is<bool>()) dispSettings.hmsSeverityAll = disp["hmsSeverityAll"].as<bool>();
+    if (disp["hmsAlertMask"].is<int>())    dispSettings.hmsAlertMask = (uint8_t)(disp["hmsAlertMask"].as<int>() & 0x0F);
+    if (disp["hmsAutoPresent"].is<int>())  { int ap = disp["hmsAutoPresent"].as<int>(); dispSettings.hmsAutoPresent = (ap >= 0 && ap <= 2) ? (uint8_t)ap : 0; }
+    if (disp["hmsLookupOnline"].is<bool>()) dispSettings.hmsLookupOnline = disp["hmsLookupOnline"].as<bool>();
+#endif
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.
 

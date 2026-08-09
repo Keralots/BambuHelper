@@ -173,6 +173,67 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
+// HMS / print_error reporting. Three independent capabilities:
+//
+//   HAS_HMS_UI           the feature exists at all - state fields, parser,
+//                        badge, error screen, alerts
+//   HAS_ERROR_TEXT_TABLE embedded print_error sentences (~36 KB flash)
+//   HAS_FULL_HMS_TABLE   embedded HMS sentences (~400 KB flash)
+//
+// A code with no embedded sentence still shows "<MODULE> <SEVERITY>" plus the
+// formatted code (~100 bytes). That is the normal case for HMS codes on 4 MB
+// boards, where the sentence comes from the web portal instead.
+//
+// The first two are on for every env; HAS_FULL_HMS_TABLE below is not. The C3
+// family used to drop both - the stock esp32c3 had ~4 KB of app slot left and
+// the round variant ~6 KB, which paid for neither the print_error sentences nor
+// the portal section. Moving the portal CSS and JS out of PAGE_HTML into gzipped
+// assets gave every board ~77 KB back, more than these cost together, so the
+// exception is gone and a C3 reports errors like everything else.
+#define HAS_HMS_UI            1
+#define HAS_ERROR_TEXT_TABLE  1
+
+// The full HMS table only fits envs built on the 8 MB / 16 MB partition
+// tables, and no flash-size macro exists to key off - so this is enumerated
+// per board, which is exactly what this block is the allowed site for.
+// Fielded 16 MB devices never reflashed since v3.7.4 still carry the old
+// 1.75 MB OTA slot and will be told to repartition by the portal's update
+// checker; that is a known, accepted one-time migration.
+#if defined(BOARD_IS_WS154) || defined(BOARD_IS_WS200) || \
+    defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
+    defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
+    defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
+    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216)
+#define HAS_FULL_HMS_TABLE  1
+#else
+#define HAS_FULL_HMS_TABLE  0
+#endif
+
+// The portal's "Printer Errors" section is markup, and markup is flash: it
+// costs ~7 KB, the same on every board. Kept as its own capability - and
+// PAGE_HTML kept split into three streamed literals - so a board that runs out
+// of app slot can still drop the settings page while keeping the parts that
+// matter without a keyboard: the badge, the error screen, the cancel wording.
+// Such a board runs on the defaults (reporting on, important-only, no alert
+// channels), which a settings import can override.
+//
+// Defined in terms of HAS_HMS_UI rather than as a literal, so "the section
+// cannot exist without the feature" is structural - which is why there is no
+// #error guard for that pairing below.
+#define HAS_HMS_WEB_UI  HAS_HMS_UI
+
+#if HAS_FULL_HMS_TABLE && !HAS_HMS_UI
+#error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
+#endif
+
+// Published mirror of Bambu's error-text feed, read by the portal page in the
+// user's browser - never by the device. e.bambulab.com sends no CORS header at
+// all, so the page cannot read the feed directly; GitHub Pages sends
+// "Access-Control-Allow-Origin: *", and release.py refreshes this copy.
+// Boards that carry the full table on-device resolve text themselves and only
+// fall back to this for codes the table does not have.
+#define HMS_MIRROR_URL  "https://keralots.github.io/BambuHelper/errors/hms_en.json"
+
 // Signing into a Bambu account from the device itself (portal form -> cloud
 // token, no Companion Tool). Every board carries it: gzipping the portal's CSS
 // and JS freed ~77 KB of app slot, which is far more than the flow costs even

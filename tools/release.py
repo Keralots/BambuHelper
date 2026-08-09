@@ -10,6 +10,9 @@ Runs the full release pipeline for the web-flasher boards:
     5. Copies only the Full.bin files into docs/firmware/latest/ (web flasher
        binaries) - ota.bin stays in firmware/v<ver>/ for the GitHub Release
     6. Writes docs/firmware/latest/VERSION
+    7. Refreshes docs/errors/hms_en.json from Bambu's error-text feed - the
+       portal page reads it from GitHub Pages for codes the device carries no
+       table for
 
 Old BambuHelper-*-Full.bin files in docs/firmware/latest/ are left in place;
 clean them up manually with `git rm` when they're no longer needed.
@@ -155,11 +158,38 @@ def list_ota_assets(version: str):
     )
 
 
+def refresh_error_mirror():
+    """Pull Bambu's error-text feed and rewrite the portal's mirror.
+
+    Only the mirror. The embedded tables are source files, and regenerating them
+    here would change what the firmware we just built contains - refresh those
+    deliberately with a plain `python tools/gen_error_tables.py`, rebuild, and
+    commit, rather than as a side effect of cutting a release. A network failure
+    is not fatal: the previously published mirror stays up and merely goes stale.
+    """
+    script = REPO_ROOT / "tools" / "gen_error_tables.py"
+    cmd = [sys.executable, str(script), "--mirror-only"]
+    print(f"\n$ {' '.join(cmd)}")
+    # Deliberately not run() - that exits the whole release on a non-zero code,
+    # and a feed that is briefly unreachable must not sink a build that is
+    # otherwise finished.
+    try:
+        rc = subprocess.run(cmd, cwd=REPO_ROOT).returncode
+    except OSError as exc:
+        rc, note = 1, str(exc)
+    else:
+        note = f"exit code {rc}"
+    if rc != 0:
+        print(f"  WARNING: mirror refresh failed ({note}); keeping the published copy")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-build", action="store_true",
                         help="Skip the PlatformIO build step (assume .pio/build is up to date)")
+    parser.add_argument("--skip-error-mirror", action="store_true",
+                        help="Leave docs/errors/hms_en.json alone (offline builds)")
     args = parser.parse_args()
 
     version = read_version()
@@ -180,6 +210,10 @@ def main():
     print("\n--- Copying Full.bin to docs/firmware/latest/ ---")
     copied = copy_full_to_docs(version)
     write_version_file(version)
+
+    if not args.skip_error_mirror:
+        print("\n--- Refreshing docs/errors/hms_en.json ---")
+        refresh_error_mirror()
 
     print("\n" + "=" * 60)
     print(f"Release {version} ready.")
@@ -204,7 +238,7 @@ def main():
             print(f"  {name}")
 
     print("\nNext steps:")
-    print("  git add docs/firmware/latest/ .gitignore include/config.h")
+    print("  git add docs/firmware/latest/ docs/errors/ .gitignore include/config.h")
     print(f'  git commit -m "release: {version}"')
     print(f"  gh release create {version} firmware/{version}/*.bin --notes \"...\"")
     print("  git push")

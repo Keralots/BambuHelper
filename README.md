@@ -119,6 +119,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Smart-plug power monitoring** - per-printer Tasmota, Shelly Gen2/Gen3, or TP-Link Kasa legacy plug with live wattage, per-print kWh + cost, and optional auto-off after print finishes (with hot-end gate)
 - **Button plug power control** - double-click the device button (or touchscreen) to switch the shown printer's smart plug on or off, with a hold-to-confirm safety screen - power a switched-off printer back on without opening a browser
 - **Chamber light control** - manual on/off buttons in the web UI plus per-printer automation: light off after a successful or failed print (with delay), on when a print starts; dual-bar printers (H2C/H2D) switch both bars
+- **Printer error reporting (HMS)** - a red `ERR` badge when the printer reports an HMS code or print error, a tap-to-open detail screen with the official Bambu wording, and optional edge-glow / buzzer / LED / wake-the-screen alerts
 - **Animations** - loading spinner, progress pulse, completion celebration
 - **Web config portal** - dark-themed settings page for WiFi, network, printer, display, power, buzzer, and LED settings
 - **Network configuration** - DHCP or static IP, with optional IP display at startup
@@ -198,6 +199,37 @@ When the printer comes back online, the backoff resets once the connection has h
 | | |
 |---|---|
 | <img src="img/ChamberLight.png" width="360" alt="Chamber light"> | BambuHelper can control the printer's **chamber light** over LAN and Cloud connections (X1, P-series, H2 series). Each printer card in the web UI has a **Chamber light** section with manual **Light On / Light Off** buttons and per-printer automation:<br><br>- **Turn off after a successful print**<br>- **Turn off after a failed or cancelled print**<br>- **Turn on when a print starts**<br><br>The off rules share a configurable **delay** (0 = immediate), so the light stays on long enough to eyeball the finished print. If a new print starts during the delay, the pending off is cancelled. On dual-bar printers (H2C/H2D) both light bars switch together. |
+
+## Printer Errors (HMS)
+
+When a printer reports a problem, it publishes an **HMS code** (hardware/maintenance system) or a **print error**. BambuHelper decodes both and turns the raw hex into the same sentence Bambu Studio shows.
+
+**On the display:** the status badge turns into a red **`ERR`**. Press the button or touchscreen to open the error screen, which lists each active code as a coloured severity bar, a headline of `MODULE SEVERITY  code` (for example `AMS SERIOUS  0701_2000_0002_0021`), and the official description underneath. Long descriptions wrap and end in `...` when they run out of room; entries that do not fit are counted as `+N more`. Round 240x240 screens have room for the worst entry only, plus the count. The screen closes on the next tap or after 30 seconds.
+
+**In the web interface**, the **Printer Errors** section lists everything the printers are reporting right now, per printer, with a `wiki` link on each row. Codes that were already active when the device connected are tagged `standing` - they are the printer's normal state, not news, so they never raise an alert.
+
+### Settings
+
+| Setting | What it does |
+|---|---|
+| **Report printer errors** | Master switch. Off hides the badge, the error screen and every alert. Codes keep being read, so switching it back on takes effect immediately. |
+| **Include low-priority codes** | Off shows only fatal and serious codes. On adds the common ones, such as an open front door. |
+| **Show the error screen automatically** | *Never - badge only* / *Briefly, then go back* / *Until dismissed*. |
+| **Alert on a new error** | Any combination of edge glow, buzzer, status LED, and waking a sleeping screen. Alerts fire once per new code, never repeatedly. |
+| **Look up error text on this page** | Only appears on boards that do not store the HMS sentences - see below. |
+
+### Where the text comes from
+
+The print-error sentences (about 540 codes) are stored on **every** board. The HMS table is far larger - roughly 4000 codes and 400 KB - so it is compiled in only on boards with 8 MB or 16 MB of flash:
+
+| Boards | Error text on the display | Error text in the web interface |
+|---|---|---|
+| Waveshare 1.54" / 2" / 2.8" / 3.5", Guition JC3248W535, WT32-SC01 Plus, QD ES3N28P, Panlee SC05_X, SenseCAP Indicator | Print errors **and** HMS codes | From the device, no internet needed |
+| ESP32-S3 / ESP32-C3 Super Mini (square and round), ESP32-S3-Zero, CYD, TZT L1435-2.4, DIY builds | Print errors only. HMS codes show the code, severity and module | Fetched by **your browser**, once per visit, from `keralots.github.io` |
+
+On the second group, **the device itself never goes online for this** - the config page you are looking at does the lookup, so an isolated printer network changes nothing. Untick **Look up error text on this page** to stop even that; every row keeps its code, severity, module and wiki link.
+
+> **About the wiki links:** Bambu's wiki documents only a small fraction of the HMS codes (about 225 of 4000). Rows for a documented code link straight to its page; every other row links to the [HMS index](https://wiki.bambulab.com/en/hms/home), where you can search. The device screen always shows the full code, so you can look it up anywhere.
 
 ## Hardware Assembly for the DIY Version (ESP32-S3 Super Mini)
 
@@ -469,6 +501,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 | **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code, or a Bambu account sign-in / pasted token), the account's printer list and a LAN scan to fill the serial in, live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
 | **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, custom labels (accented European characters supported) |
 | **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
+| **Printer Errors** | Live list of every HMS code and print error the printers report, plus the badge / error-screen / alert settings - see Printer Errors |
 | **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
 | **WiFi & System** | WiFi credentials, DHCP / static IP, mDNS hostname, settings backup (JSON export / import), firmware update - one-click install from GitHub Releases or manual `.bin` upload |
 | **Power** | Smart-plug power monitoring: Tasmota / Shelly / TP-Link Kasa plug slots, tariff and currency, auto power-off, button power control, live plug stats |
@@ -485,6 +518,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 | Connecting Printer | WiFi connected, waiting for MQTT |
 | Idle | Connected, printer not printing |
 | Printing | Active print with full dashboard |
+| Printer error | Tap the button/touchscreen while the `ERR` badge is up, or automatically if configured - see Printer Errors |
 | Finished | Print complete with animation (auto-off after timeout) |
 | Clock | After finish timeout (if enabled) - shows digital clock with date |
 | Display Off | After finish timeout (if clock disabled) or printer powered off |

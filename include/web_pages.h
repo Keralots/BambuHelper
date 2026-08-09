@@ -9,18 +9,23 @@
 //  Two literals are defined here:
 //    PAGE_AP_HTML  - small WiFi-setup page served in AP mode (no %TOKEN%
 //                    substitution, sent verbatim by serveApPage()).
-//    PAGE_HTML     - the full configuration page (shell + sidebar + six
-//                    section blocks). Run through resolvePlaceholder() by
-//                    streamTemplate() in chunks of 2 KB.
+//    PAGE_HTML_1/_ERRORS/_2 - the full configuration page (shell + sidebar +
+//                    one section block per nav entry), streamed back to back by
+//                    serveMainPage() and run through resolvePlaceholder() by
+//                    streamTemplate() in chunks of 2 KB. The middle piece is
+//                    the Printer Errors section and only exists where the
+//                    feature is compiled in - the esp32c3 has ~5 KB of app slot
+//                    left and cannot carry markup it can never show.
 //
 //  Section blocks live as hidden <div id="sec-..."> elements inside the main
-//  panel. Sidebar clicks toggle the `hidden` attribute - all six sections live
+//  panel. Sidebar clicks toggle the `hidden` attribute - every section lives
 //  in the DOM at all times, so user-edited input values persist across nav.
 // =============================================================================
 #pragma once
 
-// HAS_CLOUD_LOGIN gates the on-device sign-in block; flash-poor boards ship the
-// page without it.
+// Two gates live in here. HAS_HMS_UI keeps the Printer Errors section in its
+// own literal, so boards without the feature carry none of its markup;
+// HAS_CLOUD_LOGIN does the same for the on-device sign-in block.
 #include "config.h"
 
 #include <Arduino.h>
@@ -74,7 +79,7 @@ function saveWifi(){
 )rawliteral";
 
 // -----------------------------------------------------------------------------
-//  Main page - shell + sidebar + six hidden section <div> blocks.
+//  Main page - shell + sidebar + one hidden section <div> block per nav entry.
 //
 //  Field IDs (audited against web_server.cpp, NOT the design handoff README):
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
@@ -87,6 +92,8 @@ function saveWifi(){
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
+//    Errors:   hmsen, hmssev, hmsauto, hmsonl, hmsm0..hmsm3 (composed into the
+//              hmsmask arg)
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
@@ -97,7 +104,7 @@ function saveWifi(){
 //              tsm_ao, tsm_ad, tsm_aod, tsm_slot
 //    Diag:     dbglog
 // -----------------------------------------------------------------------------
-static const char PAGE_HTML[] PROGMEM = R"rawliteral(
+static const char PAGE_HTML_1[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -141,6 +148,7 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
   <h4>Configuration</h4>
   <button class="nav-item" type="button" data-section="printer" aria-current="true"><span>Printer</span></button>
   <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
+%HMS_NAV%
   <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
   <button class="nav-item" type="button" data-section="advanced"><span>Advanced</span></button>
   <h4>Network</h4>
@@ -704,7 +712,89 @@ R"rawliteral(
   </div>
 </div>
 
-<!-- ===== Section 3: Hardware ===== -->
+)rawliteral";
+
+#if HAS_HMS_WEB_UI
+static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
+<!-- ===== Section 3: Printer Errors ===== -->
+<div class="section" id="sec-errors" hidden>
+  <div class="section-intro">
+    <h2>Printer Errors</h2>
+    <p>What the device does when the printer reports an HMS code or a print error. These settings are global - one buzzer, one LED and one screen serve every printer slot.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert.</p></div></div>
+    <div class="card-body"><div id="hmsLive"><span class="text-dim">Loading...</span></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Reporting</h3><p>An active error replaces the status badge with a red ERR. Tap the button to read the details.</p></div></div>
+    <div class="card-body">
+      <label class="check-row">
+        <input type="checkbox" id="hmsen" value="1" %HMS_EN% onchange="toggleSetting('hmsen',this.checked);toggleHmsFields()">
+        <label for="hmsen">Report printer errors</label>
+      </label>
+      <div class="help-text" style="padding-left:28px">Off hides the badge, the error screen and every alert below. Codes keep being read, so turning this back on takes effect immediately.</div>
+
+      <div id="hmsFields" style="display:%HMS_DISP%">
+        <label class="check-row" style="margin-top:var(--sp-3)">
+          <input type="checkbox" id="hmssev" value="1" %HMS_SEV% onchange="toggleSetting('hmssev',this.checked)">
+          <label for="hmssev">Include low-priority codes</label>
+        </label>
+        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common ones, such as an open front door. Codes already active when the device connects never raise an alert either way - they are the printer's normal state, not news.</div>
+
+        <div class="field" style="margin-top:var(--sp-4)">
+          <label for="hmsauto">Show the error screen automatically</label>
+          <select id="hmsauto" onchange="toggleSetting('hmsauto',this.value)">
+            <option value="0" %HMSA0%>Never - badge only</option>
+            <option value="1" %HMSA1%>Briefly, then go back</option>
+            <option value="2" %HMSA2%>Until dismissed (button or touch)</option>
+          </select>
+        </div>
+
+        <!-- The check-rows are siblings of the caption, not children of the
+             .field: ".field > label" forces display:block and would break the
+             check-row flex layout, dropping each caption under its box. -->
+        <div class="field" style="margin:var(--sp-4) 0 0"><label>Alert on a new error</label></div>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm0" value="1" %HMSM0% onchange="applyHmsMask()">
+          <label for="hmsm0">Edge glow</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm1" value="1" %HMSM1% onchange="applyHmsMask()">
+          <label for="hmsm1">Buzzer</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm2" value="1" %HMSM2% onchange="applyHmsMask()">
+          <label for="hmsm2">Status LED</label>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hmsm3" value="1" %HMSM3% onchange="applyHmsMask()">
+          <label for="hmsm3">Wake a sleeping screen</label>
+        </label>
+        <div class="hint" style="padding-left:28px">Without "wake", the error screen never comes up on its own while the display is asleep - you see the badge when you wake it yourself.</div>
+
+        <!-- Hidden on boards that carry the sentence table: there is nothing to
+             look up, so the switch would do nothing. -->
+        <div id="hmsOnlRow" style="display:%HMS_ONL_DISP%">
+          <div class="field" style="margin:var(--sp-4) 0 0"><label>Error text</label></div>
+          <label class="check-row">
+            <input type="checkbox" id="hmsonl" value="1" %HMS_ONL% onchange="toggleSetting('hmsonl',this.checked);hmsLookupChanged()">
+            <label for="hmsonl">Look up error text on this page</label>
+          </label>
+          <div class="help-text" style="padding-left:28px">This board stores the text for print errors, but not for the thousands of HMS codes. With this on, <strong>this page</strong> - not the device - fetches that missing text once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link on every row, and print-error rows keep their text either way.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+)rawliteral";
+#endif  // HAS_HMS_WEB_UI
+
+static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
+<!-- ===== Section 4: Hardware ===== -->
 <div class="section" id="sec-hardware" hidden>
   <div class="section-intro">
     <h2>Hardware</h2>
@@ -883,7 +973,7 @@ R"rawliteral(
   </div>
 </div>
 
-<!-- ===== Section 4: Advanced ===== -->
+<!-- ===== Section 5: Advanced ===== -->
 <div class="section" id="sec-advanced" hidden>
   <div class="section-intro">
     <h2>Advanced</h2>
@@ -947,7 +1037,7 @@ R"rawliteral(
   </div>
 </div>
 
-<!-- ===== Section 5: WiFi & System ===== -->
+<!-- ===== Section 6: WiFi & System ===== -->
 <div class="section" id="sec-wifi" hidden>
   <div class="section-intro">
     <h2>WiFi &amp; System</h2>
@@ -1101,7 +1191,7 @@ R"rawliteral(
   <p class="hint" style="margin-top:var(--sp-3)">Reboot and factory reset have moved to the <strong>Advanced</strong> section.</p>
 </div>
 
-<!-- ===== Section 6: Power Monitoring ===== -->
+<!-- ===== Section 7: Power Monitoring ===== -->
 <div class="section" id="sec-power" hidden>
   <div class="section-intro">
     <h2>Power Monitoring</h2>
@@ -1206,7 +1296,7 @@ R"rawliteral(
   <div id="powerStatus" role="status" aria-live="polite" style="margin-top:var(--sp-2);font-size:13px"></div>
 </div>
 
-<!-- ===== Section 6: Diagnostics ===== -->
+<!-- ===== Section 8: Diagnostics ===== -->
 <div class="section" id="sec-diag" hidden>
   <div class="section-intro">
     <h2>Diagnostics</h2>
@@ -1237,7 +1327,7 @@ R"rawliteral(
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
 
-<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',es8311:'%ES8311_AUDIO%'};</script>
+<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',es8311:'%ES8311_AUDIO%',hmsFull:'%HMSFULL%'};</script>
 <script src="/app.js?v=%JSVER%"></script>
 </body>
 </html>

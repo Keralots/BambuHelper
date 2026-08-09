@@ -63,6 +63,46 @@ struct AmsState {
   char     vtType[16];
 };
 
+// ── Printer errors: print.hms + print.print_error ───────────────────────────
+#if HAS_HMS_UI
+
+// Display cap, NOT a protocol bound. Every entry the printer reports is scanned
+// for worst severity and baseline membership; only this many are kept for
+// rendering, sorted by severity then key so a reordered array cannot manufacture
+// a change. hmsOverflow records that the printer sent more than we kept.
+#define HMS_MAX_ENTRIES    8
+
+// Codes already standing when we connect are the printer's baseline: listed,
+// but never alerting. Capped per slot so a pathological printer cannot eat RAM.
+#define HMS_BASELINE_MAX  16
+
+struct HmsEntry {
+  uint32_t attr;   // module in the top byte
+  uint32_t code;   // severity in the high 16 bits
+};
+
+// Severity is the high half of `code`: 1 fatal, 2 serious, 3 common. The live
+// feed also carries one severity-0 code, and Bambu may add more, so anything
+// outside 1-3 is "unknown": listed, never alerting, and ranked below every
+// real severity. Clamped to a byte - real values are single digits.
+inline uint8_t hmsSeverityOf(uint32_t code) {
+  uint32_t sev = code >> 16;
+  return sev > 255 ? 255 : (uint8_t)sev;
+}
+
+// Sort/compare key: 0 = fatal (worst) .. 3 = unknown (loses to everything).
+inline uint8_t hmsSeverityRank(uint32_t code) {
+  uint8_t sev = hmsSeverityOf(code);
+  return (sev >= 1 && sev <= 3) ? (uint8_t)(sev - 1) : (uint8_t)3;
+}
+
+// Full 64-bit lookup key, matching Bambu's 16-hex-char ecode.
+inline uint64_t hmsKeyOf(uint32_t attr, uint32_t code) {
+  return ((uint64_t)attr << 32) | (uint64_t)code;
+}
+
+#endif  // HAS_HMS_UI
+
 // Chamber-light automation flags (PrinterConfig.lightFlags bitmask)
 #define LIGHT_OFF_ON_FINISH 0x01  // turn light off after a successful print
 #define LIGHT_OFF_ON_FAILED 0x02  // turn light off after a failed/cancelled print
@@ -119,8 +159,46 @@ struct BambuState {
   int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
   bool hasSecondLight;        // true if printer reports chamber_light2 (H2C/H2D dual bar)
   unsigned long lightOffDueMs; // millis() deadline for a scheduled light-off, 0 = none pending
+#if HAS_HMS_UI
+  uint32_t printError;        // print.print_error, 0 = none
+  bool printErrorSeen;        // a value has been observed on this connection.
+                              // First sight initializes without counting as an
+                              // edge - booting into an error must not alert.
+  HmsEntry hms[HMS_MAX_ENTRIES];  // worst-first, deterministic subset
+  uint8_t  hmsCount;          // entries kept in hms[]
+  uint8_t  hmsTotal;          // entries the printer actually reported
+  bool     hmsOverflow;       // hmsTotal > HMS_MAX_ENTRIES
+  uint8_t  hmsWorstSeverity;  // severity of hms[0], 0 = none active. The array
+                              // is sorted worst-first, so the worst entry is
+                              // always hms[0] - no separate index is needed,
+                              // and the truncated tail can never hold anything
+                              // more severe than what was kept.
+  HmsEntry hmsBaseline[HMS_BASELINE_MAX];  // standing codes, never alert
+  uint8_t  hmsBaselineCount;
+  bool     hmsBaselineSaturated;  // more than HMS_BASELINE_MAX standing codes.
+                                  // We can no longer tell a dropped baseline
+                                  // member from a new code, so everything on
+                                  // this slot counts as baseline until the next
+                                  // connect. Suppressing a real alert beats
+                                  // false-alerting on a permanent condition,
+                                  // and a printer standing on 17+ codes is
+                                  // already broken. Logged when it happens.
+#endif
   AmsState ams;               // AMS tray data
 };
+
+#if HAS_HMS_UI
+// True when (attr, code) was already standing during the connect baseline
+// window - listed on screen and in the portal, but never raises the badge or
+// fires an alert.
+inline bool hmsIsBaseline(const BambuState& s, uint32_t attr, uint32_t code) {
+  if (s.hmsBaselineSaturated) return true;
+  for (uint8_t i = 0; i < s.hmsBaselineCount; i++)
+    if (s.hmsBaseline[i].attr == attr && s.hmsBaseline[i].code == code)
+      return true;
+  return false;
+}
+#endif
 
 inline PrinterGcodeState parsePrinterGcodeState(const char* state) {
   if (!state || state[0] == '\0') return GCODE_UNKNOWN;

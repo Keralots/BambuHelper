@@ -109,6 +109,28 @@ struct DisplaySettings {
   uint8_t  glowStyle;      // 0 = Sweep (traveling head + tail), 1 = Pulse (breathing),
                            // 2 = Storm (shattered flickering shards)
   uint8_t  glowDuration;   // 0 = Burst, 1 = Until dismissed, 2 = Burst + reminder
+#if HAS_HMS_UI
+  // Printer errors (HMS + print_error). Global, not per-printer: the alert
+  // hardware is one buzzer, one LED and one panel, so a per-printer mask would
+  // have no answer for "A says buzz, B says silent, both erroring". Compiled
+  // out where the feature is - the esp32c3 cannot spare flash for settings it
+  // can never act on.
+  bool     hmsEnabled;     // master opt-out. Off = no badge, no error screen,
+                           // no alerts. Parsing stays on, so re-enabling is
+                           // instant instead of waiting for the next report.
+  bool     hmsSeverityAll; // false = important only (severity 1+2),
+                           // true = also common (severity 3)
+  uint8_t  hmsAlertMask;   // bit0 glow, bit1 buzzer, bit2 LED, bit3 wake
+  uint8_t  hmsAutoPresent; // 0 = badge only, 1 = show briefly, 2 = until dismissed
+  bool     hmsLookupOnline;// let the config page fetch the sentence list from
+                           // the published mirror. The DEVICE never does this -
+                           // the request comes from the browser - so the switch
+                           // exists for isolated networks, where it can only
+                           // fail, and for anyone who wants no third-party
+                           // request at all. Off still leaves the code,
+                           // severity, module and wiki link. Ignored on boards
+                           // that carry the table (nothing to fetch).
+#endif
   // Gauge full-scale ranges (arc maxima). Lowering a scale makes the arc sweep
   // fuller for a printer's normal range. Defaults suit any Bambu printer.
   uint16_t nozzleScaleMax;   // C

@@ -2,6 +2,7 @@
 var SECTION_LABELS = {
   printer: 'Printer Settings',
   display: 'Display',
+  errors: 'Printer Errors',
   hardware: 'Hardware',
   advanced: 'Advanced',
   wifi: 'WiFi & System',
@@ -84,6 +85,9 @@ function startPolling(id){
   stopPolling();
   if (id === 'diag') { refreshDiag(); diagTimer = setInterval(refreshDiag, 5000); }
   if (id === 'printer') { refreshLiveStats(); statsTimer = setInterval(refreshLiveStats, 3000); }
+  /* Errors move on their own schedule, not the user's - 5 s is plenty, and it
+     is four slot fetches per tick. */
+  if (id === 'errors') { refreshErrorCard(); statsTimer = setInterval(refreshErrorCard, 5000); }
   if (id === 'power') { refreshPowerStats(); powerTimer = setInterval(refreshPowerStats, 5000); }
   if (id === 'hardware' || id === 'wifi') { refreshHwInfo(); hwTimer = setInterval(refreshHwInfo, 5000); }
 }
@@ -1066,6 +1070,7 @@ function applyDisplay(){
   p.append('glow_clr', document.getElementById('glow_clr').value);
   p.append('glows', document.getElementById('glows').value);
   p.append('glowd', document.getElementById('glowd').value);
+  appendHmsSettings(p);   /* no-op where the Printer Errors section does not exist */
   p.append('tz', document.getElementById('tz').value);
   if (document.getElementById('use24h').checked) p.append('use24h', '1');
   p.append('datefmt', document.getElementById('datefmt').value);
@@ -1108,6 +1113,181 @@ function toggleSetting(key, on){
     .then(function(r){if(r.ok)showToast(typeof on==='boolean'?(on?key+' ON':key+' OFF'):key+' saved');else showToast('Error');})
     .catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
+
+/* ============ Printer errors (HMS + print_error) ============
+
+   This file is shared by every board, but the Printer Errors section is not:
+   flash-poor boards compile its markup out and keep only the on-screen badge.
+   Every function here therefore checks that its markup exists first, and the
+   two called from shared code - appendHmsSettings() and refreshErrorCard() -
+   simply do nothing where it does not. */
+
+function hmsHasSection(){ return !!document.getElementById('hmsauto'); }
+
+/* The four alert checkboxes ride one bitmask, and it is always sent -
+   including zero. Four unchecked boxes posting nothing at all would leave the
+   old bits in place on the device. */
+function hmsMaskValue(){
+  var m = 0;
+  for (var i = 0; i < 4; i++){
+    var e = document.getElementById('hmsm' + i);
+    if (e && e.checked) m |= (1 << i);
+  }
+  return m;
+}
+function applyHmsMask(){ toggleSetting('hmsmask', hmsMaskValue()); }
+
+function toggleHmsFields(){
+  var f = document.getElementById('hmsFields');
+  var e = document.getElementById('hmsen');
+  if (f && e) f.style.display = e.checked ? 'block' : 'none';
+}
+
+function appendHmsSettings(p){
+  if (!hmsHasSection()) return;
+  var en = document.getElementById('hmsen'), sv = document.getElementById('hmssev');
+  if (en && en.checked) p.append('hmsen', '1');
+  if (sv && sv.checked) p.append('hmssev', '1');
+  var ol = document.getElementById('hmsonl');
+  if (ol && ol.checked) p.append('hmsonl', '1');
+  p.append('hmsauto', document.getElementById('hmsauto').value);
+  p.append('hmsmask', String(hmsMaskValue()));
+}
+
+/* Live card. Text comes from the device where a table is compiled in; the rest
+   is looked up in the published mirror, which the browser can reach and the
+   firmware cannot (e.bambulab.com sends no CORS header, and the feed is
+   750 KB). Fetched once per page load, never inside the poll.
+
+   Boards carrying the full table (DEV.hmsFull) never fetch it: a code with no
+   device text is blank in Bambu's feed, and the mirror is built from that same
+   feed with the same blanks dropped, so the request could only ever fail to
+   help. And the "hmsonl" setting lets anyone turn the lookup off - on an
+   isolated network it can only fail, and some people want no third-party
+   request from a LAN page at all. */
+var HMS_MIRROR = 'https://keralots.github.io/BambuHelper/errors/hms_en.json';
+var HMS_ON_DEVICE = (DEV.hmsFull === '1');
+var _hmsMirror = null, _hmsTexts = null, _hmsLast = null;
+
+/* Read live rather than cached: flipping the checkbox has to take effect on the
+   next render, without a reload. Missing markup means an older page, where the
+   lookup was unconditional. */
+function hmsLookupAllowed(){
+  if (HMS_ON_DEVICE) return false;
+  var c = document.getElementById('hmsonl');
+  return !c || c.checked;
+}
+
+/* Turning the lookup off has to drop what was already fetched, or the sentences
+   stay on screen until a reload and the switch looks broken. Turning it back on
+   clears the cached promise too, so the next render refetches. */
+function hmsLookupChanged(){
+  if (!hmsLookupAllowed()) _hmsTexts = null;
+  _hmsMirror = null;
+  refreshErrorCard();
+}
+
+function hmsMirror(){
+  if (!hmsLookupAllowed()) return Promise.resolve(null);
+  if (!_hmsMirror){
+    _hmsMirror = fetch(HMS_MIRROR)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; });
+  }
+  return _hmsMirror;
+}
+function hmsSevName(s){ return ['Info','Fatal','Serious','Common'][s] || 'Info'; }
+function hmsSevClr(s){
+  return ['var(--text-dim)','var(--danger)','var(--warn)','var(--warn)'][s] || 'var(--text-dim)';
+}
+
+/* lbl overrides the severity word: a print_error carries no severity of its
+   own, and a cancel is not an error at all. */
+function hmsRow(code, sev, mod, text, base, wiki, lbl){
+  var h = '<div style="padding:8px 0;border-top:1px solid var(--line-soft)">'
+        + '<div class="hstack" style="flex-wrap:wrap">'
+        + '<span style="font-weight:600;color:' + hmsSevClr(sev) + '">' + (lbl || hmsSevName(sev)) + '</span>'
+        + (mod ? '<span class="text-dim small">' + esc(mod) + '</span>' : '')
+        + '<span class="mono small">' + esc(code) + '</span>';
+  if (base) h += '<span class="text-dim small" title="Already active when the device connected - listed, never alerts">standing</span>';
+  if (wiki) h += '<a class="small" target="_blank" rel="noopener" href="' + wiki + '">wiki</a>';
+  h += '</div>';
+  if (text) h += '<div class="small" style="margin-top:2px;color:var(--text-mid)">' + esc(text) + '</div>';
+  return h + '</div>';
+}
+
+function hmsText(map, code, dev){
+  if (dev) return dev;
+  if (!map) return '';
+  var k = code.replace(/_/g, '');
+  return map[k] || map[k.toUpperCase()] || '';
+}
+
+/* Every per-code wiki page sits under a model path segment (x1, a1-mini, a2l,
+   h2d, ams-ht, ...) that the code itself does not carry, so the URL cannot be
+   built from the code alone - the old fixed /en/x1/ link 404'd for most codes.
+   The mirror ships the path verbatim (the wiki's own separator and case; some
+   of its links use "-" between the code groups, not "_"). Where the map is
+   missing - a full-table board never fetches the mirror, and the text lookup
+   can be switched off - link the HMS index, which lists every documented code
+   and never 404s. Only ~225 of 3958 codes have a page at all, so the index is
+   the common case either way. */
+var HMS_WIKI_INDEX = 'https://wiki.bambulab.com/en/hms/home';
+function hmsWikiUrl(code){
+  var m = _hmsTexts && _hmsTexts.wiki, p = m && m[code.replace(/_/g, '').toUpperCase()];
+  return p ? 'https://wiki.bambulab.com/en/' + p : HMS_WIKI_INDEX;
+}
+
+function hmsRender(){
+  var el = document.getElementById('hmsLive');
+  if (!el || !_hmsLast) return;
+  var h = '', need = false, m = _hmsTexts || {};
+
+  for (var i = 0; i < _hmsLast.length; i++){
+    var d = _hmsLast[i];
+    if (!d || !d.configured) continue;
+    var rows = '';
+
+    if (d.printError){
+      var t = hmsText(m.err, d.printError, d.printErrorText);
+      if (!t && !d.printErrorText) need = true;
+      rows += hmsRow(d.printError, d.printErrorCancel ? 0 : 1, '', t, false, '',
+                     d.printErrorCancel ? 'Canceled' : 'Print error');
+    }
+
+    var a = d.hms || [];
+    for (var j = 0; j < a.length; j++){
+      var e = a[j], tx = hmsText(m.hms, e.code, e.text);
+      if (!tx && !e.text) need = true;
+      rows += hmsRow(e.code, e.sev, e.module, tx, e.baseline, hmsWikiUrl(e.code));
+    }
+
+    if (d.hmsOverflow) rows += '<div class="small text-dim" style="padding-top:6px">+' + d.hmsOverflow + ' more not kept</div>';
+    if (rows) h += '<div style="margin-bottom:var(--sp-3)"><strong>' + esc(d.name || ('Printer ' + (i + 1))) + '</strong>' + rows + '</div>';
+  }
+
+  el.innerHTML = h || '<span class="text-dim">No errors reported.</span>';
+  // Second guard at the call site as well as inside hmsMirror(): the card
+  // re-renders on every 3 s poll, and a standing blank code would otherwise
+  // build a throwaway promise each time. The third guard is inside the
+  // continuation: a request already in flight when the user unticks the box
+  // still resolves, and without the re-check it would put the sentences back
+  // on screen after the switch said no.
+  if (need && !_hmsTexts && hmsLookupAllowed())
+    hmsMirror().then(function(j){
+      if (j && hmsLookupAllowed()){ _hmsTexts = j; hmsRender(); }
+    });
+}
+
+function refreshErrorCard(){
+  if (!document.getElementById('hmsLive')) return;
+  var q = [];
+  for (var s = 0; s < 4; s++){
+    q.push(fetch('/status?slot=' + s).then(function(r){ return r.json(); }).catch(function(){ return null; }));
+  }
+  Promise.all(q).then(function(all){ _hmsLast = all; hmsRender(); });
+}
+
 function toggleDualPrinterMode(on){
   toggleSetting('dualp', on);
   var t = document.getElementById('tab1');
@@ -1501,13 +1681,17 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   toggleBtnPin();
   toggleLed();
   toggleAfterPrint();
-  // Initial section: URL hash, else last visited (localStorage), else printer
+  // Initial section: URL hash, else last visited (localStorage), else printer.
+  // Printer Errors only exists on boards that compiled its markup in, so it
+  // joins the list only when the page actually carries it.
+  var SECTIONS = ['printer','display','hardware','wifi','power','diag'];
+  if (document.getElementById('sec-errors')) SECTIONS.push('errors');
   var initId = 'printer';
   if (location.hash){
     var h = location.hash.substring(1);
-    if (['printer','display','hardware','wifi','power','diag'].indexOf(h) >= 0) initId = h;
+    if (SECTIONS.indexOf(h) >= 0) initId = h;
   } else {
-    try { var saved = localStorage.getItem('bambu_section'); if (saved && ['printer','display','hardware','wifi','power','diag'].indexOf(saved) >= 0) initId = saved; } catch(e){}
+    try { var saved = localStorage.getItem('bambu_section'); if (saved && SECTIONS.indexOf(saved) >= 0) initId = saved; } catch(e){}
   }
   loadSection(initId);
   applyLabelMaxlen();
