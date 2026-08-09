@@ -5170,6 +5170,24 @@ static uint8_t drawWrappedText(const char* text, int16_t x, int16_t y,
     }
     memcpy(line, p, fit);
     line[fit] = '\0';
+
+    // Last line we are allowed to draw, with text still to come: mark it. A
+    // sentence clipped by the line budget otherwise reads as a complete one -
+    // "...in the tube between the filament buffer" looks like the whole
+    // instruction. Shrink the line until the marker fits the same width.
+    const char* rest = p + fit;
+    while (*rest == ' ') rest++;
+    if (drawn + 1 == maxLines && *rest) {
+      size_t n = fit;
+      if (n > sizeof(line) - 4) n = sizeof(line) - 4;
+      for (; n > 0; n--) {
+        memcpy(line, p, n);
+        memcpy(line + n, "...", 4);
+        if ((int16_t)tft.textWidth(line) <= maxW) break;
+      }
+      if (n == 0) { memcpy(line, p, fit); line[fit] = '\0'; }
+    }
+
     tft.drawString(line, x, y + drawn * lineH);
     drawn++;
     p += fit;
@@ -5297,7 +5315,10 @@ static void drawHmsScreen() {
 
     // A block is only worth starting if its headline and at least one line of
     // text fit above the footer; otherwise it belongs in the "+N more" count.
-    if (y + 2 * (smallH + 2) > footY - smallH) break;
+    // footY is the footer's own top edge (it is drawn TC_DATUM downwards), so
+    // it is already the content limit - reserving another smallH on top of it
+    // threw away a usable line.
+    if (y + 2 * (smallH + 2) > footY) break;
 
     char headline[64];
     uint16_t hlColor = CLR_RED;
@@ -5314,7 +5335,9 @@ static void drawHmsScreen() {
 
     // Cap the wrap at whatever is left above the footer, never past 4 lines -
     // one long sentence must not push every other entry off the screen.
-    int16_t roomLines = (footY - smallH - y) / (smallH + 2);
+    // n lines occupy n * (smallH + 2) - 2 px, so this exact form leaves a 2 px
+    // gap above the footer and nothing more.
+    int16_t roomLines = (footY - y) / (smallH + 2);
     if (roomLines > 4) roomLines = 4;
     if (roomLines > 0) {
       const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
