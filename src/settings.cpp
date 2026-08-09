@@ -1165,8 +1165,51 @@ bool loadCloudToken(char* buf, size_t bufLen) {
 void clearCloudToken() {
   prefs.begin(NVS_NAMESPACE, false);
   prefs.remove("cl_token");
-  // cl_email: stale key written by old firmware's on-device cloud login;
-  // kept here so upgraded devices get it purged on logout.
   prefs.remove("cl_email");
+  prefs.remove("cl_pass");
+  prefs.end();
+}
+
+// ---------------------------------------------------------------------------
+//  Account credentials for on-device sign-in
+//
+//  The email is kept so the portal can show who is signed in and so a stored
+//  password has something to pair with. The password is optional and only
+//  exists to re-run sign-in when the token expires; accounts with 2FA cannot
+//  use it, and the sign-in code deletes it when it discovers that.
+// ---------------------------------------------------------------------------
+void saveCloudEmail(const char* email) {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.putString("cl_email", email);
+  prefs.end();
+}
+
+bool loadCloudEmail(char* buf, size_t bufLen) {
+  prefs.begin(NVS_NAMESPACE, true);
+  String e = prefs.getString("cl_email", "");
+  prefs.end();
+  if (e.length() == 0) return false;
+  strlcpy(buf, e.c_str(), bufLen);
+  return true;
+}
+
+void saveCloudPassword(const char* password) {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.putString("cl_pass", password);
+  prefs.end();
+}
+
+bool loadCloudPassword(char* buf, size_t bufLen) {
+  prefs.begin(NVS_NAMESPACE, true);
+  String p = prefs.getString("cl_pass", "");
+  prefs.end();
+  if (p.length() == 0) return false;
+  strlcpy(buf, p.c_str(), bufLen);
+  return true;
+}
+
+void clearCloudPassword() {
+  prefs.begin(NVS_NAMESPACE, false);
+  prefs.remove("cl_pass");
   prefs.end();
 }

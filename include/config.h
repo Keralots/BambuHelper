@@ -242,6 +242,13 @@
 // fall back to this for codes the table does not have.
 #define HMS_MIRROR_URL  "https://keralots.github.io/BambuHelper/errors/hms_en.json"
 
+// Signing into a Bambu account from the device itself (portal form -> cloud
+// token, no Companion Tool). Every board carries it: gzipping the portal's CSS
+// and JS freed ~77 KB of app slot, which is far more than the flow costs even
+// on the 1.75 MB C3 boards. Kept as a capability so a future flash-starved
+// board can drop it without touching anything but this block.
+#define HAS_CLOUD_LOGIN  1
+
 // =============================================================================
 //  Display rotation (multi-printer)
 // =============================================================================

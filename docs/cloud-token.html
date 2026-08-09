@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>BambuHelper - Cloud Token Setup</title>
-  <meta name="description" content="How to get a Bambu Cloud access token and configure BambuHelper with it - Companion Tool or browser DevTools.">
+  <title>BambuHelper - Bambu Cloud Setup</title>
+  <meta name="description" content="Three ways to connect BambuHelper to Bambu Cloud - sign in on the device, the Companion Tool, or an access token copied from your browser.">
   <meta name="theme-color" content="#FAF8F6">
 
   <link rel="stylesheet" href="styles.css">
@@ -56,9 +56,10 @@
     <aside class="sidebar" id="sidebar">
       <h4>On this page</h4>
       <nav aria-label="On this page">
-        <a class="nav-item" href="#when-head" data-target="when-head">When you need a token</a>
+        <a class="nav-item" href="#when-head" data-target="when-head">When you need this</a>
+        <a class="nav-item" href="#signin-head" data-target="signin-head">Sign in on the device</a>
         <a class="nav-item" href="#tool-head" data-target="tool-head">Companion Tool</a>
-        <a class="nav-item" href="#manual-head" data-target="manual-head">Copy it from your browser</a>
+        <a class="nav-item" href="#manual-head" data-target="manual-head">Copy a token from your browser</a>
         <a class="nav-item" href="#region-head" data-target="region-head">Region and serial number</a>
         <a class="nav-item" href="#expiry-head" data-target="expiry-head">When the token expires</a>
         <a class="nav-item" href="#privacy-head" data-target="privacy-head">What is stored</a>
@@ -67,7 +68,7 @@
       <nav aria-label="Project links">
         <a class="nav-item" href="index.html">Web Flasher</a>
         <a class="nav-item" href="https://github.com/Keralots/BambuHelper" target="_blank" rel="noopener">GitHub <span class="ext">&#8599;</span></a>
-        <a class="nav-item" href="https://github.com/Keralots/BambuHelper#getting-a-cloud-token" target="_blank" rel="noopener">Documentation <span class="ext">&#8599;</span></a>
+        <a class="nav-item" href="https://github.com/Keralots/BambuHelper#connecting-to-bambu-cloud" target="_blank" rel="noopener">Documentation <span class="ext">&#8599;</span></a>
         <a class="nav-item" href="https://github.com/Keralots/BambuHelper/issues" target="_blank" rel="noopener">Report a bug <span class="ext">&#8599;</span></a>
       </nav>
     </aside>
@@ -77,16 +78,16 @@
     <main class="main">
 
       <div class="section-intro">
-        <h2>Cloud Token Setup</h2>
-        <p>Cloud mode connects through Bambu Lab's own MQTT service using an access token from your account. Two ways to get one - a tool that does it for you, or a copy-paste from your browser.</p>
+        <h2>Bambu Cloud Setup</h2>
+        <p>Cloud mode connects through Bambu Lab's own MQTT service using an access token from your account. Three ways to put one on the device - sign in on the device itself, let the Companion Tool do it from your PC, or copy the token out of your browser.</p>
       </div>
 
       <!-- ────────── When you need a token ────────── -->
       <section class="card" aria-labelledby="when-head">
         <div class="card-head">
           <div>
-            <h3 id="when-head">When you need a token</h3>
-            <p>Only Cloud mode uses one. LAN mode does not.</p>
+            <h3 id="when-head">When you need this</h3>
+            <p>Only Cloud mode needs an account. LAN mode does not.</p>
           </div>
         </div>
         <ul class="checklist">
@@ -96,23 +97,59 @@
         </ul>
       </section>
 
+      <!-- ────────── Sign in on the device ────────── -->
+      <section class="card" aria-labelledby="signin-head">
+        <div class="card-head">
+          <div>
+            <h3 id="signin-head">Easiest: sign in on the device</h3>
+            <p>Nothing to download, nothing to copy. The device signs in and fetches the token itself.</p>
+          </div>
+        </div>
+
+        <article class="path" aria-labelledby="path-signin">
+          <header class="path-head">
+            <span class="path-tag">
+              <span class="path-pulse" aria-hidden="true"></span>
+              recommended
+            </span>
+            <h4 id="path-signin">Straight from the device's web page</h4>
+          </header>
+          <p class="path-body">
+            Open your device's page in a browser, go to <strong>Printer</strong>,
+            set the connection mode to <strong>Bambu Cloud</strong>, and under
+            <strong>Account access</strong> choose
+            <strong>Sign in with your Bambu account</strong>. Two ways in:
+          </p>
+          <ol class="step-list">
+            <li><strong>Email code</strong> - type your account email and press <strong>Email me a code</strong>. Bambu sends a 6-digit code; enter it. No password is typed at any point.</li>
+            <li><strong>Password</strong> - type your email and password. If the account uses two-factor authentication, the device asks for the second code next: the 6 digits from your authenticator app, or a code Bambu emails you, depending on how your account is set up. Mistyped a code? Just enter it again.</li>
+          </ol>
+          <p class="help-text" style="margin-top:16px">Once signed in, press <strong>My printers</strong> and pick yours from the account's own list - no serial number to transcribe.</p>
+          <ul class="checklist">
+            <li><strong>Remember the password</strong> is optional and only worth ticking if you want the device to renew the token by itself every ~3 months. It works only on accounts <em>without</em> two-factor authentication; with 2FA the device deletes the password the moment it sees the prompt, since it could never finish an unattended sign-in anyway.</li>
+            <li><strong>The device's config page has no password and runs over plain HTTP.</strong> Whatever you type into it crosses your network unencrypted. On a network you do not fully trust, use the email code or one of the other two methods - a token expires on its own, a password does not.</li>
+          </ul>
+        </article>
+      </section>
+
       <!-- ────────── Companion Tool ────────── -->
       <section class="card" aria-labelledby="tool-head">
         <div class="card-head">
           <div>
-            <h3 id="tool-head">Easiest: the Companion Tool</h3>
+            <h3 id="tool-head">From your PC: the Companion Tool</h3>
             <p>Logs into your account, finds your printers, and pushes the token and serial straight to the device.</p>
           </div>
         </div>
 
         <article class="path" aria-labelledby="path-tool">
           <header class="path-head">
-            <span class="path-tag">
-              <span class="path-pulse" aria-hidden="true"></span>
-              recommended
-            </span>
             <h4 id="path-tool">One tool, no copy-paste</h4>
           </header>
+          <p class="path-body">
+            Useful when you would rather your password never went near the
+            device's plain-HTTP page, or when the device is not reachable in a
+            browser yet.
+          </p>
           <p class="path-body">
             The tool handles the login (including 2FA), lists the printers on your
             account, and sends the token plus the matching serial number to
@@ -133,8 +170,8 @@
       <section class="card" aria-labelledby="manual-head">
         <div class="card-head">
           <div>
-            <h3 id="manual-head">Manual: copy the token from your browser</h3>
-            <p>Log into bambulab.com, then read one cookie out of the developer tools.</p>
+            <h3 id="manual-head">Manual: copy a token from your browser</h3>
+            <p>The original method, still fully supported. Log into bambulab.com, then read one cookie out of the developer tools.</p>
           </div>
         </div>
 
@@ -178,7 +215,7 @@
           </ol>
         </article>
 
-        <p class="help-text" style="margin-top:16px">Then open your device's page in a browser, go to <strong>Printer &rarr; Cloud</strong>, paste the value into <strong>Access token</strong>, add the serial number, and save.</p>
+        <p class="help-text" style="margin-top:16px">Then open your device's page in a browser, go to <strong>Printer &rarr; Cloud</strong>, switch <strong>Account access</strong> to <strong>Paste an access token</strong>, paste the value in, add the serial number, and save.</p>
         <p class="hint">The token is long - a few hundred characters. Make sure you copied all of it; a truncated token connects and then silently fails.</p>
       </section>
 
@@ -191,11 +228,11 @@
           </div>
         </div>
         <ul class="checklist">
-          <li><strong>Server region</strong> must match the account the token came from - China accounts use a different MQTT host than US/EU. A mismatch fails authentication with a valid token.</li>
+          <li><strong>Server region</strong> must match the account - China accounts use a different MQTT host. Europe and the Americas share one host, so the picker offers <strong>Europe / Americas</strong> and <strong>China</strong>. A mismatch fails authentication even with a valid token.</li>
           <li><strong>Serial number is not the printer name.</strong> It is a 15-character code like <code>01P00A000000000</code>, on the printer under <strong>Settings &rarr; Device</strong> or on the label. The name Bambu Studio shows (for example <code>3DP-01P-110</code>) will not work.</li>
           <li><strong>Serials are uppercase.</strong> The MQTT topics are case-sensitive, so a lowercase serial connects but shows no data.</li>
         </ul>
-        <p class="hint">The device can also find the serial for you: on the Cloud tab, use <strong>Scan local network</strong> when the printer is on the same WiFi.</p>
+        <p class="hint">The device can find the serial for you: <strong>My printers</strong> lists everything bound to the account once it has a token, and <strong>Scan local network</strong> finds printers on the same WiFi.</p>
       </section>
 
       <!-- ────────── Expiry ────────── -->
@@ -206,10 +243,12 @@
             <p>Roughly every three months, and sooner if you sign out everywhere or change your password.</p>
           </div>
         </div>
-        <p class="help-text">An expired token looks like a printer that will not connect: the device sits on "Connecting", and the <strong>Diagnostics</strong> page reports an MQTT authentication failure. Nothing is broken - the token simply needs replacing, using either method above.</p>
+        <p class="help-text">An expired token looks like a printer that will not connect: the device sits on "Connecting", and the <strong>Diagnostics</strong> page reports an MQTT authentication failure. Nothing is broken - the token simply needs replacing, by any of the methods above.</p>
         <ul class="checklist">
-          <li><strong>Tokens from the Companion Tool tend to last longer</strong> than ones lifted from a browser cookie, which can be invalidated as soon as the browser session ends.</li>
-          <li><strong>Nothing on the device needs reflashing</strong> - paste the new token over the old one and save.</li>
+          <li><strong>A remembered password renews it for you.</strong> If you ticked that box on an account without two-factor authentication, the device signs in again by itself when the broker rejects the old token - you will not notice the expiry at all.</li>
+          <li><strong>Otherwise, signing in again on the device is the quickest fix</strong> - the email-code route takes one code and no typing of passwords.</li>
+          <li><strong>Tokens from a sign-in or the Companion Tool tend to last longer</strong> than ones lifted from a browser cookie, which can be invalidated as soon as the browser session ends.</li>
+          <li><strong>Nothing on the device needs reflashing</strong> - the new token replaces the old one and that is it.</li>
         </ul>
       </section>
 
@@ -218,13 +257,16 @@
         <div class="card-head">
           <div>
             <h3 id="privacy-head">What is stored on the device</h3>
-            <p>The short version: the token, and nothing else.</p>
+            <p>The token always. Your email if you signed in. Your password only if you asked for it.</p>
           </div>
         </div>
         <ul class="checklist">
-          <li><strong>No account credentials.</strong> BambuHelper never asks for your email or password. The Companion Tool sends your login to Bambu's own servers and keeps nothing.</li>
-          <li><strong>Only the token</strong> lands in the ESP32's flash, alongside the printer serial.</li>
-          <li><strong>Read-only.</strong> The firmware subscribes to printer status. The only commands it can send are the chamber-light controls you trigger yourself.</li>
+          <li><strong>The token</strong> lands in the ESP32's flash alongside the printer serial, whichever method put it there. It is what talks to Bambu.</li>
+          <li><strong>Your email address</strong> is kept after a sign-in, so the page can show which account is connected and so a remembered password has something to pair with.</li>
+          <li><strong>Your password only if you ticked "Remember the password"</strong>, and then it is stored so the device can renew the token unattended. It is kept in plain text in the ESP32's flash - anyone holding the board can read it. Accounts with two-factor authentication never keep it: the device deletes it as soon as a second factor is demanded.</li>
+          <li><strong>Signing out wipes all three</strong> - token, email and password - and drops the live session as well.</li>
+          <li><strong>Read-only.</strong> The firmware subscribes to printer status. The only commands it can send are the chamber-light and smart-plug actions you trigger yourself.</li>
+          <li><strong>The Companion Tool keeps nothing</strong> - it sends your login to Bambu's own servers and forwards only the resulting token.</li>
         </ul>
       </section>
 

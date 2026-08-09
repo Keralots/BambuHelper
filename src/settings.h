@@ -329,7 +329,13 @@ void resetSettings();
 // Cloud token persistence (shared across printer slots)
 void saveCloudToken(const char* token);
 bool loadCloudToken(char* buf, size_t bufLen);
-void clearCloudToken();
+void clearCloudToken();          // also drops the stored email and password
+
+void saveCloudEmail(const char* email);
+bool loadCloudEmail(char* buf, size_t bufLen);
+void saveCloudPassword(const char* password);
+bool loadCloudPassword(char* buf, size_t bufLen);
+void clearCloudPassword();
 
 // RGB565 <-> HTML hex conversion
 uint16_t htmlToRgb565(const char* hex);

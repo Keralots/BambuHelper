@@ -57,10 +57,16 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "REGION_CN") == 0)       { out = cfg.region == REGION_CN ? "selected" : ""; return true; }
   if (strcmp(name, "CLOUD_STATUS") == 0) {
     char tokenBuf[32];
-    bool hasToken = loadCloudToken(tokenBuf, sizeof(tokenBuf));
-    out = hasToken ? "Token active" : "No token set";
+    if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) { out = "No token set"; return true; }
+    out = "Token active";
+    char email[96];
+    if (loadCloudEmail(email, sizeof(email))) { out += " ("; out += email; out += ")"; }
     return true;
   }
+
+  // Cache-busting hashes for the gzipped assets the page pulls in.
+  if (strcmp(name, "CSSVER") == 0)          { out = webAssetCssVersion(); return true; }
+  if (strcmp(name, "JSVER") == 0)           { out = webAssetJsVersion(); return true; }
 
   // --- Brightness / Night mode ---
   if (strcmp(name, "BL_DISP") == 0) {
@@ -253,89 +259,16 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = "";
     return true;
   }
-  // Printer errors. The nav entry and the section's own JS are placeholders
-  // rather than page markup so they disappear along with the section itself
-  // where the feature is compiled out.
+  // Printer errors. The nav entry is a placeholder rather than page markup so
+  // it disappears along with the section itself where the feature is compiled
+  // out. The section's JS lives in web/app.js and guards on its markup being
+  // present, since that file is shared by every board and sees no #if.
   if (strcmp(name, "HMS_NAV") == 0) {
 #if HAS_HMS_WEB_UI
     out = F("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\">"
             "<span>Printer Errors</span></button>");
 #else
     out = "";
-#endif
-    return true;
-  }
-  if (strcmp(name, "HMS_JS") == 0) {
-#if HAS_HMS_WEB_UI
-    // The four alert checkboxes ride one bitmask, and it is always sent -
-    // including zero. Four unchecked boxes posting nothing at all would leave
-    // the old bits in place on the device.
-    out = F("function hmsMaskValue(){var m=0;for(var i=0;i<4;i++){"
-            "var e=document.getElementById('hmsm'+i);if(e&&e.checked)m|=(1<<i);}return m;}\n"
-            "function applyHmsMask(){toggleSetting('hmsmask',hmsMaskValue());}\n"
-            "function toggleHmsFields(){var f=document.getElementById('hmsFields');"
-            "var e=document.getElementById('hmsen');"
-            "if(f&&e)f.style.display=e.checked?'block':'none';}\n"
-            "function appendHmsSettings(p){var a=document.getElementById('hmsauto');if(!a)return;"
-            "var en=document.getElementById('hmsen'),sv=document.getElementById('hmssev');"
-            "if(en&&en.checked)p.append('hmsen','1');"
-            "if(sv&&sv.checked)p.append('hmssev','1');"
-            "p.append('hmsauto',a.value);p.append('hmsmask',String(hmsMaskValue()));}\n");
-    // Live card. Text comes from the device where a table is compiled in; the
-    // rest is looked up in the published mirror, which the browser can reach
-    // and the firmware cannot (e.bambulab.com sends no CORS header, and the
-    // feed is 750 KB). Fetched once per page load, never inside the poll.
-    out += F("var HMS_MIRROR='" HMS_MIRROR_URL "';\n"
-             "var _hmsMirror=null,_hmsTexts=null,_hmsLast=null;\n"
-             "function hmsMirror(){if(!_hmsMirror)_hmsMirror=fetch(HMS_MIRROR)"
-             ".then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});"
-             "return _hmsMirror;}\n"
-             "function hmsSevName(s){return ['Info','Fatal','Serious','Common'][s]||'Info';}\n"
-             "function hmsSevClr(s){return ['var(--text-dim)','var(--danger)','var(--warn)','var(--warn)'][s]"
-             "||'var(--text-dim)';}\n"
-             // lbl overrides the severity word: a print_error carries no
-             // severity of its own, and a cancel is not an error at all.
-             "function hmsRow(code,sev,mod,text,base,wiki,lbl){"
-             "var h='<div style=\"padding:8px 0;border-top:1px solid var(--line-soft)\">'"
-             "+'<div class=\"hstack\" style=\"flex-wrap:wrap\">'"
-             "+'<span style=\"font-weight:600;color:'+hmsSevClr(sev)+'\">'+(lbl||hmsSevName(sev))+'</span>'"
-             "+(mod?'<span class=\"text-dim small\">'+esc(mod)+'</span>':'')"
-             "+'<span class=\"mono small\">'+esc(code)+'</span>';"
-             "if(base)h+='<span class=\"text-dim small\" title=\"Already active when the device connected"
-             " - listed, never alerts\">standing</span>';"
-             "if(wiki)h+='<a class=\"small\" target=\"_blank\" rel=\"noopener\" href=\"'+wiki+'\">wiki</a>';"
-             "h+='</div>';"
-             "if(text)h+='<div class=\"small\" style=\"margin-top:2px;color:var(--text-mid)\">'+esc(text)+'</div>';"
-             "return h+'</div>';}\n");
-    out += F("function hmsText(map,code,dev){if(dev)return dev;"
-             "if(!map)return '';var k=code.replace(/_/g,'');return map[k]||map[k.toUpperCase()]||'';}\n"
-             "function hmsRender(){var el=document.getElementById('hmsLive');if(!el||!_hmsLast)return;"
-             "var h='',need=false,m=_hmsTexts||{};\n"
-             "for(var i=0;i<_hmsLast.length;i++){var d=_hmsLast[i];"
-             "if(!d||!d.configured)continue;"
-             "var rows='';\n"
-             "if(d.printError){var t=hmsText(m.err,d.printError,d.printErrorText);"
-             "if(!t&&!d.printErrorText)need=true;"
-             "rows+=hmsRow(d.printError,d.printErrorCancel?0:1,'',t,false,'',"
-             "d.printErrorCancel?'Canceled':'Print error');}\n"
-             "var a=d.hms||[];"
-             "for(var j=0;j<a.length;j++){var e=a[j],tx=hmsText(m.hms,e.code,e.text);"
-             "if(!tx&&!e.text)need=true;"
-             "rows+=hmsRow(e.code,e.sev,e.module,tx,e.baseline,"
-             "'https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/'+e.code.toLowerCase());}\n"
-             "if(d.hmsOverflow)rows+='<div class=\"small text-dim\" style=\"padding-top:6px\">+'"
-             "+d.hmsOverflow+' more not kept</div>';\n"
-             "if(rows)h+='<div style=\"margin-bottom:var(--sp-3)\"><strong>'+esc(d.name||('Printer '+(i+1)))"
-             "+'</strong>'+rows+'</div>';}\n"
-             "el.innerHTML=h||'<span class=\"text-dim\">No errors reported.</span>';\n"
-             "if(need&&!_hmsTexts)hmsMirror().then(function(j){if(j){_hmsTexts=j;hmsRender();}});}\n"
-             "function refreshErrorCard(){var q=[];for(var s=0;s<4;s++){q.push("
-             "fetch('/status?slot='+s).then(function(r){return r.json();}).catch(function(){return null;}));}"
-             "Promise.all(q).then(function(all){_hmsLast=all;hmsRender();});}\n");
-#else
-    // appendHmsSettings() and refreshErrorCard() are called from shared code,
-    // so those two stubs still have to exist.
-    out = F("function appendHmsSettings(p){}\nfunction refreshErrorCard(){}\n");
 #endif
     return true;
   }

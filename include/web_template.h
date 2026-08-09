@@ -22,3 +22,10 @@ void serveMainPage();
 
 // Send the (small) AP-mode WiFi setup page. No placeholder substitution.
 void serveApPage();
+
+// Content hashes of the gzipped /app.css and /app.js assets, defined in
+// src/web_server.cpp (the only TU that includes the generated header). The page
+// puts them in the asset URLs, so a browser cache can never survive a firmware
+// update that changed the file.
+const char* webAssetCssVersion();
+const char* webAssetJsVersion();

@@ -4,6 +4,7 @@
 #include "display_ui.h"
 #include "config.h"
 #include "bambu_cloud.h"
+#include "cloud_login.h"
 
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
@@ -1320,6 +1321,32 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 #endif
 }
 
+// An expired cloud token shows up as CONNACK 4 or 5. If the user chose to store
+// their password, sign in again right here instead of leaving the device dark
+// until somebody opens the portal. Accounts with 2FA never get this far - the
+// sign-in code drops a password it cannot use on its own.
+//
+// Rate-limited hard: a wrong stored password would otherwise re-post
+// credentials on every reconnect, and Bambu bans on connection churn.
+static bool tryStoredPasswordRelogin(uint8_t slot) {
+  static uint32_t lastAttempt = 0;
+  const uint32_t RETRY_INTERVAL_MS = 15UL * 60UL * 1000UL;
+
+  if (!cloudLoginCanAutoRefresh()) return false;
+
+  uint32_t now = millis();
+  if (lastAttempt != 0 && now - lastAttempt < RETRY_INTERVAL_MS) return false;
+  lastAttempt = now;
+
+  MQTT_LOG("[%d] cloud token rejected — signing in again with the stored password", slot);
+  if (!cloudLoginRefreshStored()) {
+    MQTT_LOG("[%d] stored-password sign-in failed: %s", slot, cloudLoginMessage());
+    return false;
+  }
+  MQTT_LOG("[%d] token renewed", slot);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 //  Reconnect one connection
 // ---------------------------------------------------------------------------
@@ -1484,7 +1511,9 @@ static void reconnectConn(MqttConn& c) {
       MQTT_LOG("[%d] config: serial=%s userId=%s region=%d",
                c.slotIndex, cfg.serial, cfg.cloudUserId, cfg.region);
       if (c.diag.lastRc == 4 || c.diag.lastRc == 5) {
-        MQTT_LOG("[%d] Cloud token may be expired — re-login via web UI", c.slotIndex);
+        if (!tryStoredPasswordRelogin(c.slotIndex)) {
+          MQTT_LOG("[%d] Cloud token may be expired — re-login via web UI", c.slotIndex);
+        }
       }
     } else {
       MQTT_LOG("[%d] config: ip=%s serial=%s code_len=%d",
