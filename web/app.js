@@ -320,7 +320,9 @@ function selectPrinterTab(slot){
     document.getElementById('code').value = d.code || '';
     document.getElementById('cl_serial').value = d.serial || '';
     document.getElementById('cl_pname').value = d.name || '';
-    document.getElementById('region').value = d.region || 'us';
+    // The picker merged US and EU into one entry, but devices configured before
+    // that still report 'eu' - without this the select would end up on nothing.
+    document.getElementById('region').value = (d.region === 'eu') ? 'us' : (d.region || 'us');
     document.getElementById('cl_token').value = '';
     var capsChanged = false;
     Object.keys(GAUGE_REQUIRES).forEach(function(idx){

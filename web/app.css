@@ -185,6 +185,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 /* ============ Inputs ============ */
 .section input[type="text"],
 .section input[type="password"],
+.section input[type="email"],
 .section input[type="number"],
 .section input[type="url"],
 .section select,

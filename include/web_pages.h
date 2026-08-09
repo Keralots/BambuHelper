@@ -227,9 +227,10 @@ static const char PAGE_HTML[] PROGMEM = R"rawliteral(
       <div class="row">
         <div class="field">
           <label for="region">Server region</label>
+          <!-- US and EU reach the same broker and the same API, so they are one
+               choice here; either stored value keeps this option selected. -->
           <select id="region">
-            <option value="us" %REGION_US%>Americas (US)</option>
-            <option value="eu" %REGION_EU%>Europe (EU)</option>
+            <option value="us" %REGION_US%%REGION_EU%>Europe / Americas</option>
             <option value="cn" %REGION_CN%>China (CN)</option>
           </select>
         </div>
@@ -323,17 +324,24 @@ R"rawliteral(
         </div>
       </div>
 
-      <div class="row" style="margin-top:var(--sp-4)">
+      <!-- The pickers come before the serial field on purpose: put them after it
+           and people start typing a serial by hand without seeing them. -->
+      <div class="field" style="margin-top:var(--sp-4)">
+        <label>Pick your printer</label>
+        <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" id="cl_acctBtn" onclick="loadAccountPrinters()">My printers</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')">Scan local network</button>
+        </div>
+        <select id="cl_acctsel" onchange="pickAccountPrinter()" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+        <select id="cl_devsel" onchange="pickLanDevice('cloud')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
+        <div class="hint"><strong>My printers</strong> lists everything bound to your account - needs a working token or sign-in. <strong>Scan local network</strong> finds printers on the same Wi-Fi. Picking one fills in the fields below.</div>
+      </div>
+
+      <div class="row" style="margin-top:var(--sp-3)">
         <div class="field">
           <label for="cl_serial">Printer serial number</label>
           <input type="text" id="cl_serial" class="mono" value="%SERIAL%" placeholder="01P00A000000000" maxlength="19">
-          <div class="hstack" style="gap:var(--sp-2);margin-top:var(--sp-2);flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost btn-sm" id="cl_acctBtn" onclick="loadAccountPrinters()">My printers</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="cl_scanBtn" onclick="scanLan('cloud')">Scan local network</button>
-          </div>
-          <select id="cl_acctsel" onchange="pickAccountPrinter()" style="display:none;margin-top:var(--sp-2);width:100%"></select>
-          <select id="cl_devsel" onchange="pickLanDevice('cloud')" style="display:none;margin-top:var(--sp-2);width:100%"></select>
-          <div class="hint">Must match exactly (UPPERCASE). <strong>My printers</strong> lists everything bound to your account - needs a working token or sign-in. Scan finds printers on the same Wi-Fi. A wrong serial connects but shows no data.</div>
+          <div class="hint">Must match exactly (UPPERCASE). A wrong serial connects but shows no data.</div>
         </div>
         <div class="field">
           <label for="cl_pname">Printer name</label>
