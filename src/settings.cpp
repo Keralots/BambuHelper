@@ -195,6 +195,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.hmsSeverityAll = false;   // important only: severity 1+2
   ds.hmsAlertMask = 0;         // opt in to buzzer/glow/LED/wake individually
   ds.hmsAutoPresent = 0;       // badge only; the screen is a deliberate tap
+  ds.hmsLookupOnline = true;   // the config page may look sentences up
 #endif
   ds.hideStatusReadout = false; // default ON-screen readout stays visible
   ds.nozzleScaleMax  = GAUGE_NOZZLE_SCALE_DEFAULT;
@@ -574,6 +575,7 @@ void loadSettings() {
     dispSettings.hmsAlertMask = prefs.getUChar("dsp_hmsmask", def.hmsAlertMask) & 0x0F;
     uint8_t ap = prefs.getUChar("dsp_hmsauto", def.hmsAutoPresent);
     dispSettings.hmsAutoPresent = (ap <= 2) ? ap : 0;
+    dispSettings.hmsLookupOnline = prefs.getBool("dsp_hmsonl", def.hmsLookupOnline);
   }
 #endif
   dispSettings.nozzleScaleMax  = constrain((int)prefs.getUShort("dsp_nozmx", def.nozzleScaleMax),
@@ -899,6 +901,7 @@ void saveSettings() {
   prefs.putBool("dsp_hmssev", dispSettings.hmsSeverityAll);
   prefs.putUChar("dsp_hmsmask", dispSettings.hmsAlertMask);
   prefs.putUChar("dsp_hmsauto", dispSettings.hmsAutoPresent);
+  prefs.putBool("dsp_hmsonl", dispSettings.hmsLookupOnline);
 #endif
 
   saveGaugeColors("gc_prg", dispSettings.progress);

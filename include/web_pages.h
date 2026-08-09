@@ -92,7 +92,8 @@ function saveWifi(){
 //              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
-//    Errors:   hmsen, hmssev, hmsauto, hmsm0..hmsm3 (composed into the hmsmask arg)
+//    Errors:   hmsen, hmssev, hmsauto, hmsonl, hmsm0..hmsm3 (composed into the
+//              hmsmask arg)
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
@@ -773,6 +774,17 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
           <label for="hmsm3">Wake a sleeping screen</label>
         </label>
         <div class="hint" style="padding-left:28px">Without "wake", the error screen never comes up on its own while the display is asleep - you see the badge when you wake it yourself.</div>
+
+        <!-- Hidden on boards that carry the sentence table: there is nothing to
+             look up, so the switch would do nothing. -->
+        <div id="hmsOnlRow" style="display:%HMS_ONL_DISP%">
+          <div class="field" style="margin:var(--sp-4) 0 0"><label>Error text</label></div>
+          <label class="check-row">
+            <input type="checkbox" id="hmsonl" value="1" %HMS_ONL% onchange="toggleSetting('hmsonl',this.checked);hmsLookupChanged()">
+            <label for="hmsonl">Look up error text on this page</label>
+          </label>
+          <div class="help-text" style="padding-left:28px">This board stores error codes but not the sentences that explain them. With this on, <strong>this page</strong> - not the device - fetches the text list once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link, which is all an offline network can show anyway.</div>
+        </div>
       </div>
     </div>
   </div>

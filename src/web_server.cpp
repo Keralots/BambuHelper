@@ -203,6 +203,7 @@ static void readDisplayFromForm() {
     if (ap >= 0 && ap <= 2) dispSettings.hmsAutoPresent = (uint8_t)ap;
     dispSettings.hmsEnabled = server.hasArg("hmsen");
     dispSettings.hmsSeverityAll = server.hasArg("hmssev");
+    dispSettings.hmsLookupOnline = server.hasArg("hmsonl");
     if (server.hasArg("hmsmask"))
       dispSettings.hmsAlertMask = (uint8_t)(server.arg("hmsmask").toInt() & 0x0F);
   }
@@ -724,6 +725,9 @@ static void handleToggleSetting() {
   else if (key == "hmssev")  dispSettings.hmsSeverityAll = on;
   else if (key == "hmsauto") dispSettings.hmsAutoPresent = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "hmsmask") dispSettings.hmsAlertMask = (uint8_t)(constrain(server.arg("val").toInt(), 0, 15));
+  // Browser-side only - the device never fetches the list, so nothing on the
+  // panel has to be repainted for this one.
+  else if (key == "hmsonl")  dispSettings.hmsLookupOnline = on;
 #endif
   else if (key == "nighten") dpSettings.nightModeEnabled = on;
   else if (key == "use24h")  netSettings.use24h = on;

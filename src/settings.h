@@ -122,6 +122,14 @@ struct DisplaySettings {
                            // true = also common (severity 3)
   uint8_t  hmsAlertMask;   // bit0 glow, bit1 buzzer, bit2 LED, bit3 wake
   uint8_t  hmsAutoPresent; // 0 = badge only, 1 = show briefly, 2 = until dismissed
+  bool     hmsLookupOnline;// let the config page fetch the sentence list from
+                           // the published mirror. The DEVICE never does this -
+                           // the request comes from the browser - so the switch
+                           // exists for isolated networks, where it can only
+                           // fail, and for anyone who wants no third-party
+                           // request at all. Off still leaves the code,
+                           // severity, module and wiki link. Ignored on boards
+                           // that carry the table (nothing to fetch).
 #endif
   // Gauge full-scale ranges (arc maxima). Lowering a scale makes the arc sweep
   // fuller for a printer's normal range. Defaults suit any Bambu printer.

@@ -286,6 +286,16 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "HMS_EN") == 0)  { out = dispSettings.hmsEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "HMS_SEV") == 0) { out = dispSettings.hmsSeverityAll ? "checked" : ""; return true; }
   if (strcmp(name, "HMS_DISP") == 0) { out = dispSettings.hmsEnabled ? "block" : "none"; return true; }
+  if (strcmp(name, "HMS_ONL") == 0) { out = dispSettings.hmsLookupOnline ? "checked" : ""; return true; }
+  if (strcmp(name, "HMS_ONL_DISP") == 0) {
+    // Nothing to look up where the sentences are compiled in.
+#if HAS_FULL_HMS_TABLE
+    out = "none";
+#else
+    out = "block";
+#endif
+    return true;
+  }
 #endif  // HAS_HMS_WEB_UI
   if (strcmp(name, "GLOWF_DISP") == 0) { out = dispSettings.glowMode != 0 ? "block" : "none"; return true; }
   if (strcmp(name, "GLOWC_DISP") == 0) { out = dispSettings.glowMode == 1 ? "block" : "none"; return true; }

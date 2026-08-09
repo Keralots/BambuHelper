@@ -1148,6 +1148,8 @@ function appendHmsSettings(p){
   var en = document.getElementById('hmsen'), sv = document.getElementById('hmssev');
   if (en && en.checked) p.append('hmsen', '1');
   if (sv && sv.checked) p.append('hmssev', '1');
+  var ol = document.getElementById('hmsonl');
+  if (ol && ol.checked) p.append('hmsonl', '1');
   p.append('hmsauto', document.getElementById('hmsauto').value);
   p.append('hmsmask', String(hmsMaskValue()));
 }
@@ -1160,13 +1162,33 @@ function appendHmsSettings(p){
    Boards carrying the full table (DEV.hmsFull) never fetch it: a code with no
    device text is blank in Bambu's feed, and the mirror is built from that same
    feed with the same blanks dropped, so the request could only ever fail to
-   help - half a megabyte for nothing. */
+   help. And the "hmsonl" setting lets anyone turn the lookup off - on an
+   isolated network it can only fail, and some people want no third-party
+   request from a LAN page at all. */
 var HMS_MIRROR = 'https://keralots.github.io/BambuHelper/errors/hms_en.json';
 var HMS_ON_DEVICE = (DEV.hmsFull === '1');
 var _hmsMirror = null, _hmsTexts = null, _hmsLast = null;
 
+/* Read live rather than cached: flipping the checkbox has to take effect on the
+   next render, without a reload. Missing markup means an older page, where the
+   lookup was unconditional. */
+function hmsLookupAllowed(){
+  if (HMS_ON_DEVICE) return false;
+  var c = document.getElementById('hmsonl');
+  return !c || c.checked;
+}
+
+/* Turning the lookup off has to drop what was already fetched, or the sentences
+   stay on screen until a reload and the switch looks broken. Turning it back on
+   clears the cached promise too, so the next render refetches. */
+function hmsLookupChanged(){
+  if (!hmsLookupAllowed()) _hmsTexts = null;
+  _hmsMirror = null;
+  refreshErrorCard();
+}
+
 function hmsMirror(){
-  if (HMS_ON_DEVICE) return Promise.resolve(null);
+  if (!hmsLookupAllowed()) return Promise.resolve(null);
   if (!_hmsMirror){
     _hmsMirror = fetch(HMS_MIRROR)
       .then(function(r){ return r.ok ? r.json() : null; })
@@ -1234,7 +1256,7 @@ function hmsRender(){
   // Second guard at the call site as well as inside hmsMirror(): the card
   // re-renders on every 3 s poll, and a standing blank code would otherwise
   // build a throwaway promise each time.
-  if (need && !_hmsTexts && !HMS_ON_DEVICE)
+  if (need && !_hmsTexts && hmsLookupAllowed())
     hmsMirror().then(function(j){ if (j){ _hmsTexts = j; hmsRender(); } });
 }
 
