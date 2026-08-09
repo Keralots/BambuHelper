@@ -47,10 +47,16 @@ static void jarPut(const String& pair) {
   // sessions with `Set-Cookie: token=` and that used to wipe the real session
   // token the sign-in had just handed us.
   if (eq == (int)pair.length() - 1) return;
-  String name = pair.substring(0, eq);
+  String needle = pair.substring(0, eq) + "=";
 
-  int at = g_jar.indexOf(name + "=");
-  if (at >= 0 && (at == 0 || g_jar[at - 1] == ' ')) {
+  // Seek a real name boundary. "token=" also matches inside "bbl_csrf_token=",
+  // and stopping at that first hit would leave the old cookie in place and
+  // append a second one under the same name - the server then reads the stale
+  // one, which is first in the jar.
+  int at = g_jar.indexOf(needle);
+  while (at > 0 && g_jar[at - 1] != ' ') at = g_jar.indexOf(needle, at + 1);
+
+  if (at >= 0) {
     int end = g_jar.indexOf(';', at);
     if (end < 0) end = g_jar.length();
     else if (end + 2 <= (int)g_jar.length()) end += 2;   // eat "; " too
@@ -103,6 +109,7 @@ struct CloudResponse {
   int    status = -1;
   String setCookies;
   String body;
+  bool   truncated = false;   // body hit the cap, so it is not parseable JSON
 };
 
 // The account API answers the sign-in calls; the website host only carries the
@@ -119,19 +126,23 @@ static const char* siteHost(CloudRegion region) {
 // none of it, and mixing the two has already cost one debugging round.
 static bool cloudRequest(const char* host, const char* path, const char* method,
                          const char* body, bool useSession, CloudResponse& out,
-                         size_t maxBody = 4096) {
+                         size_t maxBody = 8192) {   // a login reply carries two JWTs
 
   WiFiClientSecure* tls = new (std::nothrow) WiFiClientSecure();
   if (!tls) { out.status = -2; return false; }
 
   // All three bounds matter: the web server is single-threaded, so a handshake
-  // that never returns takes the device offline, OTA endpoint included.
-  tls->setTimeout(8);
-  tls->setHandshakeTimeout(8);
+  // that never returns takes the device offline, OTA endpoint included. They
+  // stack, and a sign-in step can run two requests back to back, so keep them
+  // tight - a healthy call here finishes in a second or two.
+  tls->setTimeout(5);
+  tls->setHandshakeTimeout(6);
   tls->setCACertBundle(rootca_crt_bundle_start);
 
   esp_task_wdt_reset();
-  if (!tls->connect(host, 443)) {
+  bool connected = tls->connect(host, 443);
+  esp_task_wdt_reset();          // the handshake itself can eat several seconds
+  if (!connected) {
     delete tls;
     out.status = -1;
     return false;
@@ -161,16 +172,18 @@ static bool cloudRequest(const char* host, const char* path, const char* method,
 
     String line = tls->readStringUntil('\n');
     line.trim();
-    if (out.status < 0 && line.startsWith("HTTP/")) {
+    String lower = line;
+    lower.toLowerCase();          // header names are case-insensitive
+
+    if (out.status < 0 && lower.startsWith("http/")) {
       int sp = line.indexOf(' ');
       if (sp > 0) out.status = line.substring(sp + 1, sp + 4).toInt();
-    } else if (line.startsWith("Set-Cookie:") || line.startsWith("set-cookie:")) {
+    } else if (lower.startsWith("set-cookie:")) {
       out.setCookies += line.substring(11);
       out.setCookies += '\n';
-    } else if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+    } else if (lower.startsWith("content-length:")) {
       contentLength = line.substring(15).toInt();
-    } else if (line.indexOf("chunked") > 0 &&
-               (line.startsWith("Transfer-Encoding:") || line.startsWith("transfer-encoding:"))) {
+    } else if (lower.startsWith("transfer-encoding:") && lower.indexOf("chunked") > 0) {
       chunked = true;
     } else if (line.length() == 0) {
       break;   // end of headers
@@ -178,8 +191,23 @@ static bool cloudRequest(const char* host, const char* path, const char* method,
   }
 
   // --- body ---
+  // Stop at the cap instead of overshooting by a read: a body that gets cut
+  // mid-JSON must be reported as truncated, not parsed as a reply with fields
+  // missing. A login answer carries two JWTs and is the closest thing here to
+  // the cap.
+  auto append = [&](const char* chunk, size_t len) {
+    if (out.body.length() + len > maxBody) {
+      size_t room = maxBody - out.body.length();
+      if (room > 0) out.body += String(chunk).substring(0, room);
+      out.truncated = true;
+      return;
+    }
+    out.body += chunk;
+  };
+
   if (chunked) {
-    while (millis() - start < 12000) {
+    bool desynced = false;
+    while (!desynced && millis() - start < 12000) {
       esp_task_wdt_reset();
       String sizeLine = tls->readStringUntil('\n');
       sizeLine.trim();
@@ -189,12 +217,17 @@ static bool cloudRequest(const char* host, const char* path, const char* method,
         char buf[129];
         size_t want = chunkSize < 128 ? chunkSize : 128;
         size_t got = tls->readBytes(buf, want);
-        if (got == 0) break;
+        if (got == 0) {
+          // A short read leaves the stream mid-chunk; carrying on would parse
+          // payload bytes as the next chunk header and append garbage.
+          desynced = true;
+          break;
+        }
         buf[got] = '\0';
-        if (out.body.length() < maxBody) out.body += buf;
+        append(buf, got);
         chunkSize -= got;
       }
-      tls->readStringUntil('\n');   // trailing CRLF
+      if (!desynced) tls->readStringUntil('\n');   // trailing CRLF
     }
   } else if (contentLength > 0) {
     long remaining = contentLength;
@@ -205,8 +238,25 @@ static bool cloudRequest(const char* host, const char* path, const char* method,
       size_t got = tls->readBytes(buf, want);
       if (got == 0) break;
       buf[got] = '\0';
-      if (out.body.length() < maxBody) out.body += buf;
+      append(buf, got);
       remaining -= got;
+    }
+  } else if (contentLength < 0) {
+    // Neither header: the body runs until the peer closes. Without this an
+    // identity-encoded reply reads as empty and a perfectly good token is
+    // reported as "no token came back".
+    while (millis() - start < 12000) {
+      esp_task_wdt_reset();
+      if (!tls->available()) {
+        if (!tls->connected()) break;
+        delay(5);
+        continue;
+      }
+      char buf[129];
+      size_t got = tls->readBytes(buf, 128);
+      if (got == 0) continue;
+      buf[got] = '\0';
+      append(buf, got);
     }
   }
 
@@ -295,8 +345,19 @@ static bool handleLoginReply(const CloudResponse& r) {
   String token = extractToken(r.body);
   if (token.length() > 0) return storeToken(token);
 
+  // A cut-off body parses as nothing, which would otherwise be reported as a
+  // reply that carried no token - two very different problems.
   JsonDocument doc;
-  deserializeJson(doc, r.body);
+  DeserializationError err = deserializeJson(doc, r.body);
+  if (r.truncated || err) {
+    Serial.printf("CLOUD: login reply unreadable (%s), len=%d, truncated=%d\n",
+                  err.c_str(), r.body.length(), r.truncated ? 1 : 0);
+    g_message = r.truncated ? "Bambu's answer was too large to read."
+                            : "Bambu's answer could not be read.";
+    g_state = CLOUD_LOGIN_FAILED;
+    return false;
+  }
+
   const char* loginType = doc["loginType"].as<const char*>();
   if (!loginType) loginType = "";
   const char* tfaKey = doc["tfaKey"].as<const char*>();
@@ -306,6 +367,14 @@ static bool handleLoginReply(const CloudResponse& r) {
   // an EMPTY loginType, so keying off loginType alone never enters this branch.
   // The handed-out tfaKey is the challenge; that is what decides.
   if (strcmp(loginType, "tfa") == 0 || (loginType[0] == '\0' && tfaKey[0] != '\0')) {
+    if (tfaKey[0] == '\0') {
+      // Without the key the verify call can only ever be refused, so asking for
+      // a code would trap the user in a step that cannot succeed.
+      Serial.println("CLOUD: 2FA demanded but no tfaKey came with it");
+      g_message = "Bambu asked for a 2FA code but sent no challenge. Try again.";
+      g_state = CLOUD_LOGIN_FAILED;
+      return false;
+    }
     g_tfaKey = tfaKey;
     g_neededTwoFactor = true;
     g_state = CLOUD_LOGIN_NEED_TFA;
@@ -332,6 +401,10 @@ static bool handleLoginReply(const CloudResponse& r) {
     const char* key = kv.key().c_str();
     if (kv.value().isNull()) {
       fields += "null";
+    } else if (kv.value().is<JsonObjectConst>()) {
+      fields += "{...}";        // never serialize a subtree - it may hold a token
+    } else if (kv.value().is<JsonArrayConst>()) {
+      fields += "[...]";
     } else if (kv.value().is<const char*>()) {
       if (strcmp(key, "loginType") == 0 || strcmp(key, "accessMethod") == 0) {
         fields += '"';
@@ -435,8 +508,9 @@ bool cloudLoginSubmitCode(const char* code) {
 
   CloudResponse r;
   if (!cloudRequest(host, path, "POST", payload.c_str(), tfa, r)) {
-    g_message = "Could not reach the Bambu sign-in service.";
-    g_state = CLOUD_LOGIN_FAILED;
+    // A blip on the way out must not throw away a code the user still holds.
+    g_message = "Could not reach the Bambu sign-in service - try the code again.";
+    g_state = keep;
     return false;
   }
   Serial.printf("CLOUD: %s HTTP %d, len=%d\n", path, r.status, r.body.length());
@@ -449,7 +523,12 @@ bool cloudLoginSubmitCode(const char* code) {
 
   if (!tfa) {
     bool ok = handleLoginReply(r);
-    if (!ok) g_state = keep;
+    if (!ok) {
+      // handleLoginReply describes a finished sign-in; back on the code step
+      // that reads as a contradiction, so say what the user can act on.
+      g_message = "That code was not accepted.";
+      g_state = keep;
+    }
     return ok;
   }
 
@@ -482,9 +561,14 @@ bool cloudLoginRefreshStored() {
 
   if (ok && g_state != CLOUD_LOGIN_OK) {
     // A code prompt cannot be answered without a human, so a 2FA account can
-    // never refresh silently. Drop the password rather than keep asking.
+    // never refresh silently. Drop the password rather than keep asking - and
+    // clear the pending step, or the portal would poll this background attempt
+    // and pop a code prompt at somebody who never asked to sign in.
     Serial.println("CLOUD: account asks for 2FA - stored password cannot refresh it");
     clearCloudPassword();
+    cloudLoginReset();
+    g_state = CLOUD_LOGIN_FAILED;
+    g_message = "The saved password needs a 2FA code, so the token could not be renewed. Sign in again.";
     return false;
   }
   return ok && g_state == CLOUD_LOGIN_OK;
