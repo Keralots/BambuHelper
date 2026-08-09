@@ -6,11 +6,13 @@ Runs the full release pipeline for the web-flasher boards:
     1. Reads FW_VERSION from include/config.h
     2. Locates pio.exe (PATH first, then ~/.platformio/penv/Scripts/pio.exe)
     3. Builds every WEB_FLASHER_BOARDS env in one PlatformIO invocation
-    4. Runs merge_bins.py for each board to generate Full.bin + ota.bin
-    5. Copies only the Full.bin files into docs/firmware/latest/ (web flasher
+    4. Checks each firmware.bin against its own app partition and refuses to go
+       further if one does not fit - the build summary does NOT answer this
+    5. Runs merge_bins.py for each board to generate Full.bin + ota.bin
+    6. Copies only the Full.bin files into docs/firmware/latest/ (web flasher
        binaries) - ota.bin stays in firmware/v<ver>/ for the GitHub Release
-    6. Writes docs/firmware/latest/VERSION
-    7. Refreshes docs/errors/hms_en.json from Bambu's error-text feed - the
+    7. Writes docs/firmware/latest/VERSION
+    8. Refreshes docs/errors/hms_en.json from Bambu's error-text feed - the
        portal page reads it from GitHub Pages for codes the device carries no
        table for
 
@@ -111,6 +113,106 @@ def merge_for_board(board: str):
     run([sys.executable, str(MERGE_BINS), "--board", board])
 
 
+def _partition_csv_for(board: str):
+    """Which partition table an env builds against.
+
+    An explicit `board_build.partitions` under `[env:<board>]` wins; otherwise
+    the `[env]` default in platformio.ini applies. Both live across
+    platformio.ini and the boards/*.ini files pulled in by extra_configs.
+    """
+    default = None
+    per_env = {}
+    inis = [REPO_ROOT / "platformio.ini"] + sorted((REPO_ROOT / "boards").glob("*.ini"))
+    for ini in inis:
+        section = None
+        for line in ini.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            m = re.match(r"^\[env:?([^\]]*)\]$", stripped)
+            if m:
+                section = m.group(1) or None
+                continue
+            m = re.match(r"^board_build\.partitions\s*=\s*(\S+)", stripped)
+            if not m:
+                continue
+            if section:
+                per_env[section] = m.group(1)
+            elif ini.name == "platformio.ini":
+                default = m.group(1)
+    return per_env.get(board, default)
+
+
+def _app_slot_bytes(csv_name: str):
+    """Size of the ota_0/factory app partition, or None if the table is not found.
+
+    Tables live either in the repo or, for Arduino's stock ones like
+    min_spiffs.csv, inside the framework package - which may sit under a custom
+    packages dir, so search the obvious roots rather than assuming one.
+    """
+    candidates = [REPO_ROOT / csv_name]
+    roots = [os.environ.get("PLATFORMIO_PACKAGES_DIR"),
+             os.environ.get("PLATFORMIO_CORE_DIR"),
+             str(Path.home() / ".platformio")]
+    for root in filter(None, roots):
+        candidates.extend(Path(root).glob("**/framework-arduinoespressif32*/tools/partitions/" + csv_name))
+    for path in candidates:
+        if not Path(path).is_file():
+            continue
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            cols = [c.strip() for c in line.split(",")]
+            if len(cols) < 5 or cols[1] != "app":
+                continue
+            if cols[2] not in ("ota_0", "factory"):
+                continue
+            size = cols[4]
+            if size.lower().startswith("0x"):
+                return int(size, 16)
+            if size and size[-1] in "kKmM":
+                return int(size[:-1]) * (1024 if size[-1] in "kK" else 1024 * 1024)
+            return int(size)
+    return None
+
+
+def check_ota_slots():
+    """Refuse to publish an app image that does not fit its own partition.
+
+    The build summary cannot answer this. PlatformIO prints the linker section
+    sum; what OTA uploads and what Full.bin embeds is firmware.bin, which
+    carries segment padding on top - about 88 KB more on the C3. v3.8.0 shipped
+    an esp32c3 image 7,408 bytes past its 1,835,008 byte slot on the strength of
+    a build summary claiming 78 KB spare. Such a board boots from a fresh flash,
+    because the bootloader loads segments without checking partition bounds, and
+    then dies on its first OTA when app1 is written over the tail of app0.
+    """
+    print("\n--- Checking images against their app partitions ---")
+    over, unknown = [], []
+    for board in WEB_FLASHER_BOARDS:
+        image = REPO_ROOT / ".pio" / "build" / board / "firmware.bin"
+        if not image.is_file():
+            sys.exit(f"error: {image} not found - build first, or drop --skip-build")
+        csv_name = _partition_csv_for(board)
+        slot = _app_slot_bytes(csv_name) if csv_name else None
+        size = image.stat().st_size
+        if slot is None:
+            unknown.append((board, csv_name))
+            print(f"  {board:<20} {size:>9,}  (partition table {csv_name!r} not found - NOT CHECKED)")
+            continue
+        free = slot - size
+        print(f"  {board:<20} {size:>9,} / {slot:>9,}  {free:>+9,}"
+              + ("   *** OVER ***" if free < 0 else ""))
+        if free < 0:
+            over.append((board, size, slot))
+    if unknown:
+        print("\nWARNING: could not verify " + ", ".join(b for b, _ in unknown))
+    if over:
+        print()
+        for board, size, slot in over:
+            print(f"error: {board} image is {size:,} B but its app partition is only {slot:,} B "
+                  f"({size - slot:,} B over)")
+        sys.exit("Refusing to publish - such a build bricks the board on its first OTA.")
+
+
 def copy_full_to_docs(version: str):
     """Copy *-Full.bin for each board from firmware/v<ver>/ to docs/firmware/latest/."""
     src_dir = REPO_ROOT / "firmware" / version
@@ -202,6 +304,10 @@ def main():
         build_envs(pio)
     else:
         print("Skipping build (--skip-build)")
+
+    # Before anything is merged or copied, so a bad build cannot reach
+    # docs/firmware/latest/ or a release asset.
+    check_ota_slots()
 
     print("\n--- Merging binaries ---")
     for board in WEB_FLASHER_BOARDS:
