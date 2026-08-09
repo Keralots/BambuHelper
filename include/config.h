@@ -184,14 +184,31 @@
 // formatted code (~100 bytes). That is the normal case for HMS codes on 4 MB
 // boards, where the sentence comes from the web portal instead.
 //
-// The first two are on for every env; HAS_FULL_HMS_TABLE below is not. The C3
-// family used to drop both - the stock esp32c3 had ~4 KB of app slot left and
-// the round variant ~6 KB, which paid for neither the print_error sentences nor
-// the portal section. Moving the portal CSS and JS out of PAGE_HTML into gzipped
-// assets gave every board ~77 KB back, more than these cost together, so the
-// exception is gone and a C3 reports errors like everything else.
+// HAS_HMS_UI is on for every env. HAS_ERROR_TEXT_TABLE is off on the C3s, and
+// HAS_FULL_HMS_TABLE below is on only for the big-flash boards.
+//
+// The C3 exception came back in v3.8.0, and the reason is worth writing down
+// because the obvious measurement lies. PlatformIO's "Flash: used" line is the
+// linker section sum; the image that OTA uploads and that Full.bin embeds is
+// `firmware.bin`, roughly 88 KB larger on this target because of segment
+// padding. Judged by the PIO number the stock esp32c3 had 78 KB spare - judged
+// by the image it was 7,408 bytes OVER its 1,835,008 B app slot, which would
+// have overrun app1 and bricked the board on its next OTA. Always size a 4 MB
+// board with `stat .pio/build/<env>/firmware.bin`, never with the build summary.
+//
+// Dropping the print_error sentences here buys 36 KB of image and leaves the
+// stock C3 ~28 KB and the round one ~39 KB. The cost is confined to the device
+// screen, which falls back to "<MODULE> <SEVERITY>" plus the code: the portal
+// still shows the full wording, because it resolves both domains from the
+// published mirror in the user's browser whenever the device has no text of its
+// own. So the rule on a C3 is simply "codes on the screen, sentences in the
+// portal" - which is what its HMS codes already did.
 #define HAS_HMS_UI            1
+#if BOARD_IS_C3
+#define HAS_ERROR_TEXT_TABLE  0
+#else
 #define HAS_ERROR_TEXT_TABLE  1
+#endif
 
 // The full HMS table only fits envs built on the 8 MB / 16 MB partition
 // tables, and no flash-size macro exists to key off - so this is enumerated

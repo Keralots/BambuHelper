@@ -220,14 +220,15 @@ When a printer reports a problem, it publishes an **HMS code** (hardware/mainten
 
 ### Where the text comes from
 
-The print-error sentences (about 540 codes) are stored on **every** board. The HMS table is far larger - roughly 4000 codes and 400 KB - so it is compiled in only on boards with 8 MB or 16 MB of flash:
+The HMS table is large - roughly 4000 codes and 400 KB - so it is compiled in only on boards with 8 MB or 16 MB of flash. The print-error table is smaller (about 540 codes, ~36 KB) and fits everywhere except the ESP32-C3, which is the tightest board in the range:
 
 | Boards | Error text on the display | Error text in the web interface |
 |---|---|---|
 | Waveshare 1.54" / 2" / 2.8" / 3.5", Guition JC3248W535, WT32-SC01 Plus, QD ES3N28P, Panlee SC05_X, SenseCAP Indicator | Print errors **and** HMS codes | From the device, no internet needed |
-| ESP32-S3 / ESP32-C3 Super Mini (square and round), ESP32-S3-Zero, CYD, TZT L1435-2.4, DIY builds | Print errors only. HMS codes show the code, severity and module | Fetched by **your browser**, once per visit, from `keralots.github.io` |
+| ESP32-S3 Super Mini and ESP32-S3-Zero (square and round), CYD, TZT L1435-2.4, DIY builds | Print errors only. HMS codes show the code, severity and module | Fetched by **your browser**, once per visit, from `keralots.github.io` |
+| ESP32-C3 Super Mini (square and round) | Code, severity and module | Fetched by **your browser**, once per visit, from `keralots.github.io` |
 
-On the second group, **the device itself never goes online for this** - the config page you are looking at does the lookup, so an isolated printer network changes nothing. Untick **Look up error text on this page** to stop even that; every row keeps its code, severity, module and wiki link.
+On the last two groups, **the device itself never goes online for this** - the config page you are looking at does the lookup, so an isolated printer network changes nothing. Untick **Look up error text on this page** to stop even that; every row keeps its code, severity, module and wiki link.
 
 > **About the wiki links:** Bambu's wiki documents only a small fraction of the HMS codes (about 225 of 4000). Rows for a documented code link straight to its page; every other row links to the [HMS index](https://wiki.bambulab.com/en/hms/home), where you can search. The device screen always shows the full code, so you can look it up anywhere.
 
