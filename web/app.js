@@ -1223,6 +1223,21 @@ function hmsText(map, code, dev){
   return map[k] || map[k.toUpperCase()] || '';
 }
 
+/* Every per-code wiki page sits under a model path segment (x1, a1-mini, a2l,
+   h2d, ams-ht, ...) that the code itself does not carry, so the URL cannot be
+   built from the code alone - the old fixed /en/x1/ link 404'd for most codes.
+   The mirror ships the path verbatim (the wiki's own separator and case; some
+   of its links use "-" between the code groups, not "_"). Where the map is
+   missing - a full-table board never fetches the mirror, and the text lookup
+   can be switched off - link the HMS index, which lists every documented code
+   and never 404s. Only ~225 of 3958 codes have a page at all, so the index is
+   the common case either way. */
+var HMS_WIKI_INDEX = 'https://wiki.bambulab.com/en/hms/home';
+function hmsWikiUrl(code){
+  var m = _hmsTexts && _hmsTexts.wiki, p = m && m[code.replace(/_/g, '').toUpperCase()];
+  return p ? 'https://wiki.bambulab.com/en/' + p : HMS_WIKI_INDEX;
+}
+
 function hmsRender(){
   var el = document.getElementById('hmsLive');
   if (!el || !_hmsLast) return;
@@ -1244,8 +1259,7 @@ function hmsRender(){
     for (var j = 0; j < a.length; j++){
       var e = a[j], tx = hmsText(m.hms, e.code, e.text);
       if (!tx && !e.text) need = true;
-      rows += hmsRow(e.code, e.sev, e.module, tx, e.baseline,
-                     'https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/' + e.code.toLowerCase());
+      rows += hmsRow(e.code, e.sev, e.module, tx, e.baseline, hmsWikiUrl(e.code));
     }
 
     if (d.hmsOverflow) rows += '<div class="small text-dim" style="padding-top:6px">+' + d.hmsOverflow + ' more not kept</div>';

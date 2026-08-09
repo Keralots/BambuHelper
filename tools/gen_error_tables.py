@@ -28,7 +28,17 @@ Processing rules:
 
 Also writes the portal's text mirror:
 
-    docs/errors/hms_en.json     {"ver": ..., "hms": {...}, "err": {...}}
+    docs/errors/hms_en.json     {"ver": ..., "hms": {...}, "err": {...}, "wiki": {...}}
+
+`wiki` maps a code to the path of its Bambu wiki page, relative to `/en/`. The
+URL is NOT derivable from the code: the page sits under a per-model segment
+(x1, a1, a1-mini, a2l, h2d, ams-ht, ...) that appears nowhere in the code, which
+is why the old fixed `/en/x1/...` link 404'd for most codes. The stored value is
+the href exactly as the wiki writes it, separators and case included - 11 of the
+index's links put "-" between the code groups instead of "_", so rebuilding the
+tail from the code would be a guess. Scraped from the wiki's own HMS index;
+codes missing from it have no page at all (only ~225 of 3958 are documented) and
+the portal links to the index instead.
 
 The portal page reads that from GitHub Pages in the user's browser. It cannot
 read Bambu's feed directly - e.bambulab.com sends no Access-Control-Allow-Origin
@@ -49,6 +59,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import unicodedata
 import urllib.request
@@ -56,6 +67,18 @@ import urllib.request
 FEED_URL = "https://e.bambulab.com/query.php?lang=en"
 MAX_TEXT = 200          # stored chars per string, ellipsis included
 ELLIPSIS = "..."
+
+# The wiki's own index of every documented HMS code. Every per-code page is
+# linked from here, which is the only place the model path segment can be
+# learned. A plain urllib UA is refused outright, so send a browser one.
+WIKI_INDEX_URL = "https://wiki.bambulab.com/en/hms/home"
+WIKI_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+           "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+# href="/en/<model>/troubleshooting/hmscode/<CODE>" - the index uses both "_"
+# and "-" between the four groups, and mixed case in the hex.
+WIKI_HREF_RE = re.compile(
+    r'href="/en/([A-Za-z0-9-]+)/troubleshooting/hmscode/'
+    r'([0-9A-Fa-f]{4}[_-][0-9A-Fa-f]{4}[_-][0-9A-Fa-f]{4}[_-][0-9A-Fa-f]{4})"')
 
 # Non-ASCII actually present in the feed, plus the neighbours likely to show up
 # in a later refresh. Anything not listed falls through to NFKD + drop.
@@ -254,11 +277,43 @@ def collect_raw(entries):
     return best
 
 
-def write_mirror(path, ver, data):
+def fetch_wiki_index():
+    """code (16 hex, no separators, upper) -> page path relative to /en/.
+
+    A wiki outage must never sink a table refresh, so every failure degrades to
+    an empty map: the portal then links every row at the HMS index, which is
+    exactly what it does for an undocumented code anyway.
+    """
+    try:
+        req = urllib.request.Request(WIKI_INDEX_URL, headers={"User-Agent": WIKI_UA})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception as exc:                                # noqa: BLE001
+        print("WARNING: wiki index unreachable (%s) - links fall back to the "
+              "index page" % exc, file=sys.stderr)
+        return {}
+    index = {}
+    for model, code in WIKI_HREF_RE.findall(html):
+        # First link wins: a code listed under several models resolves under
+        # each of them, so any one of them is a working link. The value keeps
+        # the href verbatim - separator and case are the wiki's, not ours.
+        key = code.upper().replace("-", "").replace("_", "")
+        index.setdefault(key, "%s/troubleshooting/hmscode/%s" % (model, code))
+    if not index:
+        print("WARNING: wiki index parsed to 0 codes - page layout changed?",
+              file=sys.stderr)
+    return index
+
+
+def write_mirror(path, ver, data, wiki):
+    hms = collect_raw(data["device_hms"]["en"])
     doc = {
         "ver": ver,
-        "hms": collect_raw(data["device_hms"]["en"]),
+        "hms": hms,
         "err": collect_raw(data["device_error"]["en"]),
+        # Only codes we actually ship text for - the index also lists codes the
+        # feed has never carried, and they would just bloat the download.
+        "wiki": {code: model for code, model in wiki.items() if code in hms},
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Sorted keys and no spaces: stable diffs, smallest download.
@@ -299,9 +354,13 @@ def main():
         os.makedirs(out_dir, exist_ok=True)
 
     if not args.dry_run:
-        doc, size = write_mirror(mirror_path, ver, data)
-        print("mirror       %u hms + %u print_error strings, %.1f KB"
-              % (len(doc["hms"]), len(doc["err"]), size / 1024.0))
+        print("Loading wiki index...")
+        wiki = fetch_wiki_index()
+        doc, size = write_mirror(mirror_path, ver, data, wiki)
+        print("mirror       %u hms + %u print_error strings, %u wiki links "
+              "(%u indexed), %.1f KB"
+              % (len(doc["hms"]), len(doc["err"]), len(doc["wiki"]), len(wiki),
+                 size / 1024.0))
         print("             -> %s" % mirror_path)
     if args.mirror_only:
         return
