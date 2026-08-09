@@ -264,8 +264,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         login_type = data.get("loginType", "")
-        if login_type == "tfa":
-            self.state.set_tfa_key(data.get("tfaKey", ""))
+        tfa_key = data.get("tfaKey") or ""
+        # A TOTP account gets the challenge as a tfaKey with an EMPTY loginType,
+        # so the key itself is what decides here.
+        if login_type == "tfa" or (not login_type and tfa_key):
+            self.state.set_tfa_key(tfa_key)
             self._json(200, {"state": "tfa"})
         elif login_type == "verifyCode":
             self._json(200, {"state": "verifyCode"})

@@ -103,12 +103,15 @@ def prompt_cloud():
     token = core.cloud_extract_token(data)
     if not token:
         login_type = data.get("loginType", "")
-        if login_type == "tfa":
+        tfa_key = data.get("tfaKey") or ""
+        # A TOTP account gets the challenge as a tfaKey with an EMPTY loginType,
+        # so the key itself is what decides here.
+        if login_type == "tfa" or (not login_type and tfa_key):
             print("TOTP 2FA required. Enter the code from your authenticator app.")
             code = input("Authenticator code: ").strip()
             print("Verifying...")
             try:
-                token = core.cloud_verify_totp(code, data.get("tfaKey", ""))
+                token = core.cloud_verify_totp(code, tfa_key)
             except Exception as e:
                 die(f"Verification failed: {e}")
         elif login_type == "verifyCode":

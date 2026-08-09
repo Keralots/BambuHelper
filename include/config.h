@@ -173,6 +173,13 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
+// Signing into a Bambu account from the device itself (portal form -> cloud
+// token, no Companion Tool). Every board carries it: gzipping the portal's CSS
+// and JS freed ~77 KB of app slot, which is far more than the flow costs even
+// on the 1.75 MB C3 boards. Kept as a capability so a future flash-starved
+// board can drop it without touching anything but this block.
+#define HAS_CLOUD_LOGIN  1
+
 // =============================================================================
 //  Display rotation (multi-printer)
 // =============================================================================

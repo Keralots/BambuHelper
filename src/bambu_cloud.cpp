@@ -28,6 +28,17 @@ const char* getBambuApiBase(CloudRegion region) {
   }
 }
 
+// The website host proxies the same services under /api/. It matters because a
+// Cloudflare WAF rule refuses some api.bambulab.com paths from this device
+// (measured: sign-in and the device-bind list both answer 403 with a block
+// page) while the site host answers normally.
+static const char* getBambuSiteBase(CloudRegion region) {
+  switch (region) {
+    case REGION_CN: return "https://bambulab.cn";
+    default:        return "https://bambulab.com";
+  }
+}
+
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------
@@ -50,7 +61,8 @@ static void setSlicerHeaders(HTTPClient& http) {
 // Returns HTTP status code, or -1 on error. Response body in `response`.
 static int httpsRequestWith(WiFiClientSecure& tls, const char* method,
                             const char* url, const char* body,
-                            const char* authToken, String& response) {
+                            const char* authToken, String& response,
+                            const char* cookie = nullptr) {
   HTTPClient http;
   if (!http.begin(tls, url)) { http.end(); return -1; }
 
@@ -60,6 +72,7 @@ static int httpsRequestWith(WiFiClientSecure& tls, const char* method,
     auth += authToken;
     http.addHeader("Authorization", auth);
   }
+  if (cookie && strlen(cookie) > 0) http.addHeader("Cookie", cookie);
 
   int httpCode;
   if (strcmp(method, "GET") == 0) {
@@ -82,20 +95,22 @@ static int httpsRequestWith(WiFiClientSecure& tls, const char* method,
 // Returns HTTP status code, or -1 on error. Response body in `response`.
 static int httpsRequest(const char* method, const char* url,
                         const char* body, const char* authToken,
-                        String& response) {
+                        String& response, const char* cookie = nullptr) {
   WiFiClientSecure* tls = new (std::nothrow) WiFiClientSecure();
   if (!tls) return -1;
   tls->setTimeout(10);
+  tls->setHandshakeTimeout(10);   // a handshake that never returns takes the
+                                  // single-threaded web server down with it
 
   // First attempt: proper CA verification
   tls->setCACertBundle(rootca_crt_bundle_start);
-  int httpCode = httpsRequestWith(*tls, method, url, body, authToken, response);
+  int httpCode = httpsRequestWith(*tls, method, url, body, authToken, response, cookie);
 
   if (httpCode == -1) {
     // TLS handshake likely failed — retry without verification
     Serial.println("CLOUD: TLS verified request failed, retrying without CA check");
     tls->setInsecure();
-    httpCode = httpsRequestWith(*tls, method, url, body, authToken, response);
+    httpCode = httpsRequestWith(*tls, method, url, body, authToken, response, cookie);
   }
 
   delete tls;
@@ -195,5 +210,28 @@ bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion r
   snprintf(userId, len, "u_%s", uidStr.c_str());
   Serial.printf("CLOUD: Got userId from profile: %s\n", userId);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+//  Printers bound to the account
+//
+//  Lets the portal offer a list to pick from instead of asking the user to copy
+//  a serial off a label - a wrong serial connects happily and then shows no
+//  data, which is the single most common cloud misconfiguration.
+// ---------------------------------------------------------------------------
+bool cloudFetchDeviceList(const char* token, CloudRegion region, String& response) {
+  // Deliberately the site host, not api.bambulab.com: measured on hardware, the
+  // direct path answers this device with a Cloudflare block page (403, ~5.4 KB
+  // of HTML) while the same service proxied under bambulab.com/api/ answers
+  // normally. The rule is path-based - a Bearer GET to
+  // api.bambulab.com/v1/user-service/my/profile still returns 200.
+  //
+  // Send the token ONE way only. Bearer alone works and a `token` cookie alone
+  // works, but sending both makes the proxy answer 401 "Please login.".
+  String url = String(getBambuSiteBase(region)) + "/api/v1/iot-service/api/user/bind";
+
+  int httpCode = httpsRequest("GET", url.c_str(), nullptr, token, response);
+  Serial.printf("CLOUD: device list HTTP %d, len=%d\n", httpCode, response.length());
+  return httpCode == 200;
 }
 
