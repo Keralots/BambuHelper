@@ -1694,7 +1694,20 @@ static void drawIdle() {
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
     char finishBadge[40];
-    if (s.gcodeStateId == GCODE_IDLE) {
+    if (s.gcodeStateId == GCODE_FAILED) {
+      // Kept ahead of the shared override so the wording stays "ERROR" here:
+      // this is a wide centred word, not a corner badge, and "ERR" reads like an
+      // abbreviation for no reason. A cancel reports FAILED too, and calling
+      // that an error sends people looking for a fault that does not exist.
+      const bool canceled = printerWasCanceled(s);
+      stateColor = canceled ? CLR_YELLOW : CLR_RED;
+      stateStr   = canceled ? "CANCELED" : "ERROR";
+    } else if (stateBadgeOverrideColor(s, stateColor)) {
+      // An error standing while gcode_state reads IDLE / FINISH / UNKNOWN - the
+      // ladder below would paint a green "Ready" straight over a live fault, and
+      // this word is the only hint that a tap opens the error screen.
+      stateStr = stateBadgeText(s);
+    } else if (s.gcodeStateId == GCODE_IDLE) {
       stateColor = CLR_GREEN;
       stateStr = "Ready";
     } else if (s.gcodeStateId == GCODE_FINISH) {
@@ -4736,7 +4749,13 @@ static void drawFinished() {
   const int16_t finHdrCY    = LY_HDR_CY;
   const int16_t finHdrDotCY = LY_HDR_DOT_CY;
 #endif
-  if (forceRedraw) {
+  // This header needs its own repaint predicate, unlike the rest of the screen.
+  // A fault is raised one report AFTER gcode_state reaches FINISH, so the error
+  // lands while this screen is already up and nothing else would redraw it.
+  static uint32_t prevFinBadgeId = 0;
+  const uint32_t finBadgeId = errorBadgeId(s);
+  if (forceRedraw || finBadgeId != prevFinBadgeId) {
+    prevFinBadgeId = finBadgeId;
     markFrameDirty();
     uint16_t hdrBg = dispSettings.bgColor;
     tft.fillRect(0, finHdrY, scrW, finHdrH, hdrBg);
@@ -4748,12 +4767,19 @@ static void drawFinished() {
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     tft.drawString(name, LY_HDR_NAME_X, finHdrCY);
 
-    // FINISH badge (right)
+    // Status badge (right). FINISH unless the shared override ladder claims the
+    // slot - this used to be hardcoded, so a print that ended in an AMS fault
+    // still read as a clean success while the error screen one tap away
+    // described the fault in full.
+    uint16_t finBadgeC;
+    const bool  finOverride = stateBadgeOverrideColor(s, finBadgeC);
+    const char* finBadge    = finOverride ? stateBadgeText(s) : "FINISH";
+    if (!finOverride) finBadgeC = CLR_GREEN;
     tft.setTextDatum(MR_DATUM);
-    tft.setTextColor(CLR_GREEN, hdrBg);
+    tft.setTextColor(finBadgeC, hdrBg);
     setFont(tft, FONT_BODY);
-    tft.fillCircle(scrW - LY_HDR_BADGE_RX - tft.textWidth("FINISH") - 10, finHdrCY, 4, CLR_GREEN);
-    tft.drawString("FINISH", scrW - LY_HDR_BADGE_RX, finHdrCY);
+    tft.fillCircle(scrW - LY_HDR_BADGE_RX - tft.textWidth(finBadge) - 10, finHdrCY, 4, finBadgeC);
+    tft.drawString(finBadge, scrW - LY_HDR_BADGE_RX, finHdrCY);
 
     // Printer indicator dots (multi-printer)
     if (getActiveConnCount() > 1) drawPrinterDots(cx, finHdrDotCY);
