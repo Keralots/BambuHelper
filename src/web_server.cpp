@@ -1557,6 +1557,7 @@ static void handleSettingsExport() {
   disp["hmsSeverityAll"] = dispSettings.hmsSeverityAll;
   disp["hmsAlertMask"] = dispSettings.hmsAlertMask;
   disp["hmsAutoPresent"] = dispSettings.hmsAutoPresent;
+  disp["hmsLookupOnline"] = dispSettings.hmsLookupOnline;
 #endif
 
   JsonObject gauges = disp["gauges"].to<JsonObject>();
@@ -1915,6 +1916,7 @@ static void handleSettingsImportFinish() {
     if (disp["hmsSeverityAll"].is<bool>()) dispSettings.hmsSeverityAll = disp["hmsSeverityAll"].as<bool>();
     if (disp["hmsAlertMask"].is<int>())    dispSettings.hmsAlertMask = (uint8_t)(disp["hmsAlertMask"].as<int>() & 0x0F);
     if (disp["hmsAutoPresent"].is<int>())  { int ap = disp["hmsAutoPresent"].as<int>(); dispSettings.hmsAutoPresent = (ap >= 0 && ap <= 2) ? (uint8_t)ap : 0; }
+    if (disp["hmsLookupOnline"].is<bool>()) dispSettings.hmsLookupOnline = disp["hmsLookupOnline"].as<bool>();
 #endif
     // Legacy disp["amsView"] is consumed in the printers block above as a fallback
     // for slots that don't have their own per-printer value.

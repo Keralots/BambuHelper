@@ -1255,9 +1255,14 @@ function hmsRender(){
   el.innerHTML = h || '<span class="text-dim">No errors reported.</span>';
   // Second guard at the call site as well as inside hmsMirror(): the card
   // re-renders on every 3 s poll, and a standing blank code would otherwise
-  // build a throwaway promise each time.
+  // build a throwaway promise each time. The third guard is inside the
+  // continuation: a request already in flight when the user unticks the box
+  // still resolves, and without the re-check it would put the sentences back
+  // on screen after the switch said no.
   if (need && !_hmsTexts && hmsLookupAllowed())
-    hmsMirror().then(function(j){ if (j){ _hmsTexts = j; hmsRender(); } });
+    hmsMirror().then(function(j){
+      if (j && hmsLookupAllowed()){ _hmsTexts = j; hmsRender(); }
+    });
 }
 
 function refreshErrorCard(){

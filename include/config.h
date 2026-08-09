@@ -180,15 +180,16 @@
 //   HAS_ERROR_TEXT_TABLE embedded print_error sentences (~36 KB flash)
 //   HAS_FULL_HMS_TABLE   embedded HMS sentences (~400 KB flash)
 //
-// Without a text table a board still shows "<MODULE> <SEVERITY>" plus the
-// formatted code (~100 bytes); the full sentence comes from the web portal.
+// A code with no embedded sentence still shows "<MODULE> <SEVERITY>" plus the
+// formatted code (~100 bytes). That is the normal case for HMS codes on 4 MB
+// boards, where the sentence comes from the web portal instead.
 //
-// Both are on for every env. The C3 family used to drop them - the stock
-// esp32c3 had ~4 KB of app slot left and the round variant ~6 KB, which paid
-// for neither the print_error sentences nor the portal section. Moving the
-// portal CSS and JS out of PAGE_HTML into gzipped assets gave every board
-// ~77 KB back, more than these cost together, so the exception is gone and a
-// C3 reports errors like everything else.
+// The first two are on for every env; HAS_FULL_HMS_TABLE below is not. The C3
+// family used to drop both - the stock esp32c3 had ~4 KB of app slot left and
+// the round variant ~6 KB, which paid for neither the print_error sentences nor
+// the portal section. Moving the portal CSS and JS out of PAGE_HTML into gzipped
+// assets gave every board ~77 KB back, more than these cost together, so the
+// exception is gone and a C3 reports errors like everything else.
 #define HAS_HMS_UI            1
 #define HAS_ERROR_TEXT_TABLE  1
 
@@ -215,13 +216,14 @@
 // matter without a keyboard: the badge, the error screen, the cancel wording.
 // Such a board runs on the defaults (reporting on, important-only, no alert
 // channels), which a settings import can override.
+//
+// Defined in terms of HAS_HMS_UI rather than as a literal, so "the section
+// cannot exist without the feature" is structural - which is why there is no
+// #error guard for that pairing below.
 #define HAS_HMS_WEB_UI  HAS_HMS_UI
 
 #if HAS_FULL_HMS_TABLE && !HAS_HMS_UI
 #error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
-#endif
-#if HAS_HMS_WEB_UI && !HAS_HMS_UI
-#error "HAS_HMS_WEB_UI requires HAS_HMS_UI"
 #endif
 
 // Published mirror of Bambu's error-text feed, read by the portal page in the

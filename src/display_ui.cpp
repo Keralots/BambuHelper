@@ -5181,6 +5181,10 @@ static uint8_t drawWrappedText(const char* text, int16_t x, int16_t y,
       size_t n = fit;
       if (n > sizeof(line) - 4) n = sizeof(line) - 4;
       for (; n > 0; n--) {
+        // The shrink walks one character at a time, so it lands on a space
+        // often enough to matter - "the filament ..." reads like a typo.
+        while (n > 0 && p[n - 1] == ' ') n--;
+        if (n == 0) break;
         memcpy(line, p, n);
         memcpy(line + n, "...", 4);
         if ((int16_t)tft.textWidth(line) <= maxW) break;
@@ -5337,7 +5341,18 @@ static void drawHmsScreen() {
     // one long sentence must not push every other entry off the screen.
     // n lines occupy n * (smallH + 2) - 2 px, so this exact form leaves a 2 px
     // gap above the footer and nothing more.
-    int16_t roomLines = (footY - y) / (smallH + 2);
+    //
+    // One line stays reserved while anything can still follow this entry: the
+    // "+N more" footnote is the only hint that the list is truncated, and
+    // letting the text fill the last gap would silently delete it. The final
+    // entry of a complete list has nothing to warn about, so it gets the lot -
+    // which is the case that motivated relaxing this in the first place.
+    // The reserve is smallH + 4, not smallH: the footnote is preceded by the
+    // same 4 px gap that separates entries, and reserving only its glyph box
+    // leaves it 2 px short of fitting in the worst case.
+    const bool moreCanFollow = (i + 1 < total) || s.hmsOverflow;
+    const int16_t wrapFloor = moreCanFollow ? (int16_t)(footY - (smallH + 4)) : footY;
+    int16_t roomLines = (wrapFloor - y) / (smallH + 2);
     if (roomLines > 4) roomLines = 4;
     if (roomLines > 0) {
       const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
@@ -5350,7 +5365,8 @@ static void drawHmsScreen() {
   }
 
   const uint8_t hidden = (uint8_t)(total - shown + (s.hmsOverflow ? s.hmsTotal - s.hmsCount : 0));
-  if (hidden > 0 && y < footY - smallH) {
+  // Fits when the glyph box ends at or before the footer's top edge.
+  if (hidden > 0 && y + smallH <= footY) {
     char more[20];
     snprintf(more, sizeof(more), "+%u more", (unsigned)hidden);
     setFont(tft, FONT_SMALL);

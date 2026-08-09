@@ -783,7 +783,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
             <input type="checkbox" id="hmsonl" value="1" %HMS_ONL% onchange="toggleSetting('hmsonl',this.checked);hmsLookupChanged()">
             <label for="hmsonl">Look up error text on this page</label>
           </label>
-          <div class="help-text" style="padding-left:28px">This board stores error codes but not the sentences that explain them. With this on, <strong>this page</strong> - not the device - fetches the text list once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link, which is all an offline network can show anyway.</div>
+          <div class="help-text" style="padding-left:28px">This board stores the text for print errors, but not for the thousands of HMS codes. With this on, <strong>this page</strong> - not the device - fetches that missing text once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link on every row, and print-error rows keep their text either way.</div>
         </div>
       </div>
     </div>
