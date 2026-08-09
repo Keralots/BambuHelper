@@ -8,18 +8,27 @@
 // ---------------------------------------------------------------------------
 //  Bambu account sign-in, performed by the device itself
 //
-//  The obvious endpoint - api.bambulab.com/v1/user-service/user/login - is the
-//  one path a Cloudflare WAF rule refuses from an ESP32 (measured: 403 with an
-//  "Attention Required!" page, regardless of agent headers or cookies). The
-//  website's own sign-in endpoints on bambulab.com are not filtered, so the
-//  flow goes through those instead, exactly as a browser would:
+//  The account endpoint hands the token back in the response body, so no
+//  browser session is involved:
 //
-//    GET  /api/csrf                -> bbl_csrf_token cookie
-//    POST /api/sign-in/form        {account,password} or {account,code}
-//    POST /api/sign-in/tfa         {tfaKey,tfaCode}
-//    GET  /api/auth/token          -> the cloud token, plus a refresh token
+//    POST api.bambulab.com/v1/user-service/user/login
+//         {account,password}  or  {account,code}
+//      -> {"accessToken":...}                    signed in
+//      -> {"loginType":"verifyCode"}             a code was mailed out
+//      -> {"loginType":"tfa","tfaKey":...}       authenticator app
+//    POST api.bambulab.com/v1/user-service/user/sendemail/code
+//         {email,type:"codeLogin"}               mail a code without a password
 //
-//  Every call needs the CSRF cookie echoed back in an x-bbl-csrf-token header.
+//  Only the authenticator leg lives on the website host, which is where Bambu
+//  put it, and that one call needs the CSRF cookie echoed back in an
+//  x-bbl-csrf-token header:
+//
+//    GET  bambulab.com/api/csrf    -> bbl_csrf_token cookie
+//    POST bambulab.com/api/sign-in/tfa  {tfaKey,tfaCode}
+//
+//  The site's own /api/sign-in/form + /api/auth/token pair is deliberately NOT
+//  used: it establishes a session but answers a non-slicer client with empty
+//  token fields.
 // ---------------------------------------------------------------------------
 
 enum CloudLoginState : uint8_t {
@@ -54,8 +63,9 @@ bool cloudLoginCanAutoRefresh();
 
 void cloudLoginReset();
 
-// Reachability self-test: fetch the CSRF cookie and post throwaway credentials.
-// Reaching the "incorrect account or password" answer proves the whole path.
+// Reachability self-test: post throwaway credentials to the account endpoint
+// and fetch the CSRF cookie the authenticator leg needs. Reaching the
+// "incorrect account or password" answer proves the whole path.
 void cloudLoginSelfTest(String& out);
 
 #else  // !HAS_CLOUD_LOGIN - flash-poor boards keep the paste-a-token path

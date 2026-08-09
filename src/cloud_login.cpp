@@ -43,6 +43,10 @@ void cloudLoginReset() {
 static void jarPut(const String& pair) {
   int eq = pair.indexOf('=');
   if (eq <= 0) return;
+  // An empty value must never replace a good one. /api/auth/token answers some
+  // sessions with `Set-Cookie: token=` and that used to wipe the real session
+  // token the sign-in had just handed us.
+  if (eq == (int)pair.length() - 1) return;
   String name = pair.substring(0, eq);
 
   int at = g_jar.indexOf(name + "=");
@@ -101,14 +105,21 @@ struct CloudResponse {
   String body;
 };
 
-static const char* loginHost(CloudRegion region) {
+// The account API answers the sign-in calls; the website host only carries the
+// authenticator leg.
+static const char* apiHost(CloudRegion region) {
+  return region == REGION_CN ? "api.bambulab.cn" : "api.bambulab.com";
+}
+static const char* siteHost(CloudRegion region) {
   return region == REGION_CN ? "bambulab.cn" : "bambulab.com";
 }
 
-static bool cloudRequest(CloudRegion region, const char* path, const char* method,
-                         const char* body, bool withCsrf, CloudResponse& out,
+// `useSession` covers the website host's cookie ritual: send the jar and the
+// CSRF header, and keep whatever Set-Cookie comes back. The account API needs
+// none of it, and mixing the two has already cost one debugging round.
+static bool cloudRequest(const char* host, const char* path, const char* method,
+                         const char* body, bool useSession, CloudResponse& out,
                          size_t maxBody = 4096) {
-  const char* host = loginHost(region);
 
   WiFiClientSecure* tls = new (std::nothrow) WiFiClientSecure();
   if (!tls) { out.status = -2; return false; }
@@ -131,8 +142,8 @@ static bool cloudRequest(CloudRegion region, const char* path, const char* metho
   req += "User-Agent: bambu_network_agent/01.09.05.01\r\n";
   req += "Accept: application/json\r\n";
   req += "Content-Type: application/json\r\n";
-  if (g_jar.length() > 0)             { req += "Cookie: ";           req += g_jar;  req += "\r\n"; }
-  if (withCsrf && g_csrf.length() > 0){ req += "x-bbl-csrf-token: "; req += g_csrf; req += "\r\n"; }
+  if (useSession && g_jar.length() > 0)  { req += "Cookie: ";           req += g_jar;  req += "\r\n"; }
+  if (useSession && g_csrf.length() > 0) { req += "x-bbl-csrf-token: "; req += g_csrf; req += "\r\n"; }
   req += "Connection: close\r\n";
   if (body) { req += "Content-Length: "; req += strlen(body); req += "\r\n"; }
   req += "\r\n";
@@ -203,7 +214,7 @@ static bool cloudRequest(CloudRegion region, const char* path, const char* metho
   delete tls;
   esp_task_wdt_reset();
 
-  jarAbsorb(out.setCookies);
+  if (useSession) jarAbsorb(out.setCookies);
   return out.status > 0;
 }
 
@@ -216,11 +227,11 @@ static CloudRegion currentRegion() {
 }
 
 // Every write to the site host is CSRF-guarded, so the cookie has to exist
-// before the first POST.
+// before the authenticator POST.
 static bool ensureCsrf() {
   if (g_csrf.length() > 0) return true;
   CloudResponse r;
-  cloudRequest(currentRegion(), "/api/csrf", "GET", nullptr, false, r);
+  cloudRequest(siteHost(currentRegion()), "/api/csrf", "GET", nullptr, true, r);
   if (g_csrf.length() == 0) {
     g_message = "Could not reach the Bambu sign-in service.";
     return false;
@@ -240,22 +251,21 @@ static void setErrorFrom(const CloudResponse& r, const char* fallback) {
   g_state = CLOUD_LOGIN_FAILED;
 }
 
-// The site's session is a cookie; the cloud token comes from /api/auth/token.
-static bool finishSignIn() {
-  CloudResponse r;
-  if (!cloudRequest(currentRegion(), "/api/auth/token", "GET", nullptr, true, r, 4096)) {
-    g_message = "Signed in, but the token request failed.";
-    g_state = CLOUD_LOGIN_FAILED;
-    return false;
-  }
-
-  String token;
+// Bambu spells the token differently depending on which of its own endpoints
+// answered, and sometimes wraps the payload in "data".
+static String extractToken(const String& body) {
   JsonDocument doc;
-  if (!deserializeJson(doc, r.body) && doc["token"].is<const char*>()) {
-    token = (const char*)doc["token"];
-  }
-  if (token.length() == 0) token = jarValue("token");   // fallback: session cookie
+  if (body.length() == 0 || deserializeJson(doc, body)) return "";
 
+  const char* keys[] = { "accessToken", "token" };
+  for (size_t i = 0; i < 2; i++) {
+    if (doc[keys[i]].is<const char*>())         return (const char*)doc[keys[i]];
+    if (doc["data"][keys[i]].is<const char*>()) return (const char*)doc["data"][keys[i]];
+  }
+  return "";
+}
+
+static bool storeToken(const String& token) {
   if (token.length() == 0) {
     g_message = "Signed in, but no token came back.";
     g_state = CLOUD_LOGIN_FAILED;
@@ -274,38 +284,78 @@ static bool finishSignIn() {
   return true;
 }
 
-// Both sign-in POSTs answer with the same envelope.
-static bool handleSignInReply(const CloudResponse& r) {
+// The account endpoint answers {account,password} and {account,code} with the
+// same envelope: either the token, or which second factor it wants next.
+static bool handleLoginReply(const CloudResponse& r) {
   if (r.status != 200) {
     setErrorFrom(r, "Sign-in was refused.");
     return false;
   }
 
+  String token = extractToken(r.body);
+  if (token.length() > 0) return storeToken(token);
+
   JsonDocument doc;
   deserializeJson(doc, r.body);
-  const char* loginType = doc["loginType"].is<const char*>() ? doc["loginType"] : nullptr;
+  const char* loginType = doc["loginType"].as<const char*>();
+  if (!loginType) loginType = "";
+  const char* tfaKey = doc["tfaKey"].as<const char*>();
+  if (!tfaKey) tfaKey = "";
 
-  if (loginType && strcmp(loginType, "tfa") == 0) {
-    g_tfaKey = doc["tfaKey"].is<const char*>() ? (const char*)doc["tfaKey"] : "";
+  // Measured on a TOTP account: Bambu answers the challenge with a tfaKey and
+  // an EMPTY loginType, so keying off loginType alone never enters this branch.
+  // The handed-out tfaKey is the challenge; that is what decides.
+  if (strcmp(loginType, "tfa") == 0 || (loginType[0] == '\0' && tfaKey[0] != '\0')) {
+    g_tfaKey = tfaKey;
     g_neededTwoFactor = true;
     g_state = CLOUD_LOGIN_NEED_TFA;
     g_message = "Enter the 6-digit code from your authenticator app.";
     return true;
   }
-  if (loginType && strcmp(loginType, "verifyCode") == 0) {
+  if (strcmp(loginType, "verifyCode") == 0) {
     g_neededTwoFactor = true;
     g_state = CLOUD_LOGIN_NEED_EMAIL_CODE;
     g_message = "Enter the code Bambu just emailed you.";
     return true;
   }
 
-  return finishSignIn();
+  // Describe the envelope without printing it: strings are reported by length
+  // only, since any of them may be a credential. Numbers, booleans and the two
+  // enum-ish routing fields are safe to show and are what actually explains a
+  // refusal.
+  String fields;
+  for (JsonPair kv : doc.as<JsonObject>()) {
+    if (fields.length() > 0) fields += ' ';
+    fields += kv.key().c_str();
+    fields += '=';
+
+    const char* key = kv.key().c_str();
+    if (kv.value().isNull()) {
+      fields += "null";
+    } else if (kv.value().is<const char*>()) {
+      if (strcmp(key, "loginType") == 0 || strcmp(key, "accessMethod") == 0) {
+        fields += '"';
+        fields += kv.value().as<const char*>();
+        fields += '"';
+      } else {
+        fields += "len";
+        fields += strlen(kv.value().as<const char*>());
+      }
+    } else {
+      fields += kv.value().as<String>();
+    }
+  }
+  Serial.printf("CLOUD: login reply had no token, len=%d, fields: %s\n",
+                r.body.length(), fields.c_str());
+
+  g_message = "Bambu accepted the sign-in but sent no token.";
+  g_state = CLOUD_LOGIN_FAILED;
+  return false;
 }
 
 bool cloudLoginWithPassword(const char* email, const char* password) {
   cloudLoginReset();
   g_email = email;
-  if (!ensureCsrf()) return false;
 
   JsonDocument body;
   body["account"]  = email;
@@ -314,20 +364,20 @@ bool cloudLoginWithPassword(const char* email, const char* password) {
   serializeJson(body, payload);
 
   CloudResponse r;
-  if (!cloudRequest(currentRegion(), "/api/sign-in/form", "POST", payload.c_str(), true, r)) {
+  if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/login", "POST",
+                    payload.c_str(), false, r)) {
     g_message = "Could not reach the Bambu sign-in service.";
     g_state = CLOUD_LOGIN_FAILED;
     return false;
   }
-  Serial.printf("CLOUD: sign-in/form HTTP %d\n", r.status);
-  return handleSignInReply(r);
+  Serial.printf("CLOUD: user/login HTTP %d, len=%d\n", r.status, r.body.length());
+  return handleLoginReply(r);
 }
 
 bool cloudLoginRequestEmailCode(const char* email) {
   cloudLoginReset();
   g_email = email;
   g_neededTwoFactor = true;      // this path never has a password to store
-  if (!ensureCsrf()) return false;
 
   JsonDocument body;
   body["email"] = email;
@@ -336,8 +386,8 @@ bool cloudLoginRequestEmailCode(const char* email) {
   serializeJson(body, payload);
 
   CloudResponse r;
-  if (!cloudRequest(currentRegion(), "/api/v1/user-service/user/sendemail/code",
-                    "POST", payload.c_str(), true, r)) {
+  if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/sendemail/code",
+                    "POST", payload.c_str(), false, r)) {
     g_message = "Could not reach the Bambu sign-in service.";
     g_state = CLOUD_LOGIN_FAILED;
     return false;
@@ -355,42 +405,63 @@ bool cloudLoginRequestEmailCode(const char* email) {
 }
 
 bool cloudLoginSubmitCode(const char* code) {
-  if (g_state != CLOUD_LOGIN_NEED_TFA && g_state != CLOUD_LOGIN_NEED_EMAIL_CODE) {
+  const CloudLoginState keep = g_state;   // so a mistyped code can be retried
+  if (keep != CLOUD_LOGIN_NEED_TFA && keep != CLOUD_LOGIN_NEED_EMAIL_CODE) {
     g_message = "Nothing is waiting for a code - start again.";
     return false;
   }
-  if (!ensureCsrf()) return false;
+
+  // The authenticator leg is the one Bambu keeps on the website host, session
+  // cookies and all; the emailed code goes back to the account endpoint.
+  const bool tfa = (keep == CLOUD_LOGIN_NEED_TFA);
+  if (tfa && !ensureCsrf()) {
+    g_state = keep;
+    return false;
+  }
 
   JsonDocument body;
-  const char* path;
-  if (g_state == CLOUD_LOGIN_NEED_TFA) {
+  if (tfa) {
     body["tfaKey"]  = g_tfaKey;
     body["tfaCode"] = code;
-    path = "/api/sign-in/tfa";
   } else {
     body["account"] = g_email;
     body["code"]    = code;
-    path = "/api/sign-in/form";
   }
   String payload;
   serializeJson(body, payload);
 
+  const char* host = tfa ? siteHost(currentRegion()) : apiHost(currentRegion());
+  const char* path = tfa ? "/api/sign-in/tfa" : "/v1/user-service/user/login";
+
   CloudResponse r;
-  if (!cloudRequest(currentRegion(), path, "POST", payload.c_str(), true, r)) {
+  if (!cloudRequest(host, path, "POST", payload.c_str(), tfa, r)) {
     g_message = "Could not reach the Bambu sign-in service.";
     g_state = CLOUD_LOGIN_FAILED;
     return false;
   }
-  Serial.printf("CLOUD: %s HTTP %d\n", path, r.status);
+  Serial.printf("CLOUD: %s HTTP %d, len=%d\n", path, r.status, r.body.length());
 
   if (r.status != 200) {
-    // Keep waiting on the same step so a mistyped code can be retried.
-    CloudLoginState keep = g_state;
     setErrorFrom(r, "That code was not accepted.");
     g_state = keep;
     return false;
   }
-  return finishSignIn();
+
+  if (!tfa) {
+    bool ok = handleLoginReply(r);
+    if (!ok) g_state = keep;
+    return ok;
+  }
+
+  // The site answers the authenticator leg with a session cookie, and only
+  // sometimes echoes the token in the body.
+  String token = extractToken(r.body);
+  if (token.length() == 0) token = jarValue("token");
+  if (!storeToken(token)) {
+    g_state = keep;
+    return false;
+  }
+  return true;
 }
 
 bool cloudLoginCanAutoRefresh() {
@@ -425,27 +496,34 @@ bool cloudLoginRefreshStored() {
 void cloudLoginSelfTest(String& out) {
   cloudLoginReset();
 
-  CloudResponse csrf;
-  bool ok1 = cloudRequest(currentRegion(), "/api/csrf", "GET", nullptr, false, csrf);
-
+  // Throwaway credentials: reaching "Incorrect account or password." proves the
+  // account endpoint answers this device. A multi-kilobyte HTML body instead
+  // means Cloudflare stepped in - historically rate limiting, so wait it out
+  // before reading anything more into it.
   CloudResponse login;
-  bool ok2 = cloudRequest(currentRegion(), "/api/sign-in/form", "POST",
+  bool ok1 = cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/login", "POST",
                           "{\"account\":\"probe@bambuhelper.invalid\","
-                          "\"password\":\"not-a-real-password\"}", true, login);
+                          "\"password\":\"not-a-real-password\"}", false, login, 1024);
 
-  out = "{\"csrf_http\":";
-  out += ok1 ? csrf.status : -1;
-  out += ",\"have_csrf\":";
-  out += g_csrf.length() > 0 ? "true" : "false";
-  out += ",\"login_http\":";
-  out += ok2 ? login.status : -1;
+  // The authenticator leg needs this cookie, so it is worth reporting too.
+  CloudResponse csrf;
+  bool ok2 = cloudRequest(siteHost(currentRegion()), "/api/csrf", "GET", nullptr, true, csrf);
+
+  out = "{\"login_http\":";
+  out += ok1 ? login.status : -1;
+  out += ",\"login_len\":";
+  out += login.body.length();
   out += ",\"login_body\":\"";
   for (size_t i = 0; i < login.body.length() && i < 200; i++) {
     char c = login.body[i];
     if (c == '"' || c == '\\') out += '\\';
     if ((uint8_t)c >= 0x20) out += c;
   }
-  out += "\"}";
+  out += "\",\"csrf_http\":";
+  out += ok2 ? csrf.status : -1;
+  out += ",\"have_csrf\":";
+  out += g_csrf.length() > 0 ? "true" : "false";
+  out += "}";
 
   cloudLoginReset();
 }
