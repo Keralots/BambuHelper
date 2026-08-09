@@ -183,21 +183,14 @@
 // Without a text table a board still shows "<MODULE> <SEVERITY>" plus the
 // formatted code (~100 bytes); the full sentence comes from the web portal.
 //
-// BOARD_IS_C3 alone cannot express "stock esp32c3": esp32c3_round and
-// diy_round240 set it too, so those two are excluded by their own macros.
-// The whole C3 family is off the print_error table - the stock env has ~5 KB
-// of app slot left and the round variant ~15 KB.
-#if defined(BOARD_IS_C3) && !defined(BOARD_IS_C3_ROUND) && !defined(BOARD_IS_DIY)
-#define HAS_HMS_UI  0
-#else
-#define HAS_HMS_UI  1
-#endif
-
-#if defined(BOARD_IS_C3)
-#define HAS_ERROR_TEXT_TABLE  0
-#else
+// Both are on for every env. The C3 family used to drop them - the stock
+// esp32c3 had ~4 KB of app slot left and the round variant ~6 KB, which paid
+// for neither the print_error sentences nor the portal section. Moving the
+// portal CSS and JS out of PAGE_HTML into gzipped assets gave every board
+// ~77 KB back, more than these cost together, so the exception is gone and a
+// C3 reports errors like everything else.
+#define HAS_HMS_UI            1
 #define HAS_ERROR_TEXT_TABLE  1
-#endif
 
 // The full HMS table only fits envs built on the 8 MB / 16 MB partition
 // tables, and no flash-size macro exists to key off - so this is enumerated
@@ -216,16 +209,13 @@
 #endif
 
 // The portal's "Printer Errors" section is markup, and markup is flash: it
-// costs ~7 KB, the same on every board. The C3 family has single-digit KB of
-// app slot left, so those boards keep the parts that matter on a device with no
-// keyboard - the badge, the error screen, the cancel wording - and drop the
-// settings page. They run on the defaults (reporting on, important-only, no
-// alert channels), which a settings import can still override.
-#if HAS_HMS_UI && !defined(BOARD_IS_C3)
-#define HAS_HMS_WEB_UI  1
-#else
-#define HAS_HMS_WEB_UI  0
-#endif
+// costs ~7 KB, the same on every board. Kept as its own capability - and
+// PAGE_HTML kept split into three streamed literals - so a board that runs out
+// of app slot can still drop the settings page while keeping the parts that
+// matter without a keyboard: the badge, the error screen, the cancel wording.
+// Such a board runs on the defaults (reporting on, important-only, no alert
+// channels), which a settings import can override.
+#define HAS_HMS_WEB_UI  HAS_HMS_UI
 
 #if HAS_FULL_HMS_TABLE && !HAS_HMS_UI
 #error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
