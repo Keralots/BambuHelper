@@ -1155,11 +1155,18 @@ function appendHmsSettings(p){
 /* Live card. Text comes from the device where a table is compiled in; the rest
    is looked up in the published mirror, which the browser can reach and the
    firmware cannot (e.bambulab.com sends no CORS header, and the feed is
-   750 KB). Fetched once per page load, never inside the poll. */
+   750 KB). Fetched once per page load, never inside the poll.
+
+   Boards carrying the full table (DEV.hmsFull) never fetch it: a code with no
+   device text is blank in Bambu's feed, and the mirror is built from that same
+   feed with the same blanks dropped, so the request could only ever fail to
+   help - half a megabyte for nothing. */
 var HMS_MIRROR = 'https://keralots.github.io/BambuHelper/errors/hms_en.json';
+var HMS_ON_DEVICE = (DEV.hmsFull === '1');
 var _hmsMirror = null, _hmsTexts = null, _hmsLast = null;
 
 function hmsMirror(){
+  if (HMS_ON_DEVICE) return Promise.resolve(null);
   if (!_hmsMirror){
     _hmsMirror = fetch(HMS_MIRROR)
       .then(function(r){ return r.ok ? r.json() : null; })
@@ -1224,7 +1231,11 @@ function hmsRender(){
   }
 
   el.innerHTML = h || '<span class="text-dim">No errors reported.</span>';
-  if (need && !_hmsTexts) hmsMirror().then(function(j){ if (j){ _hmsTexts = j; hmsRender(); } });
+  // Second guard at the call site as well as inside hmsMirror(): the card
+  // re-renders on every 3 s poll, and a standing blank code would otherwise
+  // build a throwaway promise each time.
+  if (need && !_hmsTexts && !HMS_ON_DEVICE)
+    hmsMirror().then(function(j){ if (j){ _hmsTexts = j; hmsRender(); } });
 }
 
 function refreshErrorCard(){

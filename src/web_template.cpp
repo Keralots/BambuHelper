@@ -437,6 +437,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "HMSFULL") == 0) {
+    // JS board flag: this device carries the full HMS sentence table, so the
+    // error card must not fetch the published mirror. A code that has no text
+    // here is blank in Bambu's feed, and the mirror is generated from that same
+    // feed with the same blanks dropped - the download could only ever fail to
+    // help, at 500+ KB a page load.
+#if HAS_FULL_HMS_TABLE
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMSV_ROW") == 0) {
     // AMS view swaps gauge row 2 for the AMS strip - 240x240 square boards
     // only. Round boards have no AMS strip, big boards show AMS natively.

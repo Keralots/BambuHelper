@@ -1315,7 +1315,7 @@ R"rawliteral(
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
 
-<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',es8311:'%ES8311_AUDIO%'};</script>
+<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',es8311:'%ES8311_AUDIO%',hmsFull:'%HMSFULL%'};</script>
 <script src="/app.js?v=%JSVER%"></script>
 </body>
 </html>
