@@ -21,13 +21,33 @@ static String g_csrf;       // bbl_csrf_token value, echoed in a header
 static String g_tfaKey;
 static String g_email;
 static bool   g_neededTwoFactor = false;
+// A refused code leaves the flow waiting on the same step, so the state alone
+// cannot tell the portal whether to show the message as a prompt or a problem.
+static bool   g_lastFailed = false;
 
 CloudLoginState cloudLoginState()   { return g_state; }
 const char*     cloudLoginMessage() { return g_message.c_str(); }
+bool            cloudLoginLastFailed() { return g_lastFailed; }
+
+// Wait on a step: the message is an instruction, not a complaint.
+static bool prompt(CloudLoginState state, const char* message) {
+  g_state = state;
+  g_message = message;
+  g_lastFailed = false;
+  return true;
+}
+
+static bool fail(const char* message, CloudLoginState state = CLOUD_LOGIN_FAILED) {
+  g_state = state;
+  g_message = message;
+  g_lastFailed = true;
+  return false;
+}
 
 void cloudLoginReset() {
   g_state = CLOUD_LOGIN_IDLE;
   g_message = "";
+  g_lastFailed = false;
   g_jar = "";
   g_csrf = "";
   g_tfaKey = "";
@@ -283,8 +303,7 @@ static bool ensureCsrf() {
   CloudResponse r;
   cloudRequest(siteHost(currentRegion()), "/api/csrf", "GET", nullptr, true, r);
   if (g_csrf.length() == 0) {
-    g_message = "Could not reach the Bambu sign-in service.";
-    return false;
+    return fail("Could not reach the Bambu sign-in service.", g_state);
   }
   return true;
 }
@@ -294,11 +313,10 @@ static bool ensureCsrf() {
 static void setErrorFrom(const CloudResponse& r, const char* fallback) {
   JsonDocument doc;
   if (r.body.length() > 0 && !deserializeJson(doc, r.body) && doc["error"].is<const char*>()) {
-    g_message = (const char*)doc["error"];
+    fail((const char*)doc["error"]);
   } else {
-    g_message = fallback;
+    fail(fallback);
   }
-  g_state = CLOUD_LOGIN_FAILED;
 }
 
 // Bambu spells the token differently depending on which of its own endpoints
@@ -317,9 +335,14 @@ static String extractToken(const String& body) {
 
 static bool storeToken(const String& token) {
   if (token.length() == 0) {
-    g_message = "Signed in, but no token came back.";
-    g_state = CLOUD_LOGIN_FAILED;
-    return false;
+    return fail("Signed in, but no token came back.");
+  }
+  // Every consumer reads the token back through a 1200-byte buffer, so storing
+  // a longer one would truncate on load and surface later as an expired token
+  // that never stops being expired.
+  if (token.length() >= CLOUD_TOKEN_MAX) {
+    Serial.printf("CLOUD: token is %d bytes, too long to store\n", token.length());
+    return fail("Bambu's token is larger than this device can store.");
   }
 
   saveCloudToken(token.c_str());
@@ -328,9 +351,8 @@ static bool storeToken(const String& token) {
   // A stored password is only useful for silent re-login, which 2FA rules out.
   if (g_neededTwoFactor) clearCloudPassword();
 
-  g_state = CLOUD_LOGIN_OK;
-  g_message = "Signed in.";
   Serial.println("CLOUD: sign-in complete, token stored");
+  prompt(CLOUD_LOGIN_OK, "Signed in.");
   return true;
 }
 
@@ -352,10 +374,8 @@ static bool handleLoginReply(const CloudResponse& r) {
   if (r.truncated || err) {
     Serial.printf("CLOUD: login reply unreadable (%s), len=%d, truncated=%d\n",
                   err.c_str(), r.body.length(), r.truncated ? 1 : 0);
-    g_message = r.truncated ? "Bambu's answer was too large to read."
-                            : "Bambu's answer could not be read.";
-    g_state = CLOUD_LOGIN_FAILED;
-    return false;
+    return fail(r.truncated ? "Bambu's answer was too large to read."
+                            : "Bambu's answer could not be read.");
   }
 
   const char* loginType = doc["loginType"].as<const char*>();
@@ -375,21 +395,16 @@ static bool handleLoginReply(const CloudResponse& r) {
       // retrying a login that can only fail.
       g_neededTwoFactor = true;
       Serial.println("CLOUD: 2FA demanded but no tfaKey came with it");
-      g_message = "Bambu asked for a 2FA code but sent no challenge. Try again.";
-      g_state = CLOUD_LOGIN_FAILED;
-      return false;
+      return fail("Bambu asked for a 2FA code but sent no challenge. Try again.");
     }
     g_tfaKey = tfaKey;
     g_neededTwoFactor = true;
-    g_state = CLOUD_LOGIN_NEED_TFA;
-    g_message = "Enter the 6-digit code from your authenticator app.";
-    return true;
+    return prompt(CLOUD_LOGIN_NEED_TFA,
+                  "Enter the 6-digit code from your authenticator app.");
   }
   if (strcmp(loginType, "verifyCode") == 0) {
     g_neededTwoFactor = true;
-    g_state = CLOUD_LOGIN_NEED_EMAIL_CODE;
-    g_message = "Enter the code Bambu just emailed you.";
-    return true;
+    return prompt(CLOUD_LOGIN_NEED_EMAIL_CODE, "Enter the code Bambu just emailed you.");
   }
 
   // Describe the envelope without printing it: strings are reported by length
@@ -425,9 +440,7 @@ static bool handleLoginReply(const CloudResponse& r) {
   Serial.printf("CLOUD: login reply had no token, len=%d, fields: %s\n",
                 r.body.length(), fields.c_str());
 
-  g_message = "Bambu accepted the sign-in but sent no token.";
-  g_state = CLOUD_LOGIN_FAILED;
-  return false;
+  return fail("Bambu accepted the sign-in but sent no token.");
 }
 
 bool cloudLoginWithPassword(const char* email, const char* password) {
@@ -443,9 +456,7 @@ bool cloudLoginWithPassword(const char* email, const char* password) {
   CloudResponse r;
   if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/login", "POST",
                     payload.c_str(), false, r)) {
-    g_message = "Could not reach the Bambu sign-in service.";
-    g_state = CLOUD_LOGIN_FAILED;
-    return false;
+    return fail("Could not reach the Bambu sign-in service.");
   }
   Serial.printf("CLOUD: user/login HTTP %d, len=%d\n", r.status, r.body.length());
   return handleLoginReply(r);
@@ -465,9 +476,7 @@ bool cloudLoginRequestEmailCode(const char* email) {
   CloudResponse r;
   if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/sendemail/code",
                     "POST", payload.c_str(), false, r)) {
-    g_message = "Could not reach the Bambu sign-in service.";
-    g_state = CLOUD_LOGIN_FAILED;
-    return false;
+    return fail("Could not reach the Bambu sign-in service.");
   }
   Serial.printf("CLOUD: sendemail/code HTTP %d\n", r.status);
 
@@ -476,16 +485,13 @@ bool cloudLoginRequestEmailCode(const char* email) {
     return false;
   }
 
-  g_state = CLOUD_LOGIN_NEED_EMAIL_CODE;
-  g_message = "Enter the code Bambu just emailed you.";
-  return true;
+  return prompt(CLOUD_LOGIN_NEED_EMAIL_CODE, "Enter the code Bambu just emailed you.");
 }
 
 bool cloudLoginSubmitCode(const char* code) {
   const CloudLoginState keep = g_state;   // so a mistyped code can be retried
   if (keep != CLOUD_LOGIN_NEED_TFA && keep != CLOUD_LOGIN_NEED_EMAIL_CODE) {
-    g_message = "Nothing is waiting for a code - start again.";
-    return false;
+    return fail("Nothing is waiting for a code - start again.", keep);
   }
 
   // The authenticator leg is the one Bambu keeps on the website host, session
@@ -513,9 +519,7 @@ bool cloudLoginSubmitCode(const char* code) {
   CloudResponse r;
   if (!cloudRequest(host, path, "POST", payload.c_str(), tfa, r)) {
     // A blip on the way out must not throw away a code the user still holds.
-    g_message = "Could not reach the Bambu sign-in service - try the code again.";
-    g_state = keep;
-    return false;
+    return fail("Could not reach the Bambu sign-in service - try the code again.", keep);
   }
   Serial.printf("CLOUD: %s HTTP %d, len=%d\n", path, r.status, r.body.length());
 
@@ -527,12 +531,9 @@ bool cloudLoginSubmitCode(const char* code) {
 
   if (!tfa) {
     bool ok = handleLoginReply(r);
-    if (!ok) {
-      // handleLoginReply describes a finished sign-in; back on the code step
-      // that reads as a contradiction, so say what the user can act on.
-      g_message = "That code was not accepted.";
-      g_state = keep;
-    }
+    // handleLoginReply describes a finished sign-in; back on the code step that
+    // reads as a contradiction, so say what the user can act on.
+    if (!ok) fail("That code was not accepted.", keep);
     return ok;
   }
 
@@ -548,13 +549,21 @@ bool cloudLoginSubmitCode(const char* code) {
 }
 
 bool cloudLoginCanAutoRefresh() {
-  char pw[128];
+  char pw[CLOUD_PASSWORD_MAX + 1];
   return loadCloudPassword(pw, sizeof(pw));
 }
 
 bool cloudLoginRefreshStored() {
-  char email[96];
-  char pw[128];
+  // Somebody is standing at the portal holding a code. This runs from the MQTT
+  // reconnect path and would reset the session out from under them, so their
+  // code would come back "nothing is waiting for a code".
+  if (g_state == CLOUD_LOGIN_NEED_TFA || g_state == CLOUD_LOGIN_NEED_EMAIL_CODE) {
+    Serial.println("CLOUD: skipping background refresh, a sign-in is waiting for a code");
+    return false;
+  }
+
+  char email[CLOUD_EMAIL_MAX + 1];
+  char pw[CLOUD_PASSWORD_MAX + 1];
   if (!loadCloudEmail(email, sizeof(email)) || !loadCloudPassword(pw, sizeof(pw))) {
     return false;
   }

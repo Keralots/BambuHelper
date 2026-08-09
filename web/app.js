@@ -451,6 +451,9 @@ function cloudLogout(){
     if (msg) { msg.textContent = 'Signed out.'; msg.style.color = 'var(--text-mid)'; }
     var wrap = document.getElementById('cl_codeWrap');
     if (wrap) wrap.style.display = 'none';
+    // The picker still lists the account we just signed out of.
+    var sel = document.getElementById('cl_acctsel');
+    if (sel) { sel.innerHTML = ''; sel.style.display = 'none'; }
   });
 }
 
@@ -476,6 +479,14 @@ function clInitAuthUi(){
   fetch('/cloud/login/status').then(function(r){return r.json();}).then(function(d){
     if (d.email) document.getElementById('cl_email').value = d.email;
     if (d.saved_password) document.getElementById('cl_savePass').checked = true;
+
+    // A sign-in left waiting for a code, or a background renewal that gave up,
+    // is device state the page has to show - nothing else polls for it, so
+    // without this the user only learns about it by trying something.
+    if (d.state === 'need_tfa' || d.state === 'need_email_code' || d.failed){
+      clApplyLoginState(d);
+      return;
+    }
     if (d.has_token && d.email){
       document.getElementById('cl_loginMsg').textContent = 'Signed in as ' + d.email;
     }
@@ -496,7 +507,9 @@ function clApplyLoginState(d){
   var msg = document.getElementById('cl_loginMsg');
   var wrap = document.getElementById('cl_codeWrap');
   msg.textContent = d.message || '';
-  msg.style.color = (d.state === 'failed') ? 'var(--warn)' : 'var(--text-mid)';
+  // A refused code leaves the device waiting on the same step, so the state
+  // stays 'need_*' while the message is a complaint - the device says which.
+  msg.style.color = (d.failed || d.state === 'failed') ? 'var(--warn)' : 'var(--text-mid)';
 
   if (d.state === 'need_tfa' || d.state === 'need_email_code'){
     wrap.style.display = '';

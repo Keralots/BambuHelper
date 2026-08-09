@@ -712,6 +712,10 @@ static void handleAppJs()  { sendGzipAsset("application/javascript", WEB_APP_JS_
 
 static void handleCloudLogout() {
   clearCloudToken();
+  // NVS is only half of it: the sign-in module still holds the live site
+  // session cookie, the 2FA challenge and a state that answers "Signed in."
+  // until the next reboot.
+  cloudLoginReset();
   server.send(200, "text/plain", "OK");
 }
 
@@ -807,6 +811,7 @@ static void sendCloudLoginState() {
   JsonDocument doc;
   doc["state"]   = cloudLoginStateName();
   doc["message"] = cloudLoginMessage();
+  doc["failed"]  = cloudLoginLastFailed();
 
   char email[96];
   doc["email"] = loadCloudEmail(email, sizeof(email)) ? email : "";
@@ -824,12 +829,28 @@ static void sendCloudLoginState() {
 // posts the password once. It is only persisted when the caller asked for it
 // AND the account signed in without a second factor - a stored password is
 // useless for silent refresh otherwise.
+static void sendCloudLoginError(const char* message) {
+  JsonDocument doc;
+  doc["state"]   = "failed";
+  doc["failed"]  = true;
+  doc["message"] = message;
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+}
+
 static void handleCloudLoginStart() {
   String email = server.arg("email");
   email.trim();
   if (email.length() == 0) {
-    server.send(200, "application/json",
-                "{\"state\":\"failed\",\"message\":\"Enter your Bambu account email.\"}");
+    sendCloudLoginError("Enter your Bambu account email.");
+    return;
+  }
+  // Both credentials are read back out of fixed buffers. Storing something
+  // longer would truncate on load and then fail every silent renewal for good,
+  // reported as a wrong password rather than as the length problem it is.
+  if (email.length() > CLOUD_EMAIL_MAX) {
+    sendCloudLoginError("That email address is too long for this device to store.");
     return;
   }
 
@@ -841,15 +862,25 @@ static void handleCloudLoginStart() {
 
   String password = server.arg("password");
   if (password.length() == 0) {
-    server.send(200, "application/json",
-                "{\"state\":\"failed\",\"message\":\"Enter your password.\"}");
+    sendCloudLoginError("Enter your password.");
+    return;
+  }
+
+  const bool save = (server.arg("save") == "1");
+  if (save && password.length() > CLOUD_PASSWORD_MAX) {
+    sendCloudLoginError("That password is too long for this device to remember. "
+                        "Sign in without saving it, or use an emailed code.");
     return;
   }
 
   cloudLoginWithPassword(email.c_str(), password.c_str());
 
   if (cloudLoginState() == CLOUD_LOGIN_OK) {
-    if (server.arg("save") == "1") saveCloudPassword(password.c_str());
+    // Not saving means not keeping: without this, signing into a second account
+    // leaves the first account's password behind, now paired with the new
+    // email, and the renewal path posts that mismatched pair every 15 minutes.
+    if (save) saveCloudPassword(password.c_str());
+    else      clearCloudPassword();
     refreshCloudUserIds();
   }
   sendCloudLoginState();

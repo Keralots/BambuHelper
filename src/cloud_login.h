@@ -31,6 +31,13 @@
 //  token fields.
 // ---------------------------------------------------------------------------
 
+// Anything longer than these truncates when it is read back out of NVS, and a
+// silently shortened credential fails forever without ever looking like the
+// wrong length. The sign-in path refuses instead.
+#define CLOUD_EMAIL_MAX     95
+#define CLOUD_PASSWORD_MAX  127
+#define CLOUD_TOKEN_MAX     1200
+
 enum CloudLoginState : uint8_t {
   CLOUD_LOGIN_IDLE = 0,
   CLOUD_LOGIN_NEED_TFA,         // authenticator code (account has 2FA)
@@ -43,6 +50,10 @@ enum CloudLoginState : uint8_t {
 
 CloudLoginState cloudLoginState();
 const char*     cloudLoginMessage();   // last error or progress line, for the UI
+
+// True when that message is a complaint rather than an instruction. A refused
+// code leaves the flow waiting on the same step, so the state cannot say this.
+bool            cloudLoginLastFailed();
 
 // Password sign-in. Returns false on any hard failure; the state says whether a
 // second factor is still needed.
@@ -72,6 +83,7 @@ void cloudLoginSelfTest(String& out);
 
 inline CloudLoginState cloudLoginState()               { return CLOUD_LOGIN_IDLE; }
 inline const char*     cloudLoginMessage()             { return ""; }
+inline bool            cloudLoginLastFailed()          { return false; }
 inline bool cloudLoginWithPassword(const char*, const char*) { return false; }
 inline bool cloudLoginRequestEmailCode(const char*)    { return false; }
 inline bool cloudLoginSubmitCode(const char*)          { return false; }
