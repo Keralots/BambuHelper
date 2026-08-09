@@ -314,7 +314,7 @@ R"rawliteral(
               <li>Find the cookie named <span class="mono">token</span> and copy its value.</li>
               <li>Paste it below and save.</li>
             </ol>
-            <p style="margin:var(--sp-3) 0 0;font-size:12.5px;color:var(--text-mid);line-height:1.6">The <strong>Companion Tool</strong> can do this for you and push the token straight to this device. <a href="https://keralots.github.io/BambuHelper/cloud-token.html" target="_blank" style="color:var(--accent)">Both methods, step by step</a></p>
+            <p style="margin:var(--sp-3) 0 0;font-size:12.5px;color:var(--text-mid);line-height:1.6">You do not have to do this by hand: sign in above, or let the <strong>Companion Tool</strong> push a token from your PC. <a href="https://keralots.github.io/BambuHelper/cloud-token.html" target="_blank" style="color:var(--accent)">All three ways, step by step</a></p>
           </div>
         </details>
 

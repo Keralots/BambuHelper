@@ -16,7 +16,7 @@ Additional supported boards include Guition JC3248W535 320x480, CYD 240x320, Wav
 |---|---|---|
 | **LAN Direct** | P1P, P1S, X1, X1C, X1E, A1, A1 Mini | Local MQTT via printer IP + LAN access code |
 | **LAN Direct (Developer Mode)** | H2S, H2C, H2D | LAN-only mode + Developer Mode required - see note below |
-| **Bambu Cloud (All printers)** | Any Bambu printer | Cloud MQTT via access token - no LAN mode needed |
+| **Bambu Cloud (All printers)** | Any Bambu printer | Cloud MQTT - sign in to your Bambu account from the device, or paste an access token. No LAN mode needed |
 
 > **H2 series LAN mode:** H2S, H2C, and H2D printers require both **LAN-only mode** and **Developer Mode** enabled in printer settings for local MQTT to work. Without Developer Mode, the printer accepts connections but does not respond to status requests. If you prefer not to enable Developer Mode, use Bambu Cloud mode instead.
 
@@ -24,12 +24,19 @@ Additional supported boards include Guition JC3248W535 320x480, CYD 240x320, Wav
 
 ### Cloud Mode Security Notice
 
-When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT service. Here is what you need to know:
+When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT service. There are **three ways to get it access**, and they differ in what your device ends up holding:
 
-- **No credentials are stored** - BambuHelper never asks for your email or password. You extract an access token from your browser and paste it into the web interface.
-- **Only the access token is stored** in the ESP32's flash memory. This token expires after about 3 months, at which point you simply paste a new one.
-- **Read-only access** - BambuHelper only reads printer status. It never sends commands or modifies printer settings.
-- **Same approach as other community projects** - this is the same authentication method used by the [Home Assistant Bambu Lab integration](https://github.com/greghesp/ha-bambulab), [OctoPrint-Bambu](https://github.com/jneilliii/OctoPrint-BambuPrinter), and other trusted third-party tools.
+| Way in | What the device stores | Good to know |
+|---|---|---|
+| **Email code** | The token and your email address | No password is ever typed or sent. Bambu mails you a 6-digit code, you enter it once. |
+| **Password** | The token, your email, and the password **only if you tick "Remember the password"** | Remembering it lets the device renew the token by itself when it expires. Accounts with two-factor authentication cannot do that, so the device **discards the password** as soon as it sees a 2FA prompt. |
+| **Access token** | The token only | The original method: copy the token out of your browser and paste it in. Still fully supported. |
+
+- **Whatever you choose, the token is what talks to Bambu.** It expires after about 3 months. With a remembered password the device signs in again on its own; otherwise you sign in again or paste a fresh token.
+- **Read-only access** - BambuHelper only reads printer status. It never sends commands or modifies printer settings, beyond the chamber-light and smart-plug actions you trigger yourself.
+- **The config portal has no password and runs over plain HTTP.** Anything you type into it, including a Bambu password, crosses your network unencrypted and is readable by anything else on that network. On a network you do not fully trust, prefer the **email code** or paste a token - a token expires on its own, a password does not.
+- **Same approach as other community projects** - the token is the same credential used by the [Home Assistant Bambu Lab integration](https://github.com/greghesp/ha-bambulab), [OctoPrint-Bambu](https://github.com/jneilliii/OctoPrint-BambuPrinter), and other trusted third-party tools.
+- **Signing out wipes all of it** - token, email and any stored password - from the device.
 
 ## Supported Boards
 
@@ -104,6 +111,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 
 - **One-click web flasher** - install firmware directly from [keralots.github.io/BambuHelper](https://keralots.github.io/BambuHelper/) in desktop Chrome/Edge - no PlatformIO, no esptool, no flash offsets
 - **In-browser WiFi setup (Improv-Serial)** - on first boot the install dialog asks for your WiFi over USB; no captive-portal switching needed (AP fallback still available)
+- **Bambu account sign-in on the device** - cloud setup without digging a token out of browser cookies: sign in with a password, an emailed code, or an authenticator app, then pick your printer from the account's own list
 - **Live dashboard** - progress arc, temperature gauges, fan speed, layer count, time remaining
 - **H2-style LED progress bar** - full-width glowing bar inspired by Bambu H2 series
 - **Anti-aliased arc gauges** - smooth nozzle and bed temperature arcs with color zones
@@ -391,17 +399,35 @@ The device reboots automatically once the update is written; the web page reload
    - LAN access code (8 characters, from printer Settings > Network)
 
    **Bambu Cloud (All printers)**:
-   - Get your Bambu Cloud access token from your browser (see [Getting a Cloud Token](#getting-a-cloud-token) below)
-   - Paste the token into the web interface
-   - Enter your printer's serial number (see note below)
+   - Under **Account access**, either **sign in with your Bambu account** or paste an access token (see [Connecting to Bambu Cloud](#connecting-to-bambu-cloud) below)
+   - Click **My printers** and pick yours from the list, or enter the serial number by hand (see note below)
 
    > **Important: Serial number is NOT the printer name.** The serial number is a 15-character code (for example `01P00A000000000`) found on the printer LCD under **Settings > Device > Serial Number**, or on the physical label on the back or bottom of the printer. Do not confuse it with the printer name shown in Bambu Studio (for example `3DP-01P-110`), which is a shortened version and will not work.
 
 8. **Save Printer Settings** - the device connects to your printer
 
-### Getting a Cloud Token
+### Connecting to Bambu Cloud
 
-To use cloud mode, you need an access token from your Bambu Lab account. The easiest way is to copy it from your browser cookies on https://bambulab.com (you must be logged in).
+Cloud mode runs on an access token from your Bambu Lab account. There are three ways to put one on the device - all of them end in the same stored token, so pick whichever suits you. Read the [Cloud Mode Security Notice](#cloud-mode-security-notice) first if you plan to type your password into the portal.
+
+#### 1. Sign in on the device (no copying anything)
+
+In the web interface, open **Printer**, set the connection mode to **Bambu Cloud**, and under **Account access** choose **Sign in with your Bambu account**. Then either:
+
+- **Email code** - enter your account email and press **Email me a code**. Bambu sends a 6-digit code; type it in. No password is involved at any point.
+- **Password** - enter your email and password. If your account uses two-factor authentication, the device asks for the code next: either the 6 digits from your authenticator app, or a code Bambu emails you, depending on how your account is set up. A wrong code can simply be retyped.
+
+Tick **Remember the password** only if you want the device to renew the token by itself every ~3 months. That works only on accounts **without** two-factor authentication - with 2FA the device deletes the password as soon as it sees the prompt, because it could never complete the sign-in unattended anyway.
+
+Once signed in, press **My printers** to pick your printer from the account's own list instead of transcribing a serial number.
+
+#### 2. Companion Tool (sign in on your PC, push to the device)
+
+The [Companion Tool](tools/DIAGNOSTICS-HOWTO.md) (`tools/BambuHelper-CompanionTool.exe` on Windows, `python tools/companion/bambu_companion.py` on Mac/Linux) signs in on your computer, fetches your printer list, and pushes the token + serial to BambuHelper over your LAN. It is a normal app window, not a terminal: open **Set up a device**, sign in, pick your printer, and let it scan your network for the device rather than typing its IP. Useful when you would rather not type your password into the device's portal at all.
+
+#### 3. Paste an access token (the original method)
+
+Copy the token from your browser cookies on https://bambulab.com (you must be logged in), then paste it into **Account access -> Paste an access token**.
 
 **Using browser DevTools (Chrome / Edge):**
 1. Open https://bambulab.com and log in to your account
@@ -428,13 +454,9 @@ To use cloud mode, you need an access token from your Bambu Lab account. The eas
 4. Find and copy the `token` value
 5. Paste it into BambuHelper's "Access Token" field
 
-> **Note:** The token is valid for approximately 3 months. When it expires, the ESP32 will fail to connect - simply repeat the process above to get a fresh token and paste it in the web interface. Make sure to select the correct **Server Region** (US/EU/CN) to match your Bambu account's region.
+> **Note:** The token is valid for approximately 3 months. When it expires, the ESP32 will fail to connect - sign in again on the device, or repeat the process above and paste a fresh token. Make sure the **Server region** matches your Bambu account (Europe / Americas share one setting; China is separate).
 
-**Optional: Companion Tool for one-click setup**
-
-If you'd rather skip the copy-paste flow entirely, the [Companion Tool](tools/DIAGNOSTICS-HOWTO.md) (`tools/BambuHelper-CompanionTool.exe` on Windows, `python tools/companion/bambu_companion.py` on Mac/Linux) logs into your Bambu account, fetches your printer list, and pushes the token + serial straight to BambuHelper over your LAN - no copying, no pasting. It's a normal app window, not a terminal: open **Set up a device**, sign in, pick your printer, and let it scan your network for the BambuHelper rather than typing its IP.
-
-> **Browser cookie token expires very quickly (after one session, on next reboot, etc.)?** Try the Companion Tool instead - tokens obtained that way tend to be more stable than browser cookies that get invalidated unexpectedly soon after extraction.
+> **Browser cookie token expires very quickly (after one session, on next reboot, etc.)?** Sign in on the device or use the Companion Tool instead - tokens obtained that way tend to be more stable than browser cookies that get invalidated unexpectedly soon after extraction.
 
 ## Web Interface
 
@@ -444,7 +466,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 | Sidebar section | What's inside |
 |---|---|
-| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code / cloud token), live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
+| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code, or a Bambu account sign-in / pasted token), the account's printer list and a LAN scan to fill the serial in, live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
 | **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, custom labels (accented European characters supported) |
 | **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
 | **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
@@ -525,7 +547,7 @@ Perform an antenna mod by soldering two individual goldpins to the antenna pads,
 ### Printer shows "Connecting" but never connects
 
 - **LAN Direct:** Make sure the printer and ESP32 are on the same network. Check that LAN mode is enabled on the printer and the access code is correct.
-- **Bambu Cloud:** Verify the access token has not expired (about 3 months validity). Re-extract it from your browser and paste it again. Check the server region matches your Bambu account.
+- **Bambu Cloud:** Verify the access token has not expired (about 3 months validity). Sign in again from the device's **Account access** section, or re-extract the token from your browser and paste it again. Check the server region matches your Bambu account.
 - If a printer is physically powered off, reconnect attempts will gradually slow down (backoff). It will reconnect automatically when the printer comes back online.
 
 ### Display shows wrong printer / does not switch
