@@ -433,6 +433,16 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
    (justify-self:start) so it doesn't stretch; the 1fr column absorbs the slack
    and keeps the colour pickers right-aligned. */
 .gauge-color-row .lbl { grid-column: 2; grid-row: 1; max-width: 14ch; justify-self: start; font-size: 12.5px; padding: 6px 10px; }
+/* Door carries a Closed/Open pair instead of the Arc/Label/Value triplet, so it
+   drops one column; the 1fr still absorbs the slack and the pickers stay
+   right-aligned with the rows above. */
+.door-color-row { grid-template-columns: auto minmax(90px, 1fr) auto auto; }
+/* Accent rows (Finish time, Print complete, Status OK): name + hint + one picker.
+   The hint column absorbs the slack so every picker lines up on the right. */
+.accent-color-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+.accent-color-row:last-child { border-bottom: none; }
+.accent-color-row .name { color: var(--text); font-weight: 500; white-space: nowrap; }
+.accent-color-row .hint { color: var(--text-dim); font-size: 11px; }
 /* Label-only rows (Clock, AMS, Nozzle L/R): name + text input, no colour pickers. */
 .gauge-label-row { display: grid; grid-template-columns: auto minmax(90px, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
 .gauge-label-row:last-child { border-bottom: none; }
@@ -488,9 +498,13 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .row, .row-3 { grid-template-columns: 1fr; }
   /* Gauge rows: name + colours on line 1, label input full-width on line 2. */
   .gauge-color-row { grid-template-columns: minmax(110px, 1fr) auto auto auto; }
+  .door-color-row { grid-template-columns: minmax(110px, 1fr) auto auto; }
   .gauge-color-row .lbl { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-self: stretch; margin-top: 4px; }
   .gauge-label-row { grid-template-columns: minmax(110px, 1fr) 1.4fr; }
   .gauge-label-row .lbl { max-width: none; justify-self: stretch; }
+  /* Accent rows: name + picker on line 1, hint wraps underneath. */
+  .accent-color-row { grid-template-columns: minmax(110px, 1fr) auto; }
+  .accent-color-row .hint { grid-column: 1 / -1; grid-row: 2; }
 }
 
 /* ============ Utility ============ */

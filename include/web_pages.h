@@ -89,7 +89,8 @@ function saveWifi(){
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
-//              clr_bg, clr_track, clr_pbar, bulk_a/l/v,
+//              clr_bg, clr_track, clr_pbar, clr_eta, clr_fin, clr_stok,
+//              clr_pname, clr_txt, clr_txtd, clr_dorc, clr_doro, bulk_a/l/v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr + _a/_l/_v,
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
 //    Errors:   hmsen, hmssev, hmsauto, hmsonl, hmsm0..hmsm3 (composed into the
@@ -696,7 +697,21 @@ R"rawliteral(
         <div class="gauge-label-row"><span class="name">AMS</span><input type="text" class="lbl" id="ams_lbl" maxlength="12" value="%AMS_LBL%" placeholder="AMS" title="Shown as 'Name 1'..'Name 4'"></div>
         <div class="gauge-label-row"><span class="name">Nozzle R</span><input type="text" class="lbl" id="nzr_lbl" maxlength="12" value="%NZR_LBL%" placeholder="Nozzle R" title="Dual-nozzle right; empty = Nozzle name + R"></div>
         <div class="gauge-label-row"><span class="name">Nozzle L</span><input type="text" class="lbl" id="nzl_lbl" maxlength="12" value="%NZL_LBL%" placeholder="Nozzle L" title="Dual-nozzle left; empty = Nozzle name + L"></div>
-        <div class="gauge-label-row"><span class="name">Door</span><input type="text" class="lbl" id="dor_lbl" maxlength="12" value="%DOR_LBL%" placeholder="empty = icon only" title="Status-bar door label. Leave empty to show just the padlock icon."></div>
+        <div class="gauge-color-row door-color-row"><span class="name">Door</span><div class="alv"><span>Closed</span><input type="color" id="clr_dorc" value="%CLR_DORC%"></div><div class="alv"><span>Open</span><input type="color" id="clr_doro" value="%CLR_DORO%"></div><input type="text" class="lbl" id="dor_lbl" maxlength="12" value="%DOR_LBL%" placeholder="empty = icon only" title="Status-bar door label. Leave empty to show just the padlock icon."></div>
+      </div>
+
+      <!-- Screen text that belongs to no gauge. Kept as its own list so the
+           label rows above keep their :last-child border rule. Warning, pause
+           and error colors are deliberately absent - an alert must not be
+           paintable in a reassuring color. -->
+      <div class="gauge-color-list">
+        <div class="subhead">Accent colors</div>
+        <div class="accent-color-row"><span class="name">Finish time</span><span class="hint">ETA / Remaining line on every screen</span><input type="color" id="clr_eta" value="%CLR_ETA%"></div>
+        <div class="accent-color-row"><span class="name">Print complete</span><span class="hint">Finished-screen headline and tick</span><input type="color" id="clr_fin" value="%CLR_FIN%"></div>
+        <div class="accent-color-row"><span class="name">Status OK</span><span class="hint">Printing / Ready / Done badge and connected dot</span><input type="color" id="clr_stok" value="%CLR_STOK%"></div>
+        <div class="accent-color-row"><span class="name">Printer name</span><span class="hint">Ready headline and every screen header</span><input type="color" id="clr_pname" value="%CLR_PNAME%"></div>
+        <div class="accent-color-row"><span class="name">Text</span><span class="hint">Readout values, file name, layer count</span><input type="color" id="clr_txt" value="%CLR_TXT%"></div>
+        <div class="accent-color-row"><span class="name">Muted text</span><span class="hint">Secondary lines and "no value" placeholders</span><input type="color" id="clr_txtd" value="%CLR_TXTD%"></div>
       </div>
 
       <div class="action-bar">

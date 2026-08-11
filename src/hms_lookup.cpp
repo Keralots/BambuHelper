@@ -120,7 +120,10 @@ uint16_t errorSeverityColor(uint8_t sev) {
     case 1:  return CLR_RED;      // fatal
     case 2:  return CLR_ORANGE;   // serious
     case 3:  return CLR_YELLOW;   // common
-    default: return CLR_TEXT_DIM; // info / unknown - listed, never urgent
+    // info / unknown - listed, never urgent. Stays the fixed literal: this is a
+    // severity ladder, and a theme that can dim its bottom rung into the
+    // background can hide a reported fault.
+    default: return CLR_TEXT_DIM_DEFAULT;
   }
 }
 

@@ -704,11 +704,18 @@ void tickSpeedoShimmer(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // tops toward the center so it still reads left to right; otherwise top-style
 // (clockwise, glyph bottoms toward the center) — which is also what the
 // arbitrary-sector variant uses for side text.
+// headBytes >= 0 paints the first headBytes bytes in `color` and the remainder
+// in `color2`, without disturbing the layout: the whole string is still
+// measured and placed as one run, so a two-colour rim line sits exactly where
+// the single-colour one did. Only drawCurvedStringPair() sets it, and it
+// computes the offset itself - callers never hand-compute a byte index.
 static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
                                  int16_t cx, int16_t cy, int16_t r,
                                  uint16_t midAA, bool reverse,
                                  uint16_t color, FontID font,
-                                 int16_t clearHalfDeg) {
+                                 int16_t clearHalfDeg,
+                                 int16_t headBytes = -1,
+                                 uint16_t color2 = 0) {
   ScopedWrite sw(gfx);
   const uint16_t bg = dispSettings.bgColor;
   setFont(gfx, font);
@@ -759,15 +766,41 @@ static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
   }
   if (n == 0 || totalW <= 0) return;
 
+  // Straight-text fallback for the two heap-starved exits below. It must honour
+  // the split as well: the tail of a rim line is the STATE word, so a fallback
+  // that painted the whole run in the head colour would render ERR / PAUSED /
+  // FAILED in the printer-name accent - a fault wearing a calm colour, exactly
+  // what the fixed alarm colours exist to prevent.
+  auto drawStraight = [&]() {
+    gfx.setTextDatum(MC_DATUM);
+    if (headBytes < 0) {
+      gfx.setTextColor(color, bg);
+      gfx.drawString(str, fbx, fby);
+      return;
+    }
+    char head[48];
+    const size_t hb = (size_t)headBytes < sizeof(head) ? (size_t)headBytes
+                                                       : sizeof(head) - 1;
+    memcpy(head, str, hb);
+    head[hb] = '\0';
+    const int16_t headW  = gfx.textWidth(head);
+    const int16_t tailW  = gfx.textWidth(str + hb);
+    const int16_t left   = fbx - (int16_t)((headW + tailW) / 2);
+    gfx.setTextDatum(ML_DATUM);
+    gfx.setTextColor(color, bg);
+    gfx.drawString(head, left, fby);
+    gfx.setTextColor(color2, bg);
+    gfx.drawString(str + hb, left + headW, fby);
+    gfx.setTextDatum(MC_DATUM);
+  };
+
   lgfx::LGFX_Sprite spr(&gfx);
   spr.setColorDepth(16);
   const int16_t sprW = maxW + 2, sprH = fh + 2;
   if (!spr.createSprite(sprW, sprH) || !loadFontInto(spr, font)) {
     // Heap-starved fallback: straight line at the arc's chord.
     spr.deleteSprite();
-    gfx.setTextDatum(MC_DATUM);
-    gfx.setTextColor(color, bg);
-    gfx.drawString(str, fbx, fby);
+    drawStraight();
     return;
   }
   spr.setTextDatum(MC_DATUM);
@@ -786,9 +819,7 @@ static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
   if (!rotspr.createSprite(side, side)) {
     spr.unloadFont();
     spr.deleteSprite();
-    gfx.setTextDatum(MC_DATUM);
-    gfx.setTextColor(color, bg);
-    gfx.drawString(str, fbx, fby);
+    drawStraight();
     return;
   }
 
@@ -797,12 +828,17 @@ static void drawCurvedStringImpl(lgfx::LovyanGFX& gfx, const char* str,
   // Forward text runs clockwise through the sector center; reversed text runs
   // counterclockwise so it still reads left to right below the center.
   float a = reverse ? (midMath + totalDeg * 0.5f) : (midMath - totalDeg * 0.5f);
+  uint16_t curColor = color;
   for (int i = 0; i < n; i++) {
     const float half = glyphs[i].w * degPerPx * 0.5f;
     const float ac = reverse ? (a - half) : (a + half);  // glyph center angle
     char tmp[5];
     memcpy(tmp, glyphs[i].p, glyphs[i].len);
     tmp[glyphs[i].len] = '\0';
+    if (headBytes >= 0) {
+      const uint16_t want = ((glyphs[i].p - str) < headBytes) ? color : color2;
+      if (want != curColor) { curColor = want; spr.setTextColor(curColor, bg); }
+    }
     spr.fillSprite(bg);
     spr.drawString(tmp, sprW / 2, sprH / 2);
     const float px = cx + r * cosf(ac * d2r);
@@ -826,6 +862,34 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
                       uint16_t color, FontID font, int16_t clearHalfDeg) {
   drawCurvedStringImpl(gfx, str, cx, cy, r, bottom ? 0 : 180, bottom,
                        color, font, clearHalfDeg);
+}
+
+void drawCurvedStringPair(lgfx::LovyanGFX& gfx, const char* head,
+                          const char* tail, int16_t cx, int16_t cy, int16_t r,
+                          bool bottom, uint16_t headColor, uint16_t tailColor,
+                          FontID font, int16_t clearHalfDeg, int16_t maxW) {
+  // Compose, clip and split in one place. The caller never sees a byte offset,
+  // which is the whole point: the offset has to survive ellipsizing, and every
+  // call site computing that itself is a UTF-8 bug waiting to happen.
+  char line[64], clipped[64];
+  snprintf(line, sizeof(line), "%s  %s", head, tail);
+  setFont(gfx, font);          // ellipsizeToWidth measures at the target font
+  const char* text = (maxW > 0)
+                     ? ellipsizeToWidth(gfx, line, maxW, clipped, sizeof(clipped))
+                     : line;
+
+  // Clipping may have eaten into the head, in which case the ".." it appends is
+  // part of the head, not the tail. Only a rendered string that still starts
+  // with the whole head keeps a real boundary; anything shorter is head all the
+  // way down. Length alone does not answer this - "ABCDE" clips to "ABCD..",
+  // which is LONGER than the head it truncated.
+  const size_t headLen = strlen(head);
+  const size_t drawn   = strlen(text);
+  const int16_t headBytes = (drawn >= headLen && strncmp(text, head, headLen) == 0)
+                            ? (int16_t)headLen : (int16_t)drawn;
+
+  drawCurvedStringImpl(gfx, text, cx, cy, r, bottom ? 0 : 180, bottom,
+                       headColor, font, clearHalfDeg, headBytes, tailColor);
 }
 
 // Arbitrary-sector variant: centerAA in drawArcAA space (0 = 6 o'clock,

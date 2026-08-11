@@ -482,6 +482,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "GLOW_CLR") == 0)  { rgb565ToHtml(dispSettings.glowColor, buf); out = buf; return true; }
   if (strcmp(name, "CLK_TIME") == 0)  { rgb565ToHtml(dispSettings.clockTimeColor, buf); out = buf; return true; }
   if (strcmp(name, "CLK_DATE") == 0)  { rgb565ToHtml(dispSettings.clockDateColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_ETA") == 0)   { rgb565ToHtml(dispSettings.etaColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_FIN") == 0)   { rgb565ToHtml(dispSettings.finishColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_STOK") == 0)  { rgb565ToHtml(dispSettings.statusOkColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_PNAME") == 0) { rgb565ToHtml(dispSettings.printerNameColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_TXT") == 0)   { rgb565ToHtml(dispSettings.textColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_TXTD") == 0)  { rgb565ToHtml(dispSettings.textDimColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_DORC") == 0)  { rgb565ToHtml(dispSettings.doorClosedColor, buf); out = buf; return true; }
+  if (strcmp(name, "CLR_DORO") == 0)  { rgb565ToHtml(dispSettings.doorOpenColor, buf); out = buf; return true; }
   {
     static const struct { const char* prefix; const GaugeColors* gc; } gauges[] = {
       {"PRG", &dispSettings.progress}, {"NOZ", &dispSettings.nozzle},

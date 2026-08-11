@@ -177,8 +177,8 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.roundSkin = 0;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
-  ds.clockTimeColor = CLR_TEXT;
-  ds.clockDateColor = CLR_TEXT_DIM;
+  ds.clockTimeColor = CLR_TEXT_DEFAULT;
+  ds.clockDateColor = CLR_TEXT_DIM_DEFAULT;
   ds.clockTimeSize = 0;        // Auto
   ds.clockDateSize = 0;        // Auto (match time size)
   ds.hideClockDate = false;
@@ -205,31 +205,43 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.gaugeSmoothing  = 2;          // Normal
   ds.warnColor       = CLR_RED;
   ds.warnThresholdPct = 0;         // off by default (no behavior change)
+  // Accent colors (#163) - all default to the green they replaced.
+  ds.etaColor        = CLR_GREEN;
+  ds.finishColor     = CLR_GREEN;
+  ds.statusOkColor   = CLR_GREEN;
+  ds.printerNameColor = CLR_GREEN;
+  // Neutral text: the factory literals these fields replace. CLR_TEXT /
+  // CLR_TEXT_DIM now resolve to the fields themselves (settings.h), so the
+  // defaults must name the *_DEFAULT constants or they would be circular.
+  ds.textColor       = CLR_TEXT_DEFAULT;
+  ds.textDimColor    = CLR_TEXT_DIM_DEFAULT;
+  ds.doorClosedColor = CLR_GREEN;
+  ds.doorOpenColor   = CLR_ORANGE;
 
   // Progress: green arc, green label, white value
-  ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  ds.progress = { CLR_GREEN, CLR_GREEN, CLR_TEXT_DEFAULT };
   // Nozzle: orange arc, orange label, white value
-  ds.nozzle = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  ds.nozzle = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT_DEFAULT };
   // Bed: cyan arc, cyan label, white value
-  ds.bed = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
+  ds.bed = { CLR_CYAN, CLR_CYAN, CLR_TEXT_DEFAULT };
   // Part fan: cyan arc, cyan label, white value
-  ds.partFan = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
+  ds.partFan = { CLR_CYAN, CLR_CYAN, CLR_TEXT_DEFAULT };
   // Aux fan: orange arc, orange label, white value
-  ds.auxFan = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  ds.auxFan = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT_DEFAULT };
   // Aux right fan (X2D): orange arc, orange label, white value
-  ds.auxFanRight = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  ds.auxFanRight = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT_DEFAULT };
   // Chamber fan: green arc, green label, white value
-  ds.chamberFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  ds.chamberFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT_DEFAULT };
   // Exhaust fan (X2D): green arc, green label, white value
-  ds.exhaustFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  ds.exhaustFan = { CLR_GREEN, CLR_GREEN, CLR_TEXT_DEFAULT };
   // Chamber temp: cyan arc, cyan label, white value
-  ds.chamberTemp = { CLR_CYAN, CLR_CYAN, CLR_TEXT };
+  ds.chamberTemp = { CLR_CYAN, CLR_CYAN, CLR_TEXT_DEFAULT };
   // Heatbreak fan: orange arc, orange label, white value
-  ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT };
+  ds.heatbreak = { CLR_ORANGE, CLR_ORANGE, CLR_TEXT_DEFAULT };
   // Power: gold arc + label, white value (matches the previous hardcoded look)
-  ds.power = { CLR_GOLD, CLR_GOLD, CLR_TEXT };
+  ds.power = { CLR_GOLD, CLR_GOLD, CLR_TEXT_DEFAULT };
   // Layer: green arc + label, white value (matches the previous Progress reuse)
-  ds.layer = { CLR_GREEN, CLR_GREEN, CLR_TEXT };
+  ds.layer = { CLR_GREEN, CLR_GREEN, CLR_TEXT_DEFAULT };
 }
 
 // Default standard 2x3 grid: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
@@ -543,8 +555,8 @@ void loadSettings() {
   if (dispSettings.roundSkin > 2) dispSettings.roundSkin = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
-  dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT);
-  dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM);
+  dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT_DEFAULT);
+  dispSettings.clockDateColor = prefs.getUShort("dsp_clkd", CLR_TEXT_DIM_DEFAULT);
   {
     uint8_t cts = prefs.getUChar("dsp_clkts", def.clockTimeSize);
     dispSettings.clockTimeSize = (cts <= 3) ? cts : 0;
@@ -592,6 +604,20 @@ void loadSettings() {
   }
   dispSettings.warnColor        = prefs.getUShort("dsp_wclr", def.warnColor);
   dispSettings.warnThresholdPct = constrain((int)prefs.getUChar("dsp_wthr", def.warnThresholdPct), 0, 100);
+  dispSettings.etaColor         = prefs.getUShort("dsp_etac", def.etaColor);
+  dispSettings.finishColor      = prefs.getUShort("dsp_finc", def.finishColor);
+  dispSettings.statusOkColor    = prefs.getUShort("dsp_okc", def.statusOkColor);
+  dispSettings.printerNameColor = prefs.getUShort("dsp_pnc", def.printerNameColor);
+  dispSettings.textColor        = prefs.getUShort("dsp_txtc", def.textColor);
+  dispSettings.textDimColor     = prefs.getUShort("dsp_txtd", def.textDimColor);
+  // Closed door falls back to the Status OK accent, not to the plain default:
+  // it followed that accent in the release before this pair existed, so an
+  // upgrade must not snap a themed door back to green. Re-reads the accent from
+  // NVS rather than from dispSettings so the fallback does not silently depend
+  // on the order of the lines above it.
+  dispSettings.doorClosedColor  = prefs.getUShort("dsp_dorc",
+                                    prefs.getUShort("dsp_okc", def.statusOkColor));
+  dispSettings.doorOpenColor    = prefs.getUShort("dsp_doro", def.doorOpenColor);
 
   loadGaugeColors("gc_prg", dispSettings.progress, def.progress);
   loadGaugeColors("gc_noz", dispSettings.nozzle, def.nozzle);
@@ -892,6 +918,14 @@ void saveSettings() {
   prefs.putUChar("dsp_smooth", dispSettings.gaugeSmoothing);
   prefs.putUShort("dsp_wclr", dispSettings.warnColor);
   prefs.putUChar("dsp_wthr", dispSettings.warnThresholdPct);
+  prefs.putUShort("dsp_etac", dispSettings.etaColor);
+  prefs.putUShort("dsp_finc", dispSettings.finishColor);
+  prefs.putUShort("dsp_okc", dispSettings.statusOkColor);
+  prefs.putUShort("dsp_pnc", dispSettings.printerNameColor);
+  prefs.putUShort("dsp_txtc", dispSettings.textColor);
+  prefs.putUShort("dsp_txtd", dispSettings.textDimColor);
+  prefs.putUShort("dsp_dorc", dispSettings.doorClosedColor);
+  prefs.putUShort("dsp_doro", dispSettings.doorOpenColor);
   prefs.putUChar("dsp_glowm", dispSettings.glowMode);
   prefs.putUShort("dsp_glowc", dispSettings.glowColor);
   prefs.putUChar("dsp_glows", dispSettings.glowStyle);

@@ -128,6 +128,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Auto AP mode** - creates WiFi hotspot on first boot or when WiFi is lost
 - **Smart redraw** - only redraws changed UI elements for smooth performance
 - **Customizable gauge colors** - per-gauge arc/label/value colors with preset themes
+- **Customizable accent colors** - recolor the finish-time (ETA / Remaining) line, the "Print Complete!" headline, the healthy status badge and the printer name in every screen header, plus the two neutral text colors (readout text and the muted secondary text), so a themed screen has no stray green or white left in it. Warning, pause and error colors stay fixed on purpose
 - **Customizable gauge labels** - rename any gauge label (Nozzle, Bed, Power, Layer, Door, AMS, dual-nozzle L/R) from the web UI; leave a field blank to keep the built-in default, with an optional smaller-label font for fitting longer names
 - **European characters** - print file names, printer names, gauge labels, and the currency symbol render accented text (German, Polish, Czech, Hungarian, Turkish, Romanian, French, Spanish, Nordic, and more) plus the euro sign
 - **Configurable gauge behavior** - adjustable arc full-scale ranges (nozzle, bed, chamber/AMS, power), arc smoothing speed, and an optional warning color when a gauge runs hot
@@ -500,7 +501,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 | Sidebar section | What's inside |
 |---|---|
 | **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code, or a Bambu account sign-in / pasted token), the account's printer list and a LAN scan to fill the serial in, live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
-| **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, custom labels (accented European characters supported) |
+| **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, accent colors (finish time, print complete, status OK, printer name, text, muted text), custom labels (accented European characters supported) |
 | **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
 | **Printer Errors** | Live list of every HMS code and print error the printers report, plus the badge / error-screen / alert settings - see Printer Errors |
 | **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
