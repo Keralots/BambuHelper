@@ -166,7 +166,14 @@ struct BambuState {
                               // edge - booting into an error must not alert.
   HmsEntry hms[HMS_MAX_ENTRIES];  // worst-first, deterministic subset
   uint8_t  hmsCount;          // entries kept in hms[]
-  uint8_t  hmsTotal;          // entries the printer actually reported
+  uint8_t  hmsTotal;          // described entries the printer reported. Codes
+                              // Bambu ships no wording for are not counted -
+                              // they are dropped before they reach any of this.
+  uint8_t  hmsSuppressed;     // entries dropped by that rule this report. Not a
+                              // display field: it exists so /debug and the
+                              // serial log can answer "the printer says a code
+                              // and BambuHelper shows nothing". See
+                              // hmsIsDescribed() and issue #164.
   bool     hmsOverflow;       // hmsTotal > HMS_MAX_ENTRIES
   uint8_t  hmsWorstSeverity;  // severity of hms[0], 0 = none active. The array
                               // is sorted worst-first, so the worst entry is

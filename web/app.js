@@ -1256,11 +1256,20 @@ function hmsRow(code, sev, mod, text, base, wiki, lbl){
   return h + '</div>';
 }
 
+/* The device now sends codes the way Bambu writes them - "HMS_0300-1A00-0002-0002"
+   for HMS, "0300-8007" for print_error - because that is what a user can paste
+   into a search box (issue #164). Both lookup maps are keyed on the bare 16 or 8
+   hex digits, so strip the prefix and every separator before indexing them.
+   Tolerates the old underscore form too: a page can outlive a firmware. */
+function hmsBareCode(code){
+  return String(code).replace(/^HMS[_-]/i, '').replace(/[_-]/g, '').toUpperCase();
+}
+
 function hmsText(map, code, dev){
   if (dev) return dev;
   if (!map) return '';
-  var k = code.replace(/_/g, '');
-  return map[k] || map[k.toUpperCase()] || '';
+  var k = hmsBareCode(code);
+  return map[k] || '';
 }
 
 /* Every per-code wiki page sits under a model path segment (x1, a1-mini, a2l,
@@ -1274,7 +1283,7 @@ function hmsText(map, code, dev){
    the common case either way. */
 var HMS_WIKI_INDEX = 'https://wiki.bambulab.com/en/hms/home';
 function hmsWikiUrl(code){
-  var m = _hmsTexts && _hmsTexts.wiki, p = m && m[code.replace(/_/g, '').toUpperCase()];
+  var m = _hmsTexts && _hmsTexts.wiki, p = m && m[hmsBareCode(code)];
   return p ? 'https://wiki.bambulab.com/en/' + p : HMS_WIKI_INDEX;
 }
 

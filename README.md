@@ -205,16 +205,18 @@ When the printer comes back online, the backoff resets once the connection has h
 
 When a printer reports a problem, it publishes an **HMS code** (hardware/maintenance system) or a **print error**. BambuHelper decodes both and turns the raw hex into the same sentence Bambu Studio shows.
 
-**On the display:** the status badge turns into a red **`ERR`**. Press the button or touchscreen to open the error screen, which lists each active code as a coloured severity bar, a headline of `MODULE SEVERITY  code` (for example `AMS SERIOUS  0701_2000_0002_0021`), and the official description underneath. Long descriptions wrap and end in `...` when they run out of room; entries that do not fit are counted as `+N more`. Round 240x240 screens have room for the worst entry only, plus the count. The screen closes on the next tap or after 30 seconds.
+**On the display:** the status badge turns into a red **`ERR`**. Press the button or touchscreen to open the error screen, which lists each active code as a coloured severity bar, a `MODULE SEVERITY` line (for example `AMS SERIOUS`), the code on the line below it (`0701-2000-0002-0021`), and the official description underneath. Long descriptions wrap and end in `...` when they run out of room; entries that do not fit are counted as `+N more`. Round 240x240 screens have room for the worst entry only, plus the count. The screen closes on the next tap or after 30 seconds.
 
-**In the web interface**, the **Printer Errors** section lists everything the printers are reporting right now, per printer, with a `wiki` link on each row. Codes that were already active when the device connected are tagged `standing` - they are the printer's normal state, not news, so they never raise an alert.
+**In the web interface**, the **Printer Errors** section lists everything the printers are reporting right now, per printer, with a `wiki` link on each row. Codes are written the way Bambu writes them - `HMS_0701-2000-0002-0021` - so they can be pasted straight into the wiki or a search engine. Codes that were already active when the device connected are tagged `standing` - they are the printer's normal state, not news, so they never raise an alert.
+
+**Codes Bambu does not describe are not shown.** Bambu's error feed registers some code numbers without publishing any wording for them, and its own printer screen and Bambu Studio stay silent about those - an X2D, for instance, stands permanently on `0500_0100_0002_000B` and `0503_0000_0003_0027` while reporting nothing wrong. BambuHelper drops them the same way, so they never reach the badge, the error screen or the web interface. The same rule covers the door-open advisory, which is what the door indicator on the dashboard is for. If a printer reports a code and BambuHelper shows nothing, `GET /debug` counts the dropped ones as `hms_suppressed` and names them in the serial log with **MQTT debug logging** on. Print errors are never dropped this way: they mean the job actually stopped.
 
 ### Settings
 
 | Setting | What it does |
 |---|---|
 | **Report printer errors** | Master switch. Off hides the badge, the error screen and every alert. Codes keep being read, so switching it back on takes effect immediately. |
-| **Include low-priority codes** | Off shows only fatal and serious codes. On adds the common ones, such as an open front door. |
+| **Include low-priority codes** | Off shows only fatal and serious codes. On adds the common ones - advisories the printer expects you to notice but not to act on immediately. |
 | **Show the error screen automatically** | *Never - badge only* / *Briefly, then go back* / *Until dismissed*. |
 | **Alert on a new error** | Any combination of edge glow, buzzer, status LED, and waking a sleeping screen. Alerts fire once per new code, never repeatedly. |
 | **Look up error text on this page** | Only appears on boards that do not store the HMS sentences - see below. |
