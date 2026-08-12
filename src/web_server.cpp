@@ -505,7 +505,7 @@ static void handleStatus() {
   // Baseline membership rides each entry rather than a second array: it is the
   // same information in fewer bytes, and the card wants it per row anyway.
   if (dispSettings.hmsEnabled && (st.printError != 0 || st.hmsCount > 0)) {
-    char codeBuf[HMS_CODE_STR_LEN];
+    char codeBuf[HMS_CODE_FULL_STR_LEN];
     if (st.printError != 0) {
       printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
       doc["printError"] = codeBuf;
@@ -518,7 +518,9 @@ static void handleStatus() {
       JsonArray arr = doc["hms"].to<JsonArray>();
       for (uint8_t i = 0; i < st.hmsCount; i++) {
         JsonObject e = arr.add<JsonObject>();
-        hmsFormatCode(st.hms[i].attr, st.hms[i].code, codeBuf, sizeof(codeBuf));
+        // Bambu's own full notation - this is the string a user copies into a
+        // search box, and "0500_0100_0002_000B" matched nothing (issue #164).
+        hmsFormatCodeFull(st.hms[i].attr, st.hms[i].code, codeBuf, sizeof(codeBuf));
         e["code"] = codeBuf;
         e["sev"] = hmsSeverityOf(st.hms[i].code);
         e["module"] = hmsModuleLabel(st.hms[i].attr);
@@ -632,7 +634,7 @@ static void handleDebug() {
 #if HAS_HMS_UI
     // Printer errors. The portal card and /status get their own shaped fields
     // later; this is the raw diagnostic view.
-    char codeBuf[HMS_CODE_STR_LEN];
+    char codeBuf[HMS_CODE_FULL_STR_LEN];
     if (st.printError != 0) {
       printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
       p["print_error"] = codeBuf;
@@ -643,7 +645,7 @@ static void handleDebug() {
       JsonArray hmsArr = p["hms"].to<JsonArray>();
       for (uint8_t k = 0; k < st.hmsCount; k++) {
         JsonObject e = hmsArr.add<JsonObject>();
-        hmsFormatCode(st.hms[k].attr, st.hms[k].code, codeBuf, sizeof(codeBuf));
+        hmsFormatCodeFull(st.hms[k].attr, st.hms[k].code, codeBuf, sizeof(codeBuf));
         e["code"] = codeBuf;
         e["sev"] = hmsSeverityOf(st.hms[k].code);
         e["module"] = hmsModuleLabel(st.hms[k].attr);
@@ -655,6 +657,10 @@ static void handleDebug() {
       p["hms_overflow"] = st.hmsOverflow;
       p["hms_worst_sev"] = st.hmsWorstSeverity;
     }
+    // Emitted outside the hmsCount guard on purpose: a report where every code
+    // was undescribed leaves hms[] empty, and that is precisely the case someone
+    // asks about ("the printer shows a code, BambuHelper shows none").
+    p["hms_suppressed"] = st.hmsSuppressed;
     p["hms_baseline_n"] = st.hmsBaselineCount;
     if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
     // What the on-screen badge resolves to, so a "why is nothing showing"
@@ -676,6 +682,10 @@ static void handleDebug() {
   {
     const char* tv = hmsTableVersion();
     doc["hms_table_ver"] = tv ? tv : "none";
+    // The key set behind the suppression rule. Present even where hms_table_ver
+    // is "none", which is the whole point of it being a separate field.
+    const char* kv = hmsKnownVersion();
+    doc["hms_known_ver"] = kv ? kv : "none";
   }
 #endif
 

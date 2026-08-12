@@ -5,6 +5,7 @@
 #include "config.h"
 #include "bambu_cloud.h"
 #include "cloud_login.h"
+#include "hms_lookup.h"    // hmsIsDescribed: undescribed HMS codes never enter state
 
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
@@ -294,6 +295,7 @@ static void clearLiveMetrics(BambuState& s) {
   s.printErrorSeen = false;
   s.hmsCount = 0;
   s.hmsTotal = 0;
+  s.hmsSuppressed = 0;
   s.hmsOverflow = false;
   s.hmsWorstSeverity = 0;
 #endif
@@ -1239,10 +1241,24 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     JsonArray hmsArr = print["hms"].as<JsonArray>();
     s.hmsCount = 0;
     s.hmsTotal = 0;
+    s.hmsSuppressed = 0;
     for (JsonObject e : hmsArr) {
       if (!e["attr"].is<unsigned int>() || !e["code"].is<unsigned int>()) continue;
       uint32_t attr = e["attr"].as<unsigned int>();
       uint32_t code = e["code"].as<unsigned int>();
+      // Bambu describes every code it means a user to see. One it registers and
+      // ships no wording for is silent on the printer's own screen and in Bambu
+      // Studio, so it is dropped here - before hmsTotal, before the baseline
+      // set, before the sorted list - and cannot reach any surface. Counted, and
+      // named in the debug log, so it stays diagnosable. See issue #164.
+      if (!hmsIsDescribed(attr, code)) {
+        if (s.hmsSuppressed < 255) s.hmsSuppressed++;
+        if (mqttDebugLog)
+          Serial.printf("MQTT:   %04X-%04X-%04X-%04X suppressed (not described by Bambu)\n",
+                        (unsigned)(attr >> 16), (unsigned)(attr & 0xFFFF),
+                        (unsigned)(code >> 16), (unsigned)(code & 0xFFFF));
+        continue;
+      }
       if (s.hmsTotal < 255) s.hmsTotal++;
       // Every entry is scanned, not just the ones we keep: the baseline set and
       // the worst-severity ranking must see the whole report.
@@ -1259,12 +1275,15 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     // and the callback line above already proves a report arrived. No line
     // here after a callback line means the key was absent.
     if (mqttDebugLog) {
-      Serial.printf("MQTT: hms %u entr%s (kept %u%s)%s\n",
-                    s.hmsTotal, s.hmsTotal == 1 ? "y" : "ies", s.hmsCount,
+      // hmsTotal counts described entries only, so print what the printer sent
+      // alongside it - otherwise a report that was entirely suppressed reads as
+      // an empty one and the individual "suppressed" lines above look unrelated.
+      Serial.printf("MQTT: hms %u reported, %u described (kept %u%s)%s\n",
+                    (unsigned)(s.hmsTotal + s.hmsSuppressed), s.hmsTotal, s.hmsCount,
                     s.hmsOverflow ? ", overflow" : "",
                     baselineWindow ? " [baseline window]" : "");
       for (uint8_t i = 0; i < s.hmsCount; i++)
-        Serial.printf("MQTT:   %04X_%04X_%04X_%04X sev=%u%s\n",
+        Serial.printf("MQTT:   %04X-%04X-%04X-%04X sev=%u%s\n",
                       (unsigned)(s.hms[i].attr >> 16), (unsigned)(s.hms[i].attr & 0xFFFF),
                       (unsigned)(s.hms[i].code >> 16), (unsigned)(s.hms[i].code & 0xFFFF),
                       hmsSeverityOf(s.hms[i].code),

@@ -6,14 +6,24 @@ Source of truth:  https://e.bambulab.com/query.php?lang=en
     data.device_hms.en[]    { ecode: <16 hex>, intro: <text> }   attr<<32 | code
     data.device_error.en[]  { ecode: <8 hex>,  intro: <text> }   print_error
 
-Emits two generated headers consumed only by src/hms_lookup.cpp:
+Emits three generated headers consumed only by src/hms_lookup.cpp:
 
     include/error_tables/print_error_table.h    ~36 KB
     include/error_tables/hms_table.h            ~430 KB
+    include/error_tables/hms_known.h            ~12 KB
 
-Both use the same shape: a sorted key array (binary searched at runtime), a
-parallel uint16 string id per key, and a single NUL-separated blob of deduped
-strings addressed through an offset array.
+The first two use the same shape: a sorted key array (binary searched at
+runtime), a parallel uint16 string id per key, and a single NUL-separated blob
+of deduped strings addressed through an offset array.
+
+hms_known.h is the same key set as hms_table.h with the text thrown away, in a
+form small enough to compile into a 4 MB board. It answers one question - "does
+Bambu describe this code at all" - which is what decides whether an HMS entry
+reaches the screen. Codes Bambu registers but ships no sentence for are not
+shown by Bambu's own printer UI or by Bambu Studio, and showing them was issue
+#164: an X2D reported 0500_0100_0002_000B and 0503_0000_0003_0027, neither of
+which the printer itself lists. Boards carrying hms_table.h never compile this
+header - their key array already is the answer.
 
 Processing rules:
   * entries with a blank `intro` are DROPPED - the lookup treats them as absent
@@ -54,6 +64,9 @@ Usage:
     python tools/gen_error_tables.py --input feed.json
     python tools/gen_error_tables.py --dry-run        # stats only
     python tools/gen_error_tables.py --mirror-only    # refresh docs/ mirror only
+    python tools/gen_error_tables.py --known-only     # rebuild hms_known.h from
+                                                      # the mirror already in the
+                                                      # repo, fetching nothing
 """
 
 import argparse
@@ -261,6 +274,97 @@ def build_header(domain, ver, best, key_bits):
     return "\n".join(lines), stats
 
 
+# hms_known.h packs each code's severity and subcode into one uint16. The feed
+# has never carried a severity above 3 or a subcode above 0x0086, so 2 + 14 bits
+# is generous - but a feed refresh that broke either assumption would silently
+# corrupt the set, so the generator asserts instead of masking.
+KNOWN_SEV_MAX = 3
+KNOWN_SUB_MAX = 0x3FFF
+
+
+def build_known_header(ver, codes):
+    """Render include/error_tables/hms_known.h. Returns (text, stats).
+
+    Grouped by `attr` rather than kept as flat 64-bit keys: 705 attrs own 3958
+    codes, so paying 4 bytes per attr once and 2 bytes per code beats 8 bytes
+    per key three times over (12.1 KB against 31.7 KB), and a 4 MB board has no
+    room for the difference. Lookup is a binary search over the attr array for
+    the run, then a binary search inside the run.
+    """
+    groups = {}
+    for code in codes:
+        key = int(code, 16)
+        attr, low = key >> 32, key & 0xFFFFFFFF
+        sev, sub = low >> 16, low & 0xFFFF
+        if sev > KNOWN_SEV_MAX or sub > KNOWN_SUB_MAX:
+            raise SystemExit(
+                "hms_known: %s does not fit the 2+14-bit packing (sev=%d, sub=0x%04X). "
+                "Widen the packing in tools/gen_error_tables.py and in "
+                "hmsIsDescribed() together." % (code, sev, sub))
+        groups.setdefault(attr, []).append((sev << 14) | sub)
+
+    attrs = sorted(groups)
+    idx, packed = [], []
+    for attr in attrs:
+        idx.append(len(packed))
+        packed.extend(sorted(groups[attr]))
+    idx.append(len(packed))          # one past the end, so every run is idx[i]..idx[i+1]
+
+    lines = [
+        "// HMS known-code set - GENERATED, DO NOT EDIT.",
+        "// Regenerate with: python tools/gen_error_tables.py --known-only",
+        "//",
+        "// Source: %s (via docs/errors/hms_en.json)" % FEED_URL,
+        "// Feed ver: %s" % ver,
+        "// %u codes across %u attr groups - the same key set as hms_table.h with"
+        % (len(packed), len(attrs)),
+        "// the text dropped. Compiled only where hms_table.h is not: there, its own",
+        "// key array answers the same question for free.",
+        "//",
+        "// Each code is packed as (severity << 14) | subcode. Runs are sorted, so a",
+        "// lookup is a binary search for the attr followed by one inside its run.",
+        "#ifndef HMS_KNOWN_H",
+        "#define HMS_KNOWN_H",
+        "",
+        "#include <Arduino.h>",
+        "",
+        '#define HMS_KNOWN_VER         "%s"' % ver,
+        "#define HMS_KNOWN_ATTR_COUNT  %u" % len(attrs),
+        "#define HMS_KNOWN_CODE_COUNT  %u" % len(packed),
+        "#define HMS_KNOWN_SEV_SHIFT   14",
+        "#define HMS_KNOWN_SUB_MASK    0x%04X" % KNOWN_SUB_MAX,
+        "",
+    ]
+
+    emit_array(lines, "static const uint32_t HMS_KNOWN_ATTR[HMS_KNOWN_ATTR_COUNT] PROGMEM",
+               attrs, 8, "0x%08XUL,")
+    emit_array(lines, "static const uint16_t HMS_KNOWN_IDX[HMS_KNOWN_ATTR_COUNT + 1] PROGMEM",
+               idx, 12, "%u,")
+    emit_array(lines, "static const uint16_t HMS_KNOWN_CODE[HMS_KNOWN_CODE_COUNT] PROGMEM",
+               packed, 12, "0x%04X,")
+
+    lines.append("#endif  // HMS_KNOWN_H")
+    lines.append("")
+
+    stats = {
+        "attrs": len(attrs),
+        "codes": len(packed),
+        "flash": len(attrs) * 4 + (len(attrs) + 1) * 2 + len(packed) * 2,
+    }
+    return "\n".join(lines), stats
+
+
+def write_known(out_dir, ver, codes):
+    text, stats = build_known_header(ver, codes)
+    path = os.path.join(out_dir, "hms_known.h")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        fh.write(text)
+    print("hms_known    %4u codes in %u attr groups, ~%.1f KB flash"
+          % (stats["codes"], stats["attrs"], stats["flash"] / 1024.0))
+    print("             -> %s (%u B)" % (path, os.path.getsize(path)))
+
+
 def collect_raw(entries):
     """ecode -> best text, unfolded and untruncated. For the browser mirror."""
     best = {}
@@ -331,11 +435,27 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="print stats, write nothing")
     ap.add_argument("--mirror-only", action="store_true",
                     help="refresh docs/errors/hms_en.json and skip the headers")
+    ap.add_argument("--known-only", action="store_true",
+                    help="rebuild hms_known.h from the mirror already in the repo "
+                         "and fetch nothing - use this to refresh the known-code "
+                         "set without disturbing the shipped text tables")
     args = ap.parse_args()
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = args.out_dir or os.path.join(repo, "include", "error_tables")
     mirror_path = os.path.join(repo, "docs", "errors", "hms_en.json")
+
+    # The mirror is the shipped snapshot, in the repo, and its `hms` keys are
+    # exactly the codes the tables carry text for - so it can regenerate the
+    # known-code set on its own. Keeping the two in step matters more than
+    # freshness: a device that suppressed a code the tables can describe, or
+    # listed one they cannot, would be worse than a week-old set.
+    if args.known_only:
+        with open(mirror_path, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+        print("Mirror ver %s (%u hms codes)" % (doc["ver"], len(doc["hms"])))
+        write_known(out_dir, str(doc["ver"]), doc["hms"].keys())
+        return
 
     print("Loading feed...")
     feed = load_feed(args.input)
@@ -363,6 +483,10 @@ def main():
                  size / 1024.0))
         print("             -> %s" % mirror_path)
     if args.mirror_only:
+        # hms_known.h is deliberately NOT written here. It is a source file the
+        # firmware compiles in, and release.py calls this mode after the binaries
+        # are already built - writing it would leave the shipped image judging
+        # codes by one feed snapshot and describing them from another.
         return
 
     for domain, entries, key_bits, filename in targets:
@@ -379,6 +503,13 @@ def main():
         with open(path, "w", encoding="ascii", newline="\n") as fh:
             fh.write(text)
         print("             -> %s (%u B)" % (path, os.path.getsize(path)))
+
+    if not args.dry_run:
+        # Last, and from the mirror written above rather than from the feed, so
+        # the key set a board suppresses by and the text it describes with come
+        # out of one snapshot. They must never drift apart: a code in one and not
+        # the other either hides a real error or resurrects a silent one.
+        write_known(out_dir, ver, doc["hms"].keys())
 
 
 if __name__ == "__main__":

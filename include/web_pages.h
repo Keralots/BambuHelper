@@ -724,7 +724,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert.</p></div></div>
+    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert. Codes Bambu publishes no description for are left out - the printer's own screen and Bambu Studio do not show them either.</p></div></div>
     <div class="card-body"><div id="hmsLive"><span class="text-dim">Loading...</span></div></div>
   </div>
 
@@ -742,7 +742,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
           <input type="checkbox" id="hmssev" value="1" %HMS_SEV% onchange="toggleSetting('hmssev',this.checked)">
           <label for="hmssev">Include low-priority codes</label>
         </label>
-        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common ones, such as an open front door. Codes already active when the device connects never raise an alert either way - they are the printer's normal state, not news.</div>
+        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common ones - advisories the printer expects you to notice but not to act on immediately. Codes already active when the device connects never raise an alert either way - they are the printer's normal state, not news.</div>
 
         <div class="field" style="margin-top:var(--sp-4)">
           <label for="hmsauto">Show the error screen automatically</label>

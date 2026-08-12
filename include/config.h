@@ -173,12 +173,14 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
-// HMS / print_error reporting. Three independent capabilities:
+// HMS / print_error reporting. Four independent capabilities:
 //
 //   HAS_HMS_UI           the feature exists at all - state fields, parser,
 //                        badge, error screen, alerts
 //   HAS_ERROR_TEXT_TABLE embedded print_error sentences (~36 KB flash)
 //   HAS_FULL_HMS_TABLE   embedded HMS sentences (~400 KB flash)
+//   HAS_HMS_KNOWN_TABLE  embedded HMS key set, no sentences (~12 KB flash) -
+//                        derived, on wherever HAS_FULL_HMS_TABLE is off
 //
 // A code with no embedded sentence still shows "<MODULE> <SEVERITY>" plus the
 // formatted code (~100 bytes). That is the normal case for HMS codes on 4 MB
@@ -224,6 +226,19 @@
 #define HAS_FULL_HMS_TABLE  1
 #else
 #define HAS_FULL_HMS_TABLE  0
+#endif
+
+// Whether Bambu describes a code at all decides whether it reaches the screen
+// (issue #164 - an X2D standing on two codes its own UI does not list, because
+// Bambu registers them and publishes no sentence). Answering that needs the key
+// set, not the text: a board carrying the full table already has it, and every
+// other board gets hms_known.h, the same 3958 keys with the sentences dropped
+// and grouped by attr - ~12 KB instead of ~400 KB. Both tables come out of the
+// same generator run, so the two paths can never disagree.
+#if HAS_HMS_UI && !HAS_FULL_HMS_TABLE
+#define HAS_HMS_KNOWN_TABLE  1
+#else
+#define HAS_HMS_KNOWN_TABLE  0
 #endif
 
 // The portal's "Printer Errors" section is markup, and markup is flash: it
