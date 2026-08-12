@@ -76,6 +76,13 @@ struct AmsState {
 // but never alerting. Capped per slot so a pathological printer cannot eat RAM.
 #define HMS_BASELINE_MAX  16
 
+// Suppressed codes kept for /debug. Hiding a code the printer really reported
+// is now a designed behaviour, so it has to be answerable from a diagnostic
+// dump alone - "my printer shows a code and BambuHelper shows none" must not
+// need a USB cable and a serial monitor. Four names the culprits; the serial
+// log still carries every one of them.
+#define HMS_SUPPRESSED_MAX  4
+
 struct HmsEntry {
   uint32_t attr;   // module in the top byte
   uint32_t code;   // severity in the high 16 bits
@@ -174,6 +181,8 @@ struct BambuState {
                               // serial log can answer "the printer says a code
                               // and BambuHelper shows nothing". See
                               // hmsIsDescribed() and issue #164.
+  HmsEntry hmsSuppressedCodes[HMS_SUPPRESSED_MAX];  // the first few of them, by
+                              // name rather than by count, for the same reason
   bool     hmsOverflow;       // hmsTotal > HMS_MAX_ENTRIES
   uint8_t  hmsWorstSeverity;  // severity of hms[0], 0 = none active. The array
                               // is sorted worst-first, so the worst entry is
