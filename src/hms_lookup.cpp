@@ -21,6 +21,11 @@ static_assert(HMS_KNOWN_ATTR_COUNT <= 0xFFFE,
               "HMS_KNOWN_ATTR_COUNT no longer fits the uint16_t search bounds");
 static_assert(HMS_KNOWN_CODE_COUNT <= 0xFFFF,
               "HMS_KNOWN_CODE_COUNT no longer fits the uint16_t run bounds");
+// And bounded from below, because the failure is silent in the other direction
+// too: an empty table compiles (GCC takes zero-length arrays as an extension)
+// and would suppress every non-fatal HMS code on every board that carries it.
+static_assert(HMS_KNOWN_ATTR_COUNT > 0, "hms_known.h generated an empty table");
+static_assert(HMS_KNOWN_CODE_COUNT > 0, "hms_known.h generated an empty table");
 #endif
 
 // ---------------------------------------------------------------------------
@@ -195,6 +200,10 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code) {
 // Not muted, on purpose: the AMS-HT front-cover codes (18xx_2400_0002_0009) are
 // a different lid with no indicator of its own and a real effect on drying, and
 // print_error 0300_800F actually pauses the print.
+//
+// The caller pairs this with doorSensorPresent - see the header. A printer that
+// never publishes the `stat` bit or home_flag bit 23 draws no door indicator at
+// all, so muting its only door signal would hide the door completely.
 bool hmsIsMuted(uint32_t attr, uint32_t code) {
   const uint64_t key = hmsKeyOf(attr, code);
   return key == 0x0300960000030001ULL ||

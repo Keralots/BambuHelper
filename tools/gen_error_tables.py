@@ -354,6 +354,18 @@ def build_known_header(ver, codes):
     return "\n".join(lines), stats
 
 
+def shipped_table_ver(out_dir):
+    """Feed stamp of the hms_table.h currently in the tree, or None."""
+    path = os.path.join(out_dir, "hms_table.h")
+    try:
+        with open(path, "r", encoding="ascii") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return None
+    m = re.search(r'#define\s+HMS_TABLE_VER\s+"([^"]+)"', head)
+    return m.group(1) if m else None
+
+
 def write_known(out_dir, ver, codes):
     text, stats = build_known_header(ver, codes)
     path = os.path.join(out_dir, "hms_known.h")
@@ -450,11 +462,29 @@ def main():
     # known-code set on its own. Keeping the two in step matters more than
     # freshness: a device that suppressed a code the tables can describe, or
     # listed one they cannot, would be worse than a week-old set.
+    #
+    # Which is why this mode refuses when they have already drifted. release.py
+    # rewrites the mirror on every release (--mirror-only) and never touches
+    # hms_table.h, so after any release the mirror can be newer than the text
+    # table. Regenerating the key set from it then would ship a build where a
+    # 4 MB board lists a code and a 8/16 MB board suppresses the same one -
+    # hmsIsDescribed() reads the key set on the first and the text table on the
+    # second. Same printer, same fault, opposite behaviour by board.
     if args.known_only:
         with open(mirror_path, "r", encoding="utf-8") as fh:
             doc = json.load(fh)
-        print("Mirror ver %s (%u hms codes)" % (doc["ver"], len(doc["hms"])))
-        write_known(out_dir, str(doc["ver"]), doc["hms"].keys())
+        mirror_ver = str(doc["ver"])
+        table_ver = shipped_table_ver(out_dir)
+        if table_ver is not None and table_ver != mirror_ver:
+            raise SystemExit(
+                "refusing to write hms_known.h: the mirror is ver %s but "
+                "include/error_tables/hms_table.h is ver %s. The key set and the "
+                "text table must come from one snapshot. Run a full "
+                "`python tools/gen_error_tables.py` to move both, or check out "
+                "the mirror that matches the tables."
+                % (mirror_ver, table_ver))
+        print("Mirror ver %s (%u hms codes)" % (mirror_ver, len(doc["hms"])))
+        write_known(out_dir, mirror_ver, doc["hms"].keys())
         return
 
     print("Loading feed...")
@@ -489,8 +519,11 @@ def main():
         # codes by one feed snapshot and describing them from another.
         return
 
+    hms_best = None
     for domain, entries, key_bits, filename in targets:
         best, conflicts = collect(entries)
+        if domain == "hms":
+            hms_best = best
         text, stats = build_header(domain, ver, best, key_bits)
         dropped = len({e["ecode"].strip().upper() for e in entries}) - stats["codes"]
         print("%-12s %4u raw -> %4u codes (%u blank dropped, %u text conflicts), "
@@ -509,6 +542,26 @@ def main():
         # the key set a board suppresses by and the text it describes with come
         # out of one snapshot. They must never drift apart: a code in one and not
         # the other either hides a real error or resurrects a silent one.
+        #
+        # The two are built by different filters, so "same snapshot" is not the
+        # same as "same keys": collect() drops an entry whose text is empty after
+        # ASCII folding and truncation, collect_raw() drops it when the raw text
+        # is empty. An intro made entirely of characters ascii_fold discards
+        # would survive one and die in the other, and the resulting key would be
+        # listed on a 4 MB board and suppressed on an 8/16 MB one. It has never
+        # happened on any feed we have seen; checking costs nothing.
+        only_mirror = sorted(set(doc["hms"]) - set(hms_best))
+        only_table = sorted(set(hms_best) - set(doc["hms"]))
+        if only_mirror or only_table:
+            raise SystemExit(
+                "hms_table.h and the mirror disagree about which codes have "
+                "text - the embedded and browser filters diverged.\n"
+                "  mirror only (%u): %s\n"
+                "  table only  (%u): %s\n"
+                "Fix ascii_fold()/truncate() or collect_raw() so both drop the "
+                "same entries before regenerating."
+                % (len(only_mirror), only_mirror[:10],
+                   len(only_table), only_table[:10]))
         write_known(out_dir, ver, doc["hms"].keys())
 
 

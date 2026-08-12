@@ -21,12 +21,20 @@
 #define HMS_CODE_FULL_STR_LEN     24
 #define PRINT_ERROR_CODE_STR_LEN  10
 
-// Shown when a code has no text on this board because the table is not compiled
-// in - which is every HMS code on a 4 MB board and every print_error code on a
-// C3. It no longer means "unknown code": codes Bambu ships no wording for are
-// dropped before they get here (hmsIsDescribed), so the only thing missing is
-// this board's copy of the sentence, and the portal has it.
+// Shown when an HMS code has no text on this board because the table is not
+// compiled in - every HMS code on a 4 MB board. It does not mean "unknown
+// code": codes Bambu ships no wording for are dropped before they get here
+// (hmsIsDescribed), so the only thing missing is this board's copy of the
+// sentence, and the portal really does have it in the published mirror.
 #define HMS_FALLBACK_TEXT  "Description in the web portal"
+
+// The print_error equivalent, and deliberately worded differently. print_error
+// is exempt from the undescribed-code rule - a stopped job is worth reporting
+// with or without wording - so this line is reachable for a code Bambu ships
+// blank, and the mirror drops those blanks too. Promising the portal has the
+// text would be a lie in exactly that case, which is the only case a C3 (no
+// print_error table at all) and a blank feed entry can produce together.
+#define PRINT_ERROR_FALLBACK_TEXT  "No description published for this code"
 
 // "FATAL" / "SERIOUS" / "COMMON" / "INFO". `sev` is hmsSeverityOf(code);
 // anything outside 1-3 reads as INFO and never alerts.
@@ -38,8 +46,10 @@ const char* hmsSeverityLabel(uint8_t sev);
 const char* hmsModuleLabel(uint32_t attr);
 
 // Bambu's own 16-hex-digit ecode, grouped: "0500-0600-0002-0070". The panel
-// form: at 240 px the headline has 218 px to spend and the prefixed form needs
-// 257, so the screen puts the bare code on its own line instead.
+// form: an entry has 218 px to draw in on a 240 px screen, and a one-line
+// "<MODULE> <SEVERITY>  HMS_<code>" measures 252-314 px across every label pair
+// (worst-case glyph widths from inter_10) - so the screen drops the prefix and
+// puts the bare code, 162 px at worst, on a line of its own.
 void hmsFormatCode(uint32_t attr, uint32_t code, char* out, size_t outSize);
 
 // The same code in Bambu's own full notation: "HMS_0500-0600-0002-0070". Used
@@ -84,6 +94,11 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code);
 // open door is a state, not an error. Both spellings the printers use are
 // listed, including the one Bambu ships no wording for - relying on that code
 // staying undescribed would leave the rule one feed refresh from breaking.
+//
+// A true answer here is NOT on its own a reason to drop the code. The caller
+// must also know that the surface this defers to exists on that printer -
+// BambuState.doorSensorPresent for the door - because "shown elsewhere" is
+// false on a printer that reports the door through the advisory alone.
 //
 // The door SENSOR fault (0300_9600_0001_0003, severity 1, "the front door Hall
 // sensor is abnormal") is a real defect with no other surface, and stays.

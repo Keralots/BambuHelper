@@ -659,8 +659,20 @@ static void handleDebug() {
     }
     // Emitted outside the hmsCount guard on purpose: a report where every code
     // was undescribed leaves hms[] empty, and that is precisely the case someone
-    // asks about ("the printer shows a code, BambuHelper shows none").
+    // asks about ("the printer shows a code, BambuHelper shows none"). The codes
+    // themselves ride along, not just the count - a diagnostic dump is the only
+    // way to answer that question without a USB cable, so it has to name them.
     p["hms_suppressed"] = st.hmsSuppressed;
+    if (st.hmsSuppressed > 0) {
+      JsonArray sup = p["hms_suppressed_codes"].to<JsonArray>();
+      const uint8_t n = st.hmsSuppressed < HMS_SUPPRESSED_MAX
+                          ? st.hmsSuppressed : HMS_SUPPRESSED_MAX;
+      for (uint8_t k = 0; k < n; k++) {
+        hmsFormatCodeFull(st.hmsSuppressedCodes[k].attr,
+                          st.hmsSuppressedCodes[k].code, codeBuf, sizeof(codeBuf));
+        sup.add(codeBuf);
+      }
+    }
     p["hms_baseline_n"] = st.hmsBaselineCount;
     if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
     // What the on-screen badge resolves to, so a "why is nothing showing"
