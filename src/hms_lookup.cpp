@@ -178,6 +178,30 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code) {
 }
 
 // ---------------------------------------------------------------------------
+//  Editorial mute list
+// ---------------------------------------------------------------------------
+// Kept as code rather than as a generated table: every entry needs a reason a
+// human wrote down, and there are two of them.
+//
+//   0300_9600_0003_0001  door open. Measured on an H2 over three open/close
+//                        cycles and present in a P2S dump alongside stat bit
+//                        0x00800000. Bambu ships no wording for it.
+//   0500_0400_0003_0008  "The door seems to be open." The same condition on the
+//                        printers that report it this way - and this one Bambu
+//                        DOES describe, so the undescribed-code rule never
+//                        touches it. Without this line the door advisory would
+//                        have survived the #164 fix on those printers.
+//
+// Not muted, on purpose: the AMS-HT front-cover codes (18xx_2400_0002_0009) are
+// a different lid with no indicator of its own and a real effect on drying, and
+// print_error 0300_800F actually pauses the print.
+bool hmsIsMuted(uint32_t attr, uint32_t code) {
+  const uint64_t key = hmsKeyOf(attr, code);
+  return key == 0x0300960000030001ULL ||
+         key == 0x0500040000030008ULL;
+}
+
+// ---------------------------------------------------------------------------
 //  Error badge
 // ---------------------------------------------------------------------------
 uint16_t errorSeverityColor(uint8_t sev) {

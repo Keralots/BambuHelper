@@ -75,6 +75,20 @@ const char* printErrorLookupText(uint32_t err);
 // which is worth surfacing even with no wording to go with it.
 bool hmsIsDescribed(uint32_t attr, uint32_t code);
 
+// Codes hidden even though Bambu does describe them, because BambuHelper
+// already shows the same condition somewhere that does not read as a fault.
+//
+// This is an editorial choice, not a fact about the feed, which is why it is a
+// separate predicate from hmsIsDescribed() rather than another row in a table.
+// Today it is the printer's door: the dashboard has a door indicator, so an
+// open door is a state, not an error. Both spellings the printers use are
+// listed, including the one Bambu ships no wording for - relying on that code
+// staying undescribed would leave the rule one feed refresh from breaking.
+//
+// The door SENSOR fault (0300_9600_0001_0003, severity 1, "the front door Hall
+// sensor is abnormal") is a real defect with no other surface, and stays.
+bool hmsIsMuted(uint32_t attr, uint32_t code);
+
 // Feed version stamp of the compiled-in tables, or NULL when none is compiled
 // in. Reported by the portal so a stale table is diagnosable.
 const char* hmsTableVersion(void);
