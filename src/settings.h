@@ -163,22 +163,26 @@ struct DisplaySettings {
                              // statusOkColor's - a name is not a status, and the
                              // two sit side by side, so one accent painting both
                              // is not always wanted.
-  // Neutral text, the two colors every readout that is NOT an accent uses:
-  // values, file names, layer counts, dBm, kWh, "ETA: ---". They were the
-  // compile-time CLR_TEXT / CLR_TEXT_DIM, which no theme could reach - a dark
-  // accent scheme still had white numerals on it. The renderers pick these up
-  // by redefining those two macros (see the #undef block at the top of each
-  // drawing TU), so the ~120 call sites did not have to change.
   // Door status indicator (status bar + round rim). Its own pair rather than
   // riding statusOkColor: "closed" is not a print state, and the open colour
   // has to be settable next to it or the pair cannot be kept legible against a
   // themed background. Open still defaults to orange.
   uint16_t doorClosedColor;
   uint16_t doorOpenColor;
+  // Neutral text, the two colors every readout that is NOT an accent uses:
+  // values, file names, layer counts, dBm, kWh, "ETA: ---". They were the
+  // compile-time CLR_TEXT / CLR_TEXT_DIM, which no theme could reach - a dark
+  // accent scheme still had white numerals on it. The ~120 call sites did not
+  // have to change because CLR_TEXT / CLR_TEXT_DIM are now defined once, at the
+  // bottom of this header, as lookups into these two fields. There is no
+  // per-TU #undef anywhere in the tree and there must not be one - see the
+  // comment on those two #defines for why.
   uint16_t textColor;        // primary readout text (was 0xFFFF white)
   uint16_t textDimColor;     // secondary / placeholder text (was 0xC618 gray).
                              // CLR_TEXT_DARK (inactive dots, tracks) stays
-                             // fixed - it is chrome, not text.
+                             // fixed - it is chrome, not text. So does the white
+                             // end of a highlight blend: see the CLR_TEXT_DEFAULT
+                             // uses in display_gauges.cpp.
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;

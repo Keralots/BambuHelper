@@ -1028,8 +1028,13 @@ function resetGaugeColors(){
     document.getElementById(k + '_v').value = c.v;
   }
   document.getElementById('clr_pbar').value = document.getElementById('prg_a').value;
-  // Firmware defaults: green accents, white text, grey muted text.
-  setAccentColors('#00FF00', '#00FF00', '#00FF00', '#00FF00', '#FFFFFF', '#C6C6C6');
+  // Firmware defaults: green accents, white text, grey muted text. The grey is
+  // #C0C0C0 and not #C6C6C6 because only the former survives the round trip -
+  // RGB565 quantises it to 0xC618, which is exactly CLR_TEXT_DIM_DEFAULT and
+  // exactly what themes.default.txtd carries. #C6C6C6 lands on 0xC638, so
+  // "reset to defaults" would have left the device on a value its own defaults
+  // never produce, and disagreeing with the Default theme for the same field.
+  setAccentColors('#00FF00', '#00FF00', '#00FF00', '#00FF00', '#FFFFFF', '#C0C0C0');
   setDoorColors('#00FF00', '#FF7D00');
   applyDisplay();
 }
@@ -1061,7 +1066,7 @@ function randomGaugeColors(){
   var accent = hslToHex(baseH, 70, 60);
   // Text stays white/grey through a randomise: a random hue on the readouts
   // themselves costs legibility, which no roll of the dice is worth.
-  setAccentColors(accent, accent, accent, accent, '#FFFFFF', '#C6C6C6');
+  setAccentColors(accent, accent, accent, accent, '#FFFFFF', '#C0C0C0');
   // Closed door joins the accent family; open keeps a fixed contrast colour so
   // a random roll can never make "door open" blend into "door closed".
   setDoorColors(accent, '#FF7D00');

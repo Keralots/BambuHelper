@@ -70,7 +70,11 @@ void drawLedProgressBar(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress) {
 
   gfx.fillRoundRect(barX, y, fillW, barH, 2, barColor);
 
-  uint16_t glowColor = alphaBlend565(160, CLR_TEXT, barColor);
+  // CLR_TEXT_DEFAULT, not CLR_TEXT: this is the white end of a highlight blend,
+  // not a piece of text. Following the themable text colour would blend the
+  // leading-edge glow toward whatever the user picked - a dark "Text" on a light
+  // theme turns the brightest part of the bar into a dark smear.
+  uint16_t glowColor = alphaBlend565(160, CLR_TEXT_DEFAULT, barColor);
 
   if (fillW > 4 && progress < 100) {
     gfx.fillRect(barX + fillW - 3, y, 3, barH, glowColor);
@@ -148,9 +152,10 @@ void tickProgressShimmer(lgfx::LovyanGFX& gfx, int16_t y, uint8_t progress, bool
   int16_t sw = SHIMMER_W;
   if (sx + sw > barX + fillW) sw = barX + fillW - sx;
   if (sw > 0) {
-    // Gradient-like shimmer: brighter in center
-    uint16_t bright = alphaBlend565(180, CLR_TEXT, barColor);
-    uint16_t mid    = alphaBlend565(100, CLR_TEXT, barColor);
+    // Gradient-like shimmer: brighter in center. White end of the blend, so it
+    // stays a highlight whatever the user set the text colour to.
+    uint16_t bright = alphaBlend565(180, CLR_TEXT_DEFAULT, barColor);
+    uint16_t mid    = alphaBlend565(100, CLR_TEXT_DEFAULT, barColor);
     // Edge pixels
     if (sw >= 3) {
       gfx.fillRect(sx, y, 2, barH, mid);
@@ -548,6 +553,10 @@ static void shimSpanAA(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // center). Adjacent slices differ by only a small alpha, so the highlight reads
 // as a smooth gradient instead of the old 3-segment mid/bright/mid blocks with
 // their visible hard edges.
+//
+// The blend is toward CLR_TEXT_DEFAULT rather than the themable CLR_TEXT: this
+// is a specular highlight, not text, and following a user-picked dark text
+// colour would invert the sweep into a dark band travelling round the rim.
 static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                           int16_t r, int16_t ir, int16_t a, int16_t b,
                           uint16_t fillColor, uint16_t bg) {
@@ -555,7 +564,7 @@ static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   if (span <= 0) return;
   if (span < RIM_SHIM_SLICES) {          // too narrow to slice: single band
     shimSpanAA(gfx, cx, cy, r, ir, a, b,
-               alphaBlend565(RIM_SHIM_PEAK, CLR_TEXT, fillColor), bg);
+               alphaBlend565(RIM_SHIM_PEAK, CLR_TEXT_DEFAULT, fillColor), bg);
     return;
   }
   const int32_t s2 = (int32_t)RIM_SHIM_SLICES * RIM_SHIM_SLICES;
@@ -567,7 +576,7 @@ static void shimPaintBand(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
       const uint8_t alpha = (uint8_t)((int32_t)RIM_SHIM_PEAK * (s2 - d * d) / s2);
       if (alpha >= 16)                                  // near-fill edges: leave base
         shimSpanAA(gfx, cx, cy, r, ir, s0, s1,
-                   alphaBlend565(alpha, CLR_TEXT, fillColor), bg);
+                   alphaBlend565(alpha, CLR_TEXT_DEFAULT, fillColor), bg);
     }
     s0 = s1;
   }
