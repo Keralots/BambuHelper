@@ -5241,8 +5241,14 @@ static uint8_t drawWrappedText(const char* text, int16_t x, int16_t y,
 // Official sentence for an entry, or the generic line when this board carries
 // no table for the domain and when Bambu ships the code blank.
 static const char* hmsEntryText(uint32_t attr, uint32_t code) {
-  const char* t = attr ? hmsLookupText(attr, code) : printErrorLookupText(code);
-  return t ? t : HMS_FALLBACK_TEXT;
+  if (attr) {
+    const char* t = hmsLookupText(attr, code);
+    return t ? t : HMS_FALLBACK_TEXT;
+  }
+  // print_error has its own fallback: it is exempt from the undescribed-code
+  // rule, so unlike an HMS entry it can genuinely be a code nobody has text for.
+  const char* t = printErrorLookupText(code);
+  return t ? t : PRINT_ERROR_FALLBACK_TEXT;
 }
 
 // One entry's two header lines: "<MODULE> <SEVERITY>" in the severity colour,

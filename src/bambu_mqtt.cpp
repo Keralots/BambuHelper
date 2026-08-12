@@ -1251,11 +1251,35 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
       // reach any surface. Bambu describes every code it means a user to see,
       // so one it registers and ships no wording for is silent on the printer's
       // own screen and in Bambu Studio too (issue #164); and the mute list holds
-      // the few described codes we deliberately show elsewhere instead. Counted
-      // and named in the debug log, so both stay diagnosable.
-      const bool undescribed = !hmsIsDescribed(attr, code);
-      if (undescribed || hmsIsMuted(attr, code)) {
+      // the described codes we deliberately show elsewhere instead.
+      //
+      // FATAL is exempt from the first rule. hmsIsDescribed() really answers
+      // "does the table THIS BUILD shipped with describe it", and that table is
+      // a snapshot - release.py refreshes only the browser mirror, so a fielded
+      // device's key set moves only when someone regenerates the headers by
+      // hand. A severity-1 code Bambu adds for a printer released after that
+      // would otherwise go completely dark: no badge, no alert, no portal row,
+      // dashboard green while the machine is stopped. An unknown fatal that
+      // says nothing useful still beats a fatal that says nothing at all. New
+      // models are exactly where new codes appear - #164 came from an X2D.
+      //
+      // The mute list is deliberately not severity-gated: it names two specific
+      // codes, and a named code is a decision, not a guess about a snapshot.
+      const uint8_t sev = hmsSeverityOf(code);
+      const bool undescribed = (sev != 1) && !hmsIsDescribed(attr, code);
+      // Muting the door needs the door indicator to actually exist on this
+      // printer. doorOpen/doorSensorPresent come only from the `stat` bit and
+      // home_flag bit 23, never from HMS, so on a printer that reports an open
+      // door through this advisory alone the indicator is never drawn - and
+      // muting it as "shown elsewhere" would leave it shown nowhere. The door
+      // fields are parsed earlier in this same report, so this reads current.
+      const bool muted = hmsIsMuted(attr, code) && s.doorSensorPresent;
+      if (undescribed || muted) {
         if (s.hmsSuppressed < 255) s.hmsSuppressed++;
+        if (s.hmsSuppressed <= HMS_SUPPRESSED_MAX) {
+          s.hmsSuppressedCodes[s.hmsSuppressed - 1].attr = attr;
+          s.hmsSuppressedCodes[s.hmsSuppressed - 1].code = code;
+        }
         if (mqttDebugLog)
           Serial.printf("MQTT:   %04X-%04X-%04X-%04X suppressed (%s)\n",
                         (unsigned)(attr >> 16), (unsigned)(attr & 0xFFFF),
