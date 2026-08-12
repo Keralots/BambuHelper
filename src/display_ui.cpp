@@ -5355,13 +5355,28 @@ static void drawHmsScreen() {
     const uint32_t attr = isPe ? 0 : s.hms[hasPrintError ? i - 1 : i].attr;
     const uint32_t code = isPe ? s.printError : s.hms[hasPrintError ? i - 1 : i].code;
 
-    // A block is only worth starting if both header lines and at least one line
-    // of text fit above the footer; otherwise it belongs in the "+N more" count.
-    // footY is the footer's own top edge (it is drawn TC_DATUM downwards), so it
-    // is already the content limit - reserving another smallH on top of it threw
-    // away a usable line. The two header lines advance y by smallH + 1 each and
-    // the text line then needs its glyph box, hence 3 * smallH + 2.
-    if (y + 3 * smallH + 2 > footY) break;
+    // Cap the wrap at whatever is left above the footer. footY is the footer's
+    // own top edge (it is drawn TC_DATUM downwards), so it is already the
+    // content limit - reserving another smallH on top of it threw away a usable
+    // line. One line stays reserved while anything can still follow this entry:
+    // the "+N more" footnote is the only hint that the list is truncated, and
+    // letting the text fill the last gap would silently delete it. The final
+    // entry of a complete list has nothing to warn about, so it gets the lot.
+    // The reserve is smallH + 4, not smallH: the footnote is preceded by the
+    // same 4 px gap that separates entries, and reserving only its glyph box
+    // leaves it 2 px short of fitting in the worst case.
+    const bool moreCanFollow = (i + 1 < total) || s.hmsOverflow;
+    const int16_t wrapFloor = moreCanFollow ? (int16_t)(footY - (smallH + 4)) : footY;
+
+    // A block is only worth starting if its two header lines AND one line of its
+    // sentence fit under the very floor the wrap will measure against. Gating on
+    // footY instead was wrong in both directions: it let an entry claim the two
+    // header lines and then find no room at all for its text, and the wasted
+    // height pushed the "+N more" footnote off the screen - the truncation
+    // marker disappearing is exactly what the reserve above exists to prevent.
+    // Header lines advance y by smallH + 1 each and one wrapped line consumes
+    // smallH + 2, hence 3 * smallH + 4.
+    if (y + 3 * smallH + 4 > wrapFloor) break;
 
     char label[32], codeStr[HMS_CODE_STR_LEN];
     uint16_t hlColor = CLR_RED;
@@ -5380,30 +5395,16 @@ static void drawHmsScreen() {
     tft.drawString(codeStr, margin + 8, y);
     y += smallH + 1;
 
-    // Cap the wrap at whatever is left above the footer, never past 4 lines -
-    // one long sentence must not push every other entry off the screen.
-    // n lines occupy n * (smallH + 2) - 2 px, so this exact form leaves a 2 px
-    // gap above the footer and nothing more.
-    //
-    // One line stays reserved while anything can still follow this entry: the
-    // "+N more" footnote is the only hint that the list is truncated, and
-    // letting the text fill the last gap would silently delete it. The final
-    // entry of a complete list has nothing to warn about, so it gets the lot -
-    // which is the case that motivated relaxing this in the first place.
-    // The reserve is smallH + 4, not smallH: the footnote is preceded by the
-    // same 4 px gap that separates entries, and reserving only its glyph box
-    // leaves it 2 px short of fitting in the worst case.
-    const bool moreCanFollow = (i + 1 < total) || s.hmsOverflow;
-    const int16_t wrapFloor = moreCanFollow ? (int16_t)(footY - (smallH + 4)) : footY;
+    // Never past 4 lines - one long sentence must not push every other entry off
+    // the screen. n lines occupy n * (smallH + 2) - 2 px, so this exact form
+    // leaves a 2 px gap above the floor and nothing more. The block-start test
+    // above guarantees at least one line fits, so this is never zero.
     int16_t roomLines = (wrapFloor - y) / (smallH + 2);
     if (roomLines > 4) roomLines = 4;
-    if (roomLines > 0) {
-      const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
-                                            maxW - 10, smallH + 2, (uint8_t)roomLines,
-                                            CLR_TEXT, bg, /*centered=*/false);
-      y += lines * (smallH + 2);
-    }
-    y += 4;
+    const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
+                                          maxW - 10, smallH + 2, (uint8_t)roomLines,
+                                          CLR_TEXT, bg, /*centered=*/false);
+    y += lines * (smallH + 2) + 4;
     shown++;
   }
 
