@@ -1246,17 +1246,21 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
       if (!e["attr"].is<unsigned int>() || !e["code"].is<unsigned int>()) continue;
       uint32_t attr = e["attr"].as<unsigned int>();
       uint32_t code = e["code"].as<unsigned int>();
-      // Bambu describes every code it means a user to see. One it registers and
-      // ships no wording for is silent on the printer's own screen and in Bambu
-      // Studio, so it is dropped here - before hmsTotal, before the baseline
-      // set, before the sorted list - and cannot reach any surface. Counted, and
-      // named in the debug log, so it stays diagnosable. See issue #164.
-      if (!hmsIsDescribed(attr, code)) {
+      // Two reasons to drop a code, both applied here - before hmsTotal, before
+      // the baseline set, before the sorted list - so a dropped code cannot
+      // reach any surface. Bambu describes every code it means a user to see,
+      // so one it registers and ships no wording for is silent on the printer's
+      // own screen and in Bambu Studio too (issue #164); and the mute list holds
+      // the few described codes we deliberately show elsewhere instead. Counted
+      // and named in the debug log, so both stay diagnosable.
+      const bool undescribed = !hmsIsDescribed(attr, code);
+      if (undescribed || hmsIsMuted(attr, code)) {
         if (s.hmsSuppressed < 255) s.hmsSuppressed++;
         if (mqttDebugLog)
-          Serial.printf("MQTT:   %04X-%04X-%04X-%04X suppressed (not described by Bambu)\n",
+          Serial.printf("MQTT:   %04X-%04X-%04X-%04X suppressed (%s)\n",
                         (unsigned)(attr >> 16), (unsigned)(attr & 0xFFFF),
-                        (unsigned)(code >> 16), (unsigned)(code & 0xFFFF));
+                        (unsigned)(code >> 16), (unsigned)(code & 0xFFFF),
+                        undescribed ? "not described by Bambu" : "muted: shown elsewhere");
         continue;
       }
       if (s.hmsTotal < 255) s.hmsTotal++;
