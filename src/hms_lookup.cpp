@@ -12,6 +12,16 @@
 #if HAS_FULL_HMS_TABLE
 #include "error_tables/hms_table.h"
 #endif
+#if HAS_HMS_KNOWN_TABLE
+#include "error_tables/hms_known.h"
+// hmsIsDescribed() indexes both arrays with uint16_t. The feed would have to
+// roughly double for either to matter, but a silent wrap would turn the
+// suppression rule into a coin toss - so it is a build failure instead.
+static_assert(HMS_KNOWN_ATTR_COUNT <= 0xFFFE,
+              "HMS_KNOWN_ATTR_COUNT no longer fits the uint16_t search bounds");
+static_assert(HMS_KNOWN_CODE_COUNT <= 0xFFFF,
+              "HMS_KNOWN_CODE_COUNT no longer fits the uint16_t run bounds");
+#endif
 
 // ---------------------------------------------------------------------------
 //  Labels
@@ -45,14 +55,21 @@ const char* hmsModuleLabel(uint32_t attr) {
 // ---------------------------------------------------------------------------
 void hmsFormatCode(uint32_t attr, uint32_t code, char* out, size_t outSize) {
   if (!out || outSize == 0) return;
-  snprintf(out, outSize, "%04X_%04X_%04X_%04X",
+  snprintf(out, outSize, "%04X-%04X-%04X-%04X",
+           (unsigned)(attr >> 16), (unsigned)(attr & 0xFFFF),
+           (unsigned)(code >> 16), (unsigned)(code & 0xFFFF));
+}
+
+void hmsFormatCodeFull(uint32_t attr, uint32_t code, char* out, size_t outSize) {
+  if (!out || outSize == 0) return;
+  snprintf(out, outSize, "HMS_%04X-%04X-%04X-%04X",
            (unsigned)(attr >> 16), (unsigned)(attr & 0xFFFF),
            (unsigned)(code >> 16), (unsigned)(code & 0xFFFF));
 }
 
 void printErrorFormatCode(uint32_t err, char* out, size_t outSize) {
   if (!out || outSize == 0) return;
-  snprintf(out, outSize, "%04X_%04X",
+  snprintf(out, outSize, "%04X-%04X",
            (unsigned)(err >> 16), (unsigned)(err & 0xFFFF));
 }
 
@@ -110,6 +127,54 @@ const char* hmsLookupText(uint32_t attr, uint32_t code) {
   (void)code;
 #endif
   return NULL;
+}
+
+// ---------------------------------------------------------------------------
+//  Known-code set
+// ---------------------------------------------------------------------------
+// Two implementations of one question, picked by which table this board carries.
+// A full-table board answers it from the key array it already has; every other
+// board uses hms_known.h, the same keys grouped by attr so they cost 12 KB
+// instead of 400. Both key sets come out of the same generator run.
+bool hmsIsDescribed(uint32_t attr, uint32_t code) {
+#if HAS_FULL_HMS_TABLE
+  return hmsLookupText(attr, code) != NULL;
+#elif HAS_HMS_KNOWN_TABLE
+  const uint32_t sev = code >> 16;
+  const uint32_t sub = code & 0xFFFF;
+  // Outside what the packing can express, so it cannot be in the set. The
+  // generator refuses to emit a table that would need wider fields, which is
+  // what keeps this from silently swallowing a whole severity class.
+  if (sev > 3 || sub > HMS_KNOWN_SUB_MASK) return false;
+
+  uint16_t lo = 0, hi = HMS_KNOWN_ATTR_COUNT;
+  while (lo < hi) {
+    const uint16_t mid = lo + (hi - lo) / 2;
+    const uint32_t a = HMS_KNOWN_ATTR[mid];
+    if (a == attr) {
+      const uint16_t want = (uint16_t)((sev << HMS_KNOWN_SEV_SHIFT) | sub);
+      uint16_t clo = HMS_KNOWN_IDX[mid], chi = HMS_KNOWN_IDX[mid + 1];
+      while (clo < chi) {
+        const uint16_t cmid = clo + (chi - clo) / 2;
+        const uint16_t c = HMS_KNOWN_CODE[cmid];
+        if (c == want) return true;
+        if (c < want) clo = cmid + 1;
+        else          chi = cmid;
+      }
+      return false;
+    }
+    if (a < attr) lo = mid + 1;
+    else          hi = mid;
+  }
+  return false;
+#else
+  // No key set compiled in: nothing can be judged, so nothing is suppressed.
+  // Reachable only if a future board drops both tables - keep the errors
+  // visible rather than silently blind.
+  (void)attr;
+  (void)code;
+  return true;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +239,19 @@ const char* hmsTableVersion(void) {
   return HMS_TABLE_VER;
 #elif HAS_ERROR_TEXT_TABLE
   return PRINT_ERROR_TABLE_VER;
+#else
+  return NULL;
+#endif
+}
+
+// Kept separate from hmsTableVersion(): that one names the text source, which is
+// how a board's HMS build is identified, and folding the key set into it would
+// make a C3 look like it had text it does not.
+const char* hmsKnownVersion(void) {
+#if HAS_HMS_KNOWN_TABLE
+  return HMS_KNOWN_VER;
+#elif HAS_FULL_HMS_TABLE
+  return HMS_TABLE_VER;   // the text table's keys ARE the known set
 #else
   return NULL;
 #endif

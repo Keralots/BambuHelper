@@ -5232,21 +5232,28 @@ static const char* hmsEntryText(uint32_t attr, uint32_t code) {
   return t ? t : HMS_FALLBACK_TEXT;
 }
 
-// One entry as the screen shows it: severity tag, "<MODULE> <SEVERITY>", the
-// formatted code, and the sentence. attr == 0 means the print_error domain,
-// which has no module or severity of its own.
-static void hmsEntryHeadline(uint32_t attr, uint32_t code,
-                             char* out, size_t outLen, uint16_t* colorOut) {
-  char codeBuf[HMS_CODE_STR_LEN];
+// One entry's two header lines: "<MODULE> <SEVERITY>" in the severity colour,
+// then the formatted code on its own line. attr == 0 means the print_error
+// domain, which has no module or severity of its own.
+//
+// Two lines because one never fitted. In FONT_SMALL the combined
+// "<MODULE> <SEVERITY>  <code>" measures 219-281 px across every label pair,
+// against the 218 px an entry has to draw in on a 240 px panel - so the code's
+// last group was always ellipsized away, on exactly the boards that carry no
+// text table and have nothing but the code to offer. The code alone is 162 px
+// at worst, inside both that budget and the round screen's 170 px.
+static void hmsEntryLines(uint32_t attr, uint32_t code,
+                          char* labelOut, size_t labelLen,
+                          char* codeOut, size_t codeLen, uint16_t* colorOut) {
   if (attr) {
-    hmsFormatCode(attr, code, codeBuf, sizeof(codeBuf));
+    hmsFormatCode(attr, code, codeOut, codeLen);
     const uint8_t sev = hmsSeverityOf(code);
-    snprintf(out, outLen, "%s %s  %s", hmsModuleLabel(attr),
-             hmsSeverityLabel(sev), codeBuf);
+    snprintf(labelOut, labelLen, "%s %s", hmsModuleLabel(attr),
+             hmsSeverityLabel(sev));
     *colorOut = errorSeverityColor(sev);
   } else {
-    printErrorFormatCode(code, codeBuf, sizeof(codeBuf));
-    snprintf(out, outLen, "PRINT ERROR  %s", codeBuf);
+    printErrorFormatCode(code, codeOut, codeLen);
+    snprintf(labelOut, labelLen, "PRINT ERROR");
     *colorOut = CLR_RED;
   }
 }
@@ -5291,14 +5298,19 @@ static void drawHmsScreen() {
   tft.drawString("Printer error", cx, cx - 78);
 
   if (total > 0) {
-    char headline[64];
+    char label[32], codeStr[HMS_CODE_STR_LEN];
     uint16_t hlColor = CLR_RED;
-    hmsEntryHeadline(attr, code, headline, sizeof(headline), &hlColor);
+    hmsEntryLines(attr, code, label, sizeof(label), codeStr, sizeof(codeStr), &hlColor);
     setFont(tft, FONT_SMALL);
     char clipped[64];
+    const int16_t hdrY = cx - 78 + bodyH + 4;
     tft.setTextColor(hlColor, bg);
-    tft.drawString(ellipsizeToWidth(tft, headline, maxW, clipped, sizeof(clipped)),
-                   cx, cx - 78 + bodyH + 4);
+    tft.drawString(ellipsizeToWidth(tft, label, maxW, clipped, sizeof(clipped)),
+                   cx, hdrY);
+    // The code goes in the gap this layout already left between the header and
+    // the sentence, so nothing below it moves.
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString(codeStr, cx, hdrY + smallH + 1);
     drawWrappedText(hmsEntryText(attr, code), cx, cx - 78 + bodyH + 6 + smallH * 2,
                     maxW, smallH + 2, 3, CLR_TEXT, bg, /*centered=*/true);
     if (total > 1) {
@@ -5343,24 +5355,29 @@ static void drawHmsScreen() {
     const uint32_t attr = isPe ? 0 : s.hms[hasPrintError ? i - 1 : i].attr;
     const uint32_t code = isPe ? s.printError : s.hms[hasPrintError ? i - 1 : i].code;
 
-    // A block is only worth starting if its headline and at least one line of
-    // text fit above the footer; otherwise it belongs in the "+N more" count.
-    // footY is the footer's own top edge (it is drawn TC_DATUM downwards), so
-    // it is already the content limit - reserving another smallH on top of it
-    // threw away a usable line.
-    if (y + 2 * (smallH + 2) > footY) break;
+    // A block is only worth starting if both header lines and at least one line
+    // of text fit above the footer; otherwise it belongs in the "+N more" count.
+    // footY is the footer's own top edge (it is drawn TC_DATUM downwards), so it
+    // is already the content limit - reserving another smallH on top of it threw
+    // away a usable line. The two header lines advance y by smallH + 1 each and
+    // the text line then needs its glyph box, hence 3 * smallH + 2.
+    if (y + 3 * smallH + 2 > footY) break;
 
-    char headline[64];
+    char label[32], codeStr[HMS_CODE_STR_LEN];
     uint16_t hlColor = CLR_RED;
-    hmsEntryHeadline(attr, code, headline, sizeof(headline), &hlColor);
+    hmsEntryLines(attr, code, label, sizeof(label), codeStr, sizeof(codeStr), &hlColor);
 
-    tft.fillRect(margin, y + 3, 4, smallH - 5, hlColor);
+    // The colour bar spans both header lines - it marks the entry, not the word.
+    tft.fillRect(margin, y + 3, 4, 2 * (smallH + 1) - 5, hlColor);
     setFont(tft, FONT_SMALL);
     tft.setTextDatum(TL_DATUM);
     tft.setTextColor(hlColor, bg);
     char hlClip[64];
-    tft.drawString(ellipsizeToWidth(tft, headline, maxW - 10, hlClip, sizeof(hlClip)),
+    tft.drawString(ellipsizeToWidth(tft, label, maxW - 10, hlClip, sizeof(hlClip)),
                    margin + 8, y);
+    y += smallH + 1;
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString(codeStr, margin + 8, y);
     y += smallH + 1;
 
     // Cap the wrap at whatever is left above the footer, never past 4 lines -

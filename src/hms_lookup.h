@@ -8,15 +8,25 @@
 #if HAS_HMS_UI
 
 // Formatted-code buffer sizes, terminator included.
-//   HMS:         "0500_0600_0002_0070"
-//   print_error: "0300_8007"
+//   HMS bare:    "0500-0600-0002-0070"
+//   HMS full:    "HMS_0500-0600-0002-0070"
+//   print_error: "0300-8007"
+//
+// The separator is a hyphen and the full form carries an "HMS_" prefix because
+// that is how Bambu itself writes these codes - the wiki renders
+// "HMS_0300-1A00-0002-0002" even on pages whose own URL spells the code with
+// underscores. Issue #164: our "0500_0100_0002_000B" matched nothing a user
+// could search for.
 #define HMS_CODE_STR_LEN          20
+#define HMS_CODE_FULL_STR_LEN     24
 #define PRINT_ERROR_CODE_STR_LEN  10
 
-// Shown when a code has no text on this board - either the table is not
-// compiled in, or Bambu's feed has no sentence for it (64 HMS and 9
-// print_error codes ship blank).
-#define HMS_FALLBACK_TEXT  "Other HMS error - check printer or app"
+// Shown when a code has no text on this board because the table is not compiled
+// in - which is every HMS code on a 4 MB board and every print_error code on a
+// C3. It no longer means "unknown code": codes Bambu ships no wording for are
+// dropped before they get here (hmsIsDescribed), so the only thing missing is
+// this board's copy of the sentence, and the portal has it.
+#define HMS_FALLBACK_TEXT  "Description in the web portal"
 
 // "FATAL" / "SERIOUS" / "COMMON" / "INFO". `sev` is hmsSeverityOf(code);
 // anything outside 1-3 reads as INFO and never alerts.
@@ -27,10 +37,19 @@ const char* hmsSeverityLabel(uint8_t sev);
 // MODULE is the catch-all for anything they add later.
 const char* hmsModuleLabel(uint32_t attr);
 
-// Bambu's own 16-hex-digit ecode, grouped: "0500_0600_0002_0070".
+// Bambu's own 16-hex-digit ecode, grouped: "0500-0600-0002-0070". The panel
+// form: at 240 px the headline has 218 px to spend and the prefixed form needs
+// 257, so the screen puts the bare code on its own line instead.
 void hmsFormatCode(uint32_t attr, uint32_t code, char* out, size_t outSize);
 
-// Bambu's 8-hex-digit print_error code, grouped: "0300_8007".
+// The same code in Bambu's own full notation: "HMS_0500-0600-0002-0070". Used
+// everywhere the value is meant to be copied or searched - the portal card, the
+// JSON APIs, the diagnostic dump.
+void hmsFormatCodeFull(uint32_t attr, uint32_t code, char* out, size_t outSize);
+
+// Bambu's 8-hex-digit print_error code, grouped: "0300-8007". No "HMS_" prefix:
+// print_error is a different domain and wearing that prefix would send anyone
+// searching for it to the wrong index.
 void printErrorFormatCode(uint32_t err, char* out, size_t outSize);
 
 // Official Bambu text, or NULL when this board carries no table for the domain
@@ -39,9 +58,30 @@ void printErrorFormatCode(uint32_t err, char* out, size_t outSize);
 const char* hmsLookupText(uint32_t attr, uint32_t code);
 const char* printErrorLookupText(uint32_t err);
 
+// True when Bambu's error feed carries this HMS code with a description.
+//
+// A code the feed does not describe is one the printer's own screen and Bambu
+// Studio both stay silent about - Bambu registers the number and publishes no
+// sentence for it. Issue #164 was an X2D standing permanently on two of them
+// (0500_0100_0002_000B, absent from the feed entirely, and 0503_0000_0003_0027,
+// present with an empty description), which we rendered as two alarming rows
+// reading "Other HMS error" while the printer itself reported nothing wrong.
+// Undescribed codes are dropped at parse time, so they never reach the badge,
+// the error screen, the alerts, or the portal card. BambuState.hmsSuppressed
+// counts them and /debug reports it, so a "why is my code missing" question is
+// still answerable.
+//
+// Deliberately NOT applied to print_error: that means the job actually stopped,
+// which is worth surfacing even with no wording to go with it.
+bool hmsIsDescribed(uint32_t attr, uint32_t code);
+
 // Feed version stamp of the compiled-in tables, or NULL when none is compiled
 // in. Reported by the portal so a stale table is diagnosable.
 const char* hmsTableVersion(void);
+
+// Feed version stamp behind hmsIsDescribed(), which every board has whether or
+// not it carries sentences. NULL only where no key set exists at all.
+const char* hmsKnownVersion(void);
 
 #endif  // HAS_HMS_UI
 
