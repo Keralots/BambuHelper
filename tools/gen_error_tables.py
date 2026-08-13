@@ -8,9 +8,9 @@ Source of truth:  https://e.bambulab.com/query.php?lang=en
 
 Emits three generated headers consumed only by src/hms_lookup.cpp:
 
-    include/error_tables/print_error_table.h    ~36 KB
-    include/error_tables/hms_table.h            ~430 KB
-    include/error_tables/hms_known.h            ~12 KB
+    include/error_tables/print_error_table.h    ~34 KB
+    include/error_tables/hms_table.h            ~194 KB
+    include/error_tables/hms_known.h            ~6 KB
 
 The first two use the same shape: a sorted key array (binary searched at
 runtime), a parallel uint16 string id per key, and a single NUL-separated blob
@@ -47,7 +47,7 @@ is why the old fixed `/en/x1/...` link 404'd for most codes. The stored value is
 the href exactly as the wiki writes it, separators and case included - 11 of the
 index's links put "-" between the code groups instead of "_", so rebuilding the
 tail from the code would be a guess. Scraped from the wiki's own HMS index;
-codes missing from it have no page at all (only ~225 of 3958 are documented) and
+codes missing from it have no page at all (only ~224 of 2014 are documented) and
 the portal links to the index instead.
 
 The portal page reads that from GitHub Pages in the user's browser. It cannot
@@ -285,11 +285,11 @@ KNOWN_SUB_MAX = 0x3FFF
 def build_known_header(ver, codes):
     """Render include/error_tables/hms_known.h. Returns (text, stats).
 
-    Grouped by `attr` rather than kept as flat 64-bit keys: 705 attrs own 3958
+    Grouped by `attr` rather than kept as flat 64-bit keys: 417 attrs own 2014
     codes, so paying 4 bytes per attr once and 2 bytes per code beats 8 bytes
-    per key three times over (12.1 KB against 31.7 KB), and a 4 MB board has no
-    room for the difference. Lookup is a binary search over the attr array for
-    the run, then a binary search inside the run.
+    per key two and a half times over (6.4 KB against 15.7 KB), and a 4 MB board
+    has no room for the difference. Lookup is a binary search over the attr array
+    for the run, then a binary search inside the run.
     """
     groups = {}
     for code in codes:

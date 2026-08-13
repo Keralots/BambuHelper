@@ -178,8 +178,8 @@
 //   HAS_HMS_UI           the feature exists at all - state fields, parser,
 //                        badge, error screen, alerts
 //   HAS_ERROR_TEXT_TABLE embedded print_error sentences (~36 KB flash)
-//   HAS_FULL_HMS_TABLE   embedded HMS sentences (~400 KB flash)
-//   HAS_HMS_KNOWN_TABLE  embedded HMS key set, no sentences (~12 KB flash) -
+//   HAS_FULL_HMS_TABLE   embedded HMS sentences (~194 KB flash)
+//   HAS_HMS_KNOWN_TABLE  embedded HMS key set, no sentences (~6 KB flash) -
 //                        derived, on wherever HAS_FULL_HMS_TABLE is off
 //
 // A code with no embedded sentence still shows "<MODULE> <SEVERITY>" plus the
@@ -232,8 +232,8 @@
 // (issue #164 - an X2D standing on two codes its own UI does not list, because
 // Bambu registers them and publishes no sentence). Answering that needs the key
 // set, not the text: a board carrying the full table already has it, and every
-// other board gets hms_known.h, the same 3958 keys with the sentences dropped
-// and grouped by attr - ~12 KB instead of ~400 KB. Both tables come out of the
+// other board gets hms_known.h, the same 2014 keys with the sentences dropped
+// and grouped by attr - ~6 KB instead of ~194 KB. Both tables come out of the
 // same generator run, so the two paths can never disagree.
 #if HAS_HMS_UI && !HAS_FULL_HMS_TABLE
 #define HAS_HMS_KNOWN_TABLE  1
