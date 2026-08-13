@@ -8,13 +8,18 @@ Runs the full release pipeline for the web-flasher boards:
     3. Builds every WEB_FLASHER_BOARDS env in one PlatformIO invocation
     4. Checks each firmware.bin against its own app partition and refuses to go
        further if one does not fit - the build summary does NOT answer this
-    5. Runs merge_bins.py for each board to generate Full.bin + ota.bin
-    6. Copies only the Full.bin files into docs/firmware/latest/ (web flasher
+    5. Checks that the error tables and the portal's mirror are one snapshot
+    6. Runs merge_bins.py for each board to generate Full.bin + ota.bin
+    7. Copies only the Full.bin files into docs/firmware/latest/ (web flasher
        binaries) - ota.bin stays in firmware/v<ver>/ for the GitHub Release
-    7. Writes docs/firmware/latest/VERSION
-    8. Refreshes docs/errors/hms_en.json from Bambu's error-text feed - the
-       portal page reads it from GitHub Pages for codes the device carries no
-       table for
+    8. Writes docs/firmware/latest/VERSION
+
+Releasing does NOT touch docs/errors/hms_en.json. That mirror and the tables
+compiled into the firmware must come from one feed snapshot, and a release can
+only move one of them - the tables are source files, already built by the time
+this script runs. Refresh both together with a deliberate
+`python tools/gen_error_tables.py`, rebuild, and commit; the check in step 5
+then confirms they still agree before anything is published.
 
 Old BambuHelper-*-Full.bin files in docs/firmware/latest/ are left in place;
 clean them up manually with `git rm` when they're no longer needed.
@@ -25,6 +30,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -57,6 +63,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_H = REPO_ROOT / "include" / "config.h"
 MERGE_BINS = REPO_ROOT / "merge_bins.py"
 DOCS_LATEST = REPO_ROOT / "docs" / "firmware" / "latest"
+ERROR_TABLES = REPO_ROOT / "include" / "error_tables"
+ERROR_MIRROR = REPO_ROOT / "docs" / "errors" / "hms_en.json"
 
 
 def read_version() -> str:
@@ -213,6 +221,54 @@ def check_ota_slots():
         sys.exit("Refusing to publish - such a build bricks the board on its first OTA.")
 
 
+def _header_define(path: Path, name: str):
+    """Value of a `#define <name> "..."` in a generated table header."""
+    if not path.is_file():
+        return None
+    m = re.search(r'#define\s+%s\s+"([^"]+)"' % re.escape(name),
+                  path.read_text(encoding="ascii", errors="replace"))
+    return m.group(1) if m else None
+
+
+def check_error_tables():
+    """Refuse to publish when the error tables and the mirror are different feeds.
+
+    Three artefacts answer the same question about one HMS code. hms_table.h
+    carries the text and ships to 8/16 MB boards; hms_known.h carries only the
+    key set and ships where the text table does not; docs/errors/hms_en.json is
+    what the portal fetches in the user's browser. A code missing from one of
+    them is suppressed on the device, or listed with nothing to describe it.
+
+    They only agree if they came from the same feed snapshot, which is why the
+    generator writes all three in one run. Publishing is where the drift would
+    escape, so it is checked here rather than trusted.
+    """
+    print("\n--- Checking error tables against the portal mirror ---")
+    table = _header_define(ERROR_TABLES / "hms_table.h", "HMS_TABLE_VER")
+    known = _header_define(ERROR_TABLES / "hms_known.h", "HMS_KNOWN_VER")
+    if not ERROR_MIRROR.is_file():
+        sys.exit(f"error: {ERROR_MIRROR} not found - run tools/gen_error_tables.py")
+    try:
+        mirror = str(json.loads(ERROR_MIRROR.read_text(encoding="utf-8"))["ver"])
+    except (ValueError, KeyError) as exc:
+        sys.exit(f"error: cannot read a feed ver from {ERROR_MIRROR}: {exc}")
+
+    for label, ver in (("hms_table.h", table), ("hms_known.h", known),
+                       ("docs/errors/hms_en.json", mirror)):
+        print(f"  {label:<26} {ver or 'MISSING'}")
+
+    seen = {v for v in (table, known, mirror) if v}
+    if table is None or known is None:
+        sys.exit("error: a generated error table is missing its ver define - "
+                 "regenerate with `python tools/gen_error_tables.py`")
+    if len(seen) > 1:
+        sys.exit("error: the error tables and the portal mirror come from "
+                 "different feed snapshots. A device would suppress codes the "
+                 "portal still describes, or list codes it cannot.\n"
+                 "Fix with a full `python tools/gen_error_tables.py`, rebuild, "
+                 "and commit all four files together.")
+
+
 def copy_full_to_docs(version: str):
     """Copy *-Full.bin for each board from firmware/v<ver>/ to docs/firmware/latest/."""
     src_dir = REPO_ROOT / "firmware" / version
@@ -260,38 +316,11 @@ def list_ota_assets(version: str):
     )
 
 
-def refresh_error_mirror():
-    """Pull Bambu's error-text feed and rewrite the portal's mirror.
-
-    Only the mirror. The embedded tables are source files, and regenerating them
-    here would change what the firmware we just built contains - refresh those
-    deliberately with a plain `python tools/gen_error_tables.py`, rebuild, and
-    commit, rather than as a side effect of cutting a release. A network failure
-    is not fatal: the previously published mirror stays up and merely goes stale.
-    """
-    script = REPO_ROOT / "tools" / "gen_error_tables.py"
-    cmd = [sys.executable, str(script), "--mirror-only"]
-    print(f"\n$ {' '.join(cmd)}")
-    # Deliberately not run() - that exits the whole release on a non-zero code,
-    # and a feed that is briefly unreachable must not sink a build that is
-    # otherwise finished.
-    try:
-        rc = subprocess.run(cmd, cwd=REPO_ROOT).returncode
-    except OSError as exc:
-        rc, note = 1, str(exc)
-    else:
-        note = f"exit code {rc}"
-    if rc != 0:
-        print(f"  WARNING: mirror refresh failed ({note}); keeping the published copy")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-build", action="store_true",
                         help="Skip the PlatformIO build step (assume .pio/build is up to date)")
-    parser.add_argument("--skip-error-mirror", action="store_true",
-                        help="Leave docs/errors/hms_en.json alone (offline builds)")
     args = parser.parse_args()
 
     version = read_version()
@@ -305,9 +334,11 @@ def main():
     else:
         print("Skipping build (--skip-build)")
 
-    # Before anything is merged or copied, so a bad build cannot reach
-    # docs/firmware/latest/ or a release asset.
+    # Before anything is merged or copied, so neither a bad build nor a
+    # half-refreshed error table can reach docs/firmware/latest/ or a release
+    # asset.
     check_ota_slots()
+    check_error_tables()
 
     print("\n--- Merging binaries ---")
     for board in WEB_FLASHER_BOARDS:
@@ -316,10 +347,6 @@ def main():
     print("\n--- Copying Full.bin to docs/firmware/latest/ ---")
     copied = copy_full_to_docs(version)
     write_version_file(version)
-
-    if not args.skip_error_mirror:
-        print("\n--- Refreshing docs/errors/hms_en.json ---")
-        refresh_error_mirror()
 
     print("\n" + "=" * 60)
     print(f"Release {version} ready.")
@@ -344,7 +371,7 @@ def main():
             print(f"  {name}")
 
     print("\nNext steps:")
-    print("  git add docs/firmware/latest/ docs/errors/ .gitignore include/config.h")
+    print("  git add docs/firmware/latest/ .gitignore include/config.h")
     print(f'  git commit -m "release: {version}"')
     print(f"  gh release create {version} firmware/{version}/*.bin --notes \"...\"")
     print("  git push")
