@@ -139,8 +139,8 @@ const char* hmsLookupText(uint32_t attr, uint32_t code) {
 // ---------------------------------------------------------------------------
 // Two implementations of one question, picked by which table this board carries.
 // A full-table board answers it from the key array it already has; every other
-// board uses hms_known.h, the same keys grouped by attr so they cost 12 KB
-// instead of 400. Both key sets come out of the same generator run.
+// board uses hms_known.h, the same keys grouped by attr so they cost 6 KB
+// instead of 194. Both key sets come out of the same generator run.
 bool hmsIsDescribed(uint32_t attr, uint32_t code) {
 #if HAS_FULL_HMS_TABLE
   return hmsLookupText(attr, code) != NULL;

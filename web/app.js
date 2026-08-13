@@ -1284,7 +1284,7 @@ function hmsText(map, code, dev){
    of its links use "-" between the code groups, not "_"). Where the map is
    missing - a full-table board never fetches the mirror, and the text lookup
    can be switched off - link the HMS index, which lists every documented code
-   and never 404s. Only ~225 of 3958 codes have a page at all, so the index is
+   and never 404s. Only ~224 of 2014 codes have a page at all, so the index is
    the common case either way. */
 var HMS_WIKI_INDEX = 'https://wiki.bambulab.com/en/hms/home';
 function hmsWikiUrl(code){
