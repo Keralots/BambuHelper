@@ -292,16 +292,27 @@ struct BuzzerSettings {
   uint8_t bedCooldownThresholdC;  // bed temperature threshold (20-80 C)
 };
 
-// External LED settings (optional, PWM dimmable)
+// Status LED settings (optional, PWM dimmable)
 enum LedFinishMode : uint8_t {
   LED_FINISH_OFF       = 0,
   LED_FINISH_BREATHING = 1,
   LED_FINISH_HEARTBEAT = 2,
 };
 
+// How the LED is wired. SINGLE is the original one-channel behaviour and stays
+// the default, so an existing install keeps working with every colour field
+// ignored. The two colour drivers reuse the whole effect engine unchanged: the
+// patterns still produce a 0..255 intensity envelope, and the driver multiplies
+// the state's colour by it.
+enum LedDriver : uint8_t {
+  LED_DRV_SINGLE = 0,   // one PWM channel on LedSettings::pin
+  LED_DRV_RGB    = 1,   // three PWM channels: pin (red) / pinG / pinB
+  LED_DRV_PIXEL  = 2,   // one WS2812 on LedSettings::pin, driven over RMT
+};
+
 struct LedSettings {
   bool    enabled;
-  uint8_t pin;
+  uint8_t pin;                 // SINGLE/PIXEL: the pin. RGB: the red channel.
   uint8_t brightness;          // 0-255, persisted "working" level
 
   // Print-finished one-shot effect
@@ -314,6 +325,17 @@ struct LedSettings {
   bool pauseBreathing;         // slow breath during GCODE_PAUSE
   bool errorStrobe;            // fast strobe during GCODE_FAILED
   uint16_t errorStrobeSeconds; // error strobe auto-off after N s (0 = never)
+
+  // Colour output. Ignored entirely when driver == LED_DRV_SINGLE.
+  uint8_t driver;              // LedDriver
+  uint8_t pinG;                // RGB only: green channel
+  uint8_t pinB;                // RGB only: blue channel
+  bool    commonAnode;         // RGB only: shared leg on 3V3, so LOW = lit
+  uint32_t colorIdle;          // 0xRRGGBB, one per printer state
+  uint32_t colorPrinting;
+  uint32_t colorPaused;
+  uint32_t colorFinished;
+  uint32_t colorError;
 };
 
 // Tasmota smart plug power monitoring

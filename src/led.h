@@ -17,7 +17,8 @@ enum LedActivity : uint8_t {
 void initLed();
 void ledTick();
 
-// Transient-duty path (used by effect engine internally).
+// Transient-duty path (used by effect engine internally). On a colour driver the
+// duty is the intensity envelope and the colour comes from the current activity.
 // Public for backward compat with any future direct callers.
 void applyLedDuty(uint8_t duty);
 
@@ -25,8 +26,19 @@ void applyLedDuty(uint8_t duty);
 void sanitizeLedPin();
 bool isLedPinAllowed(uint8_t pin);
 
+// Same question for a colour driver, which is allowed to claim the board's own
+// onboard RGB pins - the deny-list reserves those precisely so nothing else does.
+bool isRgbLedPinAllowed(uint8_t pin);
+
+// Onboard RGB pin defaults for the portal's "use the onboard LED" shortcut.
+// Returns false when the board has no onboard RGB, leaving the outputs untouched.
+// On the CYD the red pin depends on the ESP32-32E runtime variant.
+bool onboardRgbPins(uint8_t &r, uint8_t &g, uint8_t &b, bool &anode);
+
 // Live preview from web UI: reconfigures LED with form values. NVS untouched.
-void previewLed(bool enabled, uint8_t pin, uint8_t brightness);
+// color is 0xRRGGBB and is ignored by LED_DRV_SINGLE.
+void previewLed(bool enabled, uint8_t driver, uint8_t pinR, uint8_t pinG,
+                uint8_t pinB, bool commonAnode, uint8_t brightness, uint32_t color);
 
 // Effect engine
 void ledSetActivity(LedActivity act);
@@ -52,7 +64,10 @@ void ledStopErrorEpisode();
 // Pass mode=0 to use ledSettings.finishMode. Returns true on success;
 // false if no PWM channel is attached (LED neither enabled nor previewed)
 // or the resolved mode is OFF/invalid - so the handler can report it.
-bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness);
+// color is 0xRRGGBB for the colour drivers; pass 0xFFFFFFFF to use the saved
+// finished colour.
+bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness,
+                          uint32_t color);
 
 // User interaction (button/touch) hook - aborts any active finish effect.
 void ledOnUserInteraction();

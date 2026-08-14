@@ -1203,19 +1203,42 @@ static void handleBuzzerTest() {
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
+// Parse an "#rrggbb" or "rrggbb" form value into 0xRRGGBB, falling back to the
+// saved value when the argument is missing or malformed.
+static uint32_t ledColorArg(const char *arg, uint32_t fallback) {
+  if (!server.hasArg(arg)) return fallback;
+  String s = server.arg(arg);
+  if (s.startsWith("#")) s.remove(0, 1);
+  if (s.length() != 6) return fallback;
+  for (uint8_t i = 0; i < 6; i++) if (!isHexadecimalDigit(s[i])) return fallback;
+  return (uint32_t)strtoul(s.c_str(), NULL, 16) & 0xFFFFFF;
+}
+
 // Live LED preview from web UI. Validates pin range as int before casting to
 // uint8_t (avoids 300 -> 44 wraparound). On invalid pin we shut the preview
 // off so the user doesn't see a "ghost" LED still lit on the previous pin.
 static void handleLedPreview() {
   bool en = server.hasArg("en") ? (server.arg("en") == "1") : ledSettings.enabled;
 
+  uint8_t drv = ledSettings.driver;
+  if (server.hasArg("drv")) {
+    int v = server.arg("drv").toInt();
+    if (v >= 0 && v <= LED_DRV_PIXEL) drv = (uint8_t)v;
+  }
+
+  // Red / green / blue pins. Green and blue only matter for LED_DRV_RGB, but
+  // they are range-checked unconditionally so a stray value can never reach
+  // previewLed() as a wrapped uint8_t.
   int rawPin = server.hasArg("pin") ? server.arg("pin").toInt() : ledSettings.pin;
-  if (rawPin < 1 || rawPin > 48) {
-    previewLed(false, 0, 0);
+  int rawG   = server.hasArg("ping") ? server.arg("ping").toInt() : ledSettings.pinG;
+  int rawB   = server.hasArg("pinb") ? server.arg("pinb").toInt() : ledSettings.pinB;
+  const bool rgb = (drv == LED_DRV_RGB);
+  if (rawPin < 1 || rawPin > 48 ||
+      (rgb && (rawG < 1 || rawG > 48 || rawB < 1 || rawB > 48))) {
+    previewLed(false, LED_DRV_SINGLE, 0, 0, 0, false, 0, 0);
     server.send(400, "application/json", "{\"error\":\"pin out of range\"}");
     return;
   }
-  uint8_t pin = (uint8_t)rawPin;
 
   uint8_t br = ledSettings.brightness;
   if (server.hasArg("br")) {
@@ -1224,7 +1247,11 @@ static void handleLedPreview() {
     br = (uint8_t)v;
   }
 
-  previewLed(en, pin, br);
+  const bool anode = server.hasArg("anode") ? (server.arg("anode") == "1")
+                                            : ledSettings.commonAnode;
+  const uint32_t col = ledColorArg("col", ledSettings.colorIdle);
+
+  previewLed(en, drv, (uint8_t)rawPin, (uint8_t)rawG, (uint8_t)rawB, anode, br, col);
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1261,7 +1288,7 @@ static void handleLedTest() {
     br = (uint8_t)v;
   }
 
-  if (!ledTriggerTestEffect(md, sec, br)) {
+  if (!ledTriggerTestEffect(md, sec, br, ledColorArg("col", ledSettings.colorFinished))) {
     server.send(409, "application/json", "{\"status\":\"err\",\"error\":\"LED not attached - enable it first\"}");
     return;
   }
@@ -1340,14 +1367,32 @@ static void handleSaveRotation() {
     saveBatteryIndicatorSetting();
   }
 
-  // External LED — must be parsed AFTER button + buzzer so sanitizeLedPin()
+  // Status LED — must be parsed AFTER button + buzzer so sanitizeLedPin()
   // sees the freshly-applied buttonPin and buzzerSettings.pin when checking
   // for conflicts.
   if (server.hasArg("leden"))  ledSettings.enabled = (server.arg("leden") == "1");
+  if (server.hasArg("leddrv")) {
+    int v = server.arg("leddrv").toInt();
+    if (v >= 0 && v <= LED_DRV_PIXEL) ledSettings.driver = (uint8_t)v;
+  }
   if (server.hasArg("ledpin")) {
     int lp = server.arg("ledpin").toInt();
     if (lp > 0 && lp <= 48) ledSettings.pin = (uint8_t)lp;
   }
+  if (server.hasArg("ledping")) {
+    int lp = server.arg("ledping").toInt();
+    if (lp > 0 && lp <= 48) ledSettings.pinG = (uint8_t)lp;
+  }
+  if (server.hasArg("ledpinb")) {
+    int lp = server.arg("ledpinb").toInt();
+    if (lp > 0 && lp <= 48) ledSettings.pinB = (uint8_t)lp;
+  }
+  if (server.hasArg("ledanode")) ledSettings.commonAnode = (server.arg("ledanode") == "1");
+  ledSettings.colorIdle     = ledColorArg("ledcidl", ledSettings.colorIdle);
+  ledSettings.colorPrinting = ledColorArg("ledcprn", ledSettings.colorPrinting);
+  ledSettings.colorPaused   = ledColorArg("ledcpau", ledSettings.colorPaused);
+  ledSettings.colorFinished = ledColorArg("ledcfin", ledSettings.colorFinished);
+  ledSettings.colorError    = ledColorArg("ledcerr", ledSettings.colorError);
   if (server.hasArg("ledbr")) {
     int br = server.arg("ledbr").toInt();
     if (br < 0) br = 0; if (br > 255) br = 255;
@@ -1687,11 +1732,21 @@ static void handleSettingsExport() {
   buz["bedCooldownAlert"] = buzzerSettings.bedCooldownAlert;
   buz["bedCooldownThresholdC"] = buzzerSettings.bedCooldownThresholdC;
 
-  // External LED
+  // Status LED
   JsonObject led = doc["led"].to<JsonObject>();
   led["enabled"]    = ledSettings.enabled;
   led["pin"]        = ledSettings.pin;
   led["brightness"] = ledSettings.brightness;
+  led["driver"]      = ledSettings.driver;
+  led["pinG"]        = ledSettings.pinG;
+  led["pinB"]        = ledSettings.pinB;
+  led["commonAnode"] = ledSettings.commonAnode;
+  JsonObject ledCol = led["colors"].to<JsonObject>();
+  ledCol["idle"]     = ledSettings.colorIdle;
+  ledCol["printing"] = ledSettings.colorPrinting;
+  ledCol["paused"]   = ledSettings.colorPaused;
+  ledCol["finished"] = ledSettings.colorFinished;
+  ledCol["error"]    = ledSettings.colorError;
   JsonObject ledFx = led["finish"].to<JsonObject>();
   ledFx["mode"]       = ledSettings.finishMode;
   ledFx["seconds"]    = ledSettings.finishSeconds;
@@ -2095,12 +2150,27 @@ static void handleSettingsImportFinish() {
     }
   }
 
-  // External LED
+  // Status LED
   JsonObject led = doc["led"];
   if (led) {
     if (led["enabled"].is<bool>())       ledSettings.enabled = led["enabled"].as<bool>();
     if (led["pin"].is<uint8_t>())        ledSettings.pin = led["pin"].as<uint8_t>();
     if (led["brightness"].is<uint8_t>()) ledSettings.brightness = led["brightness"].as<uint8_t>();
+    if (led["driver"].is<uint8_t>()) {
+      uint8_t d = led["driver"].as<uint8_t>();
+      if (d <= LED_DRV_PIXEL) ledSettings.driver = d;
+    }
+    if (led["pinG"].is<uint8_t>())        ledSettings.pinG = led["pinG"].as<uint8_t>();
+    if (led["pinB"].is<uint8_t>())        ledSettings.pinB = led["pinB"].as<uint8_t>();
+    if (led["commonAnode"].is<bool>())    ledSettings.commonAnode = led["commonAnode"].as<bool>();
+    JsonObject ledCol = led["colors"];
+    if (ledCol) {
+      if (ledCol["idle"].is<uint32_t>())     ledSettings.colorIdle     = ledCol["idle"].as<uint32_t>() & 0xFFFFFF;
+      if (ledCol["printing"].is<uint32_t>()) ledSettings.colorPrinting = ledCol["printing"].as<uint32_t>() & 0xFFFFFF;
+      if (ledCol["paused"].is<uint32_t>())   ledSettings.colorPaused   = ledCol["paused"].as<uint32_t>() & 0xFFFFFF;
+      if (ledCol["finished"].is<uint32_t>()) ledSettings.colorFinished = ledCol["finished"].as<uint32_t>() & 0xFFFFFF;
+      if (ledCol["error"].is<uint32_t>())    ledSettings.colorError    = ledCol["error"].as<uint32_t>() & 0xFFFFFF;
+    }
     JsonObject ledFx = led["finish"];
     if (ledFx) {
       if (ledFx["mode"].is<uint8_t>()) {

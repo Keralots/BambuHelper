@@ -755,8 +755,29 @@ function toggleBuzPin(){
 }
 function toggleLed(){
   document.getElementById('ledFields').style.display = document.getElementById('leden').value !== '0' ? 'block' : 'none';
+  var drv = document.getElementById('leddrv').value;
+  /* Only a three-pin RGB LED needs the extra pins and the polarity tick; a
+     WS2812 carries its own driver chip and gets colour from the data stream. */
+  document.getElementById('ledRgbPins').style.display  = drv === '1' ? 'flex' : 'none';
+  document.getElementById('ledAnodeRow').style.display = drv === '1' ? 'flex' : 'none';
+  document.getElementById('ledColors').style.display   = drv === '0' ? 'none' : 'block';
+  document.getElementById('ledpinLbl').textContent =
+    drv === '1' ? 'Red GPIO pin' : (drv === '2' ? 'Data GPIO pin' : 'LED GPIO pin');
   toggleLedFx();
   toggleLedErr();
+}
+/* Fills the pin fields from the board's own onboard RGB wiring. The button only
+   exists on boards that have one, so every caller path is guarded on the row. */
+function ledUseOnboard(){
+  var row = document.getElementById('ledOnboard');
+  if (!row) return;
+  document.getElementById('leddrv').value = row.getAttribute('data-drv');
+  document.getElementById('ledpin').value = row.getAttribute('data-r');
+  document.getElementById('ledping').value = row.getAttribute('data-g');
+  document.getElementById('ledpinb').value = row.getAttribute('data-b');
+  document.getElementById('ledanode').checked = row.getAttribute('data-anode') === '1';
+  toggleLed();
+  ledPreviewSend();
 }
 function toggleLedFx(){
   var fx = document.getElementById('ledfxmd');
@@ -768,11 +789,19 @@ function toggleLedErr(){
   if (!c) return;
   document.getElementById('ledErrParams').style.display = c.checked ? 'block' : 'none';
 }
-function ledPreviewSend(){
+/* col is the colour to light during the preview. A colour picker passes its own
+   value so the user sees that swatch on the LED while dragging; everything else
+   omits it and the idle colour stands in. */
+function ledPreviewSend(col){
   var p = new URLSearchParams();
   p.append('en', document.getElementById('leden').value);
+  p.append('drv', document.getElementById('leddrv').value);
   p.append('pin', document.getElementById('ledpin').value);
+  p.append('ping', document.getElementById('ledping').value);
+  p.append('pinb', document.getElementById('ledpinb').value);
+  p.append('anode', document.getElementById('ledanode').checked ? '1' : '0');
   p.append('br', document.getElementById('ledbr').value);
+  p.append('col', col || document.getElementById('ledcidl').value);
   fetch('/led/preview',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()}).catch(function(){});
 }
 function ledTestEffect(){
@@ -780,6 +809,7 @@ function ledTestEffect(){
   p.append('md', document.getElementById('ledfxmd').value);
   p.append('sec', document.getElementById('ledfxsec').value);
   p.append('br', document.getElementById('ledfxbr').value);
+  p.append('col', document.getElementById('ledcfin').value);
   fetch('/led/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
     .then(function(d){if(d.status==='ok')showToast('LED effect test running');else if(d.error)showToast('Test failed: '+d.error);})
@@ -812,7 +842,16 @@ function saveRotation(){
   p.append('buzbeden', document.getElementById('buzbeden').checked ? '1' : '0');
   p.append('buzbedtemp', document.getElementById('buzbedtemp').value);
   p.append('leden', document.getElementById('leden').value);
+  p.append('leddrv', document.getElementById('leddrv').value);
   p.append('ledpin', document.getElementById('ledpin').value);
+  p.append('ledping', document.getElementById('ledping').value);
+  p.append('ledpinb', document.getElementById('ledpinb').value);
+  p.append('ledanode', document.getElementById('ledanode').checked ? '1' : '0');
+  p.append('ledcidl', document.getElementById('ledcidl').value);
+  p.append('ledcprn', document.getElementById('ledcprn').value);
+  p.append('ledcpau', document.getElementById('ledcpau').value);
+  p.append('ledcfin', document.getElementById('ledcfin').value);
+  p.append('ledcerr', document.getElementById('ledcerr').value);
   p.append('ledbr', document.getElementById('ledbr').value);
   p.append('ledfxmd', document.getElementById('ledfxmd').value);
   p.append('ledfxsec', document.getElementById('ledfxsec').value);

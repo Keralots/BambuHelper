@@ -97,8 +97,9 @@ function saveWifi(){
 //              hmsmask arg)
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
-//              ledpin, ledbr, ledfxmd, ledfxsec, ledfxbr, ledauto, ledpause,
-//              lederr, lederrsec, batshow
+//              leddrv, ledpin, ledping, ledpinb, ledanode, ledbr, ledfxmd,
+//              ledfxsec, ledfxbr, ledauto, ledpause, lederr, lederrsec,
+//              ledcidl, ledcprn, ledcpau, ledcfin, ledcerr, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
 //    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_ip, tsm_dm (radio), tsm_pi,
@@ -902,18 +903,26 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>External LED</h3><p>PWM-dimmed LED via NPN transistor or MOSFET. CYD: GPIO 22 on P3 connector.</p></div></div>
+    <div class="card-head"><div><h3>Status LED</h3><p>A single PWM-dimmed LED via NPN transistor or MOSFET, a three-pin RGB LED, or one WS2812 pixel. CYD: GPIO 22 on P3 connector.</p></div></div>
     <div class="field">
-      <label for="leden">External LED</label>
+      <label for="leden">Status LED</label>
       <select id="leden" onchange="toggleLed();ledPreviewSend()">
         <option value="0" %LED_OFF%>Disabled</option>
         <option value="1" %LED_ON%>Enabled</option>
       </select>
     </div>
     <div id="ledFields" style="display:none">
+      <div class="field">
+        <label for="leddrv">Wiring</label>
+        <select id="leddrv" onchange="toggleLed();ledPreviewSend()">
+          <option value="0" %LED_DRV_S%>Single colour (one pin)</option>
+          <option value="1" %LED_DRV_R%>RGB LED (three pins)</option>
+          %LED_DRV_PIXEL_OPT%
+        </select>
+      </div>
       <div class="row">
         <div class="field">
-          <label for="ledpin">LED GPIO pin</label>
+          <label for="ledpin"><span id="ledpinLbl">LED GPIO pin</span></label>
           <input type="number" id="ledpin" class="mono" min="1" max="48" value="%LED_PIN%" onchange="ledPreviewSend()" style="max-width:120px">
         </div>
         <div class="field">
@@ -921,6 +930,35 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
           <input type="range" id="ledbr" min="0" max="255" step="5" value="%LED_BR%"
                  oninput="document.getElementById('ledbrVal').textContent=this.value;ledPreviewSend()">
         </div>
+      </div>
+      <div class="row" id="ledRgbPins" style="display:none">
+        <div class="field">
+          <label for="ledping">Green GPIO pin</label>
+          <input type="number" id="ledping" class="mono" min="1" max="48" value="%LED_PIN_G%" onchange="ledPreviewSend()" style="max-width:120px">
+        </div>
+        <div class="field">
+          <label for="ledpinb">Blue GPIO pin</label>
+          <input type="number" id="ledpinb" class="mono" min="1" max="48" value="%LED_PIN_B%" onchange="ledPreviewSend()" style="max-width:120px">
+        </div>
+      </div>
+      <label class="check-row" id="ledAnodeRow" style="display:none">
+        <input type="checkbox" id="ledanode" %LED_ANODE% onchange="ledPreviewSend()">
+        <label for="ledanode">Common anode (shared leg on 3V3 - tick if the colours come out inverted)</label>
+      </label>
+%LED_ONBOARD_ROW%
+      <div id="ledColors" style="display:none">
+        <details open>
+          <summary>Colour per printer state</summary>
+          <div class="row">
+            <div class="field"><label for="ledcidl">Idle</label><input type="color" id="ledcidl" value="%LED_C_IDLE%" oninput="ledPreviewSend(this.value)"></div>
+            <div class="field"><label for="ledcprn">Printing</label><input type="color" id="ledcprn" value="%LED_C_PRINT%" oninput="ledPreviewSend(this.value)"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label for="ledcpau">Paused</label><input type="color" id="ledcpau" value="%LED_C_PAUSE%" oninput="ledPreviewSend(this.value)"></div>
+            <div class="field"><label for="ledcfin">Finished</label><input type="color" id="ledcfin" value="%LED_C_FIN%" oninput="ledPreviewSend(this.value)"></div>
+          </div>
+          <div class="field"><label for="ledcerr">Error</label><input type="color" id="ledcerr" value="%LED_C_ERR%" oninput="ledPreviewSend(this.value)"></div>
+        </details>
       </div>
       <details open>
         <summary>Print-finished effect</summary>

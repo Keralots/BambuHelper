@@ -2,13 +2,38 @@
 #include "settings.h"
 #include "config.h"
 #include <Arduino.h>
+#if HAS_LED_PIXEL
+#include <esp32-hal-rmt.h>
+#endif
 #include <math.h>
 
 // ---------------------------------------------------------------------------
-//  Pin attachment + duty tracking
+//  Pin attachment + output tracking
 // ---------------------------------------------------------------------------
-static int8_t  attachedPin = -1;
-static int16_t lastWrittenDuty = -1;  // -1 = unknown, force first write
+// attachedPin holds the single pin for LED_DRV_SINGLE and LED_DRV_PIXEL, and the
+// red channel for LED_DRV_RGB; it doubles as the "driver is live" flag. The
+// driver is latched at attach time rather than read from ledSettings on every
+// write, so a settings change mid-effect cannot make the teardown path detach
+// something it never attached.
+static int8_t  attachedPin  = -1;
+static int8_t  attachedPinG = -1;
+static int8_t  attachedPinB = -1;
+static uint8_t attachedDrv  = LED_DRV_SINGLE;
+// Polarity as it was when the pins were claimed. The live value can change under
+// a preview without the pins moving, and the teardown has to park them the way
+// they were wired, not the way the form now says.
+static bool    attachedAnode = false;
+#if HAS_LED_PIXEL
+static rmt_obj_t* pixelRmt  = NULL;
+#endif
+
+// Two trackers with distinct jobs. lastAppliedDuty is the intensity envelope the
+// engine last computed - hold-to-dim seeds itself from it. lastPushedOut is what
+// actually reached the hardware (a duty in single mode, a packed 0xRRGGBB in the
+// colour modes) and exists only to skip redundant writes; setting it to -1 is how
+// the rest of the file says "recompute and push on the next tick".
+static int16_t lastAppliedDuty = -1;
+static int32_t lastPushedOut   = -1;
 
 // ---------------------------------------------------------------------------
 //  Effect engine state
@@ -19,6 +44,14 @@ static unsigned long finishEffectStartMs  = 0;
 static unsigned long finishEffectEndMs    = 0;
 static uint8_t       finishEffectMode     = LED_FINISH_OFF;
 static uint8_t       finishEffectPeak     = 255;
+// Latched with the rest of the effect so a colour edit mid-celebration does not
+// change the running one, and so the portal's test button can play an unsaved
+// colour without touching ledSettings.
+static uint32_t      finishEffectColor    = LED_COLOR_FINISHED_DEFAULT;
+// True while the running finish effect came from the portal's "Test effect"
+// button rather than a real print. Only used to let the test be seen while the
+// panel is asleep - a genuine finish still goes dark with the display.
+static bool          finishEffectIsTest   = false;
 static unsigned long lastTickMs           = 0;
 
 // Error-strobe episode state. Armed on the first tick of a GCODE_FAILED episode
@@ -45,6 +78,11 @@ static const uint16_t LED_ERROR_EPISODE_S = 20;
 // initLed() (called after save).
 static bool          previewActive        = false;
 static uint8_t       previewBrightness    = 0;
+static uint32_t      previewColor         = LED_COLOR_IDLE_DEFAULT;
+// Polarity is a wiring fact, not a colour, so it cannot ride in previewColor -
+// and it must not be written into ledSettings either, or abandoning the form
+// would leave the saved config inverted until the next boot re-read NVS.
+static bool          previewAnode         = false;
 
 // ---------------------------------------------------------------------------
 //  Hold-to-dim state machine (driven by ledHoldDimUpdate from handleWakeButton)
@@ -63,6 +101,27 @@ static uint8_t  dimWorkingDuty = 0;
 
 static inline uint8_t restingBrightness() {
   return previewActive ? previewBrightness : ledSettings.brightness;
+}
+
+static inline bool activeAnode() {
+  return previewActive ? previewAnode : ledSettings.commonAnode;
+}
+
+// ---------------------------------------------------------------------------
+//  Colour selection
+// ---------------------------------------------------------------------------
+// The effect engine stays colour-blind: it produces an intensity envelope and
+// this picks the hue that envelope is painted in. Branches of ledTick() that are
+// not tied to the activity level (an HMS error episode raised mid-print, the
+// portal's "Test effect" button) override the result explicitly.
+static uint32_t activeColor() {
+  switch (currentActivity) {
+    case LED_ACT_PRINTING: return ledSettings.colorPrinting;
+    case LED_ACT_PAUSED:   return ledSettings.colorPaused;
+    case LED_ACT_FINISHED: return ledSettings.colorFinished;
+    case LED_ACT_FAILED:   return ledSettings.colorError;
+    default:               return ledSettings.colorIdle;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +299,53 @@ bool isLedPinAllowed(uint8_t pin) {
   return true;
 }
 
+// Named resolver: the pins the board's own onboard RGB hardware sits on. They
+// are in the deny-list above because nothing else may steal them, but a colour
+// driver IS their rightful owner, so it gets to claim them back.
+static bool isOnboardRgbPin(uint8_t pin) {
+#if BOARD_HAS_ONBOARD_RGB_PWM
+  if (pin == ONBOARD_RGB_G_PIN || pin == ONBOARD_RGB_B_PIN) return true;
+#if defined(DISPLAY_CYD)
+  // ESP32-32E clone: red moved to GPIO 22 and GPIO 4 became the speaker-amp
+  // enable, so on that variant GPIO 4 is emphatically not ours.
+  if (dispSettings.cyd32eVariant) return pin == CYD32E_LED_R_PIN;
+#endif
+  if (pin == ONBOARD_RGB_R_PIN) return true;
+#endif
+#if BOARD_HAS_ONBOARD_RGB_PIXEL
+  if (pin == ONBOARD_RGB_DATA_PIN) return true;
+#endif
+  return false;
+}
+
+bool isRgbLedPinAllowed(uint8_t pin) {
+  if (pin == 0) return false;
+  if (isOnboardRgbPin(pin)) return true;
+  return isLedPinAllowed(pin);
+}
+
+bool onboardRgbPins(uint8_t &r, uint8_t &g, uint8_t &b, bool &anode) {
+#if BOARD_HAS_ONBOARD_RGB_PWM
+  r = ONBOARD_RGB_R_PIN;
+#if defined(DISPLAY_CYD)
+  if (dispSettings.cyd32eVariant) r = CYD32E_LED_R_PIN;
+#endif
+  g = ONBOARD_RGB_G_PIN;
+  b = ONBOARD_RGB_B_PIN;
+  anode = (ONBOARD_RGB_ANODE != 0);
+  return true;
+#elif BOARD_HAS_ONBOARD_RGB_PIXEL
+  r = ONBOARD_RGB_DATA_PIN;
+  g = 0;
+  b = 0;
+  anode = false;
+  return true;
+#else
+  (void)r; (void)g; (void)b; (void)anode;
+  return false;
+#endif
+}
+
 void sanitizeLedPin() {
   // Clamp effect fields first - independent of pin/enabled state, so NVS-loaded
   // garbage gets normalized even on the default disabled+pin=0 path.
@@ -251,11 +357,48 @@ void sanitizeLedPin() {
     ledSettings.errorStrobeSeconds = 5;
   if (ledSettings.errorStrobeSeconds > 600) ledSettings.errorStrobeSeconds = 600;
 
+  if (ledSettings.driver > LED_DRV_PIXEL) ledSettings.driver = LED_DRV_SINGLE;
+#if !HAS_LED_PIXEL
+  // Imported from a board that has the pixel driver: fall back rather than
+  // silently pretending to drive something.
+  if (ledSettings.driver == LED_DRV_PIXEL) ledSettings.driver = LED_DRV_SINGLE;
+#endif
+  ledSettings.colorIdle     &= 0xFFFFFF;
+  ledSettings.colorPrinting &= 0xFFFFFF;
+  ledSettings.colorPaused   &= 0xFFFFFF;
+  ledSettings.colorFinished &= 0xFFFFFF;
+  ledSettings.colorError    &= 0xFFFFFF;
+
   // Default unset state (disabled + pin=0) is valid - skip pin validation.
   if (!ledSettings.enabled && ledSettings.pin == 0) return;
-  if (!isLedPinAllowed(ledSettings.pin)) {
+
+  if (ledSettings.driver == LED_DRV_RGB) {
+    // All three pins must be drivable and distinct - two channels sharing a pin
+    // would fight over one LEDC output and light neither colour correctly.
+    const bool ok = isRgbLedPinAllowed(ledSettings.pin) &&
+                    isRgbLedPinAllowed(ledSettings.pinG) &&
+                    isRgbLedPinAllowed(ledSettings.pinB) &&
+                    ledSettings.pin  != ledSettings.pinG &&
+                    ledSettings.pin  != ledSettings.pinB &&
+                    ledSettings.pinG != ledSettings.pinB;
+    if (!ok) {
+      Serial.printf("LED: RGB pins %d/%d/%d not allowed, disabling\n",
+                    ledSettings.pin, ledSettings.pinG, ledSettings.pinB);
+      ledSettings.enabled = false;
+      ledSettings.driver  = LED_DRV_SINGLE;
+      ledSettings.pin = 0;
+    }
+    return;
+  }
+
+  // Single and pixel both hang off one pin; only the pixel may claim an onboard
+  // RGB data line.
+  const bool ok = (ledSettings.driver == LED_DRV_PIXEL) ? isRgbLedPinAllowed(ledSettings.pin)
+                                                        : isLedPinAllowed(ledSettings.pin);
+  if (!ok) {
     Serial.printf("LED: pin %d not allowed, disabling\n", ledSettings.pin);
     ledSettings.enabled = false;
+    ledSettings.driver = LED_DRV_SINGLE;
     ledSettings.pin = 0;
   }
 }
@@ -265,16 +408,79 @@ void sanitizeLedPin() {
 // ---------------------------------------------------------------------------
 static bool suspendedForSleep = false;
 
-static void writeDuty(uint8_t duty) {
+static inline uint8_t scaleChannel(uint8_t v, uint8_t duty) {
+  return (uint8_t)(((uint16_t)v * (uint16_t)duty + 127u) / 255u);
+}
+
+// One WS2812 frame: 24 bits, GRB on the wire, 100 ns RMT tick so the durations
+// below read as 0.4 us / 0.8 us. rmtWriteBlocking() takes ~30 us for the frame,
+// which is nothing against the ~16 ms tick.
+static void pixelWrite(uint8_t r, uint8_t g, uint8_t b) {
+#if !HAS_LED_PIXEL
+  (void)r; (void)g; (void)b;
+  return;
+#else
+  if (!pixelRmt) return;
+  rmt_data_t bits[24];
+  const uint8_t ch[3] = { g, r, b };
+  uint8_t i = 0;
+  for (uint8_t c = 0; c < 3; c++) {
+    for (int8_t bit = 7; bit >= 0; bit--) {
+      const bool one = (ch[c] >> bit) & 1;
+      bits[i].level0    = 1;
+      bits[i].duration0 = one ? 8 : 4;
+      bits[i].level1    = 0;
+      bits[i].duration1 = one ? 4 : 8;
+      i++;
+    }
+  }
+  rmtWriteBlocking(pixelRmt, bits, 24);
+#endif
+}
+
+// The single choke point for everything that reaches the hardware. duty is the
+// intensity envelope, rgb the colour it is painted in (ignored in single mode).
+static void writeOut(uint8_t duty, uint32_t rgb) {
   if (attachedPin < 0) return;
-  if (suspendedForSleep) duty = 0;  // display asleep: every write stays dark
-  if ((int16_t)duty == lastWrittenDuty) return;
-  ledcWrite(LED_PWM_CH, duty);
-  lastWrittenDuty = duty;
+  // Display asleep: every write stays dark - unless the user is standing in the
+  // portal asking to see the LED right now. Without the exception, configuring
+  // the LED on a device whose panel has gone to sleep shows nothing at all and
+  // reads as broken hardware. A real print finish still respects the sleep.
+  if (suspendedForSleep && !previewActive && !finishEffectIsTest) duty = 0;
+  lastAppliedDuty = (int16_t)duty;
+
+  if (attachedDrv == LED_DRV_SINGLE) {
+    if ((int32_t)duty == lastPushedOut) return;
+    ledcWrite(LED_PWM_CH, duty);
+    lastPushedOut = duty;
+    return;
+  }
+
+  const uint8_t r = scaleChannel((rgb >> 16) & 0xFF, duty);
+  const uint8_t g = scaleChannel((rgb >>  8) & 0xFF, duty);
+  const uint8_t b = scaleChannel( rgb        & 0xFF, duty);
+  const int32_t packed = ((int32_t)r << 16) | ((int32_t)g << 8) | (int32_t)b;
+  if (packed == lastPushedOut) return;
+  lastPushedOut = packed;
+
+  if (attachedDrv == LED_DRV_RGB) {
+    // Common anode: the shared leg is on 3V3, so the GPIO sinks the current and
+    // the duty has to be inverted or the LED reads as a photographic negative.
+    const bool inv = activeAnode();
+    ledcWrite(LED_PWM_CH,   inv ? (uint8_t)(255 - r) : r);
+    ledcWrite(LED_PWM_CH_G, inv ? (uint8_t)(255 - g) : g);
+    ledcWrite(LED_PWM_CH_B, inv ? (uint8_t)(255 - b) : b);
+  } else {
+    pixelWrite(r, g, b);
+  }
+}
+
+static void writeDuty(uint8_t duty) {
+  writeOut(duty, activeColor());
 }
 
 // Display-sleep coupling: while the panel is in SCREEN_OFF the status LED goes
-// dark too, and the clamp in writeDuty() keeps a mid-sleep effect from
+// dark too, and the clamp in writeOut() keeps a mid-sleep effect from
 // relighting it. On wake the resting brightness comes back immediately (a
 // running effect overwrites it on its next tick).
 void ledSetSuspended(bool suspended) {
@@ -284,14 +490,94 @@ void ledSetSuspended(bool suspended) {
   writeDuty(suspended ? 0 : restingBrightness());
 }
 
+// Park one released pin at its dark level. On a common-anode wiring that level
+// is HIGH, and driving it LOW instead would leave the channel at full blast -
+// the exact opposite of releasing it.
+static void parkPin(int8_t pin, bool activeLow) {
+  if (pin < 0) return;
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, activeLow ? HIGH : LOW);
+}
+
 static void detachAndForceLow() {
   if (attachedPin < 0) return;
-  ledcWrite(LED_PWM_CH, 0);
-  ledcDetachPin(attachedPin);
-  pinMode(attachedPin, OUTPUT);
-  digitalWrite(attachedPin, LOW);
-  attachedPin = -1;
-  lastWrittenDuty = -1;
+
+  switch (attachedDrv) {
+    case LED_DRV_RGB: {
+      const bool inv = attachedAnode;
+      ledcWrite(LED_PWM_CH,   inv ? 255 : 0);
+      ledcWrite(LED_PWM_CH_G, inv ? 255 : 0);
+      ledcWrite(LED_PWM_CH_B, inv ? 255 : 0);
+      ledcDetachPin(attachedPin);
+      ledcDetachPin(attachedPinG);
+      ledcDetachPin(attachedPinB);
+      parkPin(attachedPin,  inv);
+      parkPin(attachedPinG, inv);
+      parkPin(attachedPinB, inv);
+      break;
+    }
+    case LED_DRV_PIXEL:
+      pixelWrite(0, 0, 0);       // blank it before the RMT channel goes away
+#if HAS_LED_PIXEL
+      if (pixelRmt) { rmtDeinit(pixelRmt); pixelRmt = NULL; }
+#endif
+      parkPin(attachedPin, false);
+      break;
+    default:
+      ledcWrite(LED_PWM_CH, 0);
+      ledcDetachPin(attachedPin);
+      parkPin(attachedPin, false);
+      break;
+  }
+
+  attachedPin  = -1;
+  attachedPinG = -1;
+  attachedPinB = -1;
+  attachedDrv  = LED_DRV_SINGLE;
+  lastAppliedDuty = -1;
+  lastPushedOut   = -1;
+}
+
+// Bring up whichever driver the config asks for. Returns false and leaves
+// nothing attached if the hardware refuses (only the RMT channel can).
+static bool attachDriver(uint8_t drv, uint8_t pinR, uint8_t pinG, uint8_t pinB) {
+  switch (drv) {
+    case LED_DRV_RGB:
+      ledcSetup(LED_PWM_CH,   LED_PWM_FREQ, LED_PWM_RES);
+      ledcSetup(LED_PWM_CH_G, LED_PWM_FREQ, LED_PWM_RES);
+      ledcSetup(LED_PWM_CH_B, LED_PWM_FREQ, LED_PWM_RES);
+      ledcAttachPin(pinR, LED_PWM_CH);
+      ledcAttachPin(pinG, LED_PWM_CH_G);
+      ledcAttachPin(pinB, LED_PWM_CH_B);
+      attachedPinG = (int8_t)pinG;
+      attachedPinB = (int8_t)pinB;
+      break;
+
+    case LED_DRV_PIXEL:
+#if !HAS_LED_PIXEL
+      return false;               // driver compiled out on this board
+#else
+      pixelRmt = rmtInit(pinR, RMT_TX_MODE, RMT_MEM_64);
+      if (!pixelRmt) {
+        Serial.printf("LED: RMT init failed for WS2812 on pin %d\n", pinR);
+        return false;
+      }
+      rmtSetTick(pixelRmt, 100);   // 100 ns per duration unit
+      break;
+#endif
+
+    default:
+      ledcSetup(LED_PWM_CH, LED_PWM_FREQ, LED_PWM_RES);
+      ledcAttachPin(pinR, LED_PWM_CH);
+      break;
+  }
+
+  attachedDrv     = drv;
+  attachedPin     = (int8_t)pinR;
+  attachedAnode   = activeAnode();
+  lastAppliedDuty = -1;
+  lastPushedOut   = -1;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,19 +587,26 @@ void initLed() {
   // Cancel any in-flight effect from previous config (e.g. user changed pin
   // while the finish-pulse was still running).
   finishEffectActive = false;
+  finishEffectIsTest = false;
   currentActivity = LED_ACT_IDLE;
   previewActive = false;
   errorStrobeArmed = false;
   errorStrobeDismissed = false;
 
-#if defined(DISPLAY_CYD)
-  // ESP32-32E clone: onboard RGB pins (R=22, G=16, B=17, active low) float at
-  // boot, which leaves the red LED lit. Park them high (off). Runs before the
-  // external-LED attach below, so a user-configured LED pin still wins.
-  if (dispSettings.cyd32eVariant) {
-    pinMode(CYD32E_LED_R_PIN, OUTPUT); digitalWrite(CYD32E_LED_R_PIN, HIGH);
-    pinMode(CYD32E_LED_G_PIN, OUTPUT); digitalWrite(CYD32E_LED_G_PIN, HIGH);
-    pinMode(CYD32E_LED_B_PIN, OUTPUT); digitalWrite(CYD32E_LED_B_PIN, HIGH);
+#if BOARD_HAS_ONBOARD_RGB_PWM
+  // The onboard RGB pins float at boot, and on a common-anode LED a floating
+  // pin is a dimly-lit channel - which is why an untouched CYD sits there
+  // glowing red. Park the whole triple at its dark level. Both panel variants
+  // need this, not just the 32E clone: they differ only in which pin is red
+  // (GPIO 4 classic, GPIO 22 on the clone, where GPIO 4 became the amp enable
+  // and belongs to the buzzer). Skipped when a colour driver owns those pins -
+  // the attach below is about to drive them itself.
+  if (!(ledSettings.enabled && ledSettings.driver == LED_DRV_RGB)) {
+    uint8_t obR = 0, obG = 0, obB = 0; bool obAnode = false;
+    onboardRgbPins(obR, obG, obB, obAnode);
+    parkPin((int8_t)obR, obAnode);
+    parkPin((int8_t)obG, obAnode);
+    parkPin((int8_t)obB, obAnode);
   }
 #endif
 
@@ -328,11 +621,19 @@ void initLed() {
     }
     return;
   }
-  if (!isLedPinAllowed(ledSettings.pin)) return;
-  ledcSetup(LED_PWM_CH, LED_PWM_FREQ, LED_PWM_RES);
-  ledcAttachPin(ledSettings.pin, LED_PWM_CH);
-  attachedPin = ledSettings.pin;
-  lastWrittenDuty = -1;
+
+  if (ledSettings.driver == LED_DRV_RGB) {
+    if (!isRgbLedPinAllowed(ledSettings.pin) ||
+        !isRgbLedPinAllowed(ledSettings.pinG) ||
+        !isRgbLedPinAllowed(ledSettings.pinB)) return;
+  } else if (ledSettings.driver == LED_DRV_PIXEL) {
+    if (!isRgbLedPinAllowed(ledSettings.pin)) return;
+  } else if (!isLedPinAllowed(ledSettings.pin)) {
+    return;
+  }
+
+  if (!attachDriver(ledSettings.driver, ledSettings.pin,
+                    ledSettings.pinG, ledSettings.pinB)) return;
   writeDuty(ledSettings.brightness);
 }
 
@@ -340,28 +641,55 @@ void applyLedDuty(uint8_t duty) {
   if (attachedPin >= 0 && ledSettings.enabled) writeDuty(duty);
 }
 
-void previewLed(bool enabled, uint8_t pin, uint8_t brightness) {
+void previewLed(bool enabled, uint8_t driver, uint8_t pinR, uint8_t pinG,
+                uint8_t pinB, bool commonAnode, uint8_t brightness, uint32_t color) {
   // Preview overrides any active effect - user is actively configuring.
   finishEffectActive = false;
+  finishEffectIsTest = false;
 
-  if (!enabled || !isLedPinAllowed(pin)) {
+  if (driver > LED_DRV_PIXEL) driver = LED_DRV_SINGLE;
+
+  bool pinsOk;
+  if (driver == LED_DRV_RGB) {
+    pinsOk = isRgbLedPinAllowed(pinR) && isRgbLedPinAllowed(pinG) &&
+             isRgbLedPinAllowed(pinB) &&
+             pinR != pinG && pinR != pinB && pinG != pinB;
+  } else if (driver == LED_DRV_PIXEL) {
+    pinsOk = isRgbLedPinAllowed(pinR);
+  } else {
+    pinsOk = isLedPinAllowed(pinR);
+  }
+
+  if (!enabled || !pinsOk) {
     previewActive = false;
     detachAndForceLow();
     return;
   }
-  if (attachedPin != (int8_t)pin) {
-    detachAndForceLow();
-    ledcSetup(LED_PWM_CH, LED_PWM_FREQ, LED_PWM_RES);
-    ledcAttachPin(pin, LED_PWM_CH);
-    attachedPin = pin;
-    lastWrittenDuty = -1;
-  }
-  // Latch the preview brightness so ledTick()'s resting-duty path uses it
-  // instead of the stale saved value (which would otherwise overwrite the
-  // preview every 16ms and flicker the LED).
-  previewActive = true;
+
+  // Latch the preview values first so ledTick()'s resting path uses them instead
+  // of the stale saved ones (which would otherwise overwrite the preview every
+  // 16ms and flicker the LED) - and so attachDriver() below latches the form's
+  // polarity, not the saved one. detachAndForceLow() still parks the outgoing
+  // pins the way they were actually wired, from attachedAnode.
+  previewActive     = true;
+  previewAnode      = commonAnode;
   previewBrightness = brightness;
-  writeDuty(brightness);
+  previewColor      = color & 0xFFFFFF;
+
+  const bool sameRig = (attachedDrv == driver) && (attachedPin == (int8_t)pinR) &&
+                       (driver != LED_DRV_RGB ||
+                        (attachedPinG == (int8_t)pinG && attachedPinB == (int8_t)pinB));
+  if (!sameRig) {
+    detachAndForceLow();
+    if (!attachDriver(driver, pinR, pinG, pinB)) {
+      previewActive = false;
+      return;
+    }
+  }
+  // Flipping only the polarity leaves the pre-inversion colour identical, which
+  // the change-detection in writeOut() would read as "nothing to do".
+  lastPushedOut = -1;
+  writeOut(brightness, previewColor);
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +705,8 @@ void ledStartFinishEffect() {
   if (attachedPin < 0) return;
   finishEffectMode    = ledSettings.finishMode;
   finishEffectPeak    = ledSettings.finishBrightness;
+  finishEffectColor   = ledSettings.colorFinished;
+  finishEffectIsTest  = false;
   finishEffectStartMs = millis();
   finishEffectEndMs   = finishEffectStartMs + (unsigned long)ledSettings.finishSeconds * 1000UL;
   finishEffectActive  = true;
@@ -385,11 +715,13 @@ void ledStartFinishEffect() {
 void ledStopFinishEffect() {
   if (!finishEffectActive) return;
   finishEffectActive = false;
+  finishEffectIsTest = false;
   // Force tick to recompute resting duty (idle/auto-on/etc.) on next call.
-  lastWrittenDuty = -1;
+  lastPushedOut = -1;
 }
 
-bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness) {
+bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness,
+                          uint32_t color) {
   // attachedPin is the right gate (not ledSettings.enabled) so the test works
   // for a previewed-but-unsaved LED config; ledTick() also runs during preview.
   if (attachedPin < 0) return false;
@@ -400,6 +732,9 @@ bool ledTriggerTestEffect(uint8_t mode, uint16_t seconds, uint8_t peakBrightness
   if (seconds > 600) seconds = 600;
   finishEffectMode    = mode;
   finishEffectPeak    = peakBrightness;
+  finishEffectColor   = (color == 0xFFFFFFFFUL) ? ledSettings.colorFinished
+                                                : (color & 0xFFFFFF);
+  finishEffectIsTest  = true;
   finishEffectStartMs = millis();
   finishEffectEndMs   = finishEffectStartMs + (unsigned long)seconds * 1000UL;
   finishEffectActive  = true;
@@ -414,13 +749,13 @@ void ledStartErrorEpisode() {
                                                        : LED_ERROR_EPISODE_S;
   errorEpisodeEndMs = millis() + (unsigned long)secs * 1000UL;
   if (errorEpisodeEndMs == 0) errorEpisodeEndMs = 1;   // 0 is the "none" sentinel
-  lastWrittenDuty = -1;
+  lastPushedOut = -1;
 }
 
 void ledStopErrorEpisode() {
   if (errorEpisodeEndMs == 0) return;
   errorEpisodeEndMs = 0;
-  lastWrittenDuty = -1;   // force resting duty recompute on the next tick
+  lastPushedOut = -1;   // force resting duty recompute on the next tick
 }
 #endif  // HAS_HMS_UI
 
@@ -431,14 +766,14 @@ void ledOnUserInteraction() {
   // re-arms it.
   if (errorStrobeArmed && !errorStrobeDismissed) {
     errorStrobeDismissed = true;
-    lastWrittenDuty = -1;  // force resting duty recompute on next tick
+    lastPushedOut = -1;  // force resting duty recompute on next tick
   }
 #if HAS_HMS_UI
   // Same for a one-shot error episode - it just ends, there is nothing to
   // re-arm.
   if (errorEpisodeEndMs != 0) {
     errorEpisodeEndMs = 0;
-    lastWrittenDuty = -1;
+    lastPushedOut = -1;
   }
 #endif
 }
@@ -496,7 +831,8 @@ void ledTick() {
   // Auto-stop finish effect on timeout.
   if (finishEffectActive && (long)(now - finishEffectEndMs) >= 0) {
     finishEffectActive = false;
-    lastWrittenDuty = -1;  // force resting duty on this tick
+    finishEffectIsTest = false;
+    lastPushedOut = -1;  // force resting duty on this tick
   }
 
   uint8_t duty;
@@ -521,7 +857,7 @@ void ledTick() {
     if (!errorStrobeDismissed && ledSettings.errorStrobeSeconds > 0 &&
         (long)(now - errorStrobeEndMs) >= 0) {
       errorStrobeDismissed = true;
-      lastWrittenDuty = -1;  // force resting duty on this tick
+      lastPushedOut = -1;  // force resting duty on this tick
     }
   } else {
     errorStrobeArmed = false;
@@ -530,14 +866,21 @@ void ledTick() {
 #if HAS_HMS_UI
   if (errorEpisodeEndMs != 0 && (long)(now - errorEpisodeEndMs) >= 0) {
     errorEpisodeEndMs = 0;
-    lastWrittenDuty = -1;
+    lastPushedOut = -1;
   }
 #endif
 
+  // The colour follows the same priority stack as the duty. activeColor() is
+  // right for every branch driven by the activity level; the three that are not
+  // - an HMS episode raised while the printer is still PRINTING, the finish
+  // one-shot (whose colour is latched, so the portal can test an unsaved one),
+  // and a live preview - say so explicitly.
   uint8_t baseBrightness = restingBrightness();
+  uint32_t color = activeColor();
 #if HAS_HMS_UI
   if (errorEpisodeEndMs != 0) {
     duty = patternStrobe(now, LED_ERROR_STROBE_MS, baseBrightness);
+    color = ledSettings.colorError;
   } else
 #endif
   if (ledSettings.errorStrobe && currentActivity == LED_ACT_FAILED && !errorStrobeDismissed) {
@@ -549,8 +892,10 @@ void ledTick() {
     } else {
       duty = patternBreath(phase, LED_BREATH_PERIOD_MS, finishEffectPeak);
     }
+    color = finishEffectColor;
   } else if (previewActive) {
     duty = previewBrightness;
+    color = previewColor;
   } else if (ledSettings.pauseBreathing && currentActivity == LED_ACT_PAUSED) {
     duty = patternBreath(now, LED_PAUSE_PERIOD_MS, baseBrightness);
   } else if (ledSettings.autoOnWhilePrinting) {
@@ -559,7 +904,7 @@ void ledTick() {
     duty = baseBrightness;
   }
 
-  writeDuty(duty);
+  writeOut(duty, color);
 }
 
 // ---------------------------------------------------------------------------
@@ -609,7 +954,7 @@ bool ledHoldDimUpdate(bool heldNow, uint32_t holdMs, bool suppressDim) {
   if (heldNow && !suppressDim && ledSettings.enabled && attachedPin >= 0 &&
       !previewActive && holdMs >= HOLD_THRESHOLD_MS) {
     dimSaveAtMs = 0;
-    int seed = (lastWrittenDuty >= 0) ? lastWrittenDuty : (int)ledSettings.brightness;
+    int seed = (lastAppliedDuty >= 0) ? lastAppliedDuty : (int)ledSettings.brightness;
     if (seed < (int)LED_MIN_BRIGHTNESS_DIM) seed = LED_MIN_BRIGHTNESS_DIM;
     if (seed > 255) seed = 255;
     dimWorkingDuty = (uint8_t)seed;

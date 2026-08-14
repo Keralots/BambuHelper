@@ -139,7 +139,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Multi-printer support** - monitor 2 printers simultaneously on ESP32-S3 boards; PSRAM-equipped boards add an experimental opt-in for up to 4 (see Multi-Printer Monitoring for the list); CYD, TZT, and ESP32-C3 have an experimental opt-in 2-printer mode but default to 1 printer
 - **Smart rotation** - automatically shows the printing printer; cycles between both when both are printing
 - **Physical button / touchscreen** - cycle printers and wake display via optional push button or TTP223, board-built-in buttons (Waveshare 1.54"), or the built-in capacitive touchscreens on CYD / TZT / Waveshare 2" / Waveshare 1.54"
-- **Optional LED** - PWM-driven status LED on a user-configurable pin; hold the button/touch to dim
+- **Optional LED** - status LED on user-configurable pins: a single PWM channel, a 3-pin RGB LED or a WS2812, with a colour per printer state; hold the button/touch to dim
 - **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events; Waveshare 1.54" uses its built-in ES8311 audio codec and Guition JC3248W535 its onboard NS4168 I2S speaker instead
 - **OTA updates** - update firmware from the device's web interface (manual upload or one-click from GitHub Releases)
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
@@ -248,7 +248,7 @@ AliExpress links (DIY parts):
 Optional accessories - all configurable from the web interface, none required:
 - **Touch / push button** (TTP223 or standard push button) for cycling printers and waking the display. See the wiring section below.
 - **Passive buzzer / mini speaker** for print-finished, connected, and error notifications. See the wiring section below.
-- **Status LED** (any common LED with a series resistor) for at-a-glance progress / connection state. See the wiring section below.
+- **Status LED** (any common LED with a series resistor, an RGB LED or a WS2812 pixel) for at-a-glance progress / connection state. See the wiring section below.
 
 Links for optional accessories:
 - TTP223 touch button: https://aliexpress.com/item/1005006246380749.html
@@ -283,7 +283,7 @@ Links for optional accessories:
 
 Adjust pin assignments in `platformio.ini` `build_flags` to match your wiring (only needed if you are flashing from source; the prebuilt binaries use the defaults above).
 
-> **ESP32-S3-Zero:** GPIO21 is connected to the onboard WS2812 RGB LED, so it cannot be reused as a status-LED GPIO. The firmware refuses to enable LED output on GPIO21.
+> **ESP32-S3-Zero:** GPIO21 is connected to the onboard WS2812 RGB LED. It cannot be reused as a plain status-LED GPIO, but the status LED can drive that pixel directly - pick the WS2812 wiring under **Status LED**.
 
 ### Optional Input: Button, Touch Sensor, or Touchscreen
 
@@ -331,18 +331,43 @@ You can change the buzzer GPIO later in the web interface under **Buzzer**. The 
 
 ### Optional Status LED Wiring
 
-A single PWM-driven status LED can be wired to any free GPIO. Configure the pin and behaviour (heartbeat, finish flash, off) from the web interface under **LED**.
+A status LED can be wired to any free GPIO. Pick the wiring under **Status LED** in the web interface and set the behaviour (heartbeat, finish flash, off) there too. Three wirings are supported:
 
-Wiring is done using: LD06AJSA Constant Current driver
+| Wiring | Pins | Colour |
+|---|---|---|
+| **Single colour** | one GPIO | brightness only |
+| **RGB LED** | three GPIOs, one per channel | full colour per printer state |
+| **WS2812 pixel** | one data GPIO | full colour per printer state |
+
+Wiring a single-colour LED is done using: LD06AJSA Constant Current driver
 
 Things to know:
 
 - The pin is set in the web UI - there is no default. The setting starts **disabled** with pin `0`.
 - The firmware refuses to attach the LED to the configured buzzer pin or the configured button pin (it will silently disable LED output to avoid a conflict).
-- On **ESP32-S3-Zero**, GPIO21 is reserved for the onboard WS2812 RGB LED and cannot be selected.
 - On the **Waveshare ESP32-S3-Touch-LCD-2.0**, `GPIO 2` is free and is a good choice for the LED driver's control input. The firmware rejects the pins this board already uses: `1` (backlight), `5` (battery ADC), `19`/`20` (USB), `26`-`37` (flash/PSRAM), `38`/`39`/`40`/`42`/`45` (display SPI) and `47`/`48` (touch I2C).
 - The LED is also a dimmer target: **hold the optional button / touchscreen** to ramp brightness down/up while the LED is on. The chosen brightness is debounced and saved to NVS after ~2 s of release.
-- Inverted-logic wiring (LED to VCC instead of GND) is not currently supported - the firmware always drives the pin active-HIGH.
+- For a **single-colour** LED, inverted-logic wiring (LED to VCC instead of GND) is not supported - the firmware always drives the pin active-HIGH. An **RGB** LED has a *Common anode* tick for exactly this, because most RGB packages are wired that way.
+
+#### Colour per printer state
+
+With the RGB or WS2812 wiring selected, the card grows a colour picker for each printer state. Defaults are white idle, blue printing, amber paused, green finished, red error. The brightness slider still sets the overall level, and every existing effect - pause breathing, finish pulse, error strobe, hold-to-dim - keeps working, just in colour.
+
+Colours preview live on the LED as you pick them, even when the panel has gone to sleep.
+
+#### Onboard RGB LEDs
+
+Several supported boards already have an RGB LED soldered on, and the card offers a **Use this board's onboard RGB LED** button that fills in the right pins:
+
+| Board | Type | Pins |
+|---|---|---|
+| **CYD** (ESP32-2432S028) and **TZT L1435-2.4** | 3-pin, common anode | `4` (red, or `22` on the ESP32-32E clone), `16`, `17` |
+| **ESP32-S3-Zero** | WS2812 | `21` |
+| **QD ES3N28P** | WS2812 | `42` |
+
+These pins are otherwise reserved and cannot be picked for a single-colour LED - the colour driver is the only thing allowed to claim them. On the CYD they were previously left floating, which is why an untouched board sits there glowing dim red; the firmware now parks them dark whenever the LED feature is not using them.
+
+> **ESP32-C3 boards** get the single-colour and 3-pin RGB wirings only. The WS2812 driver needs the RMT peripheral driver, which does not fit in the 1.75 MB app slot those boards have.
 
 ### Complete wiring example for ESP32-S3 Super Mini and ST7789 (240x240) display.
 
