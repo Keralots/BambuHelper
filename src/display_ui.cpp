@@ -80,7 +80,13 @@ static bool stateBadgeOverrideColor(const BambuState& s, uint16_t& out) {
 static uint16_t stateBadgeColor(const BambuState& s) {
   uint16_t override_;
   if (stateBadgeOverrideColor(s, override_)) return override_;
-  if (s.gcodeStateId == GCODE_RUNNING) return CLR_GREEN;
+  // FINISH and IDLE are healthy states, so they take the same accent RUNNING
+  // does. They used to fall through to the dim default, which left a "FINISH"
+  // badge grey on the print screen (keepPrintScreen) while the very same state
+  // painted green on the Ready and Finished screens.
+  if (s.gcodeStateId == GCODE_RUNNING ||
+      s.gcodeStateId == GCODE_FINISH  ||
+      s.gcodeStateId == GCODE_IDLE)    return dispSettings.statusOkColor;
   if (s.gcodeStateId == GCODE_PAUSE)   return CLR_YELLOW;
   if (s.gcodeStateId == GCODE_FAILED)  return CLR_RED;
   if (s.gcodeStateId == GCODE_PREPARE) return CLR_BLUE;
@@ -229,7 +235,11 @@ static void drawPrinterDots(int cx, int cy) {
     if (isPrinterConfigured(i)) slots[n++] = i;
   int x0 = cx - (n - 1) * 5;
   for (uint8_t k = 0; k < n; k++) {
-    uint16_t clr = (slots[k] == rotState.displayIndex) ? CLR_GREEN : CLR_TEXT_DARK;
+    // Active slot in the Status OK accent, the rest dark: the marker says
+    // "this printer is the one on screen", so it belongs to the same accent
+    // family as the badge it sits under rather than a fixed green.
+    uint16_t clr = (slots[k] == rotState.displayIndex) ? dispSettings.statusOkColor
+                                                       : CLR_TEXT_DARK;
     tft.fillCircle(x0 + k * 10, cy, 3, clr);
   }
 }
@@ -793,7 +803,8 @@ static void drawOtaUpdate() {
   tft.fillRoundRect(barX, barY, barW, barH, 4, CLR_TRACK);
   if (pct > 0) {
     int16_t fill = (int16_t)((pct / 100.0f) * barW);
-    tft.fillRoundRect(barX, barY, fill, barH, 4, CLR_GREEN);
+    // The one progress bar in the tree that ignored progressBarColor (#163).
+    tft.fillRoundRect(barX, barY, fill, barH, 4, dispSettings.progressBarColor);
   }
 
   // Percentage
@@ -933,7 +944,7 @@ static void drawIdleNoPrinter() {
   setFont(tft, FONT_BODY);
   tft.drawString("WiFi Connected", cx, npWifiY);
 
-  tft.fillCircle(cx, npDotY, 5, CLR_GREEN);
+  tft.fillCircle(cx, npDotY, 5, dispSettings.statusOkColor);   // connected indicator
 
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   setFont(tft, FONT_BODY);
@@ -1082,8 +1093,11 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   // minutes: dryTotalMin can change mid-session and shift the ring too)
   if (unitChanged || dryProgress != prevProg) {
     markFrameDirty();
+    // Follows the Progress gauge arc colour - this ring IS a progress arc, and
+    // hardcoding green left it as the one progress indicator a theme could not
+    // reach.
     drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T,
-                dryProgress, CLR_GREEN, forceRedraw || unitChanged);
+                dryProgress, dispSettings.progress.arc, forceRedraw || unitChanged);
   }
 
   // Title: "Drying" (+ rotation index with several units), curved on top
@@ -1241,7 +1255,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
     setFont(tft, FONT_BODY);
-    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu";
     tft.drawString(name, LY_HDR_NAME_X, dryHdrCY);
 
@@ -1441,7 +1455,11 @@ static void drawIdleDrying(PrinterSlot& p) {
     tft.setTextDatum(MC_DATUM);
 
     char etaBuf[40];
-    uint16_t etaClr = CLR_GREEN;
+    // Placeholder colour by default; formatEtaLine() overwrites it with the
+    // accent when there is an actual time to show. One rule everywhere: a
+    // missing value is dim text, not an accent (the print screen's "ETA: ---"
+    // and the split bands' "ETA: --" already read this way).
+    uint16_t etaClr = CLR_TEXT_DIM;
     setFont(tft, FONT_LARGE);
     if (u.dryRemainMin > 0) {
       // Pinned to the clock form (mode 0) rather than following
@@ -1473,7 +1491,7 @@ static void drawIdleDrying(PrinterSlot& p) {
     if (connChanged) {
       markFrameDirty();
       tft.fillRect(0, botY, scrW, botH, CLR_BG);
-      tft.fillCircle(cx, botCY, 4, s.connected ? CLR_GREEN : CLR_RED);
+      tft.fillCircle(cx, botCY, 4, s.connected ? dispSettings.statusOkColor : CLR_RED);
     }
   }
 
@@ -1676,10 +1694,10 @@ static void drawIdle() {
     drawCurvedString(tft,
                      ellipsizeToWidth(tft, name, 190, clipped, sizeof(clipped)),
                      cx, SCREEN_H / 2, LY_RND_IDLE_NAME_R, false,
-                     CLR_GREEN, FONT_LARGE, 0);
+                     dispSettings.printerNameColor, FONT_LARGE, 0);
     (void)lyIdleNameY;
 #else
-    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
     setFont(tft, FONT_LARGE);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, cx, lyIdleNameY);
@@ -1708,7 +1726,7 @@ static void drawIdle() {
       // this word is the only hint that a tap opens the error screen.
       stateStr = stateBadgeText(s);
     } else if (s.gcodeStateId == GCODE_IDLE) {
-      stateColor = CLR_GREEN;
+      stateColor = dispSettings.statusOkColor;
       stateStr = "Ready";
     } else if (s.gcodeStateId == GCODE_FINISH) {
       // The finished screen is one-shot: waking a slept display dismisses it
@@ -1716,7 +1734,7 @@ static void drawIdle() {
       // completion wording and time on the badge so a print that finished while
       // nobody was watching is still readable on wake, rather than the raw
       // "FINISH" state word (#158).
-      stateColor = CLR_GREEN;
+      stateColor = dispSettings.statusOkColor;
 #if defined(DISPLAY_ROUND_240)
       const int16_t badgeMaxW = 200;   // rim-safe chord at the badge row
 #else
@@ -1739,7 +1757,7 @@ static void drawIdle() {
 
   // Connected indicator
   if (connChanged) {
-    tft.fillCircle(cx, lyIdleDotY, 5, s.connected ? CLR_GREEN : CLR_RED);
+    tft.fillCircle(cx, lyIdleDotY, 5, s.connected ? dispSettings.statusOkColor : CLR_RED);
     markFrameDirty();
   }
 
@@ -1906,7 +1924,7 @@ static void drawIdle() {
 
     // Right: door status (if sensor present)
     if (s.doorSensorPresent) {
-      uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+      uint16_t clr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(clr, CLR_BG);
       if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, scrW - 20, botCY);
@@ -3048,12 +3066,17 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
   // 146 px), and dropping the word is better than painting outside the band
   // drawCurvedString() clears. Every route to a duration must get that check -
   // the pre-NTP path most of all, since that is the state right after boot.
+  //
+  // Every form returns dispSettings.etaColor (#163). One knob for the whole
+  // line on purpose: the duration is the same fact in a different notation, and
+  // a color that only appears in one of the three timeDisplayMode settings
+  // looks broken to anyone who is not using that mode.
   auto duration = [&]() -> uint16_t {
     if (labelRemaining) snprintf(buf, n, "Remaining: %dh %02dm", h, m);
     else                snprintf(buf, n, "%dh %02dm", h, m);
     if (maxW > 0 && labelRemaining && tft.textWidth(buf) > maxW)
       snprintf(buf, n, "%dh %02dm", h, m);
-    return CLR_TEXT;
+    return dispSettings.etaColor;
   };
 
   if (!ntpSynced) return duration();
@@ -3084,7 +3107,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
       if (netSettings.use24h) snprintf(buf, n, "ETA: %02d:%02d", eh, e.tm_min);
       else                    snprintf(buf, n, "ETA: %d:%02d %s", eh, e.tm_min, ampm);
     }
-    return CLR_GREEN;
+    return dispSettings.etaColor;
   };
 
   // Both values on one line. The "ETA:" prefix is dropped - a clock time sitting
@@ -3104,7 +3127,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
       else                    snprintf(t, sizeof(t), "%d:%02d%s", eh, e.tm_min, ampm);
     }
     snprintf(buf, n, "%s \xC2\xB7 %dh%02dm", t, h, m);
-    return CLR_GREEN;
+    return dispSettings.etaColor;
   };
 
   uint16_t clr = (mode == 2) ? both() : clockOnly();
@@ -3421,7 +3444,7 @@ static void drawRimRightStatus(BambuState& s, int16_t cx, bool forceRedraw) {
   uint16_t clr;
   if (s.doorSensorPresent) {
     txt = gaugeLabels.door;
-    clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+    clr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
   } else {
     txt = speedLevelName(s.speedLevel);
     clr = speedLevelColor(s.speedLevel);
@@ -3546,21 +3569,16 @@ static void drawPrintingSpeedo() {
     markFrameDirty();
     setFont(tft, FONT_BODY);
     // The round skins have no badge slot, so the rim status line carries the
-    // error word and its severity colour instead (§5.3). Without an error the
-    // skin keeps its own dimmer ladder - RUNNING stays neutral here.
-    uint16_t stColor = CLR_TEXT_DIM;
-    if (!stateBadgeOverrideColor(s, stColor)) {
-      if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
-      else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
-      else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
-    }
-    char line[48], clipped[48];
+    // state word - including the error word and its severity colour (§5.3).
+    // It used to run a private copy of the ladder that left every healthy state
+    // dim, which put the same word in two different colours depending on the
+    // board shape and made the Status OK accent look broken on round.
+    const uint16_t stColor = stateBadgeColor(s);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
-    snprintf(line, sizeof(line), "%s  %s", name, stateBadgeText(s));
-    drawCurvedString(tft,
-                     ellipsizeToWidth(tft, line, 150, clipped, sizeof(clipped)),
-                     cx, cx, LY_RND_SPD_STATUS_R, false, stColor, FONT_BODY,
-                     LY_RND_SPD_STATUS_HDEG);
+    drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx,
+                         LY_RND_SPD_STATUS_R, false,
+                         dispSettings.printerNameColor, stColor, FONT_BODY,
+                         LY_RND_SPD_STATUS_HDEG, /*maxW=*/150);
     tft.fillRect(cx - 30, LY_RND_SPD_DOTS_Y - 5, 60, 10, CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_SPD_DOTS_Y);
   }
@@ -3743,22 +3761,16 @@ static void drawPrintingRound() {
     markFrameDirty();
     setFont(tft, FONT_BODY);
     // The round skins have no badge slot, so the rim status line carries the
-    // error word and its severity colour instead (§5.3). Without an error the
-    // skin keeps its own dimmer ladder - RUNNING stays neutral here.
-    uint16_t stColor = CLR_TEXT_DIM;
-    if (!stateBadgeOverrideColor(s, stColor)) {
-      if (s.gcodeStateId == GCODE_PAUSE)        stColor = CLR_YELLOW;
-      else if (s.gcodeStateId == GCODE_FAILED)  stColor = CLR_RED;
-      else if (s.gcodeStateId == GCODE_PREPARE) stColor = CLR_BLUE;
-    }
-    char line[48], clipped[48];
+    // state word - including the error word and its severity colour (§5.3).
+    // It used to run a private copy of the ladder that left every healthy state
+    // dim, which put the same word in two different colours depending on the
+    // board shape and made the Status OK accent look broken on round.
+    const uint16_t stColor = stateBadgeColor(s);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
-    snprintf(line, sizeof(line), "%s  %s", name, stateBadgeText(s));
-    drawCurvedString(tft,
-                     ellipsizeToWidth(tft, line, LY_RND_ARC_STATUS_MAXW,
-                                      clipped, sizeof(clipped)),
-                     cx, cx, LY_RND_ARC_R, false, stColor, FONT_BODY,
-                     LY_RND_ARC_STATUS_HDEG);
+    drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx, LY_RND_ARC_R,
+                         false, dispSettings.printerNameColor, stColor,
+                         FONT_BODY, LY_RND_ARC_STATUS_HDEG,
+                         /*maxW=*/LY_RND_ARC_STATUS_MAXW);
     tft.fillRect(cx - 30, LY_RND_DOTS_Y - 5, 60, 10, CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_DOTS_Y);
   }
@@ -3994,7 +4006,7 @@ static void drawPrinting() {
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
     setFont(tft, FONT_BODY);
-    tft.setTextColor(CLR_TEXT, hdrBg);
+    tft.setTextColor(dispSettings.printerNameColor, hdrBg);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     tft.drawString(name, LY_HDR_NAME_X, hdrCY);
 
@@ -4580,7 +4592,7 @@ static void drawPrinting() {
     // Right: door status (if sensor present) or speed mode. Anchored on the
     // shared rightAnchorX used by the filament-name clamp above.
     if (rightIsDoor) {
-      uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+      uint16_t clr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
       tft.setTextDatum(MR_DATUM);
       tft.setTextColor(clr, CLR_BG);
       if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, rightAnchorX, eff_botCY);
@@ -4615,18 +4627,19 @@ static void drawFinishedRound() {
     if (!glowIsActive())
       drawRimRing(tft, cx, cx, LY_RND_RING_R, LY_RND_RING_T, 100, CLR_GOLD, true);
 
-    // Checkmark in a green circle outline
-    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R, CLR_GREEN);
-    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R - 1, CLR_GREEN);
+    // Checkmark circle outline, in the configurable finish accent (#163)
+    const uint16_t finClr = dispSettings.finishColor;
+    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R, finClr);
+    tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R - 1, finClr);
     for (int i = -1; i <= 1; i++) {
       tft.drawLine(cx - 14, LY_RND_FIN_CHK_Y + i,
-                   cx - 4,  LY_RND_FIN_CHK_Y + 10 + i, CLR_GREEN);
+                   cx - 4,  LY_RND_FIN_CHK_Y + 10 + i, finClr);
       tft.drawLine(cx - 4,  LY_RND_FIN_CHK_Y + 10 + i,
-                   cx + 15, LY_RND_FIN_CHK_Y - 8 + i, CLR_GREEN);
+                   cx + 15, LY_RND_FIN_CHK_Y - 8 + i, finClr);
     }
 
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.setTextColor(finClr, CLR_BG);
     drawFinishHeadline(cx, LY_RND_FIN_TEXT_Y, LY_RND_FIN_TEXT_MAXW, s);
 
     const char* rndFinName = jobDisplayName(s);
@@ -4763,7 +4776,7 @@ static void drawFinished() {
     // Printer name (left)
     tft.setTextDatum(ML_DATUM);
     setFont(tft, FONT_BODY);
-    tft.setTextColor(CLR_TEXT, hdrBg);
+    tft.setTextColor(dispSettings.printerNameColor, hdrBg);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     tft.drawString(name, LY_HDR_NAME_X, finHdrCY);
 
@@ -4774,7 +4787,7 @@ static void drawFinished() {
     uint16_t finBadgeC;
     const bool  finOverride = stateBadgeOverrideColor(s, finBadgeC);
     const char* finBadge    = finOverride ? stateBadgeText(s) : "FINISH";
-    if (!finOverride) finBadgeC = CLR_GREEN;
+    if (!finOverride) finBadgeC = dispSettings.statusOkColor;
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(finBadgeC, hdrBg);
     setFont(tft, FONT_BODY);
@@ -4801,7 +4814,7 @@ static void drawFinished() {
   if (forceRedraw) {
     markFrameDirty();
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(CLR_GREEN, CLR_BG);
+    tft.setTextColor(dispSettings.finishColor, CLR_BG);
     drawFinishHeadline(cx, finTextY, scrW - 12, s);
   }
 
@@ -4963,7 +4976,7 @@ static void drawFinished() {
     }
     // Door status (right) — always show when sensor present
     if (s.doorSensorPresent) {
-      uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+      uint16_t clr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
       tft.setTextDatum(MR_DATUM);
       setFont(tft, FONT_SMALL);
       tft.setTextColor(clr, CLR_BG);

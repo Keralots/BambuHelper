@@ -51,6 +51,16 @@ void drawCurvedString(lgfx::LovyanGFX& gfx, const char* str,
                       int16_t cx, int16_t cy, int16_t r, bool bottom,
                       uint16_t color, FontID font, int16_t clearHalfDeg);
 
+// Two-colour drawCurvedString for the rim status line: one run carrying two
+// facts ("<printer name>  <STATE>"), drawn as `head  tail` with a colour each.
+// Composition, ellipsizing to maxW (0 = no clip) and the colour boundary all
+// happen inside, so the layout is identical to the single-colour call and no
+// caller has to reason about byte offsets or UTF-8 boundaries.
+void drawCurvedStringPair(lgfx::LovyanGFX& gfx, const char* head,
+                          const char* tail, int16_t cx, int16_t cy, int16_t r,
+                          bool bottom, uint16_t headColor, uint16_t tailColor,
+                          FontID font, int16_t clearHalfDeg, int16_t maxW);
+
 // Arbitrary-sector variant of drawCurvedString: centerAA is the sector center
 // in drawArcAA space (0 = 6 o'clock, clockwise; 12 o'clock = 180). Glyphs use
 // top-style orientation (bottoms toward the center), so side text renders

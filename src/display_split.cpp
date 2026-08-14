@@ -114,7 +114,11 @@ void drawClippedName(const char* name, int16_t x, int16_t cy, int16_t maxW) {
 
 uint16_t stateColor(uint8_t gid) {
   switch (gid) {
-    case GCODE_RUNNING: return CLR_GREEN;
+    // "Printing" / "Done" / "Idle" are all healthy states and share the accent;
+    // only UNKNOWN falls through to the dim default.
+    case GCODE_RUNNING:
+    case GCODE_FINISH:
+    case GCODE_IDLE:    return dispSettings.statusOkColor;
     case GCODE_PAUSE:   return CLR_YELLOW;
     case GCODE_FAILED:  return CLR_RED;
     case GCODE_PREPARE: return CLR_BLUE;
@@ -239,7 +243,7 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
 
     setFont(tft, FONT_BODY);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
     const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
     drawClippedName(name, g.x + g.margin, g.hdrCY, stLeft - 4 - (g.x + g.margin));
   }
@@ -397,7 +401,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     // Left: printer name, clipped so it stops before the status word / dot.
     setFont(tft, FONT_BODY);
     tft.setTextDatum(ML_DATUM);
-    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
     const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
     const int16_t nameMaxW = stLeft - 4 - (g.x + g.margin);
     drawClippedName(name, g.x + g.margin, g.hdrCY, nameMaxW);
@@ -472,7 +476,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     setFont(tft, g.etaFont);   // set before building: formatEtaLine measures to fit
     const bool hasEta = buildSplitEta(s, etaStr, sizeof(etaStr), g.w - 4);
     if (!hasEta) strlcpy(etaStr, "ETA: --", sizeof(etaStr));
-    const uint16_t etaClr = hasEta ? CLR_GREEN : CLR_TEXT_DIM;
+    const uint16_t etaClr = hasEta ? dispSettings.etaColor : CLR_TEXT_DIM;
 
     if (g.etaCY > 0) {
       // --- Roomy: dedicated ETA line, plus the full foot bar below it. ---
@@ -548,7 +552,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
         }
 
         if (s.doorSensorPresent) {
-          uint16_t clr = s.doorOpen ? CLR_ORANGE : CLR_GREEN;
+          uint16_t clr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
           tft.setTextDatum(MR_DATUM);
           tft.setTextColor(clr, CLR_BG);
           if (gaugeLabels.door[0]) tft.drawString(gaugeLabels.door, g.x + g.w - g.margin - 18, fy);

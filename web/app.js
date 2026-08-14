@@ -972,12 +972,21 @@ function savePower(){
 var GAUGE_KEYS = ['prg','noz','bed','pfn','afn','afr','cfn','exh','cht','hbk','pwr','lyr'];
 // Label override keys = the 12 colour gauges + Clock + AMS + Nozzle L/R (label-only rows).
 var GAUGE_LABEL_KEYS = GAUGE_KEYS.concat(['clk','ams','nzr','nzl','dor']);
+// eta/fin/stok = the three accent colours that belong to no gauge (#163).
 var themes = {
-  default:{bg:'#081018',track:'#182028',clkt:'#FFFFFF',clkd:'#C0C0C0',prg:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},noz:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},afn:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},afr:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},cfn:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},exh:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},pwr:{a:'#FFD600',l:'#FFD600',v:'#FFFFFF'},lyr:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'}},
-  mono_green:{bg:'#000800',track:'#0A1A0A',clkt:'#00FF41',clkd:'#00CC33',prg:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},noz:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},bed:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},exh:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cht:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},hbk:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pwr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},lyr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'}},
-  neon:{bg:'#0A0014',track:'#1A0A2E',clkt:'#FF00FF',clkd:'#AA00FF',prg:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},noz:{a:'#FF4400',l:'#FF6600',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FF88',l:'#00FF88',v:'#FFFFFF'},afn:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},afr:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},cfn:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},exh:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FF4400',l:'#FF6600',v:'#FFFFFF'},pwr:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},lyr:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'}},
-  warm:{bg:'#140A00',track:'#2E1A08',clkt:'#FFEEDD',clkd:'#FFB347',prg:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},noz:{a:'#FF6347',l:'#FF6347',v:'#FFEEDD'},bed:{a:'#FFA500',l:'#FFA500',v:'#FFEEDD'},pfn:{a:'#FFD700',l:'#FFD700',v:'#FFEEDD'},afn:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},afr:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},cfn:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},exh:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},cht:{a:'#FFA500',l:'#FFA500',v:'#FFEEDD'},hbk:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},pwr:{a:'#FFD700',l:'#FFD700',v:'#FFEEDD'},lyr:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'}},
-  ocean:{bg:'#000A14',track:'#0A1A2E',clkt:'#E0F0FF',clkd:'#00BFFF',prg:{a:'#00BFFF',l:'#00BFFF',v:'#E0F0FF'},noz:{a:'#FF7F50',l:'#FF7F50',v:'#E0F0FF'},bed:{a:'#4169E1',l:'#4169E1',v:'#E0F0FF'},pfn:{a:'#00CED1',l:'#00CED1',v:'#E0F0FF'},afn:{a:'#48D1CC',l:'#48D1CC',v:'#E0F0FF'},afr:{a:'#48D1CC',l:'#48D1CC',v:'#E0F0FF'},cfn:{a:'#20B2AA',l:'#20B2AA',v:'#E0F0FF'},exh:{a:'#20B2AA',l:'#20B2AA',v:'#E0F0FF'},cht:{a:'#4169E1',l:'#4169E1',v:'#E0F0FF'},hbk:{a:'#FF7F50',l:'#FF7F50',v:'#E0F0FF'},pwr:{a:'#FFD700',l:'#FFD700',v:'#E0F0FF'},lyr:{a:'#00BFFF',l:'#00BFFF',v:'#E0F0FF'}}
+  default:{bg:'#081018',track:'#182028',clkt:'#FFFFFF',clkd:'#C0C0C0',eta:'#00FF00',fin:'#00FF00',stok:'#00FF00',pname:'#00FF00',txt:'#FFFFFF',txtd:'#C0C0C0',dorc:'#00FF00',doro:'#FF7D00',prg:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},noz:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},afn:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},afr:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},cfn:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},exh:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FFA500',l:'#FFA500',v:'#FFFFFF'},pwr:{a:'#FFD600',l:'#FFD600',v:'#FFFFFF'},lyr:{a:'#00FF00',l:'#00FF00',v:'#FFFFFF'}},
+  mono_green:{bg:'#000800',track:'#0A1A0A',clkt:'#00FF41',clkd:'#00CC33',eta:'#00FF41',fin:'#00FF41',stok:'#00FF41',pname:'#00FF41',txt:'#00FF41',txtd:'#00CC33',dorc:'#00CC33',doro:'#00FF41',prg:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},noz:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},bed:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},afr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cfn:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},exh:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},cht:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},hbk:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},pwr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'},lyr:{a:'#00FF41',l:'#00CC33',v:'#00FF41'}},
+  neon:{bg:'#0A0014',track:'#1A0A2E',clkt:'#FF00FF',clkd:'#AA00FF',eta:'#00FF88',fin:'#FF00FF',stok:'#00FF88',pname:'#FF00FF',txt:'#FFFFFF',txtd:'#B080C0',dorc:'#00FF88',doro:'#FF4400',prg:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},noz:{a:'#FF4400',l:'#FF6600',v:'#FFFFFF'},bed:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},pfn:{a:'#00FF88',l:'#00FF88',v:'#FFFFFF'},afn:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},afr:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},cfn:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},exh:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'},cht:{a:'#00FFFF',l:'#00FFFF',v:'#FFFFFF'},hbk:{a:'#FF4400',l:'#FF6600',v:'#FFFFFF'},pwr:{a:'#FFFF00',l:'#FFFF00',v:'#FFFFFF'},lyr:{a:'#FF00FF',l:'#FF00FF',v:'#FFFFFF'}},
+  warm:{bg:'#140A00',track:'#2E1A08',clkt:'#FFEEDD',clkd:'#FFB347',eta:'#FFB347',fin:'#FFD700',stok:'#FFB347',pname:'#FFEEDD',txt:'#FFEEDD',txtd:'#C9A98F',dorc:'#FFB347',doro:'#FF6347',prg:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},noz:{a:'#FF6347',l:'#FF6347',v:'#FFEEDD'},bed:{a:'#FFA500',l:'#FFA500',v:'#FFEEDD'},pfn:{a:'#FFD700',l:'#FFD700',v:'#FFEEDD'},afn:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},afr:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},cfn:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},exh:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'},cht:{a:'#FFA500',l:'#FFA500',v:'#FFEEDD'},hbk:{a:'#FF8C00',l:'#FF8C00',v:'#FFEEDD'},pwr:{a:'#FFD700',l:'#FFD700',v:'#FFEEDD'},lyr:{a:'#FFB347',l:'#FFB347',v:'#FFEEDD'}},
+  ocean:{bg:'#000A14',track:'#0A1A2E',clkt:'#E0F0FF',clkd:'#00BFFF',eta:'#00BFFF',fin:'#00CED1',stok:'#00BFFF',pname:'#E0F0FF',txt:'#E0F0FF',txtd:'#8FB4CF',dorc:'#00BFFF',doro:'#FF7F50',prg:{a:'#00BFFF',l:'#00BFFF',v:'#E0F0FF'},noz:{a:'#FF7F50',l:'#FF7F50',v:'#E0F0FF'},bed:{a:'#4169E1',l:'#4169E1',v:'#E0F0FF'},pfn:{a:'#00CED1',l:'#00CED1',v:'#E0F0FF'},afn:{a:'#48D1CC',l:'#48D1CC',v:'#E0F0FF'},afr:{a:'#48D1CC',l:'#48D1CC',v:'#E0F0FF'},cfn:{a:'#20B2AA',l:'#20B2AA',v:'#E0F0FF'},exh:{a:'#20B2AA',l:'#20B2AA',v:'#E0F0FF'},cht:{a:'#4169E1',l:'#4169E1',v:'#E0F0FF'},hbk:{a:'#FF7F50',l:'#FF7F50',v:'#E0F0FF'},pwr:{a:'#FFD700',l:'#FFD700',v:'#E0F0FF'},lyr:{a:'#00BFFF',l:'#00BFFF',v:'#E0F0FF'}},
+  /* The only light preset, and the only one whose gauge values are dark. Both
+     halves matter on a light background: the neon arcs the dark presets use are
+     unreadable on one, and a light glyph is worse than unreadable - gauge values
+     are drawn transparently (setGaugeClearedTextColor), so their antialiased
+     edge always blends toward black and a pale value picks up a dark outline.
+     Dark values make that blend the correct one. Every colour here survives the
+     RGB565 round trip, so what the picker shows is what the panel paints. */
+  paper:{bg:'#FFFFFF',track:'#CDCACD',clkt:'#101010',clkd:'#5A595A',eta:'#007100',fin:'#007100',stok:'#007100',pname:'#0050A4',txt:'#101010',txtd:'#5A595A',dorc:'#007100',doro:'#D52000',prg:{a:'#00A100',l:'#00A100',v:'#101010'},noz:{a:'#D56100',l:'#D56100',v:'#101010'},bed:{a:'#0091A4',l:'#0091A4',v:'#101010'},pfn:{a:'#0091A4',l:'#0091A4',v:'#101010'},afn:{a:'#D56100',l:'#D56100',v:'#101010'},afr:{a:'#D56100',l:'#D56100',v:'#101010'},cfn:{a:'#00A100',l:'#00A100',v:'#101010'},exh:{a:'#00A100',l:'#00A100',v:'#101010'},cht:{a:'#0091A4',l:'#0091A4',v:'#101010'},hbk:{a:'#D56100',l:'#D56100',v:'#101010'},pwr:{a:'#B48100',l:'#B48100',v:'#101010'},lyr:{a:'#00A100',l:'#00A100',v:'#101010'}}
 };
 function applyTheme(name){
   var t = themes[name]; if (!t) return;
@@ -986,6 +995,8 @@ function applyTheme(name){
   document.getElementById('clr_pbar').value = t.prg.a;
   document.getElementById('clk_time').value = t.clkt;
   document.getElementById('clk_date').value = t.clkd;
+  setAccentColors(t.eta, t.fin, t.stok, t.pname, t.txt, t.txtd);
+  setDoorColors(t.dorc, t.doro);
   for (var i = 0; i < GAUGE_KEYS.length; i++){
     var k = GAUGE_KEYS[i], c = t[k];
     if (!c) continue;
@@ -994,6 +1005,22 @@ function applyTheme(name){
     document.getElementById(k + '_v').value = c.v;
   }
   applyDisplay();
+}
+// The accent pickers, written together. Tolerates a missing value so a theme
+// that predates any of them still applies cleanly.
+function setAccentColors(eta, fin, stok, pname, txt, txtd){
+  if (eta)   document.getElementById('clr_eta').value = eta;
+  if (fin)   document.getElementById('clr_fin').value = fin;
+  if (stok)  document.getElementById('clr_stok').value = stok;
+  if (pname) document.getElementById('clr_pname').value = pname;
+  if (txt)   document.getElementById('clr_txt').value = txt;
+  if (txtd)  document.getElementById('clr_txtd').value = txtd;
+}
+// Door status pair. Open stays a contrast colour in every preset - it is the
+// half of the pair that has to catch an eye across the room.
+function setDoorColors(closed, open){
+  if (closed) document.getElementById('clr_dorc').value = closed;
+  if (open)   document.getElementById('clr_doro').value = open;
 }
 function bulkSet(suffix, color){
   for (var i = 0; i < GAUGE_KEYS.length; i++) document.getElementById(GAUGE_KEYS[i] + '_' + suffix).value = color;
@@ -1009,6 +1036,14 @@ function resetGaugeColors(){
     document.getElementById(k + '_v').value = c.v;
   }
   document.getElementById('clr_pbar').value = document.getElementById('prg_a').value;
+  // Firmware defaults: green accents, white text, grey muted text. The grey is
+  // #C0C0C0 and not #C6C6C6 because only the former survives the round trip -
+  // RGB565 quantises it to 0xC618, which is exactly CLR_TEXT_DIM_DEFAULT and
+  // exactly what themes.default.txtd carries. #C6C6C6 lands on 0xC638, so
+  // "reset to defaults" would have left the device on a value its own defaults
+  // never produce, and disagreeing with the Default theme for the same field.
+  setAccentColors('#00FF00', '#00FF00', '#00FF00', '#00FF00', '#FFFFFF', '#C0C0C0');
+  setDoorColors('#00FF00', '#FF7D00');
   applyDisplay();
 }
 function clearGaugeLabels(){
@@ -1033,6 +1068,16 @@ function randomGaugeColors(){
   // so it never matches the first gauge.
   var pbarH = (baseH + 60 + Math.floor(Math.random() * 240)) % 360;
   document.getElementById('clr_pbar').value = hslToHex(pbarH, 70, 55);
+  // Accents share the base hue so the ETA, the finish headline, the status
+  // badge and the printer name read as one family instead of four more random
+  // colours.
+  var accent = hslToHex(baseH, 70, 60);
+  // Text stays white/grey through a randomise: a random hue on the readouts
+  // themselves costs legibility, which no roll of the dice is worth.
+  setAccentColors(accent, accent, accent, accent, '#FFFFFF', '#C0C0C0');
+  // Closed door joins the accent family; open keeps a fixed contrast colour so
+  // a random roll can never make "door open" blend into "door closed".
+  setDoorColors(accent, '#FF7D00');
   applyDisplay();
 }
 function hslToHex(h, s, l){
@@ -1077,6 +1122,14 @@ function applyDisplay(){
   p.append('clr_bg', document.getElementById('clr_bg').value);
   p.append('clr_track', document.getElementById('clr_track').value);
   p.append('clr_pbar', document.getElementById('clr_pbar').value);
+  p.append('clr_eta', document.getElementById('clr_eta').value);
+  p.append('clr_fin', document.getElementById('clr_fin').value);
+  p.append('clr_stok', document.getElementById('clr_stok').value);
+  p.append('clr_pname', document.getElementById('clr_pname').value);
+  p.append('clr_txt', document.getElementById('clr_txt').value);
+  p.append('clr_txtd', document.getElementById('clr_txtd').value);
+  p.append('clr_dorc', document.getElementById('clr_dorc').value);
+  p.append('clr_doro', document.getElementById('clr_doro').value);
   p.append('clk_time', document.getElementById('clk_time').value);
   p.append('clk_date', document.getElementById('clk_date').value);
   p.append('clk_size', document.getElementById('clk_size').value);

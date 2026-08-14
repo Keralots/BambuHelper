@@ -91,6 +91,14 @@ static void readDisplayFromForm() {
   if (server.hasArg("clr_bg"))    dispSettings.bgColor = htmlToRgb565(server.arg("clr_bg").c_str());
   if (server.hasArg("clr_track")) dispSettings.trackColor = htmlToRgb565(server.arg("clr_track").c_str());
   if (server.hasArg("clr_pbar"))  dispSettings.progressBarColor = htmlToRgb565(server.arg("clr_pbar").c_str());
+  if (server.hasArg("clr_eta"))   dispSettings.etaColor = htmlToRgb565(server.arg("clr_eta").c_str());
+  if (server.hasArg("clr_fin"))   dispSettings.finishColor = htmlToRgb565(server.arg("clr_fin").c_str());
+  if (server.hasArg("clr_stok"))  dispSettings.statusOkColor = htmlToRgb565(server.arg("clr_stok").c_str());
+  if (server.hasArg("clr_pname")) dispSettings.printerNameColor = htmlToRgb565(server.arg("clr_pname").c_str());
+  if (server.hasArg("clr_txt"))   dispSettings.textColor = htmlToRgb565(server.arg("clr_txt").c_str());
+  if (server.hasArg("clr_txtd"))  dispSettings.textDimColor = htmlToRgb565(server.arg("clr_txtd").c_str());
+  if (server.hasArg("clr_dorc"))  dispSettings.doorClosedColor = htmlToRgb565(server.arg("clr_dorc").c_str());
+  if (server.hasArg("clr_doro"))  dispSettings.doorOpenColor = htmlToRgb565(server.arg("clr_doro").c_str());
   if (server.hasArg("clk_time"))  dispSettings.clockTimeColor = htmlToRgb565(server.arg("clk_time").c_str());
   if (server.hasArg("clk_date"))  dispSettings.clockDateColor = htmlToRgb565(server.arg("clk_date").c_str());
   if (server.hasArg("clk_size")) {
@@ -1574,6 +1582,14 @@ static void handleSettingsExport() {
   disp["gaugeSmoothing"]  = dispSettings.gaugeSmoothing;
   rgb565ToHtml(dispSettings.warnColor, buf); disp["warnColor"] = String(buf);
   disp["warnThresholdPct"] = dispSettings.warnThresholdPct;
+  rgb565ToHtml(dispSettings.etaColor, buf);      disp["etaColor"] = String(buf);
+  rgb565ToHtml(dispSettings.finishColor, buf);   disp["finishColor"] = String(buf);
+  rgb565ToHtml(dispSettings.statusOkColor, buf); disp["statusOkColor"] = String(buf);
+  rgb565ToHtml(dispSettings.printerNameColor, buf); disp["printerNameColor"] = String(buf);
+  rgb565ToHtml(dispSettings.textColor, buf);     disp["textColor"] = String(buf);
+  rgb565ToHtml(dispSettings.textDimColor, buf);  disp["textDimColor"] = String(buf);
+  rgb565ToHtml(dispSettings.doorClosedColor, buf); disp["doorClosedColor"] = String(buf);
+  rgb565ToHtml(dispSettings.doorOpenColor, buf);   disp["doorOpenColor"] = String(buf);
   disp["roundSkin"] = dispSettings.roundSkin;
   disp["glowMode"] = dispSettings.glowMode;
   rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
@@ -1933,6 +1949,14 @@ static void handleSettingsImportFinish() {
     if (disp["gaugeSmoothing"].is<int>())  { int sm = disp["gaugeSmoothing"].as<int>(); dispSettings.gaugeSmoothing = (sm >= 0 && sm <= 3) ? (uint8_t)sm : 2; }
     if (disp["warnColor"].is<const char*>()) dispSettings.warnColor = htmlToRgb565(disp["warnColor"]);
     if (disp["warnThresholdPct"].is<int>()) dispSettings.warnThresholdPct = constrain(disp["warnThresholdPct"].as<int>(), 0, 100);
+    if (disp["etaColor"].is<const char*>())      dispSettings.etaColor = htmlToRgb565(disp["etaColor"]);
+    if (disp["finishColor"].is<const char*>())   dispSettings.finishColor = htmlToRgb565(disp["finishColor"]);
+    if (disp["statusOkColor"].is<const char*>()) dispSettings.statusOkColor = htmlToRgb565(disp["statusOkColor"]);
+    if (disp["printerNameColor"].is<const char*>()) dispSettings.printerNameColor = htmlToRgb565(disp["printerNameColor"]);
+    if (disp["textColor"].is<const char*>())     dispSettings.textColor = htmlToRgb565(disp["textColor"]);
+    if (disp["textDimColor"].is<const char*>())  dispSettings.textDimColor = htmlToRgb565(disp["textDimColor"]);
+    if (disp["doorClosedColor"].is<const char*>()) dispSettings.doorClosedColor = htmlToRgb565(disp["doorClosedColor"]);
+    if (disp["doorOpenColor"].is<const char*>())   dispSettings.doorOpenColor = htmlToRgb565(disp["doorOpenColor"]);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
     if (disp["glowMode"].is<int>())  { int gm = disp["glowMode"].as<int>();  dispSettings.glowMode = (gm >= 0 && gm <= 2) ? (uint8_t)gm : 0; }
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);

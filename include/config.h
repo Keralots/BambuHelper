@@ -34,9 +34,15 @@
 #define CLR_BG          0x0000   // black
 #define CLR_CARD        0x1926   // dark card bg
 #define CLR_HEADER      0x10A2   // header bar bg
-#define CLR_TEXT         0xFFFF   // white
-#define CLR_TEXT_DIM     0xC618   // gray text
-#define CLR_TEXT_DARK    0x7BEF   // darker gray
+// Text colors are user-configurable (#163), so these two are only the factory
+// DEFAULTS. The live values are CLR_TEXT / CLR_TEXT_DIM, defined in settings.h
+// as dispSettings lookups - a drawing file must include settings.h to paint
+// text, and gets a compile error rather than a silently unthemed screen if it
+// forgets. Do not reintroduce CLR_TEXT here.
+#define CLR_TEXT_DEFAULT     0xFFFF   // white
+#define CLR_TEXT_DIM_DEFAULT 0xC618   // gray text
+#define CLR_TEXT_DARK        0x7BEF   // darker gray (chrome: inactive dots,
+                                      // arc tracks - not text, stays fixed)
 #define CLR_GREEN        0x07E0   // bright green
 #define CLR_GREEN_DARK   0x0400   // dark green (track)
 #define CLR_BLUE         0x34DF   // accent blue

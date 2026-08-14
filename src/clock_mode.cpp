@@ -491,7 +491,8 @@ void drawClock() {
     }
     if (dot != roundPrevDot) {
       markFrameDirty();
-      uint16_t c = (dot == 1) ? CLR_GREEN : (dot == 2) ? CLR_RED : bg;
+      // Same connected indicator as the print screens, same accent (#163).
+      uint16_t c = (dot == 1) ? dispSettings.statusOkColor : (dot == 2) ? CLR_RED : bg;
       tft.fillCircle(sw / 2, LY_RND_CLK_DOT_Y, 4, c);
       roundPrevDot = dot;
     }

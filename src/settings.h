@@ -140,6 +140,49 @@ struct DisplaySettings {
   uint8_t  gaugeSmoothing;   // arc easing speed: 0=Off(instant) 1=Slow 2=Normal 3=Fast
   uint16_t warnColor;        // temp-gauge over-threshold color (arc + value), RGB565
   uint8_t  warnThresholdPct; // temp gauge turns warnColor at >= this % of scale; 0 = off
+  // Accent colors for the screen text that is not part of a gauge (#163). The
+  // alarm colors (PAUSED/CANCELED yellow, ERROR red) stay hardcoded on purpose -
+  // a theme must never be able to paint a fault in a reassuring color.
+  uint16_t etaColor;         // finish-time line, every form: "ETA: 17:45",
+                             // "Remaining: 2h 05m" and the combined line. Also
+                             // the pre-NTP duration fallback. A missing value
+                             // ("ETA: ---") is NOT an accent - it renders in
+                             // textDimColor like every other placeholder.
+  uint16_t finishColor;      // "Print Complete!" headline and the round skins'
+                             // tick mark. NOT the round completion ring: that
+                             // one is the fixed gold celebration ring, which
+                             // the edge glow also plays against.
+  uint16_t statusOkColor;    // healthy status accents: the RUNNING/Ready/FINISH
+                             // badge and dot, the connected indicator, the
+                             // active-printer dot and a closed door (an OPEN
+                             // door keeps its fixed orange - that is a warning)
+  uint16_t printerNameColor; // printer name wherever the UI prints it as itself:
+                             // the Ready-screen headline and the header line of
+                             // the print / finished / drying screens and the
+                             // split bands. Its own knob rather than
+                             // statusOkColor's - a name is not a status, and the
+                             // two sit side by side, so one accent painting both
+                             // is not always wanted.
+  // Door status indicator (status bar + round rim). Its own pair rather than
+  // riding statusOkColor: "closed" is not a print state, and the open colour
+  // has to be settable next to it or the pair cannot be kept legible against a
+  // themed background. Open still defaults to orange.
+  uint16_t doorClosedColor;
+  uint16_t doorOpenColor;
+  // Neutral text, the two colors every readout that is NOT an accent uses:
+  // values, file names, layer counts, dBm, kWh, "ETA: ---". They were the
+  // compile-time CLR_TEXT / CLR_TEXT_DIM, which no theme could reach - a dark
+  // accent scheme still had white numerals on it. The ~120 call sites did not
+  // have to change because CLR_TEXT / CLR_TEXT_DIM are now defined once, at the
+  // bottom of this header, as lookups into these two fields. There is no
+  // per-TU #undef anywhere in the tree and there must not be one - see the
+  // comment on those two #defines for why.
+  uint16_t textColor;        // primary readout text (was 0xFFFF white)
+  uint16_t textDimColor;     // secondary / placeholder text (was 0xC618 gray).
+                             // CLR_TEXT_DARK (inactive dots, tracks) stays
+                             // fixed - it is chrome, not text. So does the white
+                             // end of a highlight blend: see the CLR_TEXT_DEFAULT
+                             // uses in display_gauges.cpp.
   GaugeColors progress;
   GaugeColors nozzle;
   GaugeColors bed;
@@ -299,6 +342,16 @@ extern char wifiSSID[33];
 extern char wifiPass[65];
 extern uint8_t brightness;
 extern DisplaySettings dispSettings;
+
+// The live neutral text colors (#163). Defined here rather than in config.h so
+// there is exactly one definition and no per-file #undef dance: a drawing file
+// already includes settings.h, and one that does not fails to compile instead
+// of silently painting the factory literal. config.h keeps only
+// CLR_TEXT_DEFAULT / CLR_TEXT_DIM_DEFAULT, which settings.cpp uses to seed
+// these fields.
+#define CLR_TEXT      (dispSettings.textColor)
+#define CLR_TEXT_DIM  (dispSettings.textDimColor)
+
 extern GaugeLabels gaugeLabels;
 extern NetworkSettings netSettings;
 extern DisplayPowerSettings dpSettings;
