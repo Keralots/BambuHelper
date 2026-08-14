@@ -659,6 +659,7 @@ R"rawliteral(
         <button type="button" class="swatch" onclick="applyTheme('neon')"><span class="blob" style="background:#FF36E5"></span> Neon</button>
         <button type="button" class="swatch" onclick="applyTheme('warm')"><span class="blob" style="background:#E0623A"></span> Warm</button>
         <button type="button" class="swatch" onclick="applyTheme('ocean')"><span class="blob" style="background:#2DB8C4"></span> Ocean</button>
+        <button type="button" class="swatch" onclick="applyTheme('paper')"><span class="blob" style="background:#E8E8E8"></span> Paper</button>
       </div>
 
       <div class="bulk-color-row">
