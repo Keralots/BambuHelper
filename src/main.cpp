@@ -1002,21 +1002,40 @@ static void processLightTimers() {
 // parked on RUNNING, so it is a different axis with a different edge.
 static uint32_t prevErrorBadgeId[MAX_ACTIVE_PRINTERS] = { 0 };
 static bool     prevErrorBadgeSeen[MAX_ACTIVE_PRINTERS] = { false };
+// Tracked separately from the id: the alert channels are started by a rising
+// edge but have to be stopped by the falling one, and "no badge" is several
+// different ids (the cancel bit rides in the same word).
+static bool     prevErrorBadgeActive[MAX_ACTIVE_PRINTERS] = { false };
 
 // Alert channels + auto-present. Fires once per new error, across all slots,
 // not just the one on screen - the alert hardware is global and an error on the
 // printer you are not looking at is exactly the one you need told about.
 static void handleErrorAlerts() {
-  if (!dispSettings.hmsEnabled) return;
+  if (!dispSettings.hmsEnabled) {
+    // Switching the feature off takes the badge off every surface at once, so
+    // an episode still running is announcing something nothing else shows.
+    bool wasAlerting = false;
+    for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
+      if (!prevErrorBadgeActive[i]) continue;
+      prevErrorBadgeActive[i] = false;
+      wasAlerting = true;
+      glowClearError(i);
+    }
+    if (wasAlerting) ledStopErrorEpisode();
+    return;
+  }
 
   uint8_t  alertSlot  = 0xFF;
   uint8_t  alertSev   = 0xFF;   // lower is worse: 1 fatal .. 3 common
   uint16_t alertColor = CLR_RED;
+  bool     anyActive  = false;
 
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
     if (!isPrinterConfigured(i)) continue;
     const BambuState& ps = printers[i].state;
     const uint32_t id = errorBadgeId(ps);
+    const ErrorBadge b = errorBadgeFor(ps);
+    if (b.active) anyActive = true;
 
     // First sight initialises without firing. Booting, or reconnecting, into a
     // standing error is not news - the HMS domain has the baseline rule for
@@ -1024,10 +1043,17 @@ static void handleErrorAlerts() {
     if (!prevErrorBadgeSeen[i]) {
       prevErrorBadgeSeen[i] = true;
       prevErrorBadgeId[i] = id;
+      prevErrorBadgeActive[i] = b.active;
       continue;
     }
 
-    const ErrorBadge b = errorBadgeFor(ps);
+    // Recovery edge. The badge is level-driven and disappears on its own, but
+    // the alert channels are episodes: the glow's reminder duration modes never
+    // end by themselves, so a cleared fault left the band red over the rest of
+    // the print and over the finish screen after it (issue #165).
+    if (prevErrorBadgeActive[i] && !b.active) glowClearError(i);
+    prevErrorBadgeActive[i] = b.active;
+
     const bool isNew = b.active && id != prevErrorBadgeId[i];
     prevErrorBadgeId[i] = id;
     if (!isNew) continue;
@@ -1039,6 +1065,13 @@ static void handleErrorAlerts() {
       alertColor = errorSeverityColor(b.severity);
     }
   }
+
+  // One status LED serves every slot, so it may only be silenced once no
+  // configured printer is showing a badge at all - otherwise a two-printer
+  // setup would have the recovered one switch off the other's strobe. Placed
+  // before the early return so a recovery with no new alert still reaches it.
+  if (!anyActive) ledStopErrorEpisode();
+
   if (alertSlot == 0xFF) return;
 
   const uint8_t mask = dispSettings.hmsAlertMask;

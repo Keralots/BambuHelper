@@ -36,6 +36,11 @@ bool glowIsErrorEpisode();
 // animation if that slot is the one on screen.
 void glowClearSlot(uint8_t slot);
 
+// Drop a slot's ERROR latch / episode only, leaving a pending or running
+// FINISH / FAILED alone. Called when the slot's error badge goes inactive: the
+// fault cleared, so the glow has nothing left to announce.
+void glowClearError(uint8_t slot);
+
 // Stop the animation and clear the on-screen slot's latch (user input,
 // screen change, glow disabled live).
 void glowDismiss();

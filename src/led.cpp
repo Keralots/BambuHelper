@@ -416,6 +416,12 @@ void ledStartErrorEpisode() {
   if (errorEpisodeEndMs == 0) errorEpisodeEndMs = 1;   // 0 is the "none" sentinel
   lastWrittenDuty = -1;
 }
+
+void ledStopErrorEpisode() {
+  if (errorEpisodeEndMs == 0) return;
+  errorEpisodeEndMs = 0;
+  lastWrittenDuty = -1;   // force resting duty recompute on the next tick
+}
 #endif  // HAS_HMS_UI
 
 void ledOnUserInteraction() {

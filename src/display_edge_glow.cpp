@@ -80,9 +80,30 @@ void glowNotifyEvent(uint8_t slot, GlowEvent ev, uint16_t color) {
   // a FINISH or FAILED that has not been shown yet.
   if (ev == GLOW_EV_ERROR && (latchMask & (1u << slot)) &&
       latchEvent[slot] != GLOW_EV_ERROR) return;
+  // The same precedence has to hold against an error episode already RUNNING,
+  // not just a pending error latch. glowTick() consumes a latch only from
+  // PHASE_IDLE, and an error episode does not end on its own in the reminder
+  // duration modes - so without this the band stayed red under the finish
+  // screen and the finish glow never played at all (issue #165).
+  if (ev != GLOW_EV_ERROR && phase != PHASE_IDLE && activeEvent == GLOW_EV_ERROR &&
+      activeSlot == slot) {
+    stopDrawing(false);
+  }
   latchMask |= (uint8_t)(1u << slot);
   latchEvent[slot] = ev;
   latchColor[slot] = color;
+}
+
+// Only error episodes are cancelled by their cause going away: a FINISH or
+// FAILED announces something that already happened and stays until seen, but an
+// error is a live condition, and once the printer has recovered the glow is
+// describing a state that no longer exists.
+void glowClearError(uint8_t slot) {
+  if (slot >= GLOW_MAX_SLOTS) return;
+  if ((latchMask & (1u << slot)) && latchEvent[slot] == GLOW_EV_ERROR)
+    latchMask &= (uint8_t)~(1u << slot);
+  if (activeSlot == slot && phase != PHASE_IDLE && activeEvent == GLOW_EV_ERROR)
+    stopDrawing(false);   // covers PHASE_REMIND too - the pause is still armed
 }
 
 bool glowIsErrorEpisode() {

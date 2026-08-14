@@ -39,6 +39,12 @@ void ledStopFinishEffect();
 // never enters, so this arms the same pattern for a bounded window instead.
 // Silenced early by ledOnUserInteraction(), like the FAILED strobe.
 void ledStartErrorEpisode();
+
+// End the episode because the fault itself cleared. The window is bounded, but
+// waiting it out after the printer has recovered leaves the LED strobing over a
+// resumed print - and re-arming on every reappearance of a flapping code made
+// that look permanent (issue #165). No-op when no episode is running.
+void ledStopErrorEpisode();
 #endif
 
 // Triggered from web UI "Test effect" button. Plays the chosen mode for
