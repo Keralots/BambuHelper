@@ -32,6 +32,15 @@ LedSettings ledSettings = {
   /*pauseBreathing*/      false,
   /*errorStrobe*/         false,
   /*errorStrobeSeconds*/  LED_ERROR_STROBE_DEFAULT_S,
+  /*driver*/              LED_DRV_SINGLE,
+  /*pinG*/                ONBOARD_RGB_G_PIN,
+  /*pinB*/                ONBOARD_RGB_B_PIN,
+  /*commonAnode*/         ONBOARD_RGB_ANODE != 0,
+  /*colorIdle*/           LED_COLOR_IDLE_DEFAULT,
+  /*colorPrinting*/       LED_COLOR_PRINTING_DEFAULT,
+  /*colorPaused*/         LED_COLOR_PAUSED_DEFAULT,
+  /*colorFinished*/       LED_COLOR_FINISHED_DEFAULT,
+  /*colorError*/          LED_COLOR_ERROR_DEFAULT,
 };
 TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT] = {};
 float tasmotaTariffPerKwh = 0.0f;
@@ -767,7 +776,7 @@ void loadSettings() {
   if (bct < 20 || bct > 80) bct = 35;
   buzzerSettings.bedCooldownThresholdC = bct;
 
-  // External LED settings
+  // Status LED settings
   ledSettings.enabled    = prefs.getBool ("led_on",  false);
   ledSettings.pin        = prefs.getUChar("led_pin", LED_DEFAULT_PIN);
   ledSettings.brightness = prefs.getUChar("led_br",  128);
@@ -780,6 +789,19 @@ void loadSettings() {
   ledSettings.pauseBreathing      = prefs.getBool("led_pause",   false);
   ledSettings.errorStrobe         = prefs.getBool("led_err",     false);
   ledSettings.errorStrobeSeconds  = prefs.getUShort("led_err_sec", LED_ERROR_STROBE_DEFAULT_S);
+
+  // Colour driver. Absent on an install that predates it, so the defaults keep
+  // the LED single-channel and nothing about an existing setup changes.
+  ledSettings.driver      = prefs.getUChar("led_drv",   LED_DRV_SINGLE);
+  ledSettings.pinG        = prefs.getUChar("led_ping",  ONBOARD_RGB_G_PIN);
+  ledSettings.pinB        = prefs.getUChar("led_pinb",  ONBOARD_RGB_B_PIN);
+  ledSettings.commonAnode = prefs.getBool ("led_anode", ONBOARD_RGB_ANODE != 0);
+
+  ledSettings.colorIdle     = prefs.getUInt("led_c_idl", LED_COLOR_IDLE_DEFAULT);
+  ledSettings.colorPrinting = prefs.getUInt("led_c_prn", LED_COLOR_PRINTING_DEFAULT);
+  ledSettings.colorPaused   = prefs.getUInt("led_c_pau", LED_COLOR_PAUSED_DEFAULT);
+  ledSettings.colorFinished = prefs.getUInt("led_c_fin", LED_COLOR_FINISHED_DEFAULT);
+  ledSettings.colorError    = prefs.getUInt("led_c_err", LED_COLOR_ERROR_DEFAULT);
 
   // Tasmota power monitoring — array of N plugs with numbered NVS keys
   // One-shot migration from legacy singleton keys (tsm_en/ip/dm/pi/slot) into
@@ -1134,7 +1156,7 @@ void saveBuzzerSettings() {
   prefs.end();
 }
 
-// External LED — only path that writes LED to NVS. Always sanitizes first so
+// Status LED — only path that writes LED to NVS. Always sanitizes first so
 // no invalid pin (peripheral conflict, input-only, flash, etc.) ever reaches
 // persistent storage. LED is intentionally NOT in saveSettings().
 void saveLedSettings() {
@@ -1152,6 +1174,17 @@ void saveLedSettings() {
   prefs.putBool("led_pause",   ledSettings.pauseBreathing);
   prefs.putBool("led_err",     ledSettings.errorStrobe);
   prefs.putUShort("led_err_sec", ledSettings.errorStrobeSeconds);
+
+  prefs.putUChar("led_drv",   ledSettings.driver);
+  prefs.putUChar("led_ping",  ledSettings.pinG);
+  prefs.putUChar("led_pinb",  ledSettings.pinB);
+  prefs.putBool ("led_anode", ledSettings.commonAnode);
+
+  prefs.putUInt("led_c_idl", ledSettings.colorIdle);
+  prefs.putUInt("led_c_prn", ledSettings.colorPrinting);
+  prefs.putUInt("led_c_pau", ledSettings.colorPaused);
+  prefs.putUInt("led_c_fin", ledSettings.colorFinished);
+  prefs.putUInt("led_c_err", ledSettings.colorError);
   prefs.end();
 }
 

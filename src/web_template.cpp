@@ -36,6 +36,14 @@
 #define BOARD_PANEL "Display"
 #endif
 
+// LED colours are full 24-bit, not the RGB565 the display settings use, so they
+// need their own formatter rather than rgb565ToHtml().
+static String ledHexColor(uint32_t rgb) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "#%06lX", (unsigned long)(rgb & 0xFFFFFF));
+  return String(buf);
+}
+
 // ---------------------------------------------------------------------------
 //  Resolve a single template placeholder to its value.
 //  Returns true if name was a known placeholder (even if value is empty).
@@ -619,6 +627,47 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "LED_PAUSE")     == 0) { out = ledSettings.pauseBreathing ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR")       == 0) { out = ledSettings.errorStrobe ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR_SEC")   == 0) { out = String(ledSettings.errorStrobeSeconds); return true; }
+  if (strcmp(name, "LED_DRV_S")   == 0) { out = ledSettings.driver == LED_DRV_SINGLE ? "selected" : ""; return true; }
+  if (strcmp(name, "LED_DRV_R")   == 0) { out = ledSettings.driver == LED_DRV_RGB    ? "selected" : ""; return true; }
+  // Offered only where the WS2812 driver was compiled in - see HAS_LED_PIXEL.
+  if (strcmp(name, "LED_DRV_PIXEL_OPT") == 0) {
+#if HAS_LED_PIXEL
+    out  = "<option value=\"2\"";
+    if (ledSettings.driver == LED_DRV_PIXEL) out += " selected";
+    out += ">WS2812 pixel (one data pin)</option>";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "LED_PIN_G")   == 0) { out = String(ledSettings.pinG); return true; }
+  if (strcmp(name, "LED_PIN_B")   == 0) { out = String(ledSettings.pinB); return true; }
+  if (strcmp(name, "LED_ANODE")   == 0) { out = ledSettings.commonAnode ? "checked" : ""; return true; }
+  if (strcmp(name, "LED_C_IDLE")  == 0) { out = ledHexColor(ledSettings.colorIdle);     return true; }
+  if (strcmp(name, "LED_C_PRINT") == 0) { out = ledHexColor(ledSettings.colorPrinting); return true; }
+  if (strcmp(name, "LED_C_PAUSE") == 0) { out = ledHexColor(ledSettings.colorPaused);   return true; }
+  if (strcmp(name, "LED_C_FIN")   == 0) { out = ledHexColor(ledSettings.colorFinished); return true; }
+  if (strcmp(name, "LED_C_ERR")   == 0) { out = ledHexColor(ledSettings.colorError);    return true; }
+  // Shortcut that fills the pin fields with the board's own onboard RGB wiring.
+  // Emitted as a block rather than inline markup because PAGE_HTML is one raw
+  // string literal - a #if inside it would ship as literal text. The pin values
+  // are resolved per render: on the CYD the red pin follows the ESP32-32E
+  // runtime variant.
+  if (strcmp(name, "LED_ONBOARD_ROW") == 0) {
+#if BOARD_HAS_ONBOARD_RGB
+    uint8_t r = 0, g = 0, b = 0; bool anode = false;
+    onboardRgbPins(r, g, b, anode);
+    out  = "<div id=\"ledOnboard\" class=\"field\" data-r=\"" + String(r) + "\"";
+    out += " data-g=\"" + String(g) + "\" data-b=\"" + String(b) + "\"";
+    out += " data-anode=\"" + String(anode ? "1" : "0") + "\"";
+    out += " data-drv=\"" + String((int)(BOARD_HAS_ONBOARD_RGB_PIXEL ? LED_DRV_PIXEL : LED_DRV_RGB)) + "\">";
+    out += "<button type=\"button\" class=\"btn btn-ghost btn-sm\" onclick=\"ledUseOnboard()\">";
+    out += "Use this board's onboard RGB LED</button></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
 
   // --- Battery indicator (Waveshare boards only) ---
   if (strcmp(name, "BAT_TOGGLE_ROW") == 0) {

@@ -179,6 +179,50 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
+// Onboard RGB status LED. The colour LED feature itself is board-independent -
+// any board can drive a hand-wired RGB LED or a WS2812 off free GPIOs - so these
+// two capabilities only say "this board already has one soldered on", which buys
+// exactly two things: sane pin defaults in the portal, and permission for the LED
+// driver to claim pins the deny-list otherwise reserves (see isOnboardRgbPin() in
+// led.cpp). They are mutually exclusive because the two kinds of onboard RGB share
+// nothing in silicon:
+//
+//   BOARD_HAS_ONBOARD_RGB_PWM    three plain GPIOs, one per colour, three LEDC
+//                                channels (CYD family, common anode)
+//   BOARD_HAS_ONBOARD_RGB_PIXEL  one data line into a WS2812, bit-banged over RMT
+#if defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432)
+#define BOARD_HAS_ONBOARD_RGB_PWM    1
+#else
+#define BOARD_HAS_ONBOARD_RGB_PWM    0
+#endif
+
+#if defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_ES3N28P)
+#define BOARD_HAS_ONBOARD_RGB_PIXEL  1
+#else
+#define BOARD_HAS_ONBOARD_RGB_PIXEL  0
+#endif
+
+#if BOARD_HAS_ONBOARD_RGB_PWM && BOARD_HAS_ONBOARD_RGB_PIXEL
+#error "A board has one kind of onboard RGB LED, not both"
+#endif
+
+#define BOARD_HAS_ONBOARD_RGB  (BOARD_HAS_ONBOARD_RGB_PWM || BOARD_HAS_ONBOARD_RGB_PIXEL)
+
+// The WS2812 driver is the one expensive half of the colour LED feature: talking
+// to a pixel means the RMT peripheral driver, and that is ~14 KB of flash where
+// the three-pin PWM path is a few hundred bytes. The 1.75 MB C3 boards do not
+// have 14 KB to spare (measured: the image lands past its app slot), so they get
+// the RGB and single-colour drivers and the pixel option is not offered.
+#if defined(BOARD_IS_C3)
+#define HAS_LED_PIXEL  0
+#else
+#define HAS_LED_PIXEL  1
+#endif
+
+#if BOARD_HAS_ONBOARD_RGB_PIXEL && !HAS_LED_PIXEL
+#error "A board with an onboard WS2812 cannot drop the pixel driver"
+#endif
+
 // HMS / print_error reporting. Four independent capabilities:
 //
 //   HAS_HMS_UI           the feature exists at all - state fields, parser,
@@ -435,9 +479,14 @@
 #endif
 
 // =============================================================================
-//  External LED (optional, PWM dimmable via NPN/MOSFET)
+//  Status LED (optional: single PWM channel, 3-pin RGB, or one WS2812)
 // =============================================================================
-#define LED_PWM_CH      2     // LEDC channel (timer 1, isolated from tone() ch0 and analogWrite backlight)
+// LEDC channel budget. analogWrite() (the backlight) allocates downward from the
+// top of the channel bank - 15 on ESP32, 7 on S3, 5 on C3 - and tone() sits on
+// channel 0, so 2/3/4 are free on every target this firmware builds for.
+#define LED_PWM_CH      2     // LEDC channel (single mode; RGB mode: red)
+#define LED_PWM_CH_G    3     // RGB mode: green
+#define LED_PWM_CH_B    4     // RGB mode: blue
 #define LED_PWM_FREQ    5000  // PWM frequency (Hz)
 #define LED_PWM_RES     8     // PWM resolution (bits) -> 0..255 duty
 
@@ -451,6 +500,34 @@
 #define LED_DEFAULT_PIN 0     // other boards: user must configure
 #endif
 
+// Onboard RGB pin defaults. Only ever used to pre-fill the portal's pin fields
+// and to let the driver claim those pins back from the deny-list; a board with
+// no onboard RGB simply starts the three fields at 0 and the user types pins in.
+#if BOARD_HAS_ONBOARD_RGB_PWM
+// CYD / TZT onboard RGB is common ANODE - the shared leg sits on 3V3, so a LOW
+// level lights the channel. Red moves to GPIO 22 on the ESP32-32E clone, which
+// is a runtime variant (dispSettings.cyd32eVariant), resolved in led.cpp.
+#define ONBOARD_RGB_R_PIN     4
+#define ONBOARD_RGB_G_PIN     16
+#define ONBOARD_RGB_B_PIN     17
+#define ONBOARD_RGB_ANODE     1
+#else
+#define ONBOARD_RGB_R_PIN     0
+#define ONBOARD_RGB_G_PIN     0
+#define ONBOARD_RGB_B_PIN     0
+#define ONBOARD_RGB_ANODE     0
+#endif
+
+#if BOARD_HAS_ONBOARD_RGB_PIXEL
+#if defined(BOARD_IS_ES3N28P)
+#define ONBOARD_RGB_DATA_PIN  42
+#else
+#define ONBOARD_RGB_DATA_PIN  21    // Waveshare ESP32-S3-Zero
+#endif
+#else
+#define ONBOARD_RGB_DATA_PIN  0
+#endif
+
 // LED effect tuning (ms periods)
 #define LED_BREATH_PERIOD_MS      2000   // breathing pulse 0->peak->0
 #define LED_HEARTBEAT_PERIOD_MS   1500   // pyk-pyk-pause cycle
@@ -459,5 +536,14 @@
 #define LED_ERROR_STROBE_DEFAULT_S  60   // error strobe auto-off after N s (0 = never)
 #define LED_TICK_MIN_INTERVAL_MS    16   // throttle ledTick() to ~60Hz
 #define LED_TEST_DURATION_S          8   // /led/test runs the chosen effect for 8s
+
+// Default per-state colours, 0xRRGGBB. Intensity is the brightness slider's job,
+// so these are saturated hues: white = standby, blue = working, amber = wants
+// attention, green = done, red = fault.
+#define LED_COLOR_IDLE_DEFAULT      0xFFFFFF
+#define LED_COLOR_PRINTING_DEFAULT  0x0080FF
+#define LED_COLOR_PAUSED_DEFAULT    0xFF9000
+#define LED_COLOR_FINISHED_DEFAULT  0x00FF40
+#define LED_COLOR_ERROR_DEFAULT     0xFF0000
 
 #endif // CONFIG_H
