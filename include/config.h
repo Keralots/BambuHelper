@@ -208,16 +208,13 @@
 
 #define BOARD_HAS_ONBOARD_RGB  (BOARD_HAS_ONBOARD_RGB_PWM || BOARD_HAS_ONBOARD_RGB_PIXEL)
 
-// The WS2812 driver is the one expensive half of the colour LED feature: talking
-// to a pixel means the RMT peripheral driver, and that is ~14 KB of flash where
-// the three-pin PWM path is a few hundred bytes. The 1.75 MB C3 boards do not
-// have 14 KB to spare (measured: the image lands past its app slot), so they get
-// the RGB and single-colour drivers and the pixel option is not offered.
-#if defined(BOARD_IS_C3)
-#define HAS_LED_PIXEL  0
-#else
+// The WS2812 pixel driver pulls in the RMT peripheral driver (~12 KB flash where
+// the three-pin PWM path is a few hundred bytes). It used to be dropped on the
+// 1.75 MB C3 boards, whose image would otherwise land past its app slot - but the
+// -fno-exceptions flash reclaim on those envs (see the esp32c3 build_flags) freed
+// ~148 KB, so every board can now afford it. All boards offer single / RGB /
+// WS2812.
 #define HAS_LED_PIXEL  1
-#endif
 
 #if BOARD_HAS_ONBOARD_RGB_PIXEL && !HAS_LED_PIXEL
 #error "A board with an onboard WS2812 cannot drop the pixel driver"

@@ -331,7 +331,7 @@ You can change the buzzer GPIO later in the web interface under **Buzzer**. The 
 
 ### Optional Status LED Wiring
 
-A status LED can be wired to any free GPIO. Pick the wiring under **Status LED** in the web interface and set the behaviour (heartbeat, finish flash, off) there too. Three wirings are supported:
+A status LED can be wired to any free GPIO for at-a-glance notifications (connection, progress, finish, error). **Every board supports all three wirings below** - including the flash-tight ESP32-C3 boards, which now carry the WS2812 driver too - so you can solder on a single, RGB, or addressable LED on any hardware. Pick the wiring under **Status LED** in the web interface and set the behaviour (heartbeat, finish flash, off) there too. Three wirings are supported:
 
 | Wiring | Pins | Colour |
 |---|---|---|
