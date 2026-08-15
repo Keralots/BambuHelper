@@ -302,26 +302,43 @@ bool isLedPinAllowed(uint8_t pin) {
 // Named resolver: the pins the board's own onboard RGB hardware sits on. They
 // are in the deny-list above because nothing else may steal them, but a colour
 // driver IS their rightful owner, so it gets to claim them back.
-static bool isOnboardRgbPin(uint8_t pin) {
+static bool isOnboardRgbPin(uint8_t pin, uint8_t drv) {
 #if BOARD_HAS_ONBOARD_RGB_PWM
-  if (pin == ONBOARD_RGB_G_PIN || pin == ONBOARD_RGB_B_PIN) return true;
+  // The three-GPIO onboard LED is the PWM RGB driver's alone. A WS2812 driver
+  // pointed at one of these pins is a misconfig, not a rightful claim-back, so it
+  // must not be exempted from the deny-list.
+  if (drv == LED_DRV_RGB) {
+    if (pin == ONBOARD_RGB_G_PIN || pin == ONBOARD_RGB_B_PIN) return true;
 #if defined(DISPLAY_CYD)
-  // ESP32-32E clone: red moved to GPIO 22 and GPIO 4 became the speaker-amp
-  // enable, so on that variant GPIO 4 is emphatically not ours.
-  if (dispSettings.cyd32eVariant) return pin == CYD32E_LED_R_PIN;
+    // ESP32-32E clone: red moved to GPIO 22 and GPIO 4 became the speaker-amp
+    // enable, so on that variant GPIO 4 is emphatically not ours.
+    if (dispSettings.cyd32eVariant) return pin == CYD32E_LED_R_PIN;
 #endif
-  if (pin == ONBOARD_RGB_R_PIN) return true;
+    if (pin == ONBOARD_RGB_R_PIN) return true;
+  }
 #endif
 #if BOARD_HAS_ONBOARD_RGB_PIXEL
-  if (pin == ONBOARD_RGB_DATA_PIN) return true;
+  // ...and the single WS2812 data line is the pixel driver's alone.
+  if (drv == LED_DRV_PIXEL && pin == ONBOARD_RGB_DATA_PIN) return true;
 #endif
+  (void)pin; (void)drv;
   return false;
 }
 
-bool isRgbLedPinAllowed(uint8_t pin) {
+// Onboard pins are claimed back only for the driver they physically belong to,
+// and never when a live input has taken one over. The onboard exemption reverses
+// the deny-list's *static* reservation; a button or buzzer the user has since
+// parked on an onboard pin is a dynamic conflict that still wins.
+static bool isRgbLedPinAllowedFor(uint8_t pin, uint8_t drv) {
   if (pin == 0) return false;
-  if (isOnboardRgbPin(pin)) return true;
+  if (buzzerSettings.enabled && pin == buzzerSettings.pin) return false;
+  if (buttonType != BTN_DISABLED && pin == buttonPin) return false;
+  if (isOnboardRgbPin(pin, drv)) return true;
   return isLedPinAllowed(pin);
+}
+
+bool isRgbLedPinAllowed(uint8_t pin) {
+  return isRgbLedPinAllowedFor(pin, LED_DRV_RGB);
 }
 
 bool onboardRgbPins(uint8_t &r, uint8_t &g, uint8_t &b, bool &anode) {
@@ -393,8 +410,9 @@ void sanitizeLedPin() {
 
   // Single and pixel both hang off one pin; only the pixel may claim an onboard
   // RGB data line.
-  const bool ok = (ledSettings.driver == LED_DRV_PIXEL) ? isRgbLedPinAllowed(ledSettings.pin)
-                                                        : isLedPinAllowed(ledSettings.pin);
+  const bool ok = (ledSettings.driver == LED_DRV_PIXEL)
+                    ? isRgbLedPinAllowedFor(ledSettings.pin, LED_DRV_PIXEL)
+                    : isLedPinAllowed(ledSettings.pin);
   if (!ok) {
     Serial.printf("LED: pin %d not allowed, disabling\n", ledSettings.pin);
     ledSettings.enabled = false;
@@ -601,9 +619,16 @@ void initLed() {
   // (GPIO 4 classic, GPIO 22 on the clone, where GPIO 4 became the amp enable
   // and belongs to the buzzer). Skipped when a colour driver owns those pins -
   // the attach below is about to drive them itself.
-  if (!(ledSettings.enabled && ledSettings.driver == LED_DRV_RGB)) {
-    uint8_t obR = 0, obG = 0, obB = 0; bool obAnode = false;
-    onboardRgbPins(obR, obG, obB, obAnode);
+  uint8_t obR = 0, obG = 0, obB = 0; bool obAnode = false;
+  onboardRgbPins(obR, obG, obB, obAnode);
+  // Skip the park only when an enabled RGB driver is wired to this exact onboard
+  // triple - the attach below is about to drive those pins itself. An RGB driver
+  // on unrelated external pins leaves the onboard LED unowned, so it still needs
+  // parking or it floats and glows.
+  const bool colorDriverOwnsOnboard =
+      ledSettings.enabled && ledSettings.driver == LED_DRV_RGB &&
+      ledSettings.pin == obR && ledSettings.pinG == obG && ledSettings.pinB == obB;
+  if (!colorDriverOwnsOnboard) {
     parkPin((int8_t)obR, obAnode);
     parkPin((int8_t)obG, obAnode);
     parkPin((int8_t)obB, obAnode);
@@ -611,13 +636,32 @@ void initLed() {
 #endif
 
   detachAndForceLow();
-  // Disabled with a saved pin: drive it LOW instead of leaving it high-Z, so the
-  // BJT/MOSFET gate is held off by firmware (independent of any external pulldown).
-  // Only if the pin is allowed - never poke peripherals (display SPI, touch, etc.).
+  // Disabled with a saved pin: hold the wiring at its OFF level instead of leaving
+  // it high-Z, so a floating gate cannot half-light the LED. What "off" means
+  // depends on the driver and polarity - a common-anode RGB is off with its
+  // channels HIGH, so the single active-high LOW that used to run here would have
+  // lit red. Only touch allowed pins - never poke peripherals (SPI, touch, etc.).
   if (!ledSettings.enabled) {
-    if (ledSettings.pin != 0 && isLedPinAllowed(ledSettings.pin)) {
-      pinMode(ledSettings.pin, OUTPUT);
-      digitalWrite(ledSettings.pin, LOW);
+    if (ledSettings.pin != 0) {
+      if (ledSettings.driver == LED_DRV_RGB) {
+        const bool inv = ledSettings.commonAnode;
+        if (isRgbLedPinAllowed(ledSettings.pin))  parkPin(ledSettings.pin,  inv);
+        if (isRgbLedPinAllowed(ledSettings.pinG)) parkPin(ledSettings.pinG, inv);
+        if (isRgbLedPinAllowed(ledSettings.pinB)) parkPin(ledSettings.pinB, inv);
+      } else if (ledSettings.driver == LED_DRV_PIXEL) {
+#if HAS_LED_PIXEL
+        // A warm reset does not power-cycle a WS2812, so it can boot still lit
+        // from a previous config, and detachAndForceLow() above only fired if a
+        // driver was already attached. Bring the driver up just to push one off
+        // frame, then tear it straight down (which also parks the line low).
+        if (isRgbLedPinAllowedFor(ledSettings.pin, LED_DRV_PIXEL) &&
+            attachDriver(LED_DRV_PIXEL, ledSettings.pin, 0, 0)) {
+          detachAndForceLow();
+        }
+#endif
+      } else if (isLedPinAllowed(ledSettings.pin)) {
+        parkPin(ledSettings.pin, false);   // single active-high LED
+      }
     }
     return;
   }
@@ -627,7 +671,7 @@ void initLed() {
         !isRgbLedPinAllowed(ledSettings.pinG) ||
         !isRgbLedPinAllowed(ledSettings.pinB)) return;
   } else if (ledSettings.driver == LED_DRV_PIXEL) {
-    if (!isRgbLedPinAllowed(ledSettings.pin)) return;
+    if (!isRgbLedPinAllowedFor(ledSettings.pin, LED_DRV_PIXEL)) return;
   } else if (!isLedPinAllowed(ledSettings.pin)) {
     return;
   }
@@ -655,7 +699,7 @@ void previewLed(bool enabled, uint8_t driver, uint8_t pinR, uint8_t pinG,
              isRgbLedPinAllowed(pinB) &&
              pinR != pinG && pinR != pinB && pinG != pinB;
   } else if (driver == LED_DRV_PIXEL) {
-    pinsOk = isRgbLedPinAllowed(pinR);
+    pinsOk = isRgbLedPinAllowedFor(pinR, LED_DRV_PIXEL);
   } else {
     pinsOk = isLedPinAllowed(pinR);
   }
