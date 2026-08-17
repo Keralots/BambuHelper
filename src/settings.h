@@ -400,7 +400,7 @@ void saveSettings();
 // nothing usable remains. Used by every path that writes netSettings.hostname.
 void sanitizeHostname(const char* in, char* out, size_t outSize);
 void savePrinterConfig(uint8_t index);
-void clearPrinterConfig(uint8_t index);  // reset slot to factory defaults + persist
+void clearPrinterConfig(uint8_t index);  // reset slot to factory defaults + erase its NVS keys
 void saveRotationSettings();
 void saveButtonSettings();
 void saveBuzzerSettings();
@@ -409,10 +409,25 @@ void saveBatteryIndicatorSetting();
 void saveWifiTxCapped();
 void resetSettings();
 
-// Cloud token persistence (shared across printer slots)
-void saveCloudToken(const char* token);
+// Cloud token persistence (shared across printer slots). The token is stored
+// as an NVS blob so it can span NVS pages; a fragmented partition that refuses
+// a ~1 KB string write can still take it. Returns false when the write did not
+// stick (storage genuinely full) - callers must surface that, never discard it.
+bool saveCloudToken(const char* token);
 bool loadCloudToken(char* buf, size_t bufLen);
 void clearCloudToken();          // also drops the stored email and password
+
+// NVS entry usage of the whole partition, for diagnostics and error messages.
+void getNvsUsage(uint16_t& used, uint16_t& freeEntries, uint16_t& total);
+
+// Persist "which BambuHelper version sits in the currently running app slot"
+// so the OTA rollback UI can name the other slot's firmware. Call once per
+// boot, after loadSettings().
+void recordBootSlotVersion();
+
+// Read that note ("<version>|<sha8>") for an app slot by partition label.
+// Returns false when no firmware ever recorded one there.
+bool loadSlotVersionNote(const char* label, char* buf, size_t bufLen);
 
 void saveCloudEmail(const char* email);
 bool loadCloudEmail(char* buf, size_t bufLen);

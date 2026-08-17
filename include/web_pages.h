@@ -1240,6 +1240,16 @@ R"rawliteral(
 )rawliteral"
 #endif
 R"rawliteral(
+    <div id="rollbackWrap" style="display:none;margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--line-soft)">
+      <div class="hstack" style="justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2);align-items:center">
+        <div>
+          <strong style="font-size:13px">Previous firmware</strong>
+          <div id="rollbackInfo" class="small text-dim"></div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="otaRollback()">Boot other slot</button>
+      </div>
+      <div id="rollbackStatus" role="status" aria-live="polite" class="small" style="margin-top:var(--sp-2)"></div>
+    </div>
   </div>
 
   <p class="hint" style="margin-top:var(--sp-3)">Reboot and factory reset have moved to the <strong>Advanced</strong> section.</p>

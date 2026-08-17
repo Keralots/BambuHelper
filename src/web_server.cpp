@@ -284,12 +284,13 @@ static void handleSavePrinter() {
     else cfg.region = REGION_US;
   }
 
+  bool tokenStoreFailed = false;
   if (isCloudMode(cfg.mode)) {
     if (server.hasArg("serial")) strlcpy(cfg.serial, server.arg("serial").c_str(), sizeof(cfg.serial));
     if (server.hasArg("pname")) { strlcpy(cfg.name, server.arg("pname").c_str(), sizeof(cfg.name)); utf8TrimPartial(cfg.name); }
     // Save token if provided
     if (server.hasArg("token") && server.arg("token").length() > 0) {
-      saveCloudToken(server.arg("token").c_str());
+      tokenStoreFailed = !saveCloudToken(server.arg("token").c_str());
     }
     // Extract userId from stored token
     char tokenBuf[1200];
@@ -310,10 +311,20 @@ static void handleSavePrinter() {
 
   // Validate required fields and build warnings
   String warnings = "";
+  if (tokenStoreFailed) {
+    // The write itself failed (full or fragmented NVS) - without this line the
+    // portal keeps saying "No token set" however often the user pastes, with
+    // nothing to explain why.
+    uint16_t u, f, t;
+    getNvsUsage(u, f, t);
+    warnings += "The cloud token could not be stored - settings storage is full (" +
+                String(u) + " of " + String(t) +
+                " entries used). Export settings, factory-reset, re-import, then paste the token again. ";
+  }
   if (isCloudMode(cfg.mode)) {
     if (strlen(cfg.serial) == 0)
       warnings += "Serial number is required for cloud mode. ";
-    if (strlen(cfg.cloudUserId) == 0)
+    if (strlen(cfg.cloudUserId) == 0 && !tokenStoreFailed)
       warnings += "Cloud token is missing or invalid (userId extraction failed). ";
   } else {
     if (strlen(cfg.ip) == 0)
@@ -698,6 +709,16 @@ static void handleDebug() {
   doc["uptime"] = millis() / 1000;
   doc["rssi"] = WiFi.RSSI();
   doc["debug_log"] = mqttDebugLog;
+  {
+    // Settings-storage pressure. free_entries overcounts (erased-but-not-yet-
+    // collected entries ride along), so used/total is the number a support
+    // thread should quote.
+    uint16_t u, f, t;
+    getNvsUsage(u, f, t);
+    doc["nvs_used"]  = u;
+    doc["nvs_free"]  = f;
+    doc["nvs_total"] = t;
+  }
 #if HAS_HMS_UI
   {
     const char* tv = hmsTableVersion();
@@ -2483,6 +2504,93 @@ static void handleOtaFinish() {
   scheduleRestart(1500);
 }
 
+// ---------------------------------------------------------------------------
+//  OTA rollback - boot the firmware still sitting in the inactive app slot,
+//  no re-download involved. Escape hatch for a regressing update.
+//
+//  Every Arduino-core image carries the lib-builder's app descriptor
+//  ("arduino-lib-builder" / "esp-idf: v4.4.7" for every build), so builds are
+//  told apart only by the per-build ELF sha256 esptool patches in. The
+//  human-readable version comes from the ver_<label> note that
+//  recordBootSlotVersion() maintains, trusted only while its sha tag still
+//  matches the image actually in the slot.
+// ---------------------------------------------------------------------------
+static const esp_partition_t* rollbackCandidate(String& fwVersion, const char** reason) {
+  *reason = "";
+  const esp_partition_t* other = esp_ota_get_next_update_partition(NULL);
+  if (!other) { *reason = "this device has no second app slot"; return nullptr; }
+
+  esp_app_desc_t desc;
+  if (esp_ota_get_partition_description(other, &desc) != ESP_OK) {
+    *reason = "the other app slot is empty"; return nullptr;
+  }
+  const esp_app_desc_t* run = esp_ota_get_app_description();
+  if (strncmp(desc.project_name, run->project_name, sizeof(desc.project_name)) != 0) {
+    *reason = "the other app slot holds something else"; return nullptr;
+  }
+  if (memcmp(desc.app_elf_sha256, run->app_elf_sha256, sizeof(desc.app_elf_sha256)) == 0) {
+    *reason = "the other app slot holds this same build"; return nullptr;
+  }
+  esp_ota_img_states_t st;
+  if (esp_ota_get_state_partition(other, &st) != ESP_OK) st = ESP_OTA_IMG_UNDEFINED;
+  if (st == ESP_OTA_IMG_INVALID || st == ESP_OTA_IMG_ABORTED) {
+    *reason = "the firmware in the other slot previously failed to boot"; return nullptr;
+  }
+
+  char note[48];
+  if (loadSlotVersionNote(other->label, note, sizeof(note))) {
+    char* bar = strchr(note, '|');
+    if (bar) {
+      char sha8[9];
+      snprintf(sha8, sizeof(sha8), "%02x%02x%02x%02x",
+               desc.app_elf_sha256[0], desc.app_elf_sha256[1],
+               desc.app_elf_sha256[2], desc.app_elf_sha256[3]);
+      if (strcmp(bar + 1, sha8) == 0) { *bar = '\0'; fwVersion = note; }
+    }
+  }
+  return other;
+}
+
+static void handleOtaSlots() {
+  String fw;
+  const char* reason;
+  const esp_partition_t* other = rollbackCandidate(fw, &reason);
+  JsonDocument doc;
+  doc["can"] = other != nullptr;
+  if (other) { if (fw.length() > 0) doc["fw"] = fw; }
+  else doc["reason"] = reason;
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+static void handleOtaRollback() {
+  String fw;
+  const char* reason;
+  const esp_partition_t* other = rollbackCandidate(fw, &reason);
+  if (!other) {
+    String resp = String("{\"status\":\"error\",\"message\":\"Rollback unavailable: ") + reason + ".\"}";
+    server.send(200, "application/json", resp);
+    return;
+  }
+  // esp_ota_set_boot_partition() runs a full esp_image_verify() over the
+  // target slot before touching otadata, so a damaged or half-written image
+  // is refused right here instead of bricking the boot. (Update.canRollBack()
+  // only checks the first byte - do not swap this for it.)
+  esp_err_t err = esp_ota_set_boot_partition(other);
+  if (err != ESP_OK) {
+    String resp = String("{\"status\":\"error\",\"message\":\"The other slot's firmware failed verification (") + esp_err_to_name(err) + ").\"}";
+    server.send(200, "application/json", resp);
+    return;
+  }
+  Serial.printf("OTA: rollback -> %s (%s)\n", other->label,
+                fw.length() > 0 ? fw.c_str() : "unknown version");
+  disconnectBambuMqtt();
+  server.send(200, "application/json",
+    "{\"status\":\"ok\",\"message\":\"Booting the other firmware slot...\"}");
+  scheduleRestart(1500);
+}
+
 // Captive portal: redirect any unknown request to root
 // Android/Samsung check /generate_204 expecting 204 — returning 302 triggers popup.
 // Apple checks /hotspot-detect.html — non-"Success" body triggers popup.
@@ -2555,6 +2663,10 @@ void initWebServer() {
   server.on("/settings/export", HTTP_GET, handleSettingsExport);
   server.on("/settings/import", HTTP_POST, handleSettingsImportFinish, handleSettingsImportUpload);
   server.on("/ota/upload", HTTP_POST, handleOtaFinish, handleOtaUpload);
+  // Deliberately outside ENABLE_OTA_AUTO: rolling back must work exactly on
+  // the boards too constrained for the online-update path.
+  server.on("/ota/slots",    HTTP_GET,  handleOtaSlots);
+  server.on("/ota/rollback", HTTP_POST, handleOtaRollback);
 #ifdef ENABLE_OTA_AUTO
   server.on("/ota/auto",   HTTP_POST, handleOtaAuto);
   server.on("/ota/status", HTTP_GET,  handleOtaStatus);

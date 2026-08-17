@@ -1641,6 +1641,30 @@ function waitForReboot(st){
   })();
 }
 
+/* Rollback: the device tells us whether the inactive app slot holds a
+   different, bootable firmware; if so the "Previous firmware" block appears.
+   The slot's version is only known when that firmware was new enough to
+   record it, hence the two phrasings. */
+function initRollback(){
+  if (!document.getElementById('rollbackWrap')) return;
+  fetch('/ota/slots').then(function(r){return r.json();}).then(function(d){
+    if (!d.can) return;
+    document.getElementById('rollbackInfo').textContent = d.fw
+      ? 'Version ' + d.fw + ' is still installed in the second update slot.'
+      : 'An older firmware build is still installed in the second update slot.';
+    document.getElementById('rollbackWrap').style.display = 'block';
+  }).catch(function(e){console.warn('rollback info:',e);});
+}
+function otaRollback(){
+  if (!confirm('Reboot into the firmware in the other update slot? Settings are kept, but options added by the newer version may reset, and its cloud token storage is not readable by older versions (re-paste the token there if cloud stops working). You can update again at any time.')) return;
+  var st = document.getElementById('rollbackStatus');
+  st.style.color = 'var(--info)'; st.textContent = 'Verifying the other slot...';
+  fetch('/ota/rollback',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if (d.status === 'ok'){ st.style.color = 'var(--success)'; st.textContent = d.message; waitForReboot(st); }
+    else { st.style.color = 'var(--danger)'; st.textContent = d.message || 'Rollback failed'; }
+  }).catch(function(e){ st.style.color = 'var(--danger)'; st.textContent = 'Rollback failed: network error'; console.warn('rollback:',e); });
+}
+
 /* Online-update helpers. The markup that calls them is still built only where
    ENABLE_OTA_AUTO is set; this file ships to every board, so on the others the
    functions simply have no buttons to be reached from. */
@@ -1799,6 +1823,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   setTimeout(function(){ selectPrinterTab(0); }, 80);
   setTimeout(function(){ selectPowerTab(0); }, 140);
   refreshHwInfo();
+  initRollback();
   refreshTopStatusDots();
   setInterval(refreshTopStatusDots, 5000);
 })();

@@ -1366,6 +1366,7 @@ void setup() {
   Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
 
   loadSettings();
+  recordBootSlotVersion();  // names this slot's fw for the OTA rollback UI
   initDisplay();
   Battery::begin();
   splashEnd = millis() + 2000;

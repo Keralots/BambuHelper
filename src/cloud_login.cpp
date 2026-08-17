@@ -345,7 +345,11 @@ static bool storeToken(const String& token) {
     return fail("Bambu's token is larger than this device can store.");
   }
 
-  saveCloudToken(token.c_str());
+  if (!saveCloudToken(token.c_str())) {
+    // A sign-in that reports success but silently lost its token leaves the
+    // user with nothing to debug - refuse loudly instead.
+    return fail("Signed in, but the token could not be stored - settings storage is full. Factory-reset (export settings first) and try again.");
+  }
   if (g_email.length() > 0) saveCloudEmail(g_email.c_str());
 
   // A stored password is only useful for silent re-login, which 2FA rules out.

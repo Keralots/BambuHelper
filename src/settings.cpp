@@ -4,7 +4,10 @@
 #include "buzzer.h"
 #include "led.h"
 #include "timezones.h"
+#include "cloud_login.h"   // CLOUD_TOKEN_MAX - the one size every token path shares
 #include <Preferences.h>
+#include <nvs.h>           // nvs_get_stats for the storage-usage diagnostics
+#include "esp_ota_ops.h"   // running-slot label for recordBootSlotVersion()
 #include <cstring>   // memcpy/memmove/strlcpy used by the UTF-8 sanitizer helpers
 
 // Global state
@@ -396,6 +399,11 @@ static void loadGaugeLabel(const char* key, char* out, size_t outLen) {
 // ---------------------------------------------------------------------------
 //  Load settings
 // ---------------------------------------------------------------------------
+// Defined next to savePrinterConfig below; loadSettings and saveSettings both
+// need them first.
+static bool printerSlotIsFactoryDefault(const PrinterConfig& cfg);
+static void erasePrinterKeys(uint8_t index, bool prefsOpen);
+
 void loadSettings() {
   // Open read-write from the start: we may need to write a migration flag.
   // This is safe and avoids closing/reopening the partition mid-load.
@@ -523,11 +531,16 @@ void loadSettings() {
     setPrinterGcodeStateCanonical(printers[i].state, GCODE_UNKNOWN);
   }
 
-  // One-shot migration: copy legacy global dsp_amsv to every printer slot
-  // that doesn't already have its own value, then remove the legacy key.
+  // One-shot migration: copy legacy global dsp_amsv to every configured
+  // printer slot that doesn't already have its own value, then remove the
+  // legacy key. Factory-default slots are skipped: with legacy true the flag
+  // would mark them non-default forever, so saveSettings could never reclaim
+  // their entries. An empty slot gets the setting from the web UI once it is
+  // actually configured.
   if (prefs.isKey("dsp_amsv")) {
     bool legacy = prefs.getBool("dsp_amsv", false);
     for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
+      if (printerSlotIsFactoryDefault(printers[i].config)) continue;
       char key[16];
       snprintf(key, sizeof(key), "p%d_amsv", i);
       if (!prefs.isKey(key)) {
@@ -901,7 +914,10 @@ void saveSettings() {
   prefs.putUChar("activePrt", activePrinterIndex);
 
   for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
-    savePrinterConfig(i);
+    // A factory-default slot is stored as "no keys", not as 14 default-valued
+    // keys - two idle slots are ~36 wasted entries on a 20 KB partition.
+    if (printerSlotIsFactoryDefault(printers[i].config)) erasePrinterKeys(i, true);
+    else savePrinterConfig(i);
   }
 
   // Display settings
@@ -1061,6 +1077,55 @@ void saveSettings() {
   prefs.end();
 }
 
+// True when a slot's persistable state is indistinguishable from a
+// never-configured one, i.e. erasing its NVS keys and re-loading reconstructs
+// the exact same RAM config. Deliberately NOT isPrinterConfigured(): that
+// predicate also returns false for populated-but-disabled slots (4-printer
+// beta off, cloud slot awaiting cloudUserId), which must never be erased.
+static bool printerSlotIsFactoryDefault(const PrinterConfig& cfg) {
+  if (cfg.ip[0] || cfg.serial[0] || cfg.accessCode[0] || cfg.name[0] ||
+      cfg.cloudUserId[0])
+    return false;
+  if (cfg.mode != CONN_LOCAL || cfg.region != REGION_US) return false;
+  if (cfg.amsView || cfg.lightFlags != 0 || cfg.lightOffDelayMin != 5) return false;
+
+  uint8_t def[GAUGE_SLOT_COUNT];
+  defaultGaugeSlots(def);
+  if (memcmp(cfg.gaugeSlots, def, sizeof(def)) != 0) return false;
+
+  uint8_t idef[IDLE_SLOT_COUNT];
+  defaultIdleSlots(idef);
+  if (memcmp(cfg.idleSlots, idef, sizeof(idef)) != 0) return false;
+
+  for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++)
+    if (cfg.landscapeExtras[g] != GAUGE_EMPTY) return false;
+  for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT; g++)
+    if (cfg.portraitExtras[g] != GAUGE_EMPTY) return false;
+  return true;
+}
+
+// Drop every persisted key of one printer slot. Loading a slot with no keys
+// yields the factory defaults, so this is the storage-shape of "unconfigured".
+// The suffix list must stay in sync with savePrinterConfig, and every key in
+// it must be tested by printerSlotIsFactoryDefault - a key erased here that
+// the predicate does not check would silently lose the user's value.
+// prefsOpen: savePrinterConfig's isKey("wifiSSID") open-heuristic is unsafe
+// here (missing on a fresh partition even while prefs IS open), and a
+// mistaken end() would close the caller's handle.
+static void erasePrinterKeys(uint8_t index, bool prefsOpen) {
+  static const char* suffixes[] = {
+    "ip", "serial", "code", "name", "mode", "cuid", "region",
+    "slots", "lext", "pext", "islot", "amsv", "lflag", "ldly",
+  };
+  if (!prefsOpen) prefs.begin(NVS_NAMESPACE, false);
+  char key[16];
+  for (auto s : suffixes) {
+    snprintf(key, sizeof(key), "p%d_%s", index, s);
+    if (prefs.isKey(key)) prefs.remove(key);
+  }
+  if (!prefsOpen) prefs.end();
+}
+
 void savePrinterConfig(uint8_t index) {
   if (index >= MAX_PRINTERS) return;
 
@@ -1123,7 +1188,9 @@ void clearPrinterConfig(uint8_t index) {
   defaultIdleSlots(cfg.idleSlots);
   memset(cfg.landscapeExtras, GAUGE_EMPTY, sizeof(cfg.landscapeExtras));
   memset(cfg.portraitExtras, GAUGE_EMPTY, sizeof(cfg.portraitExtras));
-  savePrinterConfig(index);
+  // Erase the slot's keys instead of persisting 14 default values - clearing
+  // a printer is the moment its NVS entries should come back, not get rewritten.
+  erasePrinterKeys(index, false);
 }
 
 void saveRotationSettings() {
@@ -1216,15 +1283,62 @@ void resetSettings() {
 
 // ---------------------------------------------------------------------------
 //  Cloud token persistence
+//
+//  Stored as a blob ("cl_tok2"), not a string: an NVS string must fit into
+//  contiguous entries of a single 126-entry page, so a ~1 KB token is refused
+//  outright on a full or fragmented partition. Blob chunks are sized to each
+//  page's free tail and span pages. Older firmware wrote the "cl_token"
+//  string; reads fall back to it and a successful blob write retires it.
+//  Note the one-way step: firmware predating cl_tok2 will not see the token.
 // ---------------------------------------------------------------------------
-void saveCloudToken(const char* token) {
+bool saveCloudToken(const char* token) {
+  size_t len = token ? strlen(token) : 0;
+  if (len == 0 || len >= CLOUD_TOKEN_MAX) return false;
+
   prefs.begin(NVS_NAMESPACE, false);
-  prefs.putString("cl_token", token);
+  // A refused write leaves the previous blob intact (NVS writes the new value
+  // before erasing the old one), so there is nothing to undo in that case.
+  bool ok = prefs.putBytes("cl_tok2", token, len) == len;
+  if (ok) {
+    // Read back and compare: a torn write must not report success. A blob
+    // that fails this check has already replaced whatever was there, so drop
+    // it - unverified bytes must not shadow a still-valid legacy token.
+    char* check = (char*)malloc(len);
+    if (check) {
+      ok = prefs.getBytes("cl_tok2", check, len) == len &&
+           memcmp(check, token, len) == 0;
+      free(check);
+      if (!ok) prefs.remove("cl_tok2");
+    }
+  }
+  if (ok) prefs.remove("cl_token");  // retire the legacy string, frees ~33 entries
   prefs.end();
+  if (!ok) Serial.printf("NVS: cloud token write FAILED (%u bytes)\n", (unsigned)len);
+  return ok;
 }
 
 bool loadCloudToken(char* buf, size_t bufLen) {
+  if (buf == nullptr || bufLen == 0) return false;
+  buf[0] = '\0';
   prefs.begin(NVS_NAMESPACE, true);
+  // isKey() first on purpose: getBytesLength() on a missing key logs an
+  // ESP_LOG error (visible in shipped builds), and this runs on every cloud
+  // connect, so a device still on the legacy string would spam
+  // "nvs_get_blob len fail: cl_tok2 NOT_FOUND" into the logs users paste
+  // into bug reports.
+  size_t len = prefs.isKey("cl_tok2") ? prefs.getBytesLength("cl_tok2") : 0;
+  if (len > 0) {
+    bool ok = true;
+    if (len < bufLen) {
+      ok = prefs.getBytes("cl_tok2", buf, bufLen) == len;
+      buf[ok ? len : 0] = '\0';
+    }
+    // else: an undersized probe buffer (the portal's "is a token stored?"
+    // check) - report presence without the payload; every consumer that uses
+    // the token passes a CLOUD_TOKEN_MAX-sized buffer.
+    prefs.end();
+    return ok;
+  }
   String t = prefs.getString("cl_token", "");
   prefs.end();
   if (t.length() == 0) return false;
@@ -1234,10 +1348,57 @@ bool loadCloudToken(char* buf, size_t bufLen) {
 
 void clearCloudToken() {
   prefs.begin(NVS_NAMESPACE, false);
+  prefs.remove("cl_tok2");
   prefs.remove("cl_token");
   prefs.remove("cl_email");
   prefs.remove("cl_pass");
   prefs.end();
+}
+
+// ---------------------------------------------------------------------------
+//  NVS diagnostics + per-slot version record
+// ---------------------------------------------------------------------------
+void getNvsUsage(uint16_t& used, uint16_t& freeEntries, uint16_t& total) {
+  used = freeEntries = total = 0;
+  nvs_stats_t s;
+  if (nvs_get_stats(NULL, &s) != ESP_OK) return;
+  used        = (uint16_t)s.used_entries;
+  freeEntries = (uint16_t)s.free_entries;
+  total       = (uint16_t)s.total_entries;
+}
+
+// The app descriptor of an Arduino-core image carries the lib-builder's
+// project/version ("arduino-lib-builder", "esp-idf: v4.4.7"), identical for
+// every build - only its ELF sha256 is per-build. So the running firmware
+// notes its own FW_VERSION per app-slot label, tagged with the first 4 sha
+// bytes; the rollback UI trusts the other slot's note only while that tag
+// still matches the image actually sitting there.
+void recordBootSlotVersion() {
+  const esp_partition_t* run = esp_ota_get_running_partition();
+  const esp_app_desc_t*  d   = esp_ota_get_app_description();
+  if (!run || !d) return;
+
+  char key[16];
+  snprintf(key, sizeof(key), "ver_%s", run->label);
+  char val[48];
+  snprintf(val, sizeof(val), "%s|%02x%02x%02x%02x", FW_VERSION,
+           d->app_elf_sha256[0], d->app_elf_sha256[1],
+           d->app_elf_sha256[2], d->app_elf_sha256[3]);
+
+  prefs.begin(NVS_NAMESPACE, false);
+  if (prefs.getString(key, "") != val) prefs.putString(key, val);  // best effort
+  prefs.end();
+}
+
+bool loadSlotVersionNote(const char* label, char* buf, size_t bufLen) {
+  char key[16];
+  snprintf(key, sizeof(key), "ver_%s", label);
+  prefs.begin(NVS_NAMESPACE, true);
+  String v = prefs.getString(key, "");
+  prefs.end();
+  if (v.length() == 0) return false;
+  strlcpy(buf, v.c_str(), bufLen);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
