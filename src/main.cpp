@@ -492,13 +492,13 @@ static void handleWakeButton() {
   uint32_t boardHoldMs = boardButtonHoldDurationMs();
   uint32_t holdMs = (touchHoldMs > boardHoldMs) ? touchHoldMs : boardHoldMs;
   bool suppressDim = isBoardButton3Held();
-#if defined(USE_XPT2046)
+#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH)
   // Resistive panels (CYD, TZT) register a wake touch as a long press that
   // easily crosses the 300ms hold threshold. That would ramp the LED (default
   // direction is up, toward max), save it, and consume the press so the screen
   // never wakes. Suppress dimming while asleep so the touch only wakes.
-  // Capacitive panels get crisp short taps and keep hold-to-dim on the
-  // screensaver, so this gate is XPT2046-only.
+  // Most capacitive panels get crisp short taps and keep hold-to-dim on the
+  // screensaver, but AXS15231B requires the same suppression as XPT2046.
   if (isSleepStickyScreen(getScreenState())) suppressDim = true;
 #endif
 
