@@ -918,7 +918,8 @@ function selectPowerTab(plug){
   fetch('/power/config?plug=' + plug).then(function(r){return r.json();}).then(function(d){
     if (plug !== currentPowerPlug) return;
     document.getElementById('tsm_en').checked = !!d.enabled;
-    document.getElementById('tsm_pt').value = (d.plugType >= 0 && d.plugType <= 2) ? String(d.plugType) : '0';
+    document.getElementById('tsm_pt').value = (d.plugType >= 0 && d.plugType <= 3) ? String(d.plugType) : '0';
+    document.getElementById('tsm_po').value = (d.plugOutlet >= 0 && d.plugOutlet <= 3) ? String(d.plugOutlet) : '0';
     onPlugTypeChange();
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
@@ -939,15 +940,22 @@ function onPlugTypeChange(){
   var type = document.getElementById('tsm_pt').value;
   var shelly = (type === '1');
   var kasa = (type === '2');
+  var shellyStrip = (type === '3');
   var hint = document.getElementById('tsm_shelly_hint');
   if (hint) hint.style.display = shelly ? '' : 'none';
   var kasaHint = document.getElementById('tsm_kasa_hint');
   if (kasaHint) kasaHint.style.display = kasa ? '' : 'none';
+  var stripHint = document.getElementById('tsm_shellystrip_hint');
+  if (stripHint) stripHint.style.display = shellyStrip ? '' : 'none';
+  var outletField = document.getElementById('tsm_outlet_field');
+  if (outletField) outletField.style.display = shellyStrip ? '' : 'none';
+  var ptRow = document.getElementById('tsm_pt_row');
+  if (ptRow) ptRow.style.gridTemplateColumns = shellyStrip ? '1fr 1fr' : '1fr';
   // Shelly and Kasa realtime APIs have no Today odometer.
   var tdLbl = document.getElementById('ptTodayLabel');
   var tdVal = document.getElementById('ptToday');
-  if (tdLbl) tdLbl.style.display = (shelly || kasa) ? 'none' : '';
-  if (tdVal) tdVal.style.display = (shelly || kasa) ? 'none' : '';
+  if (tdLbl) tdLbl.style.display = (shelly || kasa || shellyStrip) ? 'none' : '';
+  if (tdVal) tdVal.style.display = (shelly || kasa || shellyStrip) ? 'none' : '';
 }
 function fmtKwh(v){ return (v >= 0) ? (v.toFixed(3) + ' kWh') : '-'; }
 function fmtMoney(v, cur){ if (!(v >= 0) || !cur) return ''; return ' (' + v.toFixed(2) + ' ' + cur + ')'; }
@@ -990,6 +998,7 @@ function savePower(){
   p.append('plug', String(currentPowerPlug));
   p.append('tsm_en', document.getElementById('tsm_en').checked ? '1' : '0');
   p.append('tsm_pt', document.getElementById('tsm_pt').value);
+  p.append('tsm_po', document.getElementById('tsm_po').value);
   p.append('tsm_ip', document.getElementById('tsm_ip').value.trim());
   var dm = document.querySelector('input[name="tsm_dm"]:checked');
   if (dm) p.append('tsm_dm', dm.value);

@@ -1461,7 +1461,8 @@ static void handleGetPowerConfig() {
   TasmotaSettings& s = tasmotaSettings[plug];
   JsonDocument doc;
   doc["enabled"]         = s.enabled;
-  doc["plugType"]        = s.plugType;            // 0=Tasmota, 1=Shelly Gen2/3, 2=Kasa legacy
+  doc["plugType"]        = s.plugType;            // 0=Tasmota, 1=Shelly Gen2/3, 2=Kasa legacy, 3=Shelly Power Strip Gen4
+  doc["plugOutlet"]      = s.plugOutlet;          // plugType 3 only: which outlet (0-3)
   doc["ip"]              = s.ip;
   doc["displayMode"]     = s.displayMode;
   doc["pollInterval"]    = s.pollInterval;
@@ -1523,7 +1524,11 @@ static void handleSavePower() {
   if (server.hasArg("tsm_en"))  s.enabled = (server.arg("tsm_en").toInt() != 0);
   if (server.hasArg("tsm_pt")) {
     int pt = server.arg("tsm_pt").toInt();
-    s.plugType = (pt >= 0 && pt <= 2) ? (uint8_t)pt : 0;
+    s.plugType = (pt >= 0 && pt <= 3) ? (uint8_t)pt : 0;
+  }
+  if (server.hasArg("tsm_po")) {
+    int po = server.arg("tsm_po").toInt();
+    s.plugOutlet = (po >= 0 && po <= 3) ? (uint8_t)po : 0;
   }
   if (server.hasArg("tsm_ip"))  strlcpy(s.ip, server.arg("tsm_ip").c_str(), sizeof(s.ip));
   if (server.hasArg("tsm_dm")) {
@@ -1786,6 +1791,7 @@ static void handleSettingsExport() {
     JsonObject p = plugs.add<JsonObject>();
     p["enabled"]         = tasmotaSettings[i].enabled;
     p["plugType"]        = tasmotaSettings[i].plugType;
+    p["plugOutlet"]      = tasmotaSettings[i].plugOutlet;
     p["ip"]              = tasmotaSettings[i].ip;
     p["displayMode"]     = tasmotaSettings[i].displayMode;
     p["pollInterval"]    = tasmotaSettings[i].pollInterval;
@@ -2249,7 +2255,8 @@ static void handleSettingsImportFinish() {
       if (idx >= TASMOTA_PLUG_COUNT) return;
       TasmotaSettings& s = tasmotaSettings[idx];
       if (p["enabled"].is<bool>())          s.enabled = p["enabled"].as<bool>();
-      if (p["plugType"].is<uint8_t>())      { uint8_t pt = p["plugType"].as<uint8_t>(); s.plugType = (pt <= 2) ? pt : 0; }
+      if (p["plugType"].is<uint8_t>())      { uint8_t pt = p["plugType"].as<uint8_t>(); s.plugType = (pt <= 3) ? pt : 0; }
+      if (p["plugOutlet"].is<uint8_t>())    { uint8_t po = p["plugOutlet"].as<uint8_t>(); s.plugOutlet = (po <= 3) ? po : 0; }
       if (p["ip"].is<const char*>())        strlcpy(s.ip, p["ip"], sizeof(s.ip));
       if (p["displayMode"].is<uint8_t>())   { uint8_t dm = p["displayMode"].as<uint8_t>(); s.displayMode = (dm <= 2) ? dm : 0; }
       if (p["pollInterval"].is<uint8_t>()) {

@@ -24,6 +24,7 @@
 #define PLUG_TYPE_TASMOTA                  0
 #define PLUG_TYPE_SHELLY                   1
 #define PLUG_TYPE_KASA                     2
+#define PLUG_TYPE_SHELLY_STRIP             3
 
 #define KASA_PORT                       9999
 #define KASA_MAX_COMMAND_BYTES            192
@@ -225,17 +226,18 @@ static void pollTasmota(uint8_t i) {
                 i, newWatts, newToday, newTotal);
 }
 
-// Shelly Gen2/Gen3 (same RPC API): GET /rpc/Switch.GetStatus?id=0 -> {apower (W),
-// aenergy.total (Wh), output (bool)}.
+// Shelly Gen2/Gen3/Gen4 (same RPC API): GET /rpc/Switch.GetStatus?id=N -> {apower (W),
+// aenergy.total (Wh), output (bool)}. Single-relay plugs (Gen2/3) are always id=0;
+// the Gen4 power strip exposes multiple outlets (id=0-3), selected by the po param.
 // Issue #115 reporter used /rpc/Shelly.GetStatus -> "switch:0".apower
 // and /relay/0?turn=on|off; the Switch RPC is the narrower equivalent.
 // Shelly reports no Today/Yesterday odometer, so those stay at their -1 sentinel.
 // aenergy.total is a cumulative Wh counter (can be reset) — divide by 1000 for kWh.
-static void pollShelly(uint8_t i) {
+static void pollShelly(uint8_t i, uint8_t po = 0) {
   TasmotaSettings& s = tasmotaSettings[i];
 
   char url[64];
-  snprintf(url, sizeof(url), "http://%s/rpc/Switch.GetStatus?id=0", s.ip);
+  snprintf(url, sizeof(url), "http://%s/rpc/Switch.GetStatus?id=%u", s.ip, po);
 
   HTTPClient http;
   http.setTimeout(g_rt[i].plugOffline ? TASMOTA_TIMEOUT_FAST_MS : TASMOTA_TIMEOUT_MS);
@@ -287,8 +289,8 @@ static void pollShelly(uint8_t i) {
   // Shelly has no Today/Yesterday — pass -1 so those stay unavailable.
   applyReadings(i, newWatts, -1.0f, -1.0f, newTotal);
 
-  Serial.printf("[Shelly %u] Power=%.0fW Total=%.3fkWh Output=%d\n",
-                i, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
+  Serial.printf("[Shelly %u] outlet=%u Power=%.0fW Total=%.3fkWh Output=%d\n",
+                i, po, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
 }
 
 // TP-Link Kasa legacy local protocol (KP115/HS110 family): TCP port 9999,
@@ -431,7 +433,7 @@ static void pollKasa(uint8_t i) {
 static void pollOne(uint8_t i) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (!s.enabled || s.ip[0] == '\0') return;
-  if (s.plugType == PLUG_TYPE_SHELLY)    pollShelly(i);
+  if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) pollShelly(i, s.plugOutlet);
   else if (s.plugType == PLUG_TYPE_KASA) pollKasa(i);
   else                                   pollTasmota(i);
 }
@@ -443,7 +445,7 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (s.ip[0] == '\0') return false;
 
-  const char* tag = s.plugType == PLUG_TYPE_SHELLY ? "Shelly" :
+  const char* tag = (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) ? "Shelly" :
                     (s.plugType == PLUG_TYPE_KASA ? "Kasa" : "Tasmota");
   if (s.plugType == PLUG_TYPE_KASA) {
     char command[80];
@@ -466,10 +468,12 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   }
 
   char url[64];
-  if (s.plugType == PLUG_TYPE_SHELLY) {
+  if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) {
     // Shelly Gen2: GET /rpc/Switch.Set?id=0&on=true|false (issue #115 Gen1
-    // equivalent was /relay/0?turn=on|off).
-    snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=0&on=%s", s.ip, on ? "true" : "false");
+    // equivalent was /relay/0?turn=on|off). Gen4 power strip uses the same RPC
+    // with a user-selected outlet id; plugOutlet stays 0 (its default) for
+    // single-relay Gen2/3 plugs since that field is hidden for them.
+    snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=%u&on=%s", s.ip, s.plugOutlet, on ? "true" : "false");
   } else {
     snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power%%20%s", s.ip, on ? "On" : "Off");
   }

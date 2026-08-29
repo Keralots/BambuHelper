@@ -1286,12 +1286,19 @@ R"rawliteral(
       <label for="tsm_en">Enable power monitoring for this plug</label>
     </label>
     <div id="plugDeps1">
-    <div class="field" style="margin-top:var(--sp-3)">
-      <label for="tsm_pt">Power plug type</label>
-      <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option><option value="2">TP-Link Kasa (KP115/legacy)</option></select>
+    <div class="row" id="tsm_pt_row" style="margin-top:var(--sp-3)">
+      <div class="field">
+        <label for="tsm_pt">Power plug type</label>
+        <select id="tsm_pt" onchange="onPlugTypeChange()"><option value="0">Tasmota</option><option value="1">Shelly (Gen2/Gen3)</option><option value="2">TP-Link Kasa (KP115/legacy)</option><option value="3">Shelly Power Strip Gen4</option></select>
+      </div>
+      <div class="field" id="tsm_outlet_field" style="display:none">
+        <label for="tsm_po">Power strip outlet</label>
+        <select id="tsm_po"><option value="0">Output 0</option><option value="1">Output 1</option><option value="2">Output 2</option><option value="3">Output 3</option></select>
+      </div>
     </div>
     <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
     <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs using the legacy local protocol on TCP port 9999, including KP115 and HS110. No TP-Link credentials or cloud connection are used. Newer KLAP/Matter models are not supported. Kasa reports live watts, relay state, and cumulative Total, but not Today's energy.</div>
+    <div class="help-text" id="tsm_shellystrip_hint" style="display:none">Shelly Power Strip Gen4 - same RPC API as Gen2/Gen3, but exposes multiple outlets at one IP. Pick which outlet above tracks/controls this printer slot. Not password-protected (digest auth is not supported). Reports live watts and a cumulative Total, but not Today's / Yesterday's energy.</div>
     <div class="row" style="margin-top:var(--sp-3)">
       <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
