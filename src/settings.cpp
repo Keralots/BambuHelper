@@ -857,8 +857,13 @@ void loadSettings() {
     snprintf(k, sizeof(k), "tsm%u_en",  i); tasmotaSettings[i].enabled = prefs.getBool(k, false);
     snprintf(k, sizeof(k), "tsm%u_pt",  i); {
       uint8_t pt = prefs.getUChar(k, 0);
-      if (pt > 2) pt = 0;                       // 0=Tasmota, 1=Shelly Gen2/3, 2=Kasa legacy
+      if (pt > 3) pt = 0;                       // 0=Tasmota, 1=Shelly Gen2/3, 2=Kasa legacy, 3=Shelly Power Strip Gen4
       tasmotaSettings[i].plugType = pt;
+    }
+    snprintf(k, sizeof(k), "tsm%u_po",  i); {
+      uint8_t po = prefs.getUChar(k, 0);
+      if (po > 3) po = 0;
+      tasmotaSettings[i].plugOutlet = po;
     }
     snprintf(k, sizeof(k), "tsm%u_ip",  i); strlcpy(tasmotaSettings[i].ip, prefs.getString(k, "").c_str(), sizeof(tasmotaSettings[i].ip));
     snprintf(k, sizeof(k), "tsm%u_dm",  i); tasmotaSettings[i].displayMode = prefs.getUChar(k, 0);
@@ -1045,7 +1050,8 @@ void saveSettings() {
     if (ad < 1 || ad > 240) ad = 10;
 
     snprintf(k, sizeof(k), "tsm%u_en",  i); prefs.putBool(k, tasmotaSettings[i].enabled);
-    snprintf(k, sizeof(k), "tsm%u_pt",  i); prefs.putUChar(k, tasmotaSettings[i].plugType <= 2 ? tasmotaSettings[i].plugType : 0);
+    snprintf(k, sizeof(k), "tsm%u_pt",  i); prefs.putUChar(k, tasmotaSettings[i].plugType <= 3 ? tasmotaSettings[i].plugType : 0);
+    snprintf(k, sizeof(k), "tsm%u_po",  i); prefs.putUChar(k, tasmotaSettings[i].plugOutlet <= 3 ? tasmotaSettings[i].plugOutlet : 0);
     snprintf(k, sizeof(k), "tsm%u_ip",  i); prefs.putString(k, tasmotaSettings[i].ip);
     snprintf(k, sizeof(k), "tsm%u_dm",  i); prefs.putUChar(k, tasmotaSettings[i].displayMode);
     snprintf(k, sizeof(k), "tsm%u_pi",  i); prefs.putUChar(k, pi);
