@@ -950,7 +950,9 @@ function onPlugTypeChange(){
   var outletField = document.getElementById('tsm_outlet_field');
   if (outletField) outletField.style.display = shellyStrip ? '' : 'none';
   var ptRow = document.getElementById('tsm_pt_row');
-  if (ptRow) ptRow.style.gridTemplateColumns = shellyStrip ? '1fr 1fr' : '1fr';
+  // Class, not an inline style: an inline grid-template-columns would beat the
+  // narrow-screen media query that collapses .row to a single column.
+  if (ptRow) { if (shellyStrip) ptRow.classList.remove('row-solo'); else ptRow.classList.add('row-solo'); }
   // Shelly and Kasa realtime APIs have no Today odometer.
   var tdLbl = document.getElementById('ptTodayLabel');
   var tdVal = document.getElementById('ptToday');

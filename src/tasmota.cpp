@@ -26,6 +26,13 @@
 #define PLUG_TYPE_KASA                     2
 #define PLUG_TYPE_SHELLY_STRIP             3
 
+// Only the Gen4 power strip exposes a selectable outlet. Single-relay Gen2/Gen3
+// plugs are always id=0, so never trust a plugOutlet left behind by a plug-type
+// change, an old settings import, or a stale NVS value.
+static inline uint8_t shellyOutletId(const TasmotaSettings& s) {
+  return s.plugType == PLUG_TYPE_SHELLY_STRIP ? s.plugOutlet : 0;
+}
+
 #define KASA_PORT                       9999
 #define KASA_MAX_COMMAND_BYTES            192
 #define KASA_MAX_RESPONSE_BYTES          4096
@@ -233,7 +240,7 @@ static void pollTasmota(uint8_t i) {
 // and /relay/0?turn=on|off; the Switch RPC is the narrower equivalent.
 // Shelly reports no Today/Yesterday odometer, so those stay at their -1 sentinel.
 // aenergy.total is a cumulative Wh counter (can be reset) — divide by 1000 for kWh.
-static void pollShelly(uint8_t i, uint8_t po = 0) {
+static void pollShelly(uint8_t i, uint8_t po) {
   TasmotaSettings& s = tasmotaSettings[i];
 
   char url[64];
@@ -433,7 +440,7 @@ static void pollKasa(uint8_t i) {
 static void pollOne(uint8_t i) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (!s.enabled || s.ip[0] == '\0') return;
-  if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) pollShelly(i, s.plugOutlet);
+  if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) pollShelly(i, shellyOutletId(s));
   else if (s.plugType == PLUG_TYPE_KASA) pollKasa(i);
   else                                   pollTasmota(i);
 }
@@ -470,10 +477,9 @@ static bool sendPowerCommand(uint8_t i, bool on) {
   char url[64];
   if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) {
     // Shelly Gen2: GET /rpc/Switch.Set?id=0&on=true|false (issue #115 Gen1
-    // equivalent was /relay/0?turn=on|off). Gen4 power strip uses the same RPC
-    // with a user-selected outlet id; plugOutlet stays 0 (its default) for
-    // single-relay Gen2/3 plugs since that field is hidden for them.
-    snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=%u&on=%s", s.ip, s.plugOutlet, on ? "true" : "false");
+    // equivalent was /relay/0?turn=on|off). The Gen4 power strip uses the same
+    // RPC with a user-selected outlet id.
+    snprintf(url, sizeof(url), "http://%s/rpc/Switch.Set?id=%u&on=%s", s.ip, shellyOutletId(s), on ? "true" : "false");
   } else {
     snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power%%20%s", s.ip, on ? "On" : "Off");
   }

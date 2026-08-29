@@ -102,7 +102,7 @@ function saveWifi(){
 //              ledcidl, ledcprn, ledcpau, ledcfin, ledcerr, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
-//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_ip, tsm_dm (radio), tsm_pi,
+//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_po, tsm_ip, tsm_dm (radio), tsm_pi,
 //              tsm_ao, tsm_ad, tsm_aod, tsm_slot
 //    Diag:     dbglog
 // -----------------------------------------------------------------------------

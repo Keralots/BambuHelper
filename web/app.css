@@ -181,6 +181,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .field .hint { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-3); }
+.row.row-solo { grid-template-columns: 1fr; }
 
 /* ============ Inputs ============ */
 .section input[type="text"],
