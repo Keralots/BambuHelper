@@ -163,6 +163,26 @@ void sanitizeButtonPin() {
   if (buttonPin == CST328_RST) { clash("CST328 touch RST"); return; }
   #endif
 #endif
+#if defined(USE_GT911)
+  if (buttonPin == GT911_SDA) { clash("GT911 touch SDA"); return; }
+  if (buttonPin == GT911_SCL) { clash("GT911 touch SCL"); return; }
+  if (buttonPin == GT911_INT) { clash("GT911 touch INT"); return; }
+#endif
+#if defined(BOARD_IS_WS28C)
+  {
+    // ST7701 RGB bus + the octal-PSRAM/USB pins. LCD reset, LCD CS, touch
+    // reset and the buzzer are expander bits, so they cannot clash here.
+    const uint8_t p = buttonPin;
+    const bool reserved =
+      (p >= 1 && p <= 5) ||                      // SPI MOSI/SCLK, RGB D12/D0, battery ADC
+      (p >= 8 && p <= 18) ||                     // RGB data + touch INT
+      (p >= 38 && p <= 41) ||                    // RGB HSYNC/VSYNC/DE/PCLK
+      (p == 45 || p == 46 || p == 47 || p == 48) ||  // RGB data
+      (p == 19 || p == 20) ||                    // USB CDC
+      (p >= 26 && p <= 37);                      // flash/PSRAM
+    if (reserved) { clash("WS28C reserved peripheral"); return; }
+  }
+#endif
 #if defined(USE_XPT2046)
   if (buttonPin == TOUCH_CS)   { clash("XPT2046 CS");   return; }
   if (buttonPin == TOUCH_IRQ)  { clash("XPT2046 IRQ");  return; }
