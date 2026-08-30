@@ -562,6 +562,7 @@ static void handleStatus() {
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
   doc["mac"] = WiFi.macAddress();
+  doc["board"] = BOARD_VARIANT;   // which build this is, for remote diagnosis
   doc["flash_kb"] = ESP.getFlashChipSize() / 1024;
 #if defined(BOARD_HAS_PSRAM) || defined(CONFIG_SPIRAM_SUPPORT)
   doc["psram_kb"] = ESP.getPsramSize() / 1024;

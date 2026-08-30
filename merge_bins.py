@@ -125,6 +125,14 @@ BOARDS = {
         'build_env': 'ws_lcd_350',
         'board_id': 'ws_lcd_350',
     },
+    'ws_lcd_28c': {                      # community / untested (issue #171)
+        'build_dir': '.pio/build/ws_lcd_28c',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'ws_lcd_28c',
+        'board_id': 'ws_lcd_28c',
+    },
     'jc3248w535': {
         'build_dir': '.pio/build/jc3248w535',
         'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
@@ -198,6 +206,8 @@ BOARD_ALIASES = {
     'ws_lcd_280': 'ws_lcd_280',
     'ws350': 'ws_lcd_350',
     'ws_lcd_350': 'ws_lcd_350',
+    'ws28c': 'ws_lcd_28c',
+    'ws_lcd_28c': 'ws_lcd_28c',
     'jc': 'jc3248w535',
     'jc3248w535': 'jc3248w535',
     'sc01': 'wt32_sc01_plus',
