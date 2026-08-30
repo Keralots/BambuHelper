@@ -94,7 +94,7 @@ static bool shimmerPaused = false;
 static unsigned long shimmerPauseStart = 0;
 
 static const int16_t SHIMMER_W = 12;       // width of highlight
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Arc shimmer cadence, tuned on round hardware. Only the rim/speedo arc
 // sweep runs on round builds; the LED-bar sweep below is compiled out.
 static const uint16_t SHIMMER_INTERVAL = 20;  // ms between steps (~50fps)
@@ -462,7 +462,7 @@ void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   }
 }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // ---------------------------------------------------------------------------
 //  Full-circle rim ring (round displays): progress fill runs clockwise from
 //  12 o'clock. drawArcAA's angle space has 0 at 6 o'clock increasing
@@ -911,7 +911,7 @@ void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
   drawCurvedStringImpl(gfx, str, cx, cy, r, centerAA, false,
                        color, font, clearHalfDeg);
 }
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
@@ -977,7 +977,7 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   const bool sm = dispSettings.smallLabels;
   setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round mini slots: the rim ring runs right behind the label band and the
   // 62 px slot pitch leaves no spare width, so label ink must never exceed
   // the slot. Step down to FONT_SMALL first (keeps "Nozzle R" / "Progress"
@@ -991,7 +991,7 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   // labels (> 8) are trimmed; short ones (incl. the dynamic "Nozzle R/L") draw in
   // full even if a hair wider than the slot, matching pre-#124 behavior. Round
   // trims unconditionally: ink wider than the slot can never be fully erased.
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   const bool mustTrim = gfx.textWidth(label) > maxW;
 #else
   const bool mustTrim = strlen(label) > 8 && gfx.textWidth(label) > maxW;
@@ -1015,7 +1015,7 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
   // Clear the actual drawn extent so a previous, wider label leaves no ghost
   // (e.g. "Nozzle R" -> "Nozzle L" on a side flip, or a full label > maxW).
   const int16_t fh = gfx.fontHeight();
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Side-gauge labels sit close to the rim ring; a wider-than-slot clear band
   // would cut a rectangular notch into it. Cap at the slot width — ghosts are
   // impossible in practice (labels here only flip between short strings).

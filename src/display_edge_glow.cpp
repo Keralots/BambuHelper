@@ -6,7 +6,7 @@
 // every panel; only the renderer differs. Rectangular panels push full-width
 // line buffers for four straight strips; round panels fill an annular ring with
 // native fillArc wedges. drawBand()/clearBand() are the two platform-specific
-// hooks, selected by DISPLAY_ROUND_240 below; everything else is shared.
+// hooks, selected by DISPLAY_IS_ROUND below; everything else is shared.
 
 static const uint8_t GLOW_MAX_SLOTS = 4;
 
@@ -146,9 +146,9 @@ void glowStartTest(uint8_t slot) {
 bool glowTestRunning() { return testMode; }
 
 // ---------------------------------------------------------------------------
-//  Renderer: round ring (DISPLAY_ROUND_240)
+//  Renderer: round ring (DISPLAY_IS_ROUND)
 // ---------------------------------------------------------------------------
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 
 // Integer sqrt / atan2 - the C3 (RISC-V) has no FPU, so the per-pixel band
 // rasterizer below must avoid sqrtf/atan2f. isqrt32 gives the row half-widths;
@@ -464,7 +464,7 @@ static void clearBand(lgfx::LovyanGFX& gfx) {
   gfx.endWrite();
 }
 
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
 bool glowTick(lgfx::LovyanGFX& gfx, uint8_t slot, bool force) {
   unsigned long now = millis();

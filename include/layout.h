@@ -5,9 +5,15 @@
 // Each display target defines LY_* constants for screen dimensions,
 // gauge positions, text positions, etc.
 // To add a new display: create layout_xxx.h and add an #elif here.
+//
+// Raw -D tests only. config.h includes this header (config.h:18) BEFORE it
+// derives DISPLAY_IS_ROUND, so that capability is still undefined here and
+// would silently select layout_default.h.
 
 #if defined(DISPLAY_480x480)
   #include "layout_480x480.h"    // SenseCAP Indicator: ST7701S 480x480
+#elif defined(DISPLAY_ROUND_480)
+  #include "layout_round480.h"  // ST7701 2.8" round 480x480
 #elif defined(DISPLAY_ROUND_240)
   #include "layout_round240.h"  // GC9A01 1.28" round 240x240
 #elif defined(DISPLAY_320x480)

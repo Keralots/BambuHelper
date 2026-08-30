@@ -549,7 +549,7 @@ void initDisplay() {
 // SCREEN_CLOCK block (and so a future clear site can't forget it).
 static void resetActiveClockCache() {
   if (currentScreen != SCREEN_CLOCK) return;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round never renders pong (rectangular walls don't fit the circle) and
   // always draws the watch-face clock, so drop that cache regardless of the
   // pongClock setting or the real clock repaints blank after a screen clear.
@@ -1049,7 +1049,7 @@ static uint8_t countDryingUnits(const AmsState& ams) {
 // a multi-AMS printer lasts long enough for every unit to come around.
 uint8_t dryingUnitCount(const AmsState& ams) { return countDryingUnits(ams); }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Round (GC9A01) drying screen: rim ring = drying progress, centered text
 // stack (title, remaining time, AMS temp, humidity). The square layout's
 // bars/columns don't fit the inscribed circle.
@@ -1178,10 +1178,10 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   prevProg  = dryProgress;
   prevHumLvl = u.humidity;
 }
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
 static void drawIdleDrying(PrinterSlot& p) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   drawIdleDryingRound(p);
 }
 #else
@@ -1503,7 +1503,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   prevTempShown = tempShown;
   prevDryProgress = dryProgress;
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 static bool wasNoPrinter = false;
 
@@ -1685,7 +1685,7 @@ static void drawIdle() {
 
   // Printer name (only on forceRedraw — name doesn't change)
   if (forceRedraw) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // Curved along the top rim. Drawn only after a full wipe, so no band
     // clear is needed (clearHalfDeg 0).
     char clipped[48];
@@ -1735,7 +1735,7 @@ static void drawIdle() {
       // nobody was watching is still readable on wake, rather than the raw
       // "FINISH" state word (#158).
       stateColor = dispSettings.statusOkColor;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
       const int16_t badgeMaxW = 200;   // rim-safe chord at the badge row
 #else
       const int16_t badgeMaxW = scrW - 8;
@@ -1872,7 +1872,7 @@ static void drawIdle() {
 
   if (bottomChanged) {
     markFrameDirty();
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // Round: the bottom corners are invisible — the filament/door items of the
     // square layout have no room. Show only the WiFi signal, pulled up toward
     // the center of the circle.
@@ -1931,7 +1931,7 @@ static void drawIdle() {
       drawIcon16(tft, scrW - 18, botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
   }
 }
 
@@ -3043,7 +3043,7 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
 //  Shared finish-time line
 // ---------------------------------------------------------------------------
 //  Used by the printing screen, the split bands, the round print skins and the
-//  drying screen, so it MUST live outside the DISPLAY_ROUND_240 block below -
+//  drying screen, so it MUST live outside the DISPLAY_IS_ROUND block below -
 //  square builds and display_split.cpp link against it too.
 // ---------------------------------------------------------------------------
 uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
@@ -3145,7 +3145,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
 // ---------------------------------------------------------------------------
 //  Finished screen headline
 // ---------------------------------------------------------------------------
-//  Sits beside formatEtaLine() - outside the DISPLAY_ROUND_240 block below - so
+//  Sits beside formatEtaLine() - outside the DISPLAY_IS_ROUND block below - so
 //  the round finished screen links against it too.
 // ---------------------------------------------------------------------------
 void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s) {
@@ -3186,7 +3186,7 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
   tft.drawString(buf, cx, y);
 }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // ===========================================================================
 //  Round display (GC9A01): printing screen. Three skins selectable from the
 //  web UI (dispSettings.roundSkin): Rim (default), Speedo, Rings. All are
@@ -4605,12 +4605,12 @@ static void drawPrinting() {
     }
   }
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Screen: Finished (same layout as printing, but with 2 gauges + status)
 // ---------------------------------------------------------------------------
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Round (GC9A01) finished screen: gold rim ring at 100%, green checkmark,
 // centered text stack. Optional kWh line when a power plug tracked the print.
 static void drawFinishedRound() {
@@ -4988,7 +4988,7 @@ static void drawFinished() {
   prevFinTasmotaOnline = tasmotaActiveHere;
   prevFinWatts = finCurWatts;
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Night mode — scheduled brightness dimming
@@ -5113,7 +5113,7 @@ static void drawPowerConfirm() {
 
     setFont(tft, FONT_SMALL);
     tft.setTextColor(CLR_TEXT_DIM, bg);
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // The square stack (down to cy+110) runs off the bottom of the circle.
     // Keep the key instruction straight and prominent; curve the secondary
     // hint along the bottom rim (same style/constants as the printing ETA)
@@ -5304,7 +5304,7 @@ static void drawHmsScreen() {
   setFont(tft, FONT_BODY);
   const int16_t bodyH = (int16_t)tft.fontHeight();
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round: no room for a list. Worst entry only, centered inside a chord-safe
   // band, with the count of everything else below it.
   const int16_t maxW = 170;
@@ -5458,7 +5458,7 @@ static bool glowScreenEligible() {
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
-#if !defined(DISPLAY_ROUND_240)
+#if !DISPLAY_IS_ROUND
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
   if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
@@ -5506,9 +5506,9 @@ void updateDisplay() {
     lastDisplayUpdate = 0;
     markFrameDirty();
   }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Experimental progress-arc shimmer, per skin: Rim + Rings sweep the full
   // circle (Rings on its outer progress ring), Speedo sweeps its 240-deg arc.
   // Suppressed while the glow owns the rim ring - both draw the outer band.
@@ -5538,7 +5538,7 @@ void updateDisplay() {
   }
 
   // Edge glow ring - same eligibility + dismissal contract as the rectangular
-  // panels (see the !DISPLAY_ROUND_240 block above). Drawn after the shimmer so
+  // panels (see the !DISPLAY_IS_ROUND block above). Drawn after the shimmer so
   // it owns the rim band while active; cleanup forces a base repaint that
   // restores the gold rim / progress ring underneath.
   if (glowScreenEligible()) {
@@ -5664,7 +5664,7 @@ void updateDisplay() {
       break;
 
     case SCREEN_CLOCK:
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
       // No pong on round: rectangular walls don't fit the circle. The pong
       // setting is simply ignored and the watch-face clock always draws.
       drawClock();
@@ -5684,7 +5684,7 @@ void updateDisplay() {
       break;
   }
 
-#if !defined(DISPLAY_ROUND_240)
+#if !DISPLAY_IS_ROUND
   // The base screen may have just repainted over the band (forceRedraw, gauge
   // updates) - put it back in the same frame so the glow keeps the edge.
   if (glowIsActive() && glowScreenEligible()) {

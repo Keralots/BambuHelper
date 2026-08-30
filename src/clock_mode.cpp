@@ -73,7 +73,7 @@ static float getEffectiveClockScale() {
 // Flat panels: full width minus a small margin. Round panels: the smallest
 // circle chord across the date's clear box, kept inside the rim ticks.
 static int dateMaxWidth(int boxTop, int boxBottom) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   const float r  = (float)(LY_RND_CLK_TICK_RIM - 2);
   const float cy = clkScrH() / 2.0f;
   auto halfChord = [&](float y) -> float {
@@ -247,7 +247,7 @@ static bool  prevHideDate = false;
 static char prevInfoLines[MAX_ACTIVE_PRINTERS][40] = {{0}};
 static int  prevInfoCount = 0;
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Watch-face decorations (round GC9A01): rim tick marks + MQTT status dot.
 static bool   roundTicksDrawn = false;
 static int8_t roundPrevDot    = -1;   // 0 = none configured, 1 = green, 2 = red
@@ -273,7 +273,7 @@ void resetClock() {
   prevHideDate = false;
   for (int i = 0; i < MAX_ACTIVE_PRINTERS; i++) prevInfoLines[i][0] = '\0';
   prevInfoCount = 0;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   roundTicksDrawn = false;
   roundPrevDot    = -1;
 #endif
@@ -314,7 +314,7 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   setFont(tft, FONT_BODY);
   tft.setTextSize(1);
   const int lineH = tft.fontHeight() + 3;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // The chord at the very bottom of the circle is too narrow for a name+IP
   // line; anchor the footer block higher, where the circle is ~160 px wide.
   const int bottomMargin = LY_H - LY_RND_CLK_INFO_Y;
@@ -328,7 +328,7 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   tft.fillRect(0, blockTop, sw, maxRows * lineH + bottomMargin, bg);
   markFrameDirty();
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // The full-width band clear sweeps across the lower rim ticks (4-8 o'clock
   // live at y >= 176) and, with two footer lines, can reach the date row.
   // Invalidate both caches so they repaint: ticks on the next drawClock()
@@ -458,12 +458,12 @@ void drawClock() {
     prevBlockH = contentH;
     prevUse24h = netSettings.use24h;
     prevHideDate = dispSettings.hideClockDate;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     roundTicksDrawn = false;   // the wipe band can cross the rim ticks
 #endif
   }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // --- Watch-face rim ticks (major at 12/3/6/9) ---
   if (!roundTicksDrawn) {
     roundTicksDrawn = true;
@@ -497,7 +497,7 @@ void drawClock() {
       roundPrevDot = dot;
     }
   }
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
   // --- Colon blink (~250 ms cadence; every call) ---
   const bool colonOn = (millis() % 1000) < 500;

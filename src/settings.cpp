@@ -258,7 +258,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
 
 // Default standard 2x3 grid: Progress, Nozzle, Bed, Part Fan, Aux Fan, Chamber Fan.
 static void defaultGaugeSlots(uint8_t* slots) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round Rim skin: only slots 0-2 render (left/center/right mini gauge).
   // Default matches the original fixed layout; slots 3-5 stay unused.
   slots[0] = GAUGE_NOZZLE;
@@ -463,7 +463,7 @@ void loadSettings() {
       for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) {
         if (cfg.gaugeSlots[g] >= GAUGE_TYPE_COUNT) cfg.gaugeSlots[g] = def[g];
       }
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
       // One-time migration: savePrinterConfig persisted the grid default
       // (Progress..ChamberFan) back when round builds ignored gaugeSlots.
       // That exact pattern cannot be produced through the round web UI

@@ -154,6 +154,19 @@
 // guarded code is AXS-typed (Panel_AXS15231B_AGFX, fixed 320x480) and is 1:1 with
 // JC today - a different full-frame panel (e.g. the CO5300 AMOLED) needs its own
 // path, not this one.
+// Round panel. All three print skins, the round clock face, the edge-glow ring
+// and the round idle/finished/AP screens are shared; only the LY_RND_* geometry
+// and the font tier differ per resolution.
+//
+// NOTE: derived here, so it is only visible to a TU that has already reached
+// this point in config.h. include/layout.h and src/display_gauges.h are both
+// included earlier than that and MUST keep the raw two-flag test.
+#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480)
+#define DISPLAY_IS_ROUND  1
+#else
+#define DISPLAY_IS_ROUND  0
+#endif
+
 #if defined(BOARD_IS_JC3248W535)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
@@ -374,8 +387,8 @@
 #define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
 #if defined(BOARD_IS_JC3248W535)
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
-#elif defined(DISPLAY_ROUND_240)
-#define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges over SPI, 25 fps fine
+#elif DISPLAY_IS_ROUND
+#define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges, 25 fps fine
 #else
 #define GLOW_ANIM_MS             40        // ~25 fps band animation
 #endif
@@ -387,7 +400,7 @@
 #define GLOW_REMIND_EVERY_MS     300000UL  // reminder interval (5 min)
 #define GLOW_CONT_CEILING_MS     1800000UL // until-dismissed degrades to reminder after 30 min
 
-// Round ring variant (DISPLAY_ROUND_240): the glow owns an annular band at the
+// Round ring variant (DISPLAY_IS_ROUND): the glow owns an annular band at the
 // panel rim (a full circle) instead of four straight edge strips. Sweep is a
 // single-pass per-pixel band rasterizer (no fillArc, so no angular-seam specks
 // and no whole-ring strobe); Pulse and Storm use native fillArc. fillArc scans
