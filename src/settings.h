@@ -351,6 +351,8 @@ struct TasmotaSettings {
   uint8_t plugType;          // 0=Tasmota, 1=Shelly Gen2/Gen3, 2=TP-Link Kasa legacy (KP115), 3=Shelly Power Strip Gen4
   uint8_t plugOutlet;        // which outlet/relay (0-3) this slot tracks on a multi-channel device;
                              // currently wired for plugType 3 (Shelly Power Strip Gen4) only
+  uint8_t plugOutletExtra;   // plugType 3 only: bitmask of EXTRA outlets summed into watts/kWh
+                             // (issue #174). 0 = primary outlet only. Never switched, only measured.
   char    ip[16];
   uint8_t displayMode;       // 0=alternate layers/power every 4s, 1=always show power, 2=always layer count
   uint8_t pollInterval;      // poll interval in seconds (10-60)

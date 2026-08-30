@@ -102,7 +102,8 @@ function saveWifi(){
 //              ledcidl, ledcprn, ledcpau, ledcfin, ledcerr, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
-//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_po, tsm_ip, tsm_dm (radio), tsm_pi,
+//    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_po, tsm_pe0..tsm_pe3, tsm_ip,
+//              tsm_dm (radio), tsm_pi,
 //              tsm_ao, tsm_ad, tsm_aod, tsm_slot
 //    Diag:     dbglog
 // -----------------------------------------------------------------------------
@@ -1293,8 +1294,18 @@ R"rawliteral(
       </div>
       <div class="field" id="tsm_outlet_field" style="display:none">
         <label for="tsm_po">Power strip outlet</label>
-        <select id="tsm_po"><option value="0">Output 0</option><option value="1">Output 1</option><option value="2">Output 2</option><option value="3">Output 3</option></select>
+        <select id="tsm_po" onchange="onPrimaryOutletChange()"><option value="0">Output 0</option><option value="1">Output 1</option><option value="2">Output 2</option><option value="3">Output 3</option></select>
       </div>
+    </div>
+    <div class="field" id="tsm_extra_field" style="display:none;margin-top:var(--sp-3)">
+      <label>Also count these outlets</label>
+      <div class="hstack" style="gap:16px;margin-top:4px;flex-wrap:wrap">
+        <label class="hstack" style="gap:6px;cursor:pointer"><input type="checkbox" id="tsm_pe0"><span>Output 0</span></label>
+        <label class="hstack" style="gap:6px;cursor:pointer"><input type="checkbox" id="tsm_pe1"><span>Output 1</span></label>
+        <label class="hstack" style="gap:6px;cursor:pointer"><input type="checkbox" id="tsm_pe2"><span>Output 2</span></label>
+        <label class="hstack" style="gap:6px;cursor:pointer"><input type="checkbox" id="tsm_pe3"><span>Output 3</span></label>
+      </div>
+      <div class="help-text">Adds the watts and energy of these outlets to the totals, for setups where the printer shares a strip with an external AMS supply or other gear. Power On/Off and auto power-off still act on the outlet selected above only.</div>
     </div>
     <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
     <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs using the legacy local protocol on TCP port 9999, including KP115 and HS110. No TP-Link credentials or cloud connection are used. Newer KLAP/Matter models are not supported. Kasa reports live watts, relay state, and cumulative Total, but not Today's energy.</div>
