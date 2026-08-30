@@ -28,6 +28,23 @@
 #define BACKLIGHT_FREQ  5000
 #define BACKLIGHT_RES   8
 
+#if defined(BOARD_IS_WS28C)
+// TCA9554 output bits. The vendor demo numbers these pins 1-8; the register
+// bit is (pin - 1), and the table below is already converted.
+#define WS28C_EXP_ADDR     0x20
+#define WS28C_EXP_LCD_RST  0
+#define WS28C_EXP_TP_RST   1
+#define WS28C_EXP_LCD_CS   2
+#define WS28C_EXP_SD_CS    3
+#define WS28C_EXP_BUZZER   7
+// Expander sits on the GT911's I2C bus; keep the pin numbers in one place.
+#define WS28C_I2C_SDA      GT911_SDA
+#define WS28C_I2C_SCL      GT911_SCL
+// Reset high, CS deselected, buzzer off.
+#define WS28C_EXP_IDLE     ((1 << WS28C_EXP_LCD_RST) | (1 << WS28C_EXP_TP_RST) | \
+                            (1 << WS28C_EXP_LCD_CS)  | (1 << WS28C_EXP_SD_CS))
+#endif
+
 // =============================================================================
 //  Color palette (RGB565)
 // =============================================================================

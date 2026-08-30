@@ -20,6 +20,7 @@
 #include <time.h>
 #if PANEL_HAS_IO_EXPANDER
 #include <Wire.h>     // SenseCAP: PCA9535PW IO expander / ws_lcd_350: TCA9554 LCD reset
+#include "io_expander_tca9554.h"
 #endif
 #include <new>   // placement new for CYD panel variant selection
 
@@ -374,6 +375,37 @@ bool isDisplayForceRedraw() { return forceRedraw; }
 // ---------------------------------------------------------------------------
 void initDisplay() {
 
+#if defined(BOARD_IS_WS28C)
+  // LCD reset, LCD CS and the touch reset all hang off a TCA9554 @0x20 whose
+  // output register is written as a whole byte - so everything goes through
+  // the shared shadow in io_expander_tca9554.cpp, never a raw write.
+  {
+    ioExpanderBegin(WS28C_EXP_ADDR, WS28C_I2C_SDA, WS28C_I2C_SCL, 400000,
+                    WS28C_EXP_IDLE);
+
+    // GT911 samples INT while reset is released to choose its I2C address:
+    // low = 0x5D, high = 0x14. This MUST happen here and not in touchInit(),
+    // which runs ~2 s later from handleSplashPhase() - by then the reset is
+    // long over and the address is already latched.
+    pinMode(GT911_INT, OUTPUT);
+    digitalWrite(GT911_INT, LOW);
+    ioExpanderSet(WS28C_EXP_TP_RST, false);
+    delay(10);
+    ioExpanderSet(WS28C_EXP_TP_RST, true);
+    delay(200);                       // GT911 boot, INT held low throughout
+    digitalWrite(GT911_INT, HIGH);
+    pinMode(GT911_INT, INPUT);
+
+    // ST7701 reset, then hold CS low across the SPI init commands. The panel
+    // class sets pin_cs = -1, so LovyanGFX never touches CS itself.
+    ioExpanderSet(WS28C_EXP_LCD_RST, false);
+    delay(10);
+    ioExpanderSet(WS28C_EXP_LCD_RST, true);
+    delay(120);
+    ioExpanderSet(WS28C_EXP_LCD_CS, false);
+    delay(1);
+  }
+#endif
 #if defined(BOARD_IS_WS350)
   // The ST7796 reset line is not on a GPIO - it is driven by the TCA9554 I2C
   // IO expander (@0x20, expander P1). Bring up the shared I2C bus (also used
@@ -463,6 +495,9 @@ void initDisplay() {
   Serial.println("Display: calling _tft_instance.init()...");
   _tft_instance.init();  // LovyanGFX configures SPI from the board class above
   applyPanelInversion();
+#if defined(BOARD_IS_WS28C)
+  ioExpanderSet(WS28C_EXP_LCD_CS, true);   // init commands done
+#endif
 #if defined(BOARD_IS_SENSECAP)
   // ST7701S IPS inversion already handled by default Panel_ST7701 init (0x21 command).
   // Release SPI CS HIGH now that init commands are done
