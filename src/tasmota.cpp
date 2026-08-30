@@ -33,6 +33,13 @@ static inline uint8_t shellyOutletId(const TasmotaSettings& s) {
   return s.plugType == PLUG_TYPE_SHELLY_STRIP ? s.plugOutlet : 0;
 }
 
+// Extra outlets summed into the readings (issue #174), primary bit stripped.
+// Same stale-value trap as shellyOutletId(): only the strip may carry a mask.
+static inline uint8_t shellyExtraMask(const TasmotaSettings& s) {
+  if (s.plugType != PLUG_TYPE_SHELLY_STRIP) return 0;
+  return (uint8_t)(s.plugOutletExtra & 0x0F & ~(1u << shellyOutletId(s)));
+}
+
 #define KASA_PORT                       9999
 #define KASA_MAX_COMMAND_BYTES            192
 #define KASA_MAX_RESPONSE_BYTES          4096
@@ -300,6 +307,100 @@ static void pollShelly(uint8_t i, uint8_t po) {
                 i, po, newWatts, newTotal, g_rt[i].powerOn ? 1 : 0);
 }
 
+// Gen4 strip with extra outlets (#174): one Shelly.GetStatus covers all four
+// switches, so summing costs one request. `mask` includes the primary bit;
+// relay state and control stay on the primary, only the numbers aggregate.
+static void pollShellyStripSum(uint8_t i, uint8_t mask) {
+  TasmotaSettings& s = tasmotaSettings[i];
+  const uint8_t primary = shellyOutletId(s);
+
+  char url[64];
+  snprintf(url, sizeof(url), "http://%s/rpc/Shelly.GetStatus", s.ip);
+
+  HTTPClient http;
+  http.setTimeout(g_rt[i].plugOffline ? TASMOTA_TIMEOUT_FAST_MS : TASMOTA_TIMEOUT_MS);
+  if (!http.begin(url)) {
+    Serial.printf("[Shelly %u] begin failed: %s\n", i, url);
+    markPollFailure(i);
+    return;
+  }
+
+  int code = http.GET();
+  if (code != 200) {
+    if (code == 401) {
+      Serial.printf("[Shelly %u] HTTP 401 — password-protected Shelly not supported "
+                    "(digest auth unavailable)\n", i);
+    } else {
+      Serial.printf("[Shelly %u] HTTP %d from %s\n", i, code, s.ip);
+    }
+    http.end();
+    markPollFailure(i);
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  JsonDocument filter;
+  for (uint8_t o = 0; o < 4; o++) {
+    if (!(mask & (1u << o))) continue;
+    char key[12];
+    snprintf(key, sizeof(key), "switch:%u", o);
+    filter[key]["apower"]           = true;
+    filter[key]["aenergy"]["total"] = true;
+    filter[key]["output"]           = true;
+  }
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body, DeserializationOption::Filter(filter));
+  if (err) {
+    Serial.printf("[Shelly %u] JSON parse error: %s\n", i, err.c_str());
+    markPollFailure(i);
+    return;
+  }
+
+  float    watts     = 0.0f;
+  float    totalWh   = 0.0f;
+  bool     sawWatts  = false;
+  bool     sawEnergy = false;
+  uint8_t  counted   = 0;
+
+  for (uint8_t o = 0; o < 4; o++) {
+    if (!(mask & (1u << o))) continue;
+    char key[12];
+    snprintf(key, sizeof(key), "switch:%u", o);
+    JsonVariant sw = doc[key];
+    if (sw.isNull()) {
+      // Configured outlet the strip doesn't expose (mis-set mask): skip, don't fail.
+      Serial.printf("[Shelly %u] outlet %u absent from Shelly.GetStatus\n", i, o);
+      continue;
+    }
+    JsonVariant apower = sw["apower"];
+    if (!apower.isNull()) { watts += apower.as<float>(); sawWatts = true; }
+    JsonVariant aetotal = sw["aenergy"]["total"];          // Wh
+    if (!aetotal.isNull()) { totalWh += aetotal.as<float>(); sawEnergy = true; }
+    counted++;
+  }
+
+  if (!sawWatts) {
+    Serial.printf("[Shelly %u] no apower in Shelly.GetStatus\n", i);
+    markPollFailure(i);
+    return;
+  }
+
+  // Relay state = primary outlet only; that is what Switch.Set drives.
+  char primaryKey[12];
+  snprintf(primaryKey, sizeof(primaryKey), "switch:%u", primary);
+  JsonVariant output = doc[primaryKey]["output"];
+  g_rt[i].powerStateKnown = !output.isNull();
+  g_rt[i].powerOn         = output.as<bool>();
+
+  applyReadings(i, watts, -1.0f, -1.0f, sawEnergy ? (totalWh / 1000.0f) : -1.0f);
+
+  Serial.printf("[Shelly %u] mask=0x%X (%u outlets) Power=%.0fW Total=%.3fkWh Output=%d\n",
+                i, mask, counted, watts, totalWh / 1000.0f, g_rt[i].powerOn ? 1 : 0);
+}
+
 // TP-Link Kasa legacy local protocol (KP115/HS110 family): TCP port 9999,
 // 4-byte big-endian payload length, then autokey-XOR encrypted JSON.
 static bool kasaReadExact(WiFiClient& client, uint8_t* dst, size_t len,
@@ -440,7 +541,9 @@ static void pollKasa(uint8_t i) {
 static void pollOne(uint8_t i) {
   TasmotaSettings& s = tasmotaSettings[i];
   if (!s.enabled || s.ip[0] == '\0') return;
-  if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) pollShelly(i, shellyOutletId(s));
+  uint8_t extra = shellyExtraMask(s);
+  if (extra) pollShellyStripSum(i, (uint8_t)((1u << shellyOutletId(s)) | extra));
+  else if (s.plugType == PLUG_TYPE_SHELLY || s.plugType == PLUG_TYPE_SHELLY_STRIP) pollShelly(i, shellyOutletId(s));
   else if (s.plugType == PLUG_TYPE_KASA) pollKasa(i);
   else                                   pollTasmota(i);
 }

@@ -905,6 +905,7 @@ function applyPowerEnableState(){
     var ctl = el.querySelectorAll('input,select');
     for (var j = 0; j < ctl.length; j++) ctl[j].disabled = !en;
   }
+  if (en) onPrimaryOutletChange();   /* the blanket enable above would revive the primary box */
   applyHideReadoutToPowerDM();
 }
 function selectPowerTab(plug){
@@ -920,6 +921,8 @@ function selectPowerTab(plug){
     document.getElementById('tsm_en').checked = !!d.enabled;
     document.getElementById('tsm_pt').value = (d.plugType >= 0 && d.plugType <= 3) ? String(d.plugType) : '0';
     document.getElementById('tsm_po').value = (d.plugOutlet >= 0 && d.plugOutlet <= 3) ? String(d.plugOutlet) : '0';
+    var pe = d.plugOutletExtra || 0;
+    for (var k = 0; k < 4; k++) document.getElementById('tsm_pe' + k).checked = !!(pe & (1 << k));
     onPlugTypeChange();
     document.getElementById('tsm_ip').value = d.ip || '';
     var dm = document.querySelectorAll('input[name="tsm_dm"]');
@@ -949,6 +952,9 @@ function onPlugTypeChange(){
   if (stripHint) stripHint.style.display = shellyStrip ? '' : 'none';
   var outletField = document.getElementById('tsm_outlet_field');
   if (outletField) outletField.style.display = shellyStrip ? '' : 'none';
+  var extraField = document.getElementById('tsm_extra_field');
+  if (extraField) extraField.style.display = shellyStrip ? '' : 'none';
+  onPrimaryOutletChange();
   var ptRow = document.getElementById('tsm_pt_row');
   // Class, not an inline style: an inline grid-template-columns would beat the
   // narrow-screen media query that collapses .row to a single column.
@@ -958,6 +964,16 @@ function onPlugTypeChange(){
   var tdVal = document.getElementById('ptToday');
   if (tdLbl) tdLbl.style.display = (shelly || kasa || shellyStrip) ? 'none' : '';
   if (tdVal) tdVal.style.display = (shelly || kasa || shellyStrip) ? 'none' : '';
+}
+/* The primary outlet is always counted, so its 'also count' box is dead. */
+function onPrimaryOutletChange(){
+  var po = parseInt(document.getElementById('tsm_po').value) || 0;
+  for (var i = 0; i < 4; i++){
+    var cb = document.getElementById('tsm_pe' + i);
+    if (!cb) continue;
+    if (i === po) cb.checked = false;
+    cb.disabled = (i === po);
+  }
 }
 function fmtKwh(v){ return (v >= 0) ? (v.toFixed(3) + ' kWh') : '-'; }
 function fmtMoney(v, cur){ if (!(v >= 0) || !cur) return ''; return ' (' + v.toFixed(2) + ' ' + cur + ')'; }
@@ -1001,6 +1017,9 @@ function savePower(){
   p.append('tsm_en', document.getElementById('tsm_en').checked ? '1' : '0');
   p.append('tsm_pt', document.getElementById('tsm_pt').value);
   p.append('tsm_po', document.getElementById('tsm_po').value);
+  var peMask = 0;
+  for (var pi = 0; pi < 4; pi++){ var pc = document.getElementById('tsm_pe' + pi); if (pc && pc.checked) peMask |= (1 << pi); }
+  p.append('tsm_pe', String(peMask));
   p.append('tsm_ip', document.getElementById('tsm_ip').value.trim());
   var dm = document.querySelector('input[name="tsm_dm"]:checked');
   if (dm) p.append('tsm_dm', dm.value);
