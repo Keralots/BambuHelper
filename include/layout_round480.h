@@ -24,6 +24,13 @@
 //  Round-specific constants (LY_RND_*)
 // =============================================================================
 
+
+// Font tier for the round screens. Round code never names a FontID
+// directly - the two round profiles differ only by which tier they map to.
+#define LY_RND_F_SMALL  FONT_SMALL_2X
+#define LY_RND_F_BODY   FONT_BODY_2X
+#define LY_RND_F_LARGE  FONT_LARGE_2X
+
 // --- Rim progress ring (printing + finished screens) ---
 // Outer radius 118 runs nearly flush to the physical edge (2 px reserve for
 // bezel tolerance on cheap modules), maximizing the usable interior.
