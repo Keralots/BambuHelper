@@ -6,6 +6,7 @@
 #include "layout.h"
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
+#include "display_gauges.h"   // ellipsizeToWidth
 #include <time.h>
 
 // Base (1x) digit metrics for the simple clock. Layout-agnostic on purpose:
@@ -349,11 +350,19 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   for (int i = 0; i < count; i++) {
     const int rowY = sh - bottomMargin - (count - i) * lineH + lineH / 2;
     // Hard guarantee against overlapping the clock: if a line would collide we
-    // simply drop it rather than shrink the clock. At FONT_BODY size this can
+    // simply drop it rather than shrink the clock. At body size this can
     // happen on a short panel with a tall clock (e.g. 240x320 + Large clock +
     // two printers); every other combination has room.
     if (rowY - lineH / 2 < clockBottom + LY_SC(4)) continue;
-    tft.drawString(lines[i], sw / 2, rowY);
+    // Clamp to the row's usable width. On a round panel that is the circle
+    // chord across the line's own band, and "<name>  <ip>" overruns it for
+    // any ordinary printer name - the vertical drop above never looked at
+    // width, so the line simply ran off the bezel.
+    char clipped[sizeof(lines[0])];
+    const int rowW = dateMaxWidth(rowY - lineH / 2, rowY + lineH / 2);
+    tft.drawString(ellipsizeToWidth(tft, lines[i], rowW,
+                                    clipped, sizeof(clipped)),
+                   sw / 2, rowY);
   }
 
   prevInfoCount = count;
