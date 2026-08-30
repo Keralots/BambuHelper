@@ -203,6 +203,15 @@
 #define PANEL_HAS_IO_EXPANDER  0
 #endif
 
+// Buzzer wired to an IO-expander output bit instead of a GPIO (ws_lcd_28c).
+// Selects buzzer_backend_expander.cpp, excludes the GPIO backend, and tells the
+// portal not to ask for a pin.
+#if defined(BOARD_IS_WS28C)
+#define BUZZER_BACKEND_TCA9554  1
+#else
+#define BUZZER_BACKEND_TCA9554  0
+#endif
+
 // ESP32-C3 radio: capping AP/STA TX power works around a C3 range/brownout issue
 // (see wifi_manager.cpp). Expressed as a capability so the workaround is portable
 // if another board ever needs it.
@@ -486,6 +495,11 @@
 // S3 default (GPIO 5) is this board's display SCLK — initBuzzer() drives the pin
 // as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
 // the panel after boot. Disable (0) so the SPI clock is left alone.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_WS28C)
+// Waveshare 2.8C: the buzzer is expander bit 7, not a GPIO, so there is no pin
+// to configure. 0 keeps the GPIO backend out of it - and the generic S3
+// default (GPIO 5) is this board's RGB D0.
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_SC01PLUS)
 // Panlee WT32-SC01 Plus: the generic S3 default (GPIO 5) is this board's touch

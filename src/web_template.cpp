@@ -598,9 +598,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BUZ_OFF") == 0) { out = buzzerSettings.enabled ? "" : "selected"; return true; }
   if (strcmp(name, "BUZ_ON") == 0)  { out = buzzerSettings.enabled ? "selected" : ""; return true; }
   if (strcmp(name, "BUZ_PIN") == 0) { out = String(buzzerSettings.pin); return true; }
-  if (strcmp(name, "ES8311_AUDIO") == 0) {
-    // "1" for any board with built-in I2S audio (no GPIO pin selection needed)
-#if defined(BOARD_HAS_ES8311_AUDIO) || defined(BOARD_HAS_NS4168_AUDIO)
+  if (strcmp(name, "FIXED_AUDIO") == 0) {
+    // "1" when the sound hardware is wired, not chosen: an I2S codec/amp, or
+    // an IO-expander bit. Either way the portal must not ask for a GPIO.
+#if defined(BOARD_HAS_ES8311_AUDIO) || defined(BOARD_HAS_NS4168_AUDIO) || \
+    BUZZER_BACKEND_TCA9554
     out = "1";
 #else
     out = "0";

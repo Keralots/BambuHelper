@@ -877,7 +877,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
         <label for="buzpin">Buzzer GPIO pin</label>
         <input type="number" id="buzpin" class="mono" min="1" max="48" value="%BUZ_PIN%" style="max-width:120px">
       </div>
-      <div id="buzEs8311Info" class="help-text" style="display:none">Built-in I2S speaker. No GPIO configuration needed.</div>
+      <div id="buzFixedAudioInfo" class="help-text" style="display:none">Built-in sound hardware. No GPIO configuration needed.</div>
       <div class="field">
         <label>Quiet hours (optional)</label>
         <div class="hstack" style="gap:var(--sp-2)">
@@ -1409,7 +1409,7 @@ R"rawliteral(
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
 
-<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',es8311:'%ES8311_AUDIO%',hmsFull:'%HMSFULL%'};</script>
+<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',fixedAudio:'%FIXED_AUDIO%',hmsFull:'%HMSFULL%'};</script>
 <script src="/app.js?v=%JSVER%"></script>
 </body>
 </html>
