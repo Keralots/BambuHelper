@@ -19,9 +19,12 @@ static constexpr int CLK_BASE_COLON = 12;
 static inline int clkScrW() { return (int)tft.width(); }
 static inline int clkScrH() { return (int)tft.height(); }
 
-static constexpr int DATE_FONT_H   = 16;   // nominal FONT_BODY height (AM/PM block only)
-static constexpr int DATE_GAP      = 14;   // gap between time digits and date
-static constexpr int DATE_CLEAR_PAD = 4;   // extra rows around the date when wiping
+// CLK_BASE_* above describe the built-in 7-seg cell at setTextSize(1) and are
+// deliberately absolute - the scale factor is what grows the digits. These
+// three follow the text tier instead.
+static constexpr int DATE_FONT_H   = LY_SC(16);   // nominal body height (AM/PM block only)
+static constexpr int DATE_GAP      = LY_SC(14);   // gap between time digits and date
+static constexpr int DATE_CLEAR_PAD = LY_SC(4);   // extra rows around the date when wiping
 
 static int clkDigitX(int i, int timeX0, int digitW, int colonW) {
   if (i < 2)  return timeX0 + i * digitW;
@@ -54,11 +57,11 @@ static float getEffectiveClockScale() {
 
   int suffixW = 0;
   if (!netSettings.use24h) {
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextSize(1);
     int amW = tft.textWidth("AM");
     int pmW = tft.textWidth("PM");
-    suffixW = (amW > pmW ? amW : pmW) + 6;                       // gap + label
+    suffixW = (amW > pmW ? amW : pmW) + LY_SC(6);                // gap + label
   }
   auto fits = [&](int idx) {
     float s = sizeIndexToScale(idx);
@@ -98,10 +101,10 @@ static int dateMaxWidth(int boxTop, int boxBottom) {
 // scaling, which reads as jagged blocks on the panel.
 struct DateSizeSpec { FontID font; float zoom; };
 static const DateSizeSpec kDateSizes[4] = {
-  {FONT_BODY,  1.0f},   // [0] placeholder (Auto resolves to 1..3)
-  {FONT_BODY,  1.0f},   // 1 Normal  (~20 px cell)
-  {FONT_LARGE, 1.0f},   // 2 Medium  (~27 px cell)
-  {FONT_LARGE, 1.5f},   // 3 Large   (~40 px cell)
+  {LY_F_BODY,  1.0f},   // [0] placeholder (Auto resolves to 1..3)
+  {LY_F_BODY,  1.0f},   // 1 Normal
+  {LY_F_LARGE, 1.0f},   // 2 Medium
+  {LY_F_LARGE, 1.5f},   // 3 Large (AA-zoomed, no native blob above LARGE)
 };
 
 // Resolve the user-selected date size. Auto (0) follows the effective time
@@ -311,9 +314,9 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
     if (strcmp(lines[i], prevInfoLines[i]) != 0) changed = true;
   if (!changed) return;
 
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextSize(1);
-  const int lineH = tft.fontHeight() + 3;
+  const int lineH = tft.fontHeight() + LY_SC(3);
 #if DISPLAY_IS_ROUND
   // The chord at the very bottom of the circle is too narrow for a name+IP
   // line; anchor the footer block higher, where the circle is ~160 px wide.
@@ -335,7 +338,7 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   // pass, the date later in this very pass (drawClockInfo runs before the
   // minute-change block, so resetting prevMinute redraws it immediately).
   roundTicksDrawn = false;
-  if (blockTop < clockBottom + 4) {
+  if (blockTop < clockBottom + LY_SC(4)) {
     prevDateBuf[0] = '\0';
     prevMinute = -1;
   }
@@ -349,7 +352,7 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
     // simply drop it rather than shrink the clock. At FONT_BODY size this can
     // happen on a short panel with a tall clock (e.g. 240x320 + Large clock +
     // two printers); every other combination has room.
-    if (rowY - lineH / 2 < clockBottom + 4) continue;
+    if (rowY - lineH / 2 < clockBottom + LY_SC(4)) continue;
     tft.drawString(lines[i], sw / 2, rowY);
   }
 
@@ -402,12 +405,12 @@ void drawClock() {
   int suffixTextW = 0;
   int suffixW = 0;
   if (!netSettings.use24h) {
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextSize(1);
     int amW = tft.textWidth("AM");
     int pmW = tft.textWidth("PM");
     suffixTextW = (amW > pmW ? amW : pmW);
-    suffixW = suffixTextW + 6;
+    suffixW = suffixTextW + LY_SC(6);
   }
   const int totalW  = timeBlockW + suffixW;
   const int sw      = clkScrW();
@@ -493,7 +496,7 @@ void drawClock() {
       markFrameDirty();
       // Same connected indicator as the print screens, same accent (#163).
       uint16_t c = (dot == 1) ? dispSettings.statusOkColor : (dot == 2) ? CLR_RED : bg;
-      tft.fillCircle(sw / 2, LY_RND_CLK_DOT_Y, 4, c);
+      tft.fillCircle(sw / 2, LY_RND_CLK_DOT_Y, LY_SC(4), c);
       roundPrevDot = dot;
     }
   }
@@ -568,7 +571,7 @@ void drawClock() {
     const char* ampm = now.tm_hour < 12 ? "AM" : "PM";
     if (strcmp(ampm, prevAmPm) != 0 ||
         ampmX != prevAmpmX || ampmY != prevAmpmY) {
-      setFont(tft, FONT_BODY);
+      setFont(tft, LY_F_BODY);
       tft.setTextSize(1);
       tft.setTextColor(dateClr, bg);
       tft.setTextDatum(TL_DATUM);

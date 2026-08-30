@@ -186,7 +186,7 @@ static inline int iatan2deg(int dy, int dx) {
 //   Storm: the rectangular Storm's bolt model in polar coordinates - the pixel's
 //          arc length along the rim is the perimeter coordinate q, its distance
 //          from the outer radius is the band row t. Two bolts pick a random row
-//          per 8 px of rim and jump every segment, giving jagged streaks that
+//          per rim segment and jump every segment, giving jagged streaks that
 //          run parallel to the edge with a bright core, a dim halo and a
 //          linearly decaying tail. Reseeded ~20 Hz so they crackle.
 static void drawBandRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
@@ -194,7 +194,19 @@ static void drawBandRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                          uint16_t baseColor, uint16_t hueShift,
                          int head, int tail, uint8_t fade,
                          bool storm, uint32_t stormSeed) {
+  // One horizontal run of the band. The widest is the row at |dy| = ir,
+  // where the run spans the full chord 2*sqrt(orr^2 - ir^2) =
+  // 2*sqrt(2*R*T - T^2): 100 px on the 240 round, 201 px on the 480 one.
   static uint16_t rowBuf[248];
+  {
+    constexpr int32_t kR = SCREEN_W / 2 - GLOW_RING_MARGIN;
+    constexpr int32_t kT = GLOW_RING_T;
+    // Squared form so no sqrt is needed at compile time.
+    static_assert(4 * (2 * kR * kT - kT * kT) <=
+                  (int32_t)(sizeof(rowBuf) / sizeof(rowBuf[0]) - 1) *
+                  (int32_t)(sizeof(rowBuf) / sizeof(rowBuf[0]) - 1),
+                  "rowBuf too small for this ring radius/thickness");
+  }
   const int32_t orr2 = (int32_t)orr * orr;
   const int32_t ir2  = (int32_t)ir * ir;
   // Row boundaries as squared radii: band row t covers [orr-t-1 .. orr-t], so a
@@ -225,7 +237,7 @@ static void drawBandRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
       else                { xs = cx + dxi; xe = cx + dxo; }
       int len = 0;
       // The angle changes monotonically along a run, so the bolt hashes only
-      // need recomputing when the 8 px rim segment changes.
+      // need recomputing when the rim segment changes.
       int32_t  lastSeg = INT32_MIN;
       uint32_t h1 = 0, h2 = 0;
       for (int16_t x = xs; x <= xe; x++) {
@@ -243,7 +255,7 @@ static void drawBandRing(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
                                  : baseColor;
           px = blend565(col, bg, (uint8_t)br);
         } else {
-          int32_t seg = ((int32_t)a * degToPx1000 / 1000) >> 3;
+          int32_t seg = ((int32_t)a * degToPx1000 / 1000) >> LY_GLOW_STORM_SEG_SHIFT;
           if (seg != lastSeg) {
             lastSeg = seg;
             h1 = ((uint32_t)seg * 2654435761u) ^ stormSeed;
@@ -412,11 +424,12 @@ static void drawBand(lgfx::LovyanGFX& gfx, unsigned long now, uint8_t fade) {
           if (d >= tailLen) { lineBuf[i] = bg; continue; }
           uint32_t tail = (uint32_t)(tailLen - d) * 255 / (uint32_t)tailLen;
           // Two lightning bolts run along the band, each jumping to a random
-          // row every 8 px: jagged horizontal streaks (parallel to the edge),
+          // row every rim segment: jagged horizontal streaks (parallel to the
+          // edge),
           // bright core + dim halo, black between. Reseeded ~20 Hz to crackle.
           // The inward row fade is skipped here - a bolt flashes at full
           // strength wherever it sits in the band.
-          uint32_t seg = (uint32_t)(q >> 3);
+          uint32_t seg = (uint32_t)(q >> LY_GLOW_STORM_SEG_SHIFT);
           uint32_t h1 = (seg * 2654435761u) ^ stormSeed;
           h1 ^= h1 >> 15; h1 *= 0x85EBCA6Bu; h1 ^= h1 >> 13;
           uint32_t h2 = (seg * 0x9E3779B9u) ^ (stormSeed * 3u);

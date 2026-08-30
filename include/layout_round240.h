@@ -23,12 +23,6 @@
 // =============================================================================
 
 
-// Font tier for the round screens. Round code never names a FontID
-// directly - the two round profiles differ only by which tier they map to.
-#define LY_RND_F_SMALL  FONT_SMALL
-#define LY_RND_F_BODY   FONT_BODY
-#define LY_RND_F_LARGE  FONT_LARGE
-
 // --- Rim progress ring (printing + finished screens) ---
 // Outer radius 118 runs nearly flush to the physical edge (2 px reserve for
 // bezel tolerance on cheap modules), maximizing the usable interior.
@@ -86,6 +80,13 @@
 #define LY_RND_G_X1        58      // nozzle gauge center X
 #define LY_RND_G_X2        120     // bed gauge center X
 #define LY_RND_G_X3        182     // fan gauge center X
+
+// 7-seg progress digits. The base built-in face is ~48 px; these are the
+// setTextSize() multiplier and the resulting half-height in px.
+#define LY_RND_7SEG_SM_SCALE  0.8f   // Rim / Rings (~38 px)
+#define LY_RND_7SEG_SM_HALFH  19
+#define LY_RND_7SEG_BG_SCALE  1.0f   // Speedo (~48 px)
+#define LY_RND_7SEG_BG_HALFH  24
 
 // --- Printing screen, "Speedo" skin (roundSkin = 1) ---
 // One large 240-degree gauge arc (start 60, sweep 240, gap at 6 o'clock);

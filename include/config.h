@@ -432,7 +432,7 @@
 // rim and its anti-aliased fringe (drawn at r118, AA out to ~r119); a shy ring
 // leaves single gold pixels peeking through the moving sweep.
 #define GLOW_RING_MARGIN         0         // px from panel edge to ring outer radius
-#define GLOW_RING_T              11        // ring thickness (outer 120 -> inner 109 on 240 round)
+#define GLOW_RING_T              LY_SC(11) // ring thickness (240 round: outer 120 -> inner 109)
 #define GLOW_SWEEP_TAIL_DEG      90        // sweep comet tail length (deg of the circle)
 
 // =============================================================================
