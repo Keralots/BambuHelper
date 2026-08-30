@@ -323,6 +323,9 @@ static void applyPanelInversion() {
 #elif defined(DISPLAY_240x320)
   _tft_instance.invertDisplay(dispSettings.invertColors);
 #endif
+  // No ws_lcd_28c branch on purpose: its ST7701 vendor list never sends 0x21,
+  // so the panel init is authoritative and this must stay a no-op. That only
+  // holds because its env does not inherit s3_common's USE_ST7789_INVERT.
 }
 
 // ---------------------------------------------------------------------------

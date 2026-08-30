@@ -132,6 +132,9 @@
 // Only these two boards qualify (8 MB PSRAM + touch); BOARD_HAS_PSRAM is too
 // broad (it also covers esp32s3_zero/_320/sensecap). Every camera code path is
 // compiled behind BOARD_HAS_CAMERA; other boards link no-op stubs.
+// ws_lcd_28c also qualifies on paper (8 MB PSRAM + touch) but is deliberately
+// left out of v1 - the board is untested hardware, and a 2nd TLS socket plus
+// two 200 KB JPEG buffers is not something to debug remotely.
 #if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_WS350)
 #define BOARD_HAS_CAMERA      1
 #else
@@ -174,10 +177,10 @@
 #endif
 
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
-// SenseCAP (PCA9535) and ws_lcd_350 (TCA9554). This cap only signals "bring up
+// SenseCAP (PCA9535), ws_lcd_350 and ws_lcd_28c (TCA9554). This cap only signals "bring up
 // Wire.h for the expander"; the per-chip register bring-up stays board-specific
 // (different chip, address and pins - see initDisplay()).
-#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350)
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350) || defined(BOARD_IS_WS28C)
 #define PANEL_HAS_IO_EXPANDER  1
 #else
 #define PANEL_HAS_IO_EXPANDER  0
@@ -282,7 +285,8 @@
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
-    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216)
+    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
+    defined(BOARD_IS_WS28C)
 #define HAS_FULL_HMS_TABLE  1
 #else
 #define HAS_FULL_HMS_TABLE  0
@@ -365,6 +369,8 @@
 #define BUTTON_DEFAULT_PIN    0       // DIY: no button assumed; user configures in web UI
 #elif defined(DISPLAY_240x320)
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
+#elif defined(BOARD_IS_WS28C)
+#define BUTTON_DEFAULT_PIN    0       // 2.8C: touch is the input; GPIO4 is the battery ADC
 #elif defined(BOARD_IS_SENSECAP)
 #define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
@@ -374,7 +380,7 @@
 // =============================================================================
 //  Display refresh
 // =============================================================================
-#if defined(BOARD_IS_SENSECAP)
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS28C)
 #define DISPLAY_UPDATE_MS          100    // ~10 Hz refresh (PSRAM framebuffer can handle it)
 #else
 #define DISPLAY_UPDATE_MS          250    // ~4 Hz refresh rate
