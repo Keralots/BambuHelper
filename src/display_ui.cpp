@@ -2962,12 +2962,14 @@ static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
     const bool typeChanged = (gt != prevTypes[i]);
     if (typeChanged) {
       if (!fr) {
-        const int16_t clearSz = r * 2 + 4;
-        tft.fillRect(xs[i] - r - 2, cy - r - 2, clearSz, clearSz, dispSettings.bgColor);
+        const int16_t clearSz = r * 2 + LY_SC(4);   // == drawGaugeLabel maxW
+        tft.fillRect(xs[i] - r - LY_SC(2), cy - r - LY_SC(2), clearSz, clearSz,
+                     dispSettings.bgColor);
         const bool sm = dispSettings.smallLabels;
-        const int16_t labelY = cy + r + (sm ? 3 : -1);
-        const int16_t lh = sm ? 18 : 24;
-        tft.fillRect(xs[i] - r - 2, labelY - lh / 2, clearSz, lh, dispSettings.bgColor);
+        const int16_t labelY = cy + r + (sm ? LY_SC(3) : LY_SC(-1));
+        const int16_t lh = sm ? LY_SC(18) : LY_SC(24);
+        tft.fillRect(xs[i] - r - LY_SC(2), labelY - lh / 2, clearSz, lh,
+                     dispSettings.bgColor);
       }
       prevTypes[i] = gt;
       drew = true;
@@ -3866,13 +3868,15 @@ static void drawPrintingRound() {
       if (typeChanged) {
         // Square clear like the grid slot loop: AMS bars/filament tiles reach
         // the corners of the slot bounding box, so a circular clear ghosts.
-        tft.fillRect(miniX[i] - LY_RND_G_R - 2, LY_RND_G_Y - LY_RND_G_R - 2,
-                     LY_RND_G_R * 2 + 4, LY_RND_G_R * 2 + 4, CLR_BG);
+        const int16_t clearSz = LY_RND_G_R * 2 + LY_SC(4);   // == drawGaugeLabel maxW
+        tft.fillRect(miniX[i] - LY_RND_G_R - LY_SC(2),
+                     LY_RND_G_Y - LY_RND_G_R - LY_SC(2),
+                     clearSz, clearSz, CLR_BG);
         bool sm = dispSettings.smallLabels;
         int16_t labelY = LY_RND_G_Y + LY_RND_G_R + (sm ? LY_SC(3) : LY_SC(-1));
         int16_t lh     = sm ? LY_SC(18) : LY_SC(24);
-        tft.fillRect(miniX[i] - LY_RND_G_R - 2, labelY - lh / 2,
-                     LY_RND_G_R * 2 + 4, lh, CLR_BG);
+        tft.fillRect(miniX[i] - LY_RND_G_R - LY_SC(2), labelY - lh / 2,
+                     clearSz, lh, CLR_BG);
         prevMiniTypes[i] = gt;
       }
       // Smoothed arc types must also redraw while the lerp is animating,
