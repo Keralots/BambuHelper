@@ -143,6 +143,22 @@ void sanitizeButtonPin() {
     if (reserved) { clash("WS280 reserved peripheral"); return; }
   }
 #endif
+#if defined(BOARD_IS_E32R40T)
+  // E32R40T deliberately omits USE_XPT2046, so the generic XPT checks below
+  // compile out and the touch/LCD pins stay selectable as a button. Reject the
+  // same reserved set as led.cpp. (Backlight 27 caught above.)
+  {
+    uint8_t p = buttonPin;
+    bool reserved =
+      (p == 2 || p == 12 || p == 13 || p == 14 || p == 15) ||   // display SPI
+      (p == 33 || p == 36) ||                                    // XPT2046 CS/IRQ
+      (p == 16 || p == 17 || p == 22) ||                         // onboard RGB
+      (p == 4 || p == 26) ||                                     // amp EN + DAC
+      (p == 5 || p == 18 || p == 19 || p == 23) ||               // SD card
+      (p >= 6 && p <= 11);                                       // flash
+    if (reserved) { clash("E32R40T reserved peripheral"); return; }
+  }
+#endif
 #if defined(USE_CST816)
   if (buttonPin == CST816_SDA) { clash("CST816 touch SDA"); return; }
   if (buttonPin == CST816_SCL) { clash("CST816 touch SCL"); return; }

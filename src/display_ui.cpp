@@ -103,6 +103,7 @@ static uint16_t stateBadgeColor(const BambuState& s) {
 // populated with either the V2 or Classic panel in initDisplay(), so method
 // calls via this reference/pointer dispatch to whichever variant was chosen.
 lgfx::LovyanGFX* tft_ptr = &_tft_instance;
+lgfx::LGFX_Device* displayDevice() { return &_tft_instance; }
 // `tft` is now a macro in display_ui.h — `#define tft (*tft_ptr)` — so
 // every call site re-dereferences the pointer and picks up runtime
 // retargeting to the JC3248W535 PSRAM sprite.
@@ -513,7 +514,7 @@ void initDisplay() {
 #if defined(TOUCH_CS) && !defined(USE_XPT2046)
   // LovyanGFX touch calibration
   uint16_t calData[8] = {0, 0, 0, 65535, 0, 65535, 65535, 65535};
-  tft.setTouchCalibrate(calData);
+  displayDevice()->setTouchCalibrate(calData);
   Serial.println("Display: touch calibration set");
 #endif
 

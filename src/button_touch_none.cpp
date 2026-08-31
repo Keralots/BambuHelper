@@ -12,14 +12,19 @@
 
 #if defined(TOUCH_CS)
 
-#include "display_ui.h"  // extern tft for getTouch()
+#include "display_ui.h"  // displayDevice() for getTouch()
 
 void touchInit() {}
 
 TouchPoll touchPoll() {
   uint16_t tx, ty;
-  bool down = tft.getTouch(&tx, &ty);
-  return {TouchEvent::None, down};
+  bool down = displayDevice()->getTouch(&tx, &ty);
+  // Boot release-gate: ignore contact until one genuine release is seen, so a
+  // touch stuck-asserted from power-on (#109) cannot latch a phantom press.
+  // Ported from the HSPI backend; Touch_XPT2046 has no pressure threshold.
+  static bool armed = false;
+  if (!down) armed = true;
+  return {TouchEvent::None, (bool)(down && armed)};
 }
 
 #else  // no touchscreen at all
