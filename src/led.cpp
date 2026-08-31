@@ -154,6 +154,18 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 34 && pin <= 39) return false;                                        // input-only
   if (pin > 39) return false;
 
+#elif defined(BOARD_IS_E32R40T)
+  // LCDwiki E32R40T (classic ESP32, esp32dev)
+  if (pin == 2 || pin == 12 || pin == 13 || pin == 14 || pin == 15) return false;  // display SPI
+  if (pin == 33 || pin == 36) return false;                                        // XPT2046 CS/IRQ (SCK/MOSI/MISO shared above)
+  if (pin == 16 || pin == 17 || pin == 22) return false;                           // onboard RGB
+  if (pin == 4 || pin == 26) return false;                                         // speaker amp EN + DAC
+  if (pin == 27) return false;                                                     // backlight
+  if (pin == 5 || pin == 18 || pin == 19 || pin == 23) return false;               // SD card
+  if (pin >= 6 && pin <= 11) return false;                                         // SPI flash
+  if (pin >= 34 && pin <= 39) return false;                                        // input-only
+  if (pin > 39) return false;
+
 #elif defined(BOARD_IS_S3_ZERO)
   // Waveshare ESP32-S3-Zero + external ST7789 240x240
   if (pin == 8 || pin == 9 || pin == 10 || pin == 11 || pin == 12) return false;  // display SPI

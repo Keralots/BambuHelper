@@ -137,6 +137,24 @@ void sanitizeBuzzerPin() {
     }
   }
 #endif
+#if defined(BOARD_IS_E32R40T)
+  // Default is 0 (no GPIO buzzer). Reject a stale/manual value: the GPIO backend
+  // drives its pin LOW on init/stop even when disabled. Reserved set matches
+  // led.cpp. Backlight 27 is caught by the BACKLIGHT_PIN check below.
+  {
+    uint8_t p = buzzerSettings.pin;
+    bool reserved =
+      (p == 2 || p == 12 || p == 13 || p == 14 || p == 15) ||   // display SPI
+      (p == 33 || p == 36) || (p == 16 || p == 17 || p == 22) || // XPT2046 + RGB
+      (p == 4 || p == 26) || (p == 5 || p == 18 || p == 19 || p == 23) || // amp/DAC + SD
+      (p >= 6 && p <= 11);                                       // flash
+    if (reserved) {
+      Serial.printf("Buzzer: pin %d reserved on E32R40T, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
 #if defined(DISPLAY_CYD)
   // ESP32-32E clone variant: GPIO4 is the speaker amp enable, not a tone
   // output - the GPIO backend would hijack it and mute the amp.
