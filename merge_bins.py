@@ -93,6 +93,14 @@ BOARDS = {
         'build_env': 'tzt_2432',
         'board_id': 'tzt_2432',
     },
+    'e32r40t': {                         # community (issue #175), classic ESP32, hw-unconfirmed
+        'build_dir': '.pio/build/e32r40t',
+        'bootloader_offset': 0x1000,    # Standard ESP32 starts at 0x1000
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'e32r40t',
+        'board_id': 'e32r40t',
+    },
     'ws_lcd_200': {
         'build_dir': '.pio/build/ws_lcd_200',
         'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
@@ -210,6 +218,8 @@ BOARD_ALIASES = {
     'wt32s3_28s': 'sc05_x',
     'es3n28p': 'es3n28p',
     'es3': 'es3n28p',
+    'e32r40t': 'e32r40t',
+    'e32': 'e32r40t',
     'c3': 'esp32c3',
     'esp32c3': 'esp32c3',
     'c3round': 'esp32c3_round',
