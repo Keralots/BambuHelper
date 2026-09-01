@@ -825,9 +825,97 @@ static void drawOtaUpdate() {
 }
 
 // ---------------------------------------------------------------------------
+//  #177 Printer-off overlay (render-only). When the displayed printer's smart
+//  plug reports OFF, the idle / printing / connecting renderers paint this
+//  instead of stale data - no new ScreenState. Content is static: the caller
+//  clears the screen on the mode transition and passes fullRedraw so this
+//  repaints once. A stale/offline plug yields POM_NORMAL (fail-safe: never
+//  seizes the screen).
+// ---------------------------------------------------------------------------
+enum PrinterOffMode { POM_NORMAL, POM_OFF, POM_STARTING };
+
+static PrinterOffMode printerOffModeFor(uint8_t slot, const BambuState& s,
+                                        const PrinterConfig& cfg) {
+  if (tasmotaPrinterOffForSlot(slot)) return POM_OFF;
+  // Cloud only: LAN off->on already flows through a real CONNECTING_MQTT spinner.
+  if (isCloudMode(cfg.mode) && tasmotaPlugStartingForSlot(slot, s.lastPrintDataMs))
+    return POM_STARTING;
+  return POM_NORMAL;
+}
+
+static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode mode,
+                                  bool fullRedraw) {
+  if (!fullRedraw) return;   // static, already on screen
+  markFrameDirty();
+  const int16_t cx = uiW() / 2;
+  const int16_t cy = uiH() / 2;
+  tft.setTextDatum(MC_DATUM);
+
+  if (mode == POM_STARTING) {
+    setFont(tft, FONT_BODY);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString("Printer starting...", cx, cy);
+    return;
+  }
+
+  // POM_OFF
+  setFont(tft, FONT_LARGE);
+  tft.setTextColor(CLR_ORANGE, CLR_BG);
+  tft.drawString("Printer Off", cx, cy - 24);
+
+  setFont(tft, FONT_BODY);
+  tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+  char infoBuf[40];
+  if (isCloudMode(p.config.mode))
+    snprintf(infoBuf, sizeof(infoBuf), "[Cloud] %s",
+             strlen(p.config.serial) > 0 ? p.config.serial : "no serial!");
+  else
+    snprintf(infoBuf, sizeof(infoBuf), "[LAN] %s",
+             strlen(p.config.ip) > 0 ? p.config.ip : "no IP!");
+  tft.drawString(infoBuf, cx, cy + 6);
+
+  // Power-on hint - only when the button gesture can actually turn it on. Match
+  // powerControlAvailableForSlot's condition (buttonPowerControl + a control
+  // plug); do NOT gate on buttonType, which would hide it on a board whose
+  // built-in button works but whose configured/touch button is disabled.
+  if (dispSettings.buttonPowerControl && tasmotaControlPlugForSlot(slot) != 0xFF) {
+    setFont(tft, FONT_SMALL);
+    tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
+    char hint[40];
+    tft.drawString(ellipsizeToWidth(tft, "Double-click, hold to power on",
+                                    uiW() - 12, hint, sizeof(hint)),
+                   cx, cy + 34);
+  }
+}
+
+// ---------------------------------------------------------------------------
 //  Screen: Connecting MQTT
 // ---------------------------------------------------------------------------
 static void drawConnectingMQTT() {
+  // #177: plug reports the printer off -> paint the off overlay instead of the
+  // spinner. This screen never fillScreen()s on a plug on/off toggle (only on a
+  // ScreenState change), so clear once on the transition to wipe spinner pixels.
+  {
+    PrinterSlot& pp = displayedPrinter();
+    const uint8_t slot = rotState.displayIndex;
+    PrinterOffMode offMode = printerOffModeFor(slot, pp.state, pp.config);
+    static PrinterOffMode connPrevMode = POM_NORMAL;
+    if (offMode != POM_NORMAL) {
+      // forceRedraw covers a printer toggle (triggerDisplayTransition clears the
+      // panel): the new slot can share the old slot's mode, so a bare mode-delta
+      // would skip the repaint and leave a blank screen.
+      bool ch = (offMode != connPrevMode) || forceRedraw;
+      connPrevMode = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(pp, slot, offMode, ch);
+      return;
+    }
+    if (connPrevMode != POM_NORMAL) {       // was off, resume spinner: clear once
+      connPrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      connectScreenStart = millis();
+    }
+  }
   // Always animates (dots + slide bar + elapsed counter) — mark dirty every frame.
   markFrameDirty();
   const int16_t sw = uiW();
@@ -1596,6 +1684,30 @@ static void drawIdle() {
 
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
+
+  // #177: displayed printer's plug reports off -> paint the off overlay instead
+  // of stale gauges. Checked BEFORE the drying branch so a stale anyDrying can't
+  // keep drawIdleDrying() on screen over a powered-off printer.
+  {
+    static PrinterOffMode idlePrevMode = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, s, p.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != idlePrevMode) || forceRedraw;
+      idlePrevMode = offMode;
+      wasDrying = false;                       // don't resume a drying layout after off
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(p, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (idlePrevMode != POM_NORMAL) {          // was off, resume normal idle: full repaint
+      idlePrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      memset(&prevState, 0, sizeof(prevState));
+      resetBatteryRedrawCache();
+      forceRedraw = true;
+    }
+  }
 
   // AMS drying active — switch to dedicated drying layout
   // Grace period: stay on drying screen for 5s after anyDrying drops,
@@ -3854,6 +3966,25 @@ static void drawPrintingRound() {
 }
 
 static void drawPrinting() {
+  // #177: plug reports the printer off -> off overlay instead of the print skin.
+  {
+    PrinterSlot& pp = displayedPrinter();
+    static PrinterOffMode printPrevModeR = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, pp.state, pp.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != printPrevModeR) || forceRedraw;
+      printPrevModeR = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(pp, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (printPrevModeR != POM_NORMAL) {         // was off, resume skin: full repaint
+      printPrevModeR = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      forceRedraw = true;
+    }
+  }
   switch (dispSettings.roundSkin) {
     case 1:  drawPrintingSpeedo(); break;
     case 2:  drawPrintingRings();  break;
@@ -3864,6 +3995,28 @@ static void drawPrinting() {
 static void drawPrinting() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
+
+  // #177: plug reports the printer off -> off overlay instead of the (possibly
+  // stale) print dashboard. Covers keepPrintScreen-idle-on-PRINTING and a
+  // mid-print power-cut. The screen still won't auto-sleep (no state change).
+  {
+    static PrinterOffMode printPrevMode = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, s, p.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != printPrevMode) || forceRedraw;
+      printPrevMode = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(p, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (printPrevMode != POM_NORMAL) {          // was off, resume dashboard: full repaint
+      printPrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      memset(&prevState, 0, sizeof(prevState));
+      forceRedraw = true;
+    }
+  }
 
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
