@@ -1248,12 +1248,12 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
     // an explicit background on the rotated JC sprite, where alpha blending
     // leaves hollow-looking glyphs (bright outline, dark interior).
     setGaugeClearedTextColor(gfx, valColor, bg);
-    gfx.drawString(tempBuf, cx, hasTarget ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
+    gfx.drawString(tempBuf, cx, hasTarget ? (cy - LY_SC(4) + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTarget) {
       setFont(gfx, LY_F_SMALL);
       setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
-      gfx.drawString(targetBuf, cx, cy + 10);
+      gfx.drawString(targetBuf, cx, cy + LY_SC(10));
     }
 
     drawGaugeLabel(gfx, cx, cy, radius, label, lblColor, bg);
@@ -1520,7 +1520,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 
     fitValueFont(gfx, layerBuf, radius, thickness, useSmall ? LY_F_BODY : LY_GAUGE_VALUE_FONT);
     setGaugeClearedTextColor(gfx, dispSettings.layer.value, bg);
-    gfx.drawString(layerBuf, cx, hasTot ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
+    gfx.drawString(layerBuf, cx, hasTot ? (cy - LY_SC(4) + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTot) {
       // Secondary "/total" line uses FONT_SMALL, matching the temp gauge's
@@ -1529,7 +1529,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       // in compact mode (main capped at FONT_BODY) the two lines collided.
       fitValueFont(gfx, totalBuf, radius, thickness, LY_F_SMALL);
       setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
-      gfx.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
+      gfx.drawString(totalBuf, cx, cy + (useSmall ? LY_SC(8) : LY_SC(10)));
     }
 
     drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.layer, "Layer"), dispSettings.layer.label, bg);
