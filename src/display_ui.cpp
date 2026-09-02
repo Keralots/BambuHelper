@@ -3333,6 +3333,10 @@ static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
   }
   if (printerWasCanceled(s))          { strlcpy(buf, "CANCELED", bufLen); return CLR_YELLOW; }
   if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
+  if (const char* stage = runningStageLabel(s)) {   // prep / mid-print substage
+    strlcpy(buf, stage, bufLen);
+    return dispSettings.statusOkColor;
+  }
   if (s.remainingMinutes == 0) { strlcpy(buf, "ETA: ---", bufLen); return CLR_TEXT_DIM; }
 
   setFont(tft, measureFont);   // the fit check lies if the font doesn't match
@@ -3636,6 +3640,9 @@ static void drawPrintingSpeedo() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -3744,6 +3751,9 @@ static void drawPrintingRings() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -3850,6 +3860,9 @@ static void drawPrintingRound() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -4026,6 +4039,9 @@ static void drawPrinting() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -4564,6 +4580,12 @@ static void drawPrinting() {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_RED, CLR_BG);
       tft.drawString("ERROR!", etaCx, eff_etaTextY);
+    } else if (const char* stage = runningStageLabel(s)) {
+      // Prep / mid-print substage (changing filament, leveling...) - the ETA is
+      // meaningless here anyway (mc_percent/remaining sit at 0 during prep).
+      setFont(tft, FONT_BODY);   // longer than an ETA; FONT_LARGE would overflow 240
+      tft.setTextColor(dispSettings.statusOkColor, CLR_BG);
+      tft.drawString(stage, etaCx, eff_etaTextY);
     } else if (s.remainingMinutes > 0) {
       char etaBuf[40];
       setFont(tft, FONT_LARGE);   // set before formatting: it measures to fit

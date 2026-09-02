@@ -122,6 +122,7 @@ struct BambuState {
   PrinterGcodeState gcodeStateId;
   uint8_t progress;           // 0-100%
   uint16_t remainingMinutes;
+  int8_t stgCur;              // print.stg_cur: -1/255 idle, 0 printing, >0 substage (changing filament, leveling...)
   float nozzleTemp;
   float nozzleTarget;
   float nozzleTempN[2];       // per-nozzle temps when dualNozzle (index = extruder id: 0=right, 1=left)
@@ -233,6 +234,90 @@ inline bool isPrintingGcodeState(PrinterGcodeState state) {
          state == GCODE_PAUSE ||
          state == GCODE_PREPARE;
 }
+
+// Human label for print.stg_cur while the printer is RUNNING but not yet laying
+// plastic (changing filament, leveling, heating...). gcode_state stays RUNNING
+// through all of these, so the badge alone reads a bland "RUNNING". Returns NULL
+// for 0 (printing), <0 / 255 (idle) and any stage we don't surface, so callers
+// fall back to the normal ETA line. Covers every non-paused stage: the paused_*
+// stages flip gcode_state to PAUSE (shown by that badge), so their labels would
+// be unreachable here. IDs from BambuStudio / pybambu CURRENT_STAGE_IDS. Labels
+// kept <=18 chars so they fit the 240px ETA line at FONT_BODY without auto-fit.
+inline const char* stgCurLabel(int8_t stg) {
+  switch (stg) {
+    case 1:  return "Bed Leveling";
+    case 2:  return "Preheating Bed";
+    case 3:  return "Sweeping XY";
+    case 4:  return "Changing Filament";
+    case 7:  return "Heating Nozzle";
+    case 8:  return "Calibrating Flow";
+    case 9:  return "Scanning Bed";
+    case 10: return "Inspecting Layer 1";
+    case 11: return "Detecting Plate";
+    case 12:
+    case 18: return "Calibrating Lidar";
+    case 13: return "Homing";
+    case 14: return "Cleaning Nozzle";
+    case 15: return "Checking Temp";
+    case 19: return "Calibrating Flow";
+    case 22: return "Unloading Filament";
+    case 24: return "Loading Filament";
+    case 25:
+    case 31: return "Motor Noise Cali";
+    case 29: return "Cooling Chamber";
+    case 36: return "Accuracy Check";
+    case 37: return "Accuracy Cali";
+    case 38: return "Accuracy Verify";
+    case 39: return "Nozzle Offset Cali";
+    case 40: return "Hot Bed Leveling";
+    case 41: return "Quick Release Chk";
+    case 42: return "Door/Cover Check";
+    case 43: return "Laser Cali";
+    case 44: return "Platform Check";
+    case 45: return "Cam Position Chk";
+    case 46: return "Camera Cali";
+    case 47: return "Bed Leveling 1";
+    case 48: return "Bed Leveling 2";
+    case 49: return "Heating Chamber";
+    case 50: return "Cooling Bed";
+    case 51: return "Cali Lines";
+    case 52: return "Checking Material";
+    case 53: return "Live Cam Cali";
+    case 54: return "Waiting for Bed";
+    case 55: return "Material Pos Chk";
+    case 56: return "Cutter Offset Cali";
+    case 57: return "Measuring Surface";
+    case 58: return "Thermal Precond";
+    case 59: return "Homing Blade";
+    case 60: return "Camera Offset Cali";
+    case 61: return "Blade Pos Cali";
+    case 62: return "Hotend Test";
+    case 63: return "Chamber Temp Wait";
+    case 64: return "Preparing Hotend";
+    case 65: return "Nozzle Clump Cali";
+    case 66: return "Purifying Air";
+    case 67: return "Rotary Measure";
+    case 68: return "Moving to Purge";
+    case 69: return "Cooling Nozzle";
+    case 70: return "Centering Head";
+    case 71: return "Arc Fitting";
+    case 72: return "Hotend Detect";
+    case 73: return "Plate Align Chk";
+    case 74: return "Foreign Object Chk";
+    case 75: return "Bed Underside Chk";
+    case 76: return "Pre-Extruding";
+    case 77: return "Preparing AMS";
+    default: return nullptr;
+  }
+}
+
+// Substage label to show in place of the ETA line: only while RUNNING (prep and
+// mid-print filament swaps), NULL otherwise so the ETA/PAUSE/ERROR ladder wins.
+inline const char* runningStageLabel(const BambuState& s) {
+  if (s.gcodeStateId != GCODE_RUNNING) return nullptr;
+  return stgCurLabel(s.stgCur);
+}
+
 
 // True when the current/last job is a calibration print - either a Bambu
 // Studio calibration wizard job or a device-initiated system calibration.

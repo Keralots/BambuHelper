@@ -81,6 +81,9 @@ const unsigned long DRY_ROT_MS = 60000;            // rotate drying units every 
 // up, otherwise the remaining duration. Returns false when there is nothing to
 // show (not printing / no estimate) so the caller can render a dim placeholder.
 bool buildSplitEta(const BambuState& s, char* buf, size_t n, int16_t maxW) {
+  // Prep / mid-print substage (changing filament, leveling...) replaces the ETA
+  // while RUNNING - the estimate is meaningless during prep anyway.
+  if (const char* stage = runningStageLabel(s)) { strlcpy(buf, stage, n); return true; }
   if (s.remainingMinutes == 0) return false;
   // labelRemaining=false: no "Remaining:" prefix - the progress gauge already
   // labels this context and the narrow landscape bands are tight. maxW is the
