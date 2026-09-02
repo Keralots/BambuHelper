@@ -6,6 +6,7 @@
 #include "layout.h"
 #include "bambu_state.h"
 #include "bambu_mqtt.h"
+#include "tasmota.h"
 #include "display_gauges.h"   // ellipsizeToWidth
 #include <time.h>
 
@@ -248,7 +249,7 @@ static bool  prevUse24h = true;
 static bool  prevHideDate = false;
 
 // --- Printer info footer (name + LAN IP per configured printer) ---
-static char prevInfoLines[MAX_ACTIVE_PRINTERS][40] = {{0}};
+static char prevInfoLines[MAX_ACTIVE_PRINTERS][56] = {{0}};
 static int  prevInfoCount = 0;
 
 #if DISPLAY_IS_ROUND
@@ -289,10 +290,16 @@ void resetClock() {
 // largest clock (and keeping it outside the clock's redraw band). Only repaints
 // when the line set changes, so it costs nothing on a steady screen.
 static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t clr) {
-  char lines[MAX_ACTIVE_PRINTERS][40];
+  char lines[MAX_ACTIVE_PRINTERS][56];
   int count = 0;
 
   if (dispSettings.showClockInfo) {
+    setFont(tft, FONT_BODY);   // set the drawing font so the ellipsize measures right
+#if defined(DISPLAY_ROUND_240)
+    const int16_t infoMaxW = 160;             // chord where the footer sits
+#else
+    const int16_t infoMaxW = (int16_t)sw - 6;
+#endif
     for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
       if (!isPrinterConfigured(i)) continue;
       const PrinterConfig& cfg = printers[i].config;
@@ -301,10 +308,15 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
       // back to the configured LAN IP before the first pushall arrives.
       const char* ip = (printers[i].state.localIp[0] != '\0') ? printers[i].state.localIp
                      : (cfg.ip[0] != '\0') ? cfg.ip : nullptr;
+      // #177: mark a plug-confirmed-off printer. Ellipsize so " off" never
+      // pushes the line past the (round) chord.
+      const char* offTag = tasmotaPrinterOffForSlot(i) ? "  off" : "";
+      char raw[56];
       if (ip)
-        snprintf(lines[count], sizeof(lines[count]), "%s  %s", name, ip);
+        snprintf(raw, sizeof(raw), "%s  %s%s", name, ip, offTag);
       else
-        snprintf(lines[count], sizeof(lines[count]), "%s", name);
+        snprintf(raw, sizeof(raw), "%s%s", name, offTag);
+      ellipsizeToWidth(tft, raw, infoMaxW, lines[count], sizeof(lines[count]));
       if (++count >= MAX_ACTIVE_PRINTERS) break;
     }
   }

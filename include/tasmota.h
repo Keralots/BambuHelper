@@ -19,6 +19,15 @@ uint8_t tasmotaPrinterSlotForPlug(uint8_t plug);
 // builds where the strict mapping returns 0xFF on slots 1-3. 0xFF if none.
 uint8_t tasmotaControlPlugForSlot(uint8_t slot);
 
+// #177 printer-off detection (render-only). STRICT-mapped so a single "Any" plug
+// flags only the canonical slot, not every printer.
+//   tasmotaPrinterOffForSlot     - plug is online and reports the printer OFF.
+//   tasmotaPlugStartingForSlot   - cloud off->on: plug just turned on and no fresh
+//     print data has arrived since (pass s.lastPrintDataMs); true during the
+//     "Printer starting..." window.
+bool tasmotaPrinterOffForSlot(uint8_t slot);
+bool tasmotaPlugStartingForSlot(uint8_t slot, uint32_t lastPrintDataMs);
+
 // Display-side accessors. These keep all plug-mapping policy inside tasmota.cpp.
 //   tasmotaIsActiveForSlot - LOOSE visibility + strict freshness gate
 //   tasmotaGetWattsForSlot - LOOSE mapping; 0 when not active

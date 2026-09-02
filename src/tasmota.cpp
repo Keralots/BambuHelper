@@ -54,6 +54,14 @@ static inline uint8_t shellyExtraMask(const TasmotaSettings& s) {
 #define TASMOTA_PRINT_START_WATTS        100.0f
 #define TASMOTA_PRINT_START_SUSTAIN_MS   15000UL  // require watts high this long before nudging (filters spikes)
 
+// #177 printer-off detection. Watt hysteresis band for plugs with no relay state
+// (Tasmota): assert off below OFF, clear it only above ON. A powered-on printer
+// never idles in [OFF, ON], so a real print can't false-read off.
+#define TASMOTA_OFF_WATTS_ASSERT         0.5f
+#define TASMOTA_OFF_WATTS_CLEAR          2.0f
+// Cloud off->on: show "starting" and hold for a forced pushall to bring fresh data.
+#define TASMOTA_RECONNECT_WINDOW_MS      45000UL
+
 struct TasmotaPlugRuntime {
   float    watts;
   float    todayKwh;
@@ -72,6 +80,8 @@ struct TasmotaPlugRuntime {
   bool     autoOffFired;    // latch: true once Power Off has succeeded for this cycle
   uint32_t wattHighSinceMs; // millis() when watts first crossed the print-start threshold (0 = below)
   bool     wattRefreshFired;// latch: cloud refresh already nudged for the current rise
+  bool     readingSaysOff;  // #177: last successful reading says the printer is off (freshness applied in the accessor)
+  uint32_t plugOnEdgeMs;    // #177: millis() of the last off->on transition (0 = none)
 };
 
 static TasmotaPlugRuntime g_rt[TASMOTA_PLUG_COUNT];
@@ -142,6 +152,30 @@ uint8_t tasmotaControlPlugForSlot(uint8_t slot) {
   return visiblePlugForSlot(slot);
 }
 
+// #177: shared freshness gate for the printer-off accessors.
+static inline bool plugIsFresh(uint8_t p) {
+  return g_rt[p].lastOkMs != 0 && (millis() - g_rt[p].lastOkMs) < TASMOTA_STALE_MS;
+}
+
+// #177: STRICT-mapped plug is online and reports the printer powered off. STRICT
+// (not the loose visibility map) so a single "Any" plug can't flag every slot.
+bool tasmotaPrinterOffForSlot(uint8_t slot) {
+  uint8_t p = tasmotaPlugForPrinterSlot(slot);
+  if (p == 0xFF || !plugIsFresh(p)) return false;
+  return g_rt[p].readingSaysOff;
+}
+
+// #177: cloud off->on "starting" window - the plug just turned on and no fresh
+// print data has arrived since the edge (wrap-safe), still inside the window.
+bool tasmotaPlugStartingForSlot(uint8_t slot, uint32_t lastPrintDataMs) {
+  uint8_t p = tasmotaPlugForPrinterSlot(slot);
+  if (p == 0xFF || !plugIsFresh(p)) return false;
+  if (g_rt[p].readingSaysOff) return false;               // off again, not starting
+  uint32_t edge = g_rt[p].plugOnEdgeMs;
+  if (edge == 0 || (millis() - edge) >= TASMOTA_RECONNECT_WINDOW_MS) return false;
+  return (int32_t)(lastPrintDataMs - edge) <= 0;           // no fresh print data since the edge
+}
+
 // ---------------------------------------------------------------------------
 //  Polling + Status 10 parser
 // ---------------------------------------------------------------------------
@@ -171,6 +205,27 @@ static void applyReadings(uint8_t i, float watts, float todayKwh,
   }
   if (yestKwh >= 0.0f)  g_rt[i].yesterdayKwh = yestKwh;
   if (totalKwh >= 0.0f) g_rt[i].totalKwh     = totalKwh;
+
+  // #177: derive on/off from the just-applied reading (relay state and watts are
+  // both settled by the caller at this point). Freshness is NOT stored here - the
+  // accessor applies it, so a stuck "off" expires when polls stop.
+  bool wasOff = g_rt[i].readingSaysOff;
+  bool newOff = g_rt[i].powerStateKnown
+              ? !g_rt[i].powerOn                                  // relay: clean bool
+              : wasOff ? (watts < TASMOTA_OFF_WATTS_CLEAR)        // hysteresis: stay off until a clear rise
+                       : (watts < TASMOTA_OFF_WATTS_ASSERT);      // else assert off below the low threshold
+  if (wasOff && !newOff) {
+    g_rt[i].plugOnEdgeMs = millis();
+    // Cloud printer just powered on: force a pushall so the display leaves the
+    // stale / "starting" state in seconds instead of waiting for the 5-min idle
+    // push. Cloud + configured only; runs on the poll task, so defer to MQTT.
+    uint8_t slot = tasmotaPrinterSlotForPlug(i);
+    if (slot < MAX_ACTIVE_PRINTERS && isPrinterConfigured(slot) &&
+        isCloudMode(printers[slot].config.mode)) {
+      requestCloudRefreshFromTask(slot);
+    }
+  }
+  g_rt[i].readingSaysOff = newOff;
 }
 
 // Tasmota: GET /cm?cmnd=Status 10 -> StatusSNS.ENERGY {Power, Today, Yesterday, Total}

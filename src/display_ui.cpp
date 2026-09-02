@@ -866,9 +866,97 @@ static void drawOtaUpdate() {
 }
 
 // ---------------------------------------------------------------------------
+//  #177 Printer-off overlay (render-only). When the displayed printer's smart
+//  plug reports OFF, the idle / printing / connecting renderers paint this
+//  instead of stale data - no new ScreenState. Content is static: the caller
+//  clears the screen on the mode transition and passes fullRedraw so this
+//  repaints once. A stale/offline plug yields POM_NORMAL (fail-safe: never
+//  seizes the screen).
+// ---------------------------------------------------------------------------
+enum PrinterOffMode { POM_NORMAL, POM_OFF, POM_STARTING };
+
+static PrinterOffMode printerOffModeFor(uint8_t slot, const BambuState& s,
+                                        const PrinterConfig& cfg) {
+  if (tasmotaPrinterOffForSlot(slot)) return POM_OFF;
+  // Cloud only: LAN off->on already flows through a real CONNECTING_MQTT spinner.
+  if (isCloudMode(cfg.mode) && tasmotaPlugStartingForSlot(slot, s.lastPrintDataMs))
+    return POM_STARTING;
+  return POM_NORMAL;
+}
+
+static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode mode,
+                                  bool fullRedraw) {
+  if (!fullRedraw) return;   // static, already on screen
+  markFrameDirty();
+  const int16_t cx = uiW() / 2;
+  const int16_t cy = uiH() / 2;
+  tft.setTextDatum(MC_DATUM);
+
+  if (mode == POM_STARTING) {
+    setFont(tft, FONT_BODY);
+    tft.setTextColor(CLR_TEXT, CLR_BG);
+    tft.drawString("Printer starting...", cx, cy);
+    return;
+  }
+
+  // POM_OFF
+  setFont(tft, FONT_LARGE);
+  tft.setTextColor(CLR_ORANGE, CLR_BG);
+  tft.drawString("Printer Off", cx, cy - 24);
+
+  setFont(tft, FONT_BODY);
+  tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
+  char infoBuf[40];
+  if (isCloudMode(p.config.mode))
+    snprintf(infoBuf, sizeof(infoBuf), "[Cloud] %s",
+             strlen(p.config.serial) > 0 ? p.config.serial : "no serial!");
+  else
+    snprintf(infoBuf, sizeof(infoBuf), "[LAN] %s",
+             strlen(p.config.ip) > 0 ? p.config.ip : "no IP!");
+  tft.drawString(infoBuf, cx, cy + 6);
+
+  // Power-on hint - only when the button gesture can actually turn it on. Match
+  // powerControlAvailableForSlot's condition (buttonPowerControl + a control
+  // plug); do NOT gate on buttonType, which would hide it on a board whose
+  // built-in button works but whose configured/touch button is disabled.
+  if (dispSettings.buttonPowerControl && tasmotaControlPlugForSlot(slot) != 0xFF) {
+    setFont(tft, FONT_SMALL);
+    tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
+    char hint[40];
+    tft.drawString(ellipsizeToWidth(tft, "Double-click, hold to power on",
+                                    uiW() - 12, hint, sizeof(hint)),
+                   cx, cy + 34);
+  }
+}
+
+// ---------------------------------------------------------------------------
 //  Screen: Connecting MQTT
 // ---------------------------------------------------------------------------
 static void drawConnectingMQTT() {
+  // #177: plug reports the printer off -> paint the off overlay instead of the
+  // spinner. This screen never fillScreen()s on a plug on/off toggle (only on a
+  // ScreenState change), so clear once on the transition to wipe spinner pixels.
+  {
+    PrinterSlot& pp = displayedPrinter();
+    const uint8_t slot = rotState.displayIndex;
+    PrinterOffMode offMode = printerOffModeFor(slot, pp.state, pp.config);
+    static PrinterOffMode connPrevMode = POM_NORMAL;
+    if (offMode != POM_NORMAL) {
+      // forceRedraw covers a printer toggle (triggerDisplayTransition clears the
+      // panel): the new slot can share the old slot's mode, so a bare mode-delta
+      // would skip the repaint and leave a blank screen.
+      bool ch = (offMode != connPrevMode) || forceRedraw;
+      connPrevMode = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(pp, slot, offMode, ch);
+      return;
+    }
+    if (connPrevMode != POM_NORMAL) {       // was off, resume spinner: clear once
+      connPrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      connectScreenStart = millis();
+    }
+  }
   // Always animates (dots + slide bar + elapsed counter) — mark dirty every frame.
   markFrameDirty();
   const int16_t sw = uiW();
@@ -1640,6 +1728,30 @@ static void drawIdle() {
 
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
+
+  // #177: displayed printer's plug reports off -> paint the off overlay instead
+  // of stale gauges. Checked BEFORE the drying branch so a stale anyDrying can't
+  // keep drawIdleDrying() on screen over a powered-off printer.
+  {
+    static PrinterOffMode idlePrevMode = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, s, p.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != idlePrevMode) || forceRedraw;
+      idlePrevMode = offMode;
+      wasDrying = false;                       // don't resume a drying layout after off
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(p, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (idlePrevMode != POM_NORMAL) {          // was off, resume normal idle: full repaint
+      idlePrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      memset(&prevState, 0, sizeof(prevState));
+      resetBatteryRedrawCache();
+      forceRedraw = true;
+    }
+  }
 
   // AMS drying active — switch to dedicated drying layout
   // Grace period: stay on drying screen for 5s after anyDrying drops,
@@ -3278,6 +3390,10 @@ static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
   }
   if (printerWasCanceled(s))          { strlcpy(buf, "CANCELED", bufLen); return CLR_YELLOW; }
   if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
+  if (const char* stage = runningStageLabel(s)) {   // prep / mid-print substage
+    strlcpy(buf, stage, bufLen);
+    return dispSettings.statusOkColor;
+  }
   if (s.remainingMinutes == 0) { strlcpy(buf, "ETA: ---", bufLen); return CLR_TEXT_DIM; }
 
   setFont(tft, measureFont);   // the fit check lies if the font doesn't match
@@ -3584,6 +3700,9 @@ static void drawPrintingSpeedo() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -3695,6 +3814,9 @@ static void drawPrintingRings() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -3805,6 +3927,9 @@ static void drawPrintingRound() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -3925,6 +4050,25 @@ static void drawPrintingRound() {
 }
 
 static void drawPrinting() {
+  // #177: plug reports the printer off -> off overlay instead of the print skin.
+  {
+    PrinterSlot& pp = displayedPrinter();
+    static PrinterOffMode printPrevModeR = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, pp.state, pp.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != printPrevModeR) || forceRedraw;
+      printPrevModeR = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(pp, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (printPrevModeR != POM_NORMAL) {         // was off, resume skin: full repaint
+      printPrevModeR = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      forceRedraw = true;
+    }
+  }
   switch (dispSettings.roundSkin) {
     case 1:  drawPrintingSpeedo(); break;
     case 2:  drawPrintingRings();  break;
@@ -3936,6 +4080,28 @@ static void drawPrinting() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
 
+  // #177: plug reports the printer off -> off overlay instead of the (possibly
+  // stale) print dashboard. Covers keepPrintScreen-idle-on-PRINTING and a
+  // mid-print power-cut. The screen still won't auto-sleep (no state change).
+  {
+    static PrinterOffMode printPrevMode = POM_NORMAL;
+    PrinterOffMode offMode = printerOffModeFor(rotState.displayIndex, s, p.config);
+    if (offMode != POM_NORMAL) {
+      bool ch = (offMode != printPrevMode) || forceRedraw;
+      printPrevMode = offMode;
+      if (ch) { tft.fillScreen(dispSettings.bgColor); markFrameDirty(); }
+      drawPrinterOffOverlay(p, rotState.displayIndex, offMode, ch);
+      return;
+    }
+    if (printPrevMode != POM_NORMAL) {          // was off, resume dashboard: full repaint
+      printPrevMode = POM_NORMAL;
+      tft.fillScreen(dispSettings.bgColor);
+      markFrameDirty();
+      memset(&prevState, 0, sizeof(prevState));
+      forceRedraw = true;
+    }
+  }
+
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
   bool progChanged = forceRedraw || (s.progress != prevState.progress);
@@ -3944,6 +4110,9 @@ static void drawPrinting() {
   bool stateChanged = forceRedraw ||
                       (s.gcodeStateId != prevState.gcodeStateId) ||
                       (strcmp(s.gcodeState, prevState.gcodeState) != 0) ||
+                      // Substage swaps the ETA line while gcode_state sits on
+                      // RUNNING, so it needs its own repaint trigger.
+                      (s.stgCur != prevState.stgCur) ||
                       // An error appears and clears with gcode_state parked on
                       // RUNNING, so the badge needs its own identity here.
                       (errorBadgeId(s) != errorBadgeId(prevState));
@@ -4482,6 +4651,12 @@ static void drawPrinting() {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_RED, CLR_BG);
       tft.drawString("ERROR!", etaCx, eff_etaTextY);
+    } else if (const char* stage = runningStageLabel(s)) {
+      // Prep / mid-print substage (changing filament, leveling...) - the ETA is
+      // meaningless here anyway (mc_percent/remaining sit at 0 during prep).
+      setFont(tft, FONT_BODY);   // longer than an ETA; FONT_LARGE would overflow 240
+      tft.setTextColor(dispSettings.statusOkColor, CLR_BG);
+      tft.drawString(stage, etaCx, eff_etaTextY);
     } else if (s.remainingMinutes > 0) {
       char etaBuf[40];
       setFont(tft, FONT_LARGE);   // set before formatting: it measures to fit
@@ -5168,22 +5343,48 @@ static void drawPowerConfirm() {
     return;
   }
 
+  // Hold-to-confirm ring geometry, scaled per layout so it isn't a tiny dot on
+  // the larger panels (#176). YSH raises the whole stack (title/name/ring/hints)
+  // as one unit; within a layout the ring grows only downward from top cy-10-YSH,
+  // so the text above never collides. 240-class layouts keep their geometry.
+#if defined(DISPLAY_320x480)
+  const int16_t RR = 72, RT = 16;
+  const int16_t YSH = 34;               // raise the whole confirm stack
+#elif defined(DISPLAY_480x480)
+  const int16_t RR = 84, RT = 18;
+  const int16_t YSH = 0;
+#elif defined(DISPLAY_ROUND_480)
+  const int16_t RR = LY_SC(34), RT = LY_SC(8);   // 2x the round-240 dot
+  const int16_t YSH = 0;
+#else
+  const int16_t RR = 34, RT = 8;
+  const int16_t YSH = 0;
+#endif
+  // LY_SC() is 1x everywhere except the 480 round profile, so these are the
+  // unchanged 240/320/480 offsets and only double on ws_lcd_28c.
+  const int16_t titleY = cy - LY_SC(70) - YSH;
+  const int16_t nameY  = cy - LY_SC(44) - YSH;
+  const int16_t warnY  = cy - LY_SC(16) - YSH;
+  const int16_t ry     = cy + RR - LY_SC(10) - YSH;   // ring center; top = cy-10-YSH
+#if !defined(DISPLAY_ROUND_240)
+  const int16_t hintY  = ry + RR + 16;         // first hint line below the ring
+#endif
+
   // Wait-release / armed: question + name + hold ring.
   if (full) {
     setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT, bg);
-    tft.drawString(v.desiredOn ? "Turn ON printer" : "Turn OFF printer",
-                   cx, cy - LY_SC(70));
+    tft.drawString(v.desiredOn ? "Turn ON printer" : "Turn OFF printer", cx, titleY);
 
     setFont(tft, LY_F_LARGE);
     char nameBuf[28];
     snprintf(nameBuf, sizeof(nameBuf), "\"%s\"", (v.name && v.name[0]) ? v.name : "printer");
-    tft.drawString(nameBuf, cx, cy - LY_SC(44));
+    tft.drawString(nameBuf, cx, nameY);
 
     if (v.warn) {
       setFont(tft, LY_F_BODY);
       tft.setTextColor(CLR_TEXT, bg);
-      tft.drawString("PRINTING", cx, cy - LY_SC(16));
+      tft.drawString("PRINTING", cx, warnY);
     }
 
     setFont(tft, LY_F_SMALL);
@@ -5201,24 +5402,22 @@ static void drawPowerConfirm() {
     drawCurvedString(tft, "tap to cancel", cx, cy, LY_RND_ARC_R, true,
                      CLR_TEXT_DIM, LY_F_SMALL, LY_RND_ARC_ETA_HDEG);
 #else
-    tft.drawString("hold to confirm", cx, cy + 74);
-    tft.drawString("tap to cancel",   cx, cy + 92);
+    tft.drawString("hold to confirm", cx, hintY);
+    tft.drawString("tap to cancel",   cx, hintY + 18);
     if (v.offline) {
       tft.setTextColor(CLR_ORANGE, bg);
-      tft.drawString("plug offline", cx, cy + 110);
+      tft.drawString("plug offline", cx, hintY + 36);
     }
 #endif
   }
 
   // Hold-to-confirm ring (redraw the full track every frame, then the fill, so a
   // cancelled/restarted hold leaves no stale progress pixels).
-  const int16_t ry = cy + LY_SC(24);
-  const int16_t rr = LY_SC(34), rt = LY_SC(8);
-  tft.drawArc(cx, ry, rr, rr - rt, 0, 360, CLR_TRACK);
+  tft.drawArc(cx, ry, RR, RR - RT, 0, 360, CLR_TRACK);
   float p = v.progress;
   if (p < 0.0f) p = 0.0f;
   if (p > 1.0f) p = 1.0f;
-  if (p > 0.003f) tft.drawArc(cx, ry, rr, rr - rt, 0, 360.0f * p, CLR_GREEN);
+  if (p > 0.003f) tft.drawArc(cx, ry, RR, RR - RT, 0, 360.0f * p, CLR_GREEN);
   markFrameDirty();
 }
 

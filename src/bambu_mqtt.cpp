@@ -454,6 +454,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   JsonDocument filter;
   JsonObject pf = filter["print"].to<JsonObject>();
   pf["gcode_state"] = true;
+  pf["stg_cur"] = true;     // current stage (changing filament, leveling...) while RUNNING
   pf["mc_percent"] = true;
   pf["mc_remaining_time"] = true;
   pf["nozzle_temper"] = true;
@@ -864,6 +865,12 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     const char* state = print["gcode_state"];
     setPrinterGcodeStateRaw(s, state);
     s.printing = isPrintingGcodeState(s.gcodeStateId);
+  }
+
+  // Current stage: substage shown in place of the ETA line while RUNNING (prep
+  // and mid-print filament swaps). Partial pushes omit it - keep the last value.
+  if (print["stg_cur"].is<int>()) {
+    s.stgCur = (int8_t)(print["stg_cur"].as<int>());
   }
 
   // Chamber light: track real on/off state for the web UI (treat flashing as on)

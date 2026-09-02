@@ -32,6 +32,26 @@ static bool axsTouchProbe() {
   return Wire.endTransmission(true) == 0;
 }
 
+// Authoritative finger-down state read from the touch IC. INT-quiescence alone
+// cannot separate a fast double-tap from one held finger (a re-tap inside
+// RELEASE_MS looks like continuous contact), so the multi-click gesture used to
+// collapse to a single press. Command + parse verified identical in two
+// independent drivers (ESPHome axs15231 + me-processware JC3248W535): write the
+// 8-byte read command, read 8 bytes, finger present when data[0]==0 && data[1]!=0.
+// Returns 1 = finger down, 0 = finger up, -1 = read failed (state unknown).
+static int axsReadFinger() {
+  static const uint8_t cmd[8] = {0xb5, 0xab, 0xa5, 0x5a, 0x00, 0x00, 0x00, 0x08};
+  Wire.beginTransmission(AXS_TOUCH_ADDR);
+  Wire.write(cmd, sizeof(cmd));
+  if (Wire.endTransmission() != 0) return -1;
+  uint8_t data[8] = {0};
+  uint8_t got = Wire.requestFrom((int)AXS_TOUCH_ADDR, (int)sizeof(data));
+  uint8_t i = 0;
+  while (Wire.available() && i < sizeof(data)) data[i++] = Wire.read();
+  if (got < 2 || i < 2) return -1;
+  return (data[0] == 0 && data[1] != 0) ? 1 : 0;
+}
+
 void touchInit() {
   Wire.begin(AXS_TOUCH_SDA, AXS_TOUCH_SCL);
   Wire.setClock(400000);
@@ -55,11 +75,10 @@ void touchInit() {
 TouchPoll touchPoll() {
   if (!busReady) return {TouchEvent::Unavailable, false};
   // The AXS15231B pulses INT low->high->low while a finger is held (the ISR fires
-  // 20-30 times per contact, separated by sub-100 ms gaps). Detecting release via
-  // INT level is therefore unreliable - a HIGH observation in a gap looks like a
-  // real release. Use ISR quiescence as the release signal instead: as long as the
-  // ISR keeps firing, treat the finger as still down; only declare release once no
-  // edge has happened for RELEASE_MS.
+  // 20-30 times per contact, separated by sub-100 ms gaps). The INT edge is the
+  // press trigger (a level poll would miss sub-loop-rate taps); release is taken
+  // from an authoritative I2C finger read (axsReadFinger), because INT quiescence
+  // alone can't tell a fast double-tap from one held finger.
   //
   // Acceptable benign race: the ISR can fire and increment axsIntFallingCount
   // between our read into `cnt` and our write to axsIntFallingSeen, in which case
@@ -73,20 +92,30 @@ TouchPoll touchPoll() {
   unsigned long nowMs = millis();
   if (newEdge) lastIsrMs = nowMs;
 
-  const unsigned long RELEASE_MS = 200;
-  bool released = (nowMs - lastIsrMs > RELEASE_MS);
+  // Release the instant the IC reports finger-up (gated by a short quiescence so
+  // a single stray read can't drop a real hold). This gives clean per-tap
+  // boundaries, so a fast double-tap registers as two presses instead of merging
+  // into one held contact. If the read fails, fall back to the legacy timer.
+  int finger = axsReadFinger();
+  const unsigned long RELEASE_MS       = 200;   // fallback: no finger read
+  const unsigned long RELEASE_GUARD_MS = 40;    // finger-up debounce
+  bool released = (finger < 0)
+                  ? (nowMs - lastIsrMs > RELEASE_MS)
+                  : (finger == 0 && nowMs - lastIsrMs > RELEASE_GUARD_MS);
 
   if (released && held) {
     held = false;
     return {TouchEvent::Released, false};
   }
 
-  if (newEdge && !held) {
+  // Press on the INT edge (catches sub-loop taps) or a positive finger read.
+  if ((newEdge || finger == 1) && !held) {
     if (!seen) {
       Serial.printf("AXS15231B touch became responsive at runtime (addr 0x%02X)\n", AXS_TOUCH_ADDR);
       seen = true;
     }
     held = true;
+    lastIsrMs = nowMs;
     return {TouchEvent::Pressed, true};
   }
 

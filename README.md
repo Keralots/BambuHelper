@@ -14,11 +14,10 @@ Additional supported boards include Guition JC3248W535 320x480, CYD 240x320, Wav
 
 | Connection Mode | Printers | How it connects |
 |---|---|---|
-| **LAN Direct** | P1P, P1S, X1, X1C, X1E, A1, A1 Mini | Local MQTT via printer IP + LAN access code |
-| **LAN Direct (Developer Mode)** | H2S, H2C, H2D | LAN-only mode + Developer Mode required - see note below |
+| **LAN Direct** | P1P, P1S, X1, X1C, X1E, A1, A1 Mini, H2C, H2D, H2S | Local MQTT via printer IP + LAN access code |
 | **Bambu Cloud (All printers)** | Any Bambu printer | Cloud MQTT - sign in to your Bambu account from the device, or paste an access token. No LAN mode needed |
 
-> **H2 series LAN mode:** H2S, H2C, and H2D printers require both **LAN-only mode** and **Developer Mode** enabled in printer settings for local MQTT to work. Without Developer Mode, the printer accepts connections but does not respond to status requests. If you prefer not to enable Developer Mode, use Bambu Cloud mode instead.
+> **H2 series LAN mode:** On current firmware, H2C / H2D / H2S connect over **LAN Direct with no printer-side toggles** - you do **not** need LAN-only mode or Developer Mode, and the printer stays cloud-connected (Bambu Handy keeps working) while you monitor it locally. Just enter the printer IP and LAN access code (Settings > Network). Verified on an H2C. If a printer accepts the connection but shows no data, enable **Developer Mode** in printer settings - and note that if you deliberately run the printer in **LAN-only mode**, Developer Mode is required in that mode.
 
 > **Tip:** Use "Bambu Cloud (All printers)" if you don't want to enable LAN/Developer mode on your printer (for example to keep Bambu Handy working), if your ESP32 is on a different network than the printer, or if your printer only supports cloud mode (P2S).
 
