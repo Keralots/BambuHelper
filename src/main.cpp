@@ -43,6 +43,7 @@ static const uint32_t POWER_MULTICLICK_MS         = 450;   // double/triple-clic
 static const uint32_t POWER_CONFIRM_HOLD_MS       = 1500;  // hold-to-confirm duration
 static const uint32_t POWER_CONFIRM_INACTIVITY_MS = 10000; // auto-cancel on no input
 static const uint32_t POWER_RESULT_MS             = 1200;  // success/fail flash duration
+static const uint32_t POWER_OFF_HOLD_OPEN_MS      = 300;   // #177: hold on "Printer Off" opens confirm
 
 enum PowerConfirmPhase { PC_WAIT_RELEASE = 0, PC_ARMED = 1, PC_SENDING = 2, PC_RESULT = 3 };
 
@@ -387,21 +388,31 @@ static bool powerControlAvailableForSlot(uint8_t slot) {
           s == SCREEN_CONNECTING_MQTT);
 }
 
-static void openPowerConfirm(uint8_t slot) {
+// preArmedHold (#177): the "Printer Off" screen opens this on a single hold, so
+// arm immediately, force ON, and seed the press start from the in-flight hold -
+// one continuous press fills the ring, no double-click and no wait-for-release.
+static void openPowerConfirm(uint8_t slot, bool preArmedHold = false, uint32_t heldMs = 0) {
   pcSlot = slot;
   pcPlug = tasmotaControlPlugForSlot(slot);
   TasmotaPlugStatsView v;
   tasmotaGetStats(pcPlug, &v);
   // Mirror the web-UI inference: Shelly/Kasa report relay state; Tasmota infers from watts.
   bool currentOn = v.powerStateKnown ? v.powerOn : (v.online && v.watts > 0.5f);
-  pcDesiredOn      = !currentOn;
+  pcDesiredOn      = preArmedHold ? true : !currentOn;
   pcWasPrinting    = isPrintingGcodeState(printers[slot].state.gcodeStateId);
   pcPriorScreen    = getScreenState();
-  pcPhase          = PC_WAIT_RELEASE;   // require a finger release before arming
-  pcPrevHeld       = true;
   pcProgress       = 0.0f;
   pcLastActivityMs = millis();
   pcSendingDrawn   = false;
+  pcPrevHeld       = true;               // finger is already down at open
+  if (preArmedHold) {
+    pcPhase        = PC_ARMED;
+    uint32_t hm    = (heldMs < 60000) ? heldMs : 0;   // guard a stale hold value
+    pcPressStartMs = millis() - hm;                    // ring continues the hold
+  } else {
+    pcPhase        = PC_WAIT_RELEASE;    // require a finger release before arming
+    pcPressStartMs = 0;
+  }
   setScreenState(SCREEN_POWER_CONFIRM);
 }
 
@@ -502,6 +513,13 @@ static void handleWakeButton() {
   if (isSleepStickyScreen(getScreenState())) suppressDim = true;
 #endif
 
+  // #177: on the "Printer Off" screen, a hold means power-on (handled below), so
+  // suppress LED-dim there - the hold must never start a dim session, whether or
+  // not the LED is configured. Scoped to this screen; dim is normal everywhere else.
+  bool offScreenNow = tasmotaPrinterOffForSlot(rotState.displayIndex) &&
+                      powerControlAvailableForSlot(rotState.displayIndex);
+  if (offScreenNow) suppressDim = true;
+
   // Tap/hold disambiguation state (LED-enabled path). Hoisted so the power-confirm
   // intercept can keep them in sync and avoid a stray release-edge tap on close.
   static bool wasHeldPrev = false;
@@ -530,6 +548,24 @@ static void handleWakeButton() {
 
   // Tick the dimmer every loop regardless of state - it owns the 2 s save debounce.
   bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim);
+
+  // #177: a single hold on the "Printer Off" screen opens the power-confirm modal
+  // pre-armed for ON (no double-click, no wait-for-release). suppressDim above kept
+  // holdConsumed false, so this hold is ours to claim; a short tap still cycles.
+  static bool offHoldFired = false;
+  if (offScreenNow) {
+    if (!held) offHoldFired = false;
+    else if (!offHoldFired && holdMs >= POWER_OFF_HOLD_OPEN_MS) {
+      offHoldFired = true;
+      pcPendingClicks = 0;                 // drop any tap buffered before the hold
+      openPowerConfirm(rotState.displayIndex, /*preArmedHold=*/true, holdMs);
+      wasHeldPrev = held;
+      holdConsumedThisPress = false;
+      return;
+    }
+  } else {
+    offHoldFired = false;
+  }
 
   // LED disabled or unconfigured: take the ORIGINAL press-edge path (with the new
   // multi-click shim). The dimmer's entry guard prevents any dim session, so

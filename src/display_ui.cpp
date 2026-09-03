@@ -882,7 +882,7 @@ static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode m
     setFont(tft, FONT_SMALL);
     tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
     char hint[40];
-    tft.drawString(ellipsizeToWidth(tft, "Double-click, hold to power on",
+    tft.drawString(ellipsizeToWidth(tft, "Hold to power on",
                                     uiW() - 12, hint, sizeof(hint)),
                    cx, cy + 34);
   }
