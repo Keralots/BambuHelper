@@ -439,6 +439,7 @@ void sanitizeLedPin() {
 //  Low-level duty write (with change-detection to skip redundant SPI traffic)
 // ---------------------------------------------------------------------------
 static bool suspendedForSleep = false;
+static bool suspendedForNight = false;  // night mode + ledSettings.nightOff = keep the LED dark
 
 static inline uint8_t scaleChannel(uint8_t v, uint8_t duty) {
   return (uint8_t)(((uint16_t)v * (uint16_t)duty + 127u) / 255u);
@@ -478,7 +479,7 @@ static void writeOut(uint8_t duty, uint32_t rgb) {
   // portal asking to see the LED right now. Without the exception, configuring
   // the LED on a device whose panel has gone to sleep shows nothing at all and
   // reads as broken hardware. A real print finish still respects the sleep.
-  if (suspendedForSleep && !previewActive && !finishEffectIsTest) duty = 0;
+  if ((suspendedForSleep || suspendedForNight) && !previewActive && !finishEffectIsTest) duty = 0;
   lastAppliedDuty = (int16_t)duty;
 
   if (attachedDrv == LED_DRV_SINGLE) {
@@ -519,7 +520,17 @@ void ledSetSuspended(bool suspended) {
   if (suspended == suspendedForSleep) return;
   suspendedForSleep = suspended;
   if (attachedPin < 0) return;
-  writeDuty(suspended ? 0 : restingBrightness());
+  // restingBrightness() is re-clamped to 0 by writeOut() if night suspend still holds.
+  writeDuty((suspended || suspendedForNight) ? 0 : restingBrightness());
+}
+
+// Night-mode coupling: same clamp as sleep, driven from the main loop when the
+// device crosses into / out of the night window (only when ledSettings.nightOff).
+void ledSetNightSuspended(bool suspended) {
+  if (suspended == suspendedForNight) return;
+  suspendedForNight = suspended;
+  if (attachedPin < 0) return;
+  writeDuty((suspended || suspendedForSleep) ? 0 : restingBrightness());
 }
 
 // Park one released pin at its dark level. On a common-anode wiring that level

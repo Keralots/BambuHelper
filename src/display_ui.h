@@ -131,6 +131,9 @@ void applyDisplaySettings();  // re-apply rotation, bg, force redraw
 void triggerDisplayTransition(); // start printer-name overlay on rotation
 void checkNightMode();        // apply scheduled brightness dimming
 uint8_t getEffectiveBrightness(); // current brightness (night or normal)
+bool isNightModeActive();     // night mode enabled AND inside the night window
+bool isNightBlackout();       // night window with brightness 0, no wake override running
+void nightWake();             // button press during a blackout: light the panel briefly
 
 // True only on portrait layout profiles that define LAYOUT_HAS_SPLIT and are not
 // currently in a landscape rotation. Gates the split (dual-printer) screen so it

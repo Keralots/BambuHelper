@@ -456,7 +456,10 @@ static void handleBrightnessPreview() {
   if (server.hasArg("val")) {
     uint8_t val = server.arg("val").toInt();
     ScreenState scr = getScreenState();
-    if (scr != SCREEN_CLOCK && scr != SCREEN_OFF) {
+    // Night blackout joins clock/off for the same reason: the panel is
+    // deliberately dark and checkNightMode() would stamp the preview back out
+    // within a second anyway, so the slider would only flicker the screen.
+    if (scr != SCREEN_CLOCK && scr != SCREEN_OFF && !isNightBlackout()) {
       setBacklight(val);
     }
   }
@@ -1439,6 +1442,7 @@ static void handleSaveRotation() {
   if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
   if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
   if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
+  if (server.hasArg("lednight")) ledSettings.nightOff            = (server.arg("lednight") == "1");
   if (server.hasArg("lederrsec")) {
     int v = server.arg("lederrsec").toInt();
     if (v != 0 && v < 5) v = 5; if (v > 600) v = 600;
@@ -1787,6 +1791,7 @@ static void handleSettingsExport() {
   led["pauseBreathing"]      = ledSettings.pauseBreathing;
   led["errorStrobe"]         = ledSettings.errorStrobe;
   led["errorStrobeSeconds"]  = ledSettings.errorStrobeSeconds;
+  led["nightOff"]            = ledSettings.nightOff;
 
   // Tasmota power monitoring
   JsonObject tsm = doc["tasmota"].to<JsonObject>();
@@ -2221,6 +2226,7 @@ static void handleSettingsImportFinish() {
     if (led["autoOnWhilePrinting"].is<bool>()) ledSettings.autoOnWhilePrinting = led["autoOnWhilePrinting"].as<bool>();
     if (led["pauseBreathing"].is<bool>())      ledSettings.pauseBreathing      = led["pauseBreathing"].as<bool>();
     if (led["errorStrobe"].is<bool>())         ledSettings.errorStrobe         = led["errorStrobe"].as<bool>();
+    if (led["nightOff"].is<bool>())            ledSettings.nightOff            = led["nightOff"].as<bool>();
     if (led["errorStrobeSeconds"].is<uint16_t>()) {
       uint16_t s = led["errorStrobeSeconds"].as<uint16_t>();
       if (s != 0 && s < 5) s = 5; if (s > 600) s = 600;

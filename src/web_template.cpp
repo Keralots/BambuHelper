@@ -628,6 +628,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "LED_AUTO")      == 0) { out = ledSettings.autoOnWhilePrinting ? "checked" : ""; return true; }
   if (strcmp(name, "LED_PAUSE")     == 0) { out = ledSettings.pauseBreathing ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR")       == 0) { out = ledSettings.errorStrobe ? "checked" : ""; return true; }
+  if (strcmp(name, "LED_NIGHT")     == 0) { out = ledSettings.nightOff ? "checked" : ""; return true; }
   if (strcmp(name, "LED_ERR_SEC")   == 0) { out = String(ledSettings.errorStrobeSeconds); return true; }
   if (strcmp(name, "LED_DRV_S")   == 0) { out = ledSettings.driver == LED_DRV_SINGLE ? "selected" : ""; return true; }
   if (strcmp(name, "LED_DRV_R")   == 0) { out = ledSettings.driver == LED_DRV_RGB    ? "selected" : ""; return true; }
@@ -692,11 +693,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
 
   // --- Tasmota power monitoring ---
   if (strcmp(name, "POWER_TAB_2") == 0) {
-#if TASMOTA_PLUG_COUNT > 1
-    out = "<button type=\"button\" class=\"power-tab-btn\" id=\"ptab1\" onclick=\"selectPowerTab(1)\">Plug 2</button>";
-#else
+    // Extra plug tabs beyond Plug 1 (ptab0 is static markup): one per active
+    // printer slot. Empty on single-plug low-RAM boards, one tab on full-RAM,
+    // three on PSRAM boards running four printers.
     out = "";
-#endif
+    for (uint8_t i = 1; i < TASMOTA_PLUG_COUNT; i++) {
+      out += "<button type=\"button\" class=\"power-tab-btn\" id=\"ptab";
+      out += String(i);
+      out += "\" onclick=\"selectPowerTab(";
+      out += String(i);
+      out += ")\">Plug ";
+      out += String(i + 1);
+      out += "</button>";
+    }
     return true;
   }
   if (strcmp(name, "POWER_SLOT_BLOCK") == 0) {

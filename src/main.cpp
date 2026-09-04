@@ -43,6 +43,7 @@ static const uint32_t POWER_MULTICLICK_MS         = 450;   // double/triple-clic
 static const uint32_t POWER_CONFIRM_HOLD_MS       = 1500;  // hold-to-confirm duration
 static const uint32_t POWER_CONFIRM_INACTIVITY_MS = 10000; // auto-cancel on no input
 static const uint32_t POWER_RESULT_MS             = 1200;  // success/fail flash duration
+static const uint32_t POWER_OFF_HOLD_OPEN_MS      = 300;   // #177: hold on "Printer Off" opens confirm
 
 enum PowerConfirmPhase { PC_WAIT_RELEASE = 0, PC_ARMED = 1, PC_SENDING = 2, PC_RESULT = 3 };
 
@@ -286,6 +287,16 @@ static void closeHmsScreen() {
 static void doTapActions() {
   ScreenState cur = getScreenState();
 
+  // Night blackout: lift it first so the setBacklight() calls below resolve to
+  // the wake level instead of 0. On a live screen (IDLE / PRINTING / ...) the
+  // press then stops here - it would otherwise fall through into the tap cycle
+  // and shuffle screens nobody can see. A sleep-sticky screen keeps its own
+  // wake, which is the behavior the user already knows.
+  if (isNightBlackout()) {
+    nightWake();
+    if (!isSleepStickyScreen(cur)) return;
+  }
+
   if (isSleepStickyScreen(cur)) {
     setBacklight(getEffectiveBrightness());
     finishActive = false;
@@ -387,21 +398,31 @@ static bool powerControlAvailableForSlot(uint8_t slot) {
           s == SCREEN_CONNECTING_MQTT);
 }
 
-static void openPowerConfirm(uint8_t slot) {
+// preArmedHold (#177): the "Printer Off" screen opens this on a single hold, so
+// arm immediately, force ON, and seed the press start from the in-flight hold -
+// one continuous press fills the ring, no double-click and no wait-for-release.
+static void openPowerConfirm(uint8_t slot, bool preArmedHold = false, uint32_t heldMs = 0) {
   pcSlot = slot;
   pcPlug = tasmotaControlPlugForSlot(slot);
   TasmotaPlugStatsView v;
   tasmotaGetStats(pcPlug, &v);
   // Mirror the web-UI inference: Shelly/Kasa report relay state; Tasmota infers from watts.
   bool currentOn = v.powerStateKnown ? v.powerOn : (v.online && v.watts > 0.5f);
-  pcDesiredOn      = !currentOn;
+  pcDesiredOn      = preArmedHold ? true : !currentOn;
   pcWasPrinting    = isPrintingGcodeState(printers[slot].state.gcodeStateId);
   pcPriorScreen    = getScreenState();
-  pcPhase          = PC_WAIT_RELEASE;   // require a finger release before arming
-  pcPrevHeld       = true;
   pcProgress       = 0.0f;
   pcLastActivityMs = millis();
   pcSendingDrawn   = false;
+  pcPrevHeld       = true;               // finger is already down at open
+  if (preArmedHold) {
+    pcPhase        = PC_ARMED;
+    uint32_t hm    = (heldMs < 60000) ? heldMs : 0;   // guard a stale hold value
+    pcPressStartMs = millis() - hm;                    // ring continues the hold
+  } else {
+    pcPhase        = PC_WAIT_RELEASE;    // require a finger release before arming
+    pcPressStartMs = 0;
+  }
   setScreenState(SCREEN_POWER_CONFIRM);
 }
 
@@ -502,6 +523,13 @@ static void handleWakeButton() {
   if (isSleepStickyScreen(getScreenState())) suppressDim = true;
 #endif
 
+  // #177: on the "Printer Off" screen, a hold means power-on (handled below), so
+  // suppress LED-dim there - the hold must never start a dim session, whether or
+  // not the LED is configured. Scoped to this screen; dim is normal everywhere else.
+  bool offScreenNow = tasmotaPrinterOffForSlot(rotState.displayIndex) &&
+                      powerControlAvailableForSlot(rotState.displayIndex);
+  if (offScreenNow) suppressDim = true;
+
   // Tap/hold disambiguation state (LED-enabled path). Hoisted so the power-confirm
   // intercept can keep them in sync and avoid a stray release-edge tap on close.
   static bool wasHeldPrev = false;
@@ -519,6 +547,26 @@ static void handleWakeButton() {
     return;
   }
 
+  // Night blackout on a live screen: the panel is dark, so swallow the press as
+  // a wake before it reaches the multi-click buffer or the tap cycle - a
+  // double-click here would open the power-confirm modal over a screen the user
+  // cannot see. Sleep-sticky screens fall through to their existing wake (which
+  // lifts the blackout itself, in doTapActions). Placed after the modal
+  // intercept so one already up keeps working, and the dimmer is still ticked
+  // (suppressed) so its 2 s save debounce keeps draining and no dim session
+  // starts - a hold in the dark must not ramp the LED and write it to NVS.
+  if (isNightBlackout() && !isSleepStickyScreen(getScreenState())) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (touchPress || boardPress) {
+      buzzerPlayClick();
+      ledOnUserInteraction();
+      nightWake();
+    }
+    wasHeldPrev = held;
+    holdConsumedThisPress = false;
+    return;
+  }
+
   // Flush a buffered multi-click once the window closes: 1 click = the normal tap
   // action, 2+ = open the power-confirm modal for the frozen target slot.
   if (pcPendingClicks > 0 && (millis() - pcLastTapMs) > POWER_MULTICLICK_MS) {
@@ -530,6 +578,24 @@ static void handleWakeButton() {
 
   // Tick the dimmer every loop regardless of state - it owns the 2 s save debounce.
   bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim);
+
+  // #177: a single hold on the "Printer Off" screen opens the power-confirm modal
+  // pre-armed for ON (no double-click, no wait-for-release). suppressDim above kept
+  // holdConsumed false, so this hold is ours to claim; a short tap still cycles.
+  static bool offHoldFired = false;
+  if (offScreenNow) {
+    if (!held) offHoldFired = false;
+    else if (!offHoldFired && holdMs >= POWER_OFF_HOLD_OPEN_MS) {
+      offHoldFired = true;
+      pcPendingClicks = 0;                 // drop any tap buffered before the hold
+      openPowerConfirm(rotState.displayIndex, /*preArmedHold=*/true, holdMs);
+      wasHeldPrev = held;
+      holdConsumedThisPress = false;
+      return;
+    }
+  } else {
+    offHoldFired = false;
+  }
 
   // LED disabled or unconfigured: take the ORIGINAL press-edge path (with the new
   // multi-click shim). The dimmer's entry guard prevents any dim session, so
@@ -1410,6 +1476,16 @@ void loop() {
     if (screenOff != ledSleepSynced) {
       ledSleepSynced = screenOff;
       ledSetSuspended(screenOff);
+    }
+  }
+  // LED off during night mode (opt-in): dark for the whole night window,
+  // independent of the panel sleep state above.
+  {
+    static bool ledNightSynced = false;
+    bool nightOff = ledSettings.nightOff && isNightModeActive();
+    if (nightOff != ledNightSynced) {
+      ledNightSynced = nightOff;
+      ledSetNightSuspended(nightOff);
     }
   }
   ledTick();

@@ -336,14 +336,20 @@ struct LedSettings {
   uint32_t colorPaused;
   uint32_t colorFinished;
   uint32_t colorError;
+
+  bool nightOff;               // turn the status LED off during the night window
 };
 
 // Tasmota smart plug power monitoring
-// Dual plug on full-RAM builds, single plug on BOARD_LOW_RAM (CYD/tzt_2432/esp32c3).
+// One plug per printer slot. Single plug on BOARD_LOW_RAM (CYD/tzt_2432/esp32c3):
+// its RAM budget rules out a second, and that plug carries an "assigned printer"
+// selector instead (see TASMOTA_PLUG_COUNT==1 paths). Everywhere else it tracks
+// MAX_ACTIVE_PRINTERS: 2 on full-RAM boards, 4 on PSRAM boards that can run four
+// printers (quadPrinterBeta), so printers 3/4 get power monitoring too.
 #ifdef BOARD_LOW_RAM
   #define TASMOTA_PLUG_COUNT 1
 #else
-  #define TASMOTA_PLUG_COUNT 2
+  #define TASMOTA_PLUG_COUNT MAX_ACTIVE_PRINTERS
 #endif
 
 struct TasmotaSettings {

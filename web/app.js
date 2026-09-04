@@ -859,6 +859,7 @@ function saveRotation(){
   p.append('ledauto', document.getElementById('ledauto').checked ? '1' : '0');
   p.append('ledpause', document.getElementById('ledpause').checked ? '1' : '0');
   p.append('lederr', document.getElementById('lederr').checked ? '1' : '0');
+  p.append('lednight', document.getElementById('lednight').checked ? '1' : '0');
   p.append('lederrsec', document.getElementById('lederrsec').value);
   var bs = document.getElementById('batshow');
   if (bs) p.append('batshow', bs.checked ? '1' : '0');
@@ -880,7 +881,7 @@ function applyLabelMaxlen(){
 
 /* ============ Power monitoring ============ */
 var currentPowerPlug = 0;
-var powerPlugCount = (document.getElementById('ptab1') ? 2 : 1);
+var powerPlugCount = document.querySelectorAll('#powerTabBar .power-tab-btn').length || 1;
 /* Grey out the display-mode radios when the status-bar readout is hidden
    (Display tab) - the whole readout is gone, so the choice does nothing. */
 function applyHideReadoutToPowerDM(){
@@ -911,7 +912,7 @@ function applyPowerEnableState(){
 function selectPowerTab(plug){
   if (plug >= powerPlugCount) return;
   currentPowerPlug = plug;
-  for (var i = 0; i < 2; i++){
+  for (var i = 0; i < powerPlugCount; i++){
     var btn = document.getElementById('ptab' + i);
     if (!btn) continue;
     btn.classList.toggle('active', i === plug);
