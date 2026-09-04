@@ -875,6 +875,181 @@ public:
 };
 static LGFX_SenseCAP _tft_instance;
 
+#elif defined(BOARD_IS_WS28C)
+// --- Waveshare ESP32-S3-Touch-LCD-2.8C (ST7701 480x480 round RGB) -----------
+// Issue #171. LCD_CAM RGB bus + 3-wire SPI command interface, same shape as
+// the SenseCAP block below-but no IO-expander CS trick: pin_cs = -1 and
+// initDisplay() holds the expander's CS bit low across tft.init(). That is why
+// this board needs neither the mverch67 LovyanGFX fork nor a framework fork.
+//
+// Bring-up order (TCA9554 @0x20 via ioExpander*, see display_ui.cpp):
+//   GT911 INT low -> TP RST pulse -> LCD RST pulse -> LCD CS low -> tft.init()
+//   -> LCD CS high.
+
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+
+#ifndef WS28C_PCLK_HZ
+#define WS28C_PCLK_HZ 12000000
+#endif
+
+// Vendor init list (Display_ST7701.cpp), re-encoded as a LovyanGFX
+// command_list: cmd, len, params... ; 0xFF,0xFF terminates; CMD_INIT_DELAY
+// (0x80) OR'd into len adds one trailing millisecond byte.
+// Derives from Panel_ST7701_Base, not Panel_ST7701 - we replace the stock list
+// rather than extend it. The base has already selected bank 0x10 and sent its
+// own 0xC0 (LNSET) / 0xC3 (RGBCTRL) when this list starts, so our 0xC0 wins.
+// No 0x21: this panel runs inversion OFF.
+class Panel_ST7701_WS28C : public lgfx::Panel_ST7701_Base {
+protected:
+  const uint8_t* getInitCommands(uint8_t listno) const override {
+    static constexpr const uint8_t list0[] = {
+      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x13,
+      0xEF,  1, 0x08,
+
+      // Command2 BK0
+      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x10,
+      0xC0,  2, 0x3B, 0x00,
+      0xC1,  2, 0x10, 0x0C,
+      0xC2,  2, 0x07, 0x0A,
+      0xC7,  1, 0x00,
+      0xCC,  1, 0x10,
+      0xCD,  1, 0x08,
+      // Positive / negative gamma
+      0xB0, 16, 0x05, 0x12, 0x98, 0x0E, 0x0F, 0x07, 0x07, 0x09,
+                0x09, 0x23, 0x05, 0x52, 0x0F, 0x67, 0x2C, 0x11,
+      0xB1, 16, 0x0B, 0x11, 0x97, 0x0C, 0x12, 0x06, 0x06, 0x08,
+                0x08, 0x22, 0x03, 0x51, 0x11, 0x66, 0x2B, 0x0F,
+
+      // Command2 BK1 - power / VCOM
+      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x11,
+      0xB0,  1, 0x5D,
+      0xB1,  1, 0x3E,
+      0xB2,  1, 0x81,
+      0xB3,  1, 0x80,
+      0xB5,  1, 0x4E,
+      0xB7,  1, 0x85,
+      0xB8,  1, 0x20,
+      0xC1,  1, 0x78,
+      0xC2,  1, 0x78,
+      0xD0,  1, 0x88,
+      // Gate / source timing
+      0xE0,  3, 0x00, 0x00, 0x02,
+      0xE1, 11, 0x06, 0x30, 0x08, 0x30, 0x05, 0x30, 0x07, 0x30,
+                0x00, 0x33, 0x33,
+      0xE2, 12, 0x11, 0x11, 0x33, 0x33, 0xF4, 0x00, 0x00, 0x00,
+                0xF4, 0x00, 0x00, 0x00,
+      0xE3,  4, 0x00, 0x00, 0x11, 0x11,
+      0xE4,  2, 0x44, 0x44,
+      0xE5, 16, 0x0D, 0xF5, 0x30, 0xF0, 0x0F, 0xF7, 0x30, 0xF0,
+                0x09, 0xF1, 0x30, 0xF0, 0x0B, 0xF3, 0x30, 0xF0,
+      0xE6,  4, 0x00, 0x00, 0x11, 0x11,
+      0xE7,  2, 0x44, 0x44,
+      0xE8, 16, 0x0C, 0xF4, 0x30, 0xF0, 0x0E, 0xF6, 0x30, 0xF0,
+                0x08, 0xF0, 0x30, 0xF0, 0x0A, 0xF2, 0x30, 0xF0,
+      0xE9,  2, 0x36, 0x01,
+      0xEB,  7, 0x00, 0x01, 0xE4, 0xE4, 0x44, 0x88, 0x40,
+      0xED, 16, 0xFF, 0x10, 0xAF, 0x76, 0x54, 0x2B, 0xCF, 0xFF,
+                0xFF, 0xFC, 0xB2, 0x45, 0x67, 0xFA, 0x01, 0xFF,
+      0xEF,  6, 0x08, 0x08, 0x08, 0x45, 0x3F, 0x54,
+
+      // Back to user command set
+      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x00,
+      0x11, CMD_INIT_DELAY, 120,   // Sleep Out
+      0x3A,  1, 0x66,              // RGB666
+      0x36,  1, 0x00,
+      0x35,  1, 0x00,
+      0x29,  0,                    // Display On
+      0xFF, 0xFF,
+    };
+    switch (listno) {
+      case 0:  return list0;
+      default: return nullptr;
+    }
+  }
+};
+
+class LGFX_WS28C : public lgfx::LGFX_Device {
+  Panel_ST7701_WS28C _panel;
+  lgfx::Bus_RGB      _bus;
+public:
+  LGFX_WS28C() {
+    {
+      auto cfg = _panel.config();
+      cfg.memory_width  = 480;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 480;
+      cfg.panel_height  = 480;
+      cfg.offset_x        = 0;
+      cfg.offset_y        = 0;
+      cfg.offset_rotation = 0;   // tester reports if the UI comes up rotated
+      cfg.invert          = false;  // vendor list never sends 0x21
+      cfg.pin_rst         = -1;     // reset is expander bit0
+      _panel.config(cfg);
+    }
+    {
+      // 3-wire SPI command interface. CS is an expander bit, so LovyanGFX is
+      // told there is none and initDisplay() owns the CS window.
+      auto detail = _panel.config_detail();
+      detail.pin_cs    = -1;
+      detail.pin_sclk  = 2;
+      detail.pin_mosi  = 1;
+      detail.use_psram = 1;
+      _panel.config_detail(detail);
+    }
+    {
+      auto bus_cfg = _bus.config();
+      bus_cfg.panel = &_panel;
+
+      bus_cfg.pin_hsync   = 38;
+      bus_cfg.pin_vsync   = 39;
+      bus_cfg.pin_henable = 40;   // DE
+      bus_cfg.pin_pclk    = 41;
+
+      bus_cfg.pin_d0  =  5;
+      bus_cfg.pin_d1  = 45;
+      bus_cfg.pin_d2  = 48;
+      bus_cfg.pin_d3  = 47;
+      bus_cfg.pin_d4  = 21;
+      bus_cfg.pin_d5  = 14;
+      bus_cfg.pin_d6  = 13;
+      bus_cfg.pin_d7  = 12;
+      bus_cfg.pin_d8  = 11;
+      bus_cfg.pin_d9  = 10;
+      bus_cfg.pin_d10 =  9;
+      bus_cfg.pin_d11 = 46;
+      bus_cfg.pin_d12 =  3;
+      bus_cfg.pin_d13 =  8;
+      bus_cfg.pin_d14 = 18;
+      bus_cfg.pin_d15 = 17;
+
+      // Vendor runs 30 MHz behind a bounce buffer; Bus_RGB has none.
+      bus_cfg.freq_write = WS28C_PCLK_HZ;
+
+      // Vendor timings (Display_ST7701.h).
+      bus_cfg.hsync_pulse_width = 8;
+      bus_cfg.hsync_back_porch  = 10;
+      bus_cfg.hsync_front_porch = 50;
+      bus_cfg.vsync_pulse_width = 2;
+      bus_cfg.vsync_back_porch  = 18;
+      bus_cfg.vsync_front_porch = 8;
+      bus_cfg.pclk_active_neg   = 0;
+      // Not in the vendor config - taken from the SenseCAP ST7701S. These four
+      // feed the base class's 0xC3 RGBCTRL byte; flip them first on a rolling
+      // or shifted image.
+      bus_cfg.hsync_polarity    = 0;
+      bus_cfg.vsync_polarity    = 0;
+      bus_cfg.de_idle_high      = 1;
+      bus_cfg.pclk_idle_high    = 0;
+
+      _bus.config(bus_cfg);
+      _panel.setBus(&_bus);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_WS28C _tft_instance;
+
 #elif defined(BOARD_IS_ES3N28P)
 // --- QD electronic 2.8" IPS ESP32-S3 (ILI9341V 240x320 + FT6336) ------------
 // Issue #125. ILI9341V over plain 4-wire SPI -> native LovyanGFX Panel_ILI9341.

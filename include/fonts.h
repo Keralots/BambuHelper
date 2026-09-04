@@ -14,6 +14,12 @@ enum FontID : uint8_t {
                        // other boards setFont(FONT_XLARGE) silently falls
                        // back to FONT_LARGE (the inter_22 blob isn't linked).
     FONT_7SEG   = 7,   // Built-in 7-segment (kept for clock displays)
+    // True 2x tier, linked only on DISPLAY_ROUND_480. Elsewhere setFont()
+    // falls back to the 1x face of the same rank - never to the default:
+    // branch, which would leave whatever built-in font was last active.
+    FONT_SMALL_2X = 8,   // Inter 20pt / 24 px
+    FONT_BODY_2X  = 9,   // Inter 27pt / 32 px
+    FONT_LARGE_2X = 10,  // Inter 37pt / 44 px
 };
 
 // Sets the active font. Caches the last selection - calling setFont() repeatedly

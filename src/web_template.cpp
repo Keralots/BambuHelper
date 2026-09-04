@@ -362,7 +362,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "ROUND_SKIN_ROW") == 0) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // Round boards only: printing dashboard skin picker. Posts through the
     // same /save/toggle endpoint as the checkboxes (val carries 0-2).
     auto sel = [&](uint8_t v) { return dispSettings.roundSkin == v ? " selected" : ""; };
@@ -438,7 +438,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // on round panels the walls and corner bricks sit outside the visible
     // circle, so the firmware never runs it there (display_ui always draws
     // the watch-face clock) and the option is hidden.
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     out = "display:none";
 #else
     out = "";
@@ -448,7 +448,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "ISROUND") == 0) {
     // JS board flag: the Gauge Layout card re-labels itself for round boards
     // (3 Rim-skin mini slots, no bottom row / AMS view / extras).
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     out = "1";
 #else
     out = "0";
@@ -472,7 +472,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // AMS view swaps gauge row 2 for the AMS strip - 240x240 square boards
     // only. Round boards have no AMS strip, big boards show AMS natively.
 #if !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && \
-    !defined(DISPLAY_480x480) && !defined(DISPLAY_ROUND_240)
+    !defined(DISPLAY_480x480) && !DISPLAY_IS_ROUND
     out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"amsv\" value=\"1\" onchange=\"syncAmsView()\">";
     out += "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>";
@@ -598,9 +598,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BUZ_OFF") == 0) { out = buzzerSettings.enabled ? "" : "selected"; return true; }
   if (strcmp(name, "BUZ_ON") == 0)  { out = buzzerSettings.enabled ? "selected" : ""; return true; }
   if (strcmp(name, "BUZ_PIN") == 0) { out = String(buzzerSettings.pin); return true; }
-  if (strcmp(name, "ES8311_AUDIO") == 0) {
-    // "1" for any board with built-in I2S audio (no GPIO pin selection needed)
-#if defined(BOARD_HAS_ES8311_AUDIO) || defined(BOARD_HAS_NS4168_AUDIO)
+  if (strcmp(name, "FIXED_AUDIO") == 0) {
+    // "1" when the sound hardware is wired, not chosen: an I2S codec/amp, or
+    // an IO-expander bit. Either way the portal must not ask for a GPIO.
+#if defined(BOARD_HAS_ES8311_AUDIO) || defined(BOARD_HAS_NS4168_AUDIO) || \
+    BUZZER_BACKEND_TCA9554
     out = "1";
 #else
     out = "0";

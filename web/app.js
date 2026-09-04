@@ -747,9 +747,9 @@ function toggleBtnPin(){
 function toggleBuzPin(){
   var buzOn = document.getElementById('buzzen').value !== '0';
   document.getElementById('buzFields').style.display = buzOn ? 'block' : 'none';
-  var isES8311 = DEV.es8311 === '1';
-  document.getElementById('buzPinRow').style.display = (buzOn && !isES8311) ? 'block' : 'none';
-  document.getElementById('buzEs8311Info').style.display = (buzOn && isES8311) ? 'block' : 'none';
+  var fixedAudio = DEV.fixedAudio === '1';
+  document.getElementById('buzPinRow').style.display = (buzOn && !fixedAudio) ? 'block' : 'none';
+  document.getElementById('buzFixedAudioInfo').style.display = (buzOn && fixedAudio) ? 'block' : 'none';
   var btnOn = document.getElementById('btntype').value !== '0';
   document.getElementById('buzClickRow').style.display = (buzOn && btnOn) ? 'flex' : 'none';
 }

@@ -20,6 +20,7 @@
 #include <time.h>
 #if PANEL_HAS_IO_EXPANDER
 #include <Wire.h>     // SenseCAP: PCA9535PW IO expander / ws_lcd_350: TCA9554 LCD reset
+#include "io_expander_tca9554.h"
 #endif
 #include <new>   // placement new for CYD panel variant selection
 
@@ -233,14 +234,14 @@ static void drawPrinterDots(int cx, int cy) {
   uint8_t slots[MAX_ACTIVE_PRINTERS], n = 0;
   for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++)
     if (isPrinterConfigured(i)) slots[n++] = i;
-  int x0 = cx - (n - 1) * 5;
+  int x0 = cx - (n - 1) * LY_SC(5);
   for (uint8_t k = 0; k < n; k++) {
     // Active slot in the Status OK accent, the rest dark: the marker says
     // "this printer is the one on screen", so it belongs to the same accent
     // family as the badge it sits under rather than a fixed green.
     uint16_t clr = (slots[k] == rotState.displayIndex) ? dispSettings.statusOkColor
                                                        : CLR_TEXT_DARK;
-    tft.fillCircle(x0 + k * 10, cy, 3, clr);
+    tft.fillCircle(x0 + k * LY_SC(10), cy, LY_SC(3), clr);
   }
 }
 
@@ -323,6 +324,9 @@ static void applyPanelInversion() {
 #elif defined(DISPLAY_240x320)
   _tft_instance.invertDisplay(dispSettings.invertColors);
 #endif
+  // No ws_lcd_28c branch on purpose: its ST7701 vendor list never sends 0x21,
+  // so the panel init is authoritative and this must stay a no-op. That only
+  // holds because its env does not inherit s3_common's USE_ST7789_INVERT.
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +375,37 @@ bool isDisplayForceRedraw() { return forceRedraw; }
 // ---------------------------------------------------------------------------
 void initDisplay() {
 
+#if defined(BOARD_IS_WS28C)
+  // LCD reset, LCD CS and the touch reset all hang off a TCA9554 @0x20 whose
+  // output register is written as a whole byte - so everything goes through
+  // the shared shadow in io_expander_tca9554.cpp, never a raw write.
+  {
+    ioExpanderBegin(WS28C_EXP_ADDR, WS28C_I2C_SDA, WS28C_I2C_SCL, 400000,
+                    WS28C_EXP_IDLE);
+
+    // GT911 samples INT while reset is released to choose its I2C address:
+    // low = 0x5D, high = 0x14. This MUST happen here and not in touchInit(),
+    // which runs ~2 s later from handleSplashPhase() - by then the reset is
+    // long over and the address is already latched.
+    pinMode(GT911_INT, OUTPUT);
+    digitalWrite(GT911_INT, LOW);
+    ioExpanderSet(WS28C_EXP_TP_RST, false);
+    delay(10);
+    ioExpanderSet(WS28C_EXP_TP_RST, true);
+    delay(200);                       // GT911 boot, INT held low throughout
+    digitalWrite(GT911_INT, HIGH);
+    pinMode(GT911_INT, INPUT);
+
+    // ST7701 reset, then hold CS low across the SPI init commands. The panel
+    // class sets pin_cs = -1, so LovyanGFX never touches CS itself.
+    ioExpanderSet(WS28C_EXP_LCD_RST, false);
+    delay(10);
+    ioExpanderSet(WS28C_EXP_LCD_RST, true);
+    delay(120);
+    ioExpanderSet(WS28C_EXP_LCD_CS, false);
+    delay(1);
+  }
+#endif
 #if defined(BOARD_IS_WS350)
   // The ST7796 reset line is not on a GPIO - it is driven by the TCA9554 I2C
   // IO expander (@0x20, expander P1). Bring up the shared I2C bus (also used
@@ -460,6 +495,9 @@ void initDisplay() {
   Serial.println("Display: calling _tft_instance.init()...");
   _tft_instance.init();  // LovyanGFX configures SPI from the board class above
   applyPanelInversion();
+#if defined(BOARD_IS_WS28C)
+  ioExpanderSet(WS28C_EXP_LCD_CS, true);   // init commands done
+#endif
 #if defined(BOARD_IS_SENSECAP)
   // ST7701S IPS inversion already handled by default Panel_ST7701 init (0x21 command).
   // Release SPI CS HIGH now that init commands are done
@@ -531,13 +569,13 @@ void initDisplay() {
     const int16_t sh = uiH();
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(CLR_GREEN, CLR_BG);
-    setFont(tft, FONT_LARGE);
-    tft.drawString("BambuHelper", sw / 2, sh / 2 - 20);
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_LARGE);
+    tft.drawString("BambuHelper", sw / 2, sh / 2 + LY_SPLASH_TITLE_DY);
+    setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-    tft.drawString("Printer Monitor", sw / 2, sh / 2 + 10);
-    setFont(tft, FONT_SMALL);
-    tft.drawString(FW_VERSION, sw / 2, sh / 2 + 30);
+    tft.drawString("Printer Monitor", sw / 2, sh / 2 + LY_SPLASH_SUB_DY);
+    setFont(tft, LY_F_SMALL);
+    tft.drawString(FW_VERSION, sw / 2, sh / 2 + LY_SPLASH_VER_DY);
   }
 }
 
@@ -549,7 +587,7 @@ void initDisplay() {
 // SCREEN_CLOCK block (and so a future clear site can't forget it).
 static void resetActiveClockCache() {
   if (currentScreen != SCREEN_CLOCK) return;
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round never renders pong (rectangular walls don't fit the circle) and
   // always draws the watch-face clock, so drop that cache regardless of the
   // pongClock setting or the real clock repaints blank after a screen clear.
@@ -687,24 +725,24 @@ static void drawAPMode() {
 
   // Title
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.drawString("WiFi Setup", cx, apTitleY);
 
   // Instructions
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString("Connect to WiFi:", cx, apSsidLblY);
 
   // AP SSID
   tft.setTextColor(CLR_CYAN, CLR_BG);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   char ssid[32];
   uint32_t mac = (uint32_t)(ESP.getEfuseMac() & 0xFFFF);
   snprintf(ssid, sizeof(ssid), "%s%04X", WIFI_AP_PREFIX, mac);
   tft.drawString(ssid, cx, apSsidY);
 
   // Password
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString("Password:", cx, apPassLblY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
@@ -714,7 +752,7 @@ static void drawAPMode() {
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   tft.drawString("Then open:", cx, apOpenY);
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.drawString("192.168.4.1", cx, apIpY);
 }
 
@@ -731,17 +769,17 @@ static void drawConnectingWiFi() {
   tft.setTextDatum(MC_DATUM);
 
   // Title
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString("Connecting to WiFi", cx, cy - 20);
+  tft.drawString("Connecting to WiFi", cx, cy - LY_SC(20));
 
   int16_t tw = tft.textWidth("Connecting to WiFi");
-  drawAnimDots(tft, cx + tw / 2, cy - 26, CLR_TEXT);
+  drawAnimDots(tft, cx + tw / 2, cy - LY_SC(26), CLR_TEXT);
 
   // Slide bar
-  const int16_t barW = 180;
-  const int16_t barH = 8;
-  drawSlideBar(tft, (sw - barW) / 2, cy + 4,
+  const int16_t barW = LY_SC(180);
+  const int16_t barH = LY_SC(8);
+  drawSlideBar(tft, (sw - barW) / 2, cy + LY_SC(4),
                barW, barH, CLR_BLUE, CLR_TRACK);
 }
 
@@ -759,21 +797,24 @@ static void drawWiFiConnected() {
 
   // Checkmark circle with tick
   int cx = midX;
-  int cy = midY - 40;
-  tft.fillCircle(cx, cy, 25, CLR_GREEN);
-  // Draw thick tick mark (3px wide)
+  int cy = midY - LY_SC(40);
+  tft.fillCircle(cx, cy, LY_SC(25), CLR_GREEN);
+  // Tick stroke stays 3 physical px on every profile (raster width, not
+  // layout), so only the leg coordinates scale.
   for (int i = -1; i <= 1; i++) {
-    tft.drawLine(cx - 12, cy + i,     cx - 4, cy + 8 + i, CLR_BG);  // short leg
-    tft.drawLine(cx - 4,  cy + 8 + i, cx + 12, cy - 6 + i, CLR_BG); // long leg
+    tft.drawLine(cx - LY_SC(12), cy + i,
+                 cx - LY_SC(4),  cy + LY_SC(8) + i, CLR_BG);  // short leg
+    tft.drawLine(cx - LY_SC(4),  cy + LY_SC(8) + i,
+                 cx + LY_SC(12), cy - LY_SC(6) + i, CLR_BG);  // long leg
   }
 
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  setFont(tft, FONT_LARGE);
-  tft.drawString("WiFi Connected", midX, midY + 10);
+  setFont(tft, LY_F_LARGE);
+  tft.drawString("WiFi Connected", midX, midY + LY_SC(10));
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  setFont(tft, FONT_BODY);
-  tft.drawString(WiFi.localIP().toString().c_str(), midX, midY + 40);
+  setFont(tft, LY_F_BODY);
+  tft.drawString(WiFi.localIP().toString().c_str(), midX, midY + LY_SC(40));
 }
 
 // ---------------------------------------------------------------------------
@@ -790,38 +831,38 @@ static void drawOtaUpdate() {
   tft.setTextColor(CLR_TEXT, CLR_BG);
 
   // Title
-  setFont(tft, FONT_LARGE);
-  tft.drawString("Updating", cx, cy - 60);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_LARGE);
+  tft.drawString("Updating", cx, cy - LY_SC(60));
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString("BambuHelper firmware", cx, cy - 36);
+  tft.drawString("BambuHelper firmware", cx, cy - LY_SC(36));
 
   // Progress bar
   int pct = getOtaAutoProgress();
-  const int16_t barX = 20, barY = cy - 10;
-  const int16_t barW = sw - 40, barH = 14;
-  tft.fillRoundRect(barX, barY, barW, barH, 4, CLR_TRACK);
+  const int16_t barX = LY_SC(20), barY = cy - LY_SC(10);
+  const int16_t barW = sw - LY_SC(40), barH = LY_SC(14);
+  tft.fillRoundRect(barX, barY, barW, barH, LY_SC(4), CLR_TRACK);
   if (pct > 0) {
     int16_t fill = (int16_t)((pct / 100.0f) * barW);
     // The one progress bar in the tree that ignored progressBarColor (#163).
-    tft.fillRoundRect(barX, barY, fill, barH, 4, dispSettings.progressBarColor);
+    tft.fillRoundRect(barX, barY, fill, barH, LY_SC(4), dispSettings.progressBarColor);
   }
 
   // Percentage
   char pctBuf[8];
   snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString(pctBuf, cx, cy + 14);
+  tft.drawString(pctBuf, cx, cy + LY_SC(14));
 
   // Status
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString(getOtaAutoStatus(), cx, cy + 34);
+  tft.drawString(getOtaAutoStatus(), cx, cy + LY_SC(34));
 
   // Warning
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.drawString("Do not power off", cx, cy + 58);
+  tft.drawString("Do not power off", cx, cy + LY_SC(58));
 }
 
 // ---------------------------------------------------------------------------
@@ -924,24 +965,24 @@ static void drawConnectingMQTT() {
   tft.setTextDatum(MC_DATUM);
 
   // Title
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString("Connecting to Printer", cx, cy - 40);
+  tft.drawString("Connecting to Printer", cx, cy - LY_SC(40));
 
   int16_t tw = tft.textWidth("Connecting to Printer");
-  drawAnimDots(tft, cx + tw / 2, cy - 46, CLR_TEXT);
+  drawAnimDots(tft, cx + tw / 2, cy - LY_SC(46), CLR_TEXT);
   tft.setTextDatum(MC_DATUM);
 
   // Slide bar
-  const int16_t barW = 180;
-  const int16_t barH = 8;
-  drawSlideBar(tft, (sw - barW) / 2, cy - 14,
+  const int16_t barW = LY_SC(180);
+  const int16_t barH = LY_SC(8);
+  drawSlideBar(tft, (sw - barW) / 2, cy - LY_SC(14),
                barW, barH, CLR_ORANGE, CLR_TRACK);
 
   // Connection mode + printer info
   PrinterSlot& p = displayedPrinter();
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
 
   const char* modeStr = isCloudMode(p.config.mode) ? "Cloud" : "LAN";
   char infoBuf[40];
@@ -952,27 +993,27 @@ static void drawConnectingMQTT() {
     snprintf(infoBuf, sizeof(infoBuf), "[%s] %s",  modeStr,
              strlen(p.config.ip) > 0 ? p.config.ip : "no IP!");
   }
-  tft.drawString(infoBuf, cx, cy + 10);
+  tft.drawString(infoBuf, cx, cy + LY_SC(10));
 
   // Elapsed time
   if (connectScreenStart > 0) {
     unsigned long elapsed = (millis() - connectScreenStart) / 1000;
     char elBuf[16];
     snprintf(elBuf, sizeof(elBuf), "%lus", elapsed);
-    tft.fillRect(cx - 30, cy + 22, 60, 16, CLR_BG);
-    tft.drawString(elBuf, cx, cy + 30);
+    tft.fillRect(cx - LY_SC(30), cy + LY_SC(22), LY_SC(60), LY_SC(16), CLR_BG);
+    tft.drawString(elBuf, cx, cy + LY_SC(30));
   }
 
   // Diagnostics (only after first attempt)
   const MqttDiag& d = getMqttDiag(rotState.displayIndex);
   if (d.attempts > 0) {
-    setFont(tft, FONT_SMALL);
+    setFont(tft, LY_F_SMALL);
     tft.setTextDatum(MC_DATUM);
 
     char buf[40];
     snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-    tft.drawString(buf, cx, cy + 50);
+    tft.drawString(buf, cx, cy + LY_SC(50));
 
     if (d.lastRc != 0) {
       bool cloudAuthErr = isCloudMode(p.config.mode) &&
@@ -983,11 +1024,11 @@ static void drawConnectingMQTT() {
         // invalidated earlier if the user does "log out everywhere" or
         // changes their password. The cookie in the browser may still look
         // valid; the server is the source of truth.
-        tft.drawString("Token rejected", cx, cy + 62);
-        tft.drawString("Re-paste in web setup", cx, cy + 74);
+        tft.drawString("Token rejected", cx, cy + LY_SC(62));
+        tft.drawString("Re-paste in web setup", cx, cy + LY_SC(74));
       } else {
         snprintf(buf, sizeof(buf), "Err: %s", mqttRcToString(d.lastRc));
-        tft.drawString(buf, cx, cy + 62);
+        tft.drawString(buf, cx, cy + LY_SC(62));
       }
     }
   }
@@ -1025,22 +1066,22 @@ static void drawIdleNoPrinter() {
 #endif
 
   tft.setTextColor(CLR_GREEN, CLR_BG);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.drawString("BambuHelper", cx, npTitleY);
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.drawString("WiFi Connected", cx, npWifiY);
 
-  tft.fillCircle(cx, npDotY, 5, dispSettings.statusOkColor);   // connected indicator
+  tft.fillCircle(cx, npDotY, LY_SC(5), dispSettings.statusOkColor);   // connected indicator
 
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.drawString("No printer configured", cx, npMsgY);
   tft.drawString("Open in browser:", cx, npOpenY);
 
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.drawString(WiFi.localIP().toString().c_str(), cx, npIpY);
 }
 
@@ -1102,12 +1143,12 @@ static inline int16_t arcBudgetPx(int16_t r, int16_t halfDeg) {
 }
 
 static void drawCelsiusUnit(int16_t x, int16_t y, uint16_t color) {
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(color, CLR_BG);
-  tft.drawString("C", x + 12, y);
-  tft.drawCircle(x + 4, y - 8, 3, color);
-  tft.drawCircle(x + 4, y - 8, 2, color);
+  tft.drawString("C", x + LY_SC(12), y);
+  tft.drawCircle(x + LY_SC(4), y - LY_SC(8), LY_SC(3), color);
+  tft.drawCircle(x + LY_SC(4), y - LY_SC(8), LY_SC(2), color);
 }
 
 // Find the N-th actively drying unit (or first if idx out of range)
@@ -1137,7 +1178,7 @@ static uint8_t countDryingUnits(const AmsState& ams) {
 // a multi-AMS printer lasts long enough for every unit to come around.
 uint8_t dryingUnitCount(const AmsState& ams) { return countDryingUnits(ams); }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Round (GC9A01) drying screen: rim ring = drying progress, centered text
 // stack (title, remaining time, AMS temp, humidity). The square layout's
 // bars/columns don't fit the inscribed circle.
@@ -1197,16 +1238,17 @@ static void drawIdleDryingRound(PrinterSlot& p) {
     else
       snprintf(title, sizeof(title), "Drying");
     drawCurvedString(tft, title, cx, cx, LY_RND_ARC_R, false,
-                     CLR_TEXT_DIM, FONT_BODY, LY_RND_ARC_STATUS_HDEG);
+                     CLR_TEXT_DIM, LY_F_BODY, LY_RND_ARC_STATUS_HDEG);
   }
 
   // Remaining time, big and centered
   if (unitChanged || u.dryRemainMin != prevMin) {
     markFrameDirty();
-    tft.fillRect(cx - 70, LY_RND_PCT_Y - 20, 140, 40, CLR_BG);
+    tft.fillRect(cx - LY_SC(70), LY_RND_PCT_Y - LY_SC(20),
+                 LY_SC(140), LY_SC(40), CLR_BG);
     char buf[16];
     snprintf(buf, sizeof(buf), "%uh %02um", u.dryRemainMin / 60, u.dryRemainMin % 60);
-    setFont(tft, FONT_LARGE);
+    setFont(tft, LY_F_LARGE);
     tft.setTextColor(CLR_TEXT, CLR_BG);
     tft.drawString(buf, cx, LY_RND_PCT_Y);
   }
@@ -1214,14 +1256,15 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   // AMS temperature
   if (unitChanged || tempShown != prevTemp) {
     markFrameDirty();
-    tft.fillRect(cx - 60, LY_RND_G_Y - 26, 120, 26, CLR_BG);
+    tft.fillRect(cx - LY_SC(60), LY_RND_G_Y - LY_SC(26),
+                 LY_SC(120), LY_SC(26), CLR_BG);
     char buf[12];
     snprintf(buf, sizeof(buf), "%d", (int)tempShown);
-    setFont(tft, FONT_LARGE);
+    setFont(tft, LY_F_LARGE);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     tft.setTextDatum(MR_DATUM);
-    tft.drawString(buf, cx + 2, LY_RND_G_Y - 13);
-    drawCelsiusUnit(cx + 6, LY_RND_G_Y - 13, CLR_ORANGE);
+    tft.drawString(buf, cx + LY_SC(2), LY_RND_G_Y - LY_SC(13));
+    drawCelsiusUnit(cx + LY_SC(6), LY_RND_G_Y - LY_SC(13), CLR_ORANGE);
     tft.setTextDatum(MC_DATUM);
   }
 
@@ -1229,15 +1272,16 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   // the legacy 0-5 level (used when no raw RH is reported), so track both.
   if (unitChanged || u.humidityRaw != prevHum || u.humidity != prevHumLvl) {
     markFrameDirty();
-    tft.fillRect(cx - 60, LY_RND_G_Y + 4, 120, 24, CLR_BG);
+    tft.fillRect(cx - LY_SC(60), LY_RND_G_Y + LY_SC(4),
+                 LY_SC(120), LY_SC(24), CLR_BG);
     char buf[16];
     if (u.humidityRaw > 0)
       snprintf(buf, sizeof(buf), "RH %u%%", u.humidityRaw);
     else
       snprintf(buf, sizeof(buf), "RH -");
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextColor(amsHumidityColor(u.humidityRaw, u.humidity, true), CLR_BG);
-    tft.drawString(buf, cx, LY_RND_G_Y + 16);
+    tft.drawString(buf, cx, LY_RND_G_Y + LY_SC(16));
   }
 
   // Finish time curved along the bottom rim. The square drying screens have
@@ -1248,13 +1292,13 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   if (unitChanged || u.dryRemainMin != prevMin) {
     markFrameDirty();
     char etaBuf[40];
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     uint16_t etaClr = formatEtaLine(u.dryRemainMin, /*mode=*/0,
                                     /*labelRemaining=*/true,
                                     arcBudgetPx(LY_RND_ARC_R, LY_RND_ARC_ETA_HDEG),
                                     etaBuf, sizeof(etaBuf));
     drawCurvedString(tft, etaBuf, cx, cx, LY_RND_ARC_R, true, etaClr,
-                     FONT_BODY, LY_RND_ARC_ETA_HDEG);
+                     LY_F_BODY, LY_RND_ARC_ETA_HDEG);
     tft.setTextDatum(MC_DATUM);
   }
 
@@ -1266,10 +1310,10 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   prevProg  = dryProgress;
   prevHumLvl = u.humidity;
 }
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
 static void drawIdleDrying(PrinterSlot& p) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   drawIdleDryingRound(p);
 }
 #else
@@ -1591,7 +1635,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   prevTempShown = tempShown;
   prevDryProgress = dryProgress;
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 static bool wasNoPrinter = false;
 
@@ -1797,16 +1841,16 @@ static void drawIdle() {
 
   // Printer name (only on forceRedraw — name doesn't change)
   if (forceRedraw) {
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // Curved along the top rim. Drawn only after a full wipe, so no band
     // clear is needed (clearHalfDeg 0).
     char clipped[48];
-    setFont(tft, FONT_LARGE);
+    setFont(tft, LY_F_LARGE);
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Bambu P1S";
     drawCurvedString(tft,
-                     ellipsizeToWidth(tft, name, 190, clipped, sizeof(clipped)),
+                     ellipsizeToWidth(tft, name, LY_SC(190), clipped, sizeof(clipped)),
                      cx, SCREEN_H / 2, LY_RND_IDLE_NAME_R, false,
-                     dispSettings.printerNameColor, FONT_LARGE, 0);
+                     dispSettings.printerNameColor, LY_F_LARGE, 0);
     (void)lyIdleNameY;
 #else
     tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
@@ -1820,7 +1864,7 @@ static void drawIdle() {
   // Status badge — only redraw when state changes
   if (stateChanged) {
     markFrameDirty();
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     uint16_t stateColor = CLR_TEXT_DIM;
     const char* stateStr = s.gcodeState;
     char finishBadge[40];
@@ -1847,8 +1891,8 @@ static void drawIdle() {
       // nobody was watching is still readable on wake, rather than the raw
       // "FINISH" state word (#158).
       stateColor = dispSettings.statusOkColor;
-#if defined(DISPLAY_ROUND_240)
-      const int16_t badgeMaxW = 200;   // rim-safe chord at the badge row
+#if DISPLAY_IS_ROUND
+      const int16_t badgeMaxW = LY_SC(200);   // rim-safe chord at the badge row
 #else
       const int16_t badgeMaxW = scrW - 8;
 #endif
@@ -1869,7 +1913,8 @@ static void drawIdle() {
 
   // Connected indicator
   if (connChanged) {
-    tft.fillCircle(cx, lyIdleDotY, 5, s.connected ? dispSettings.statusOkColor : CLR_RED);
+    tft.fillCircle(cx, lyIdleDotY, LY_SC(5),
+                   s.connected ? dispSettings.statusOkColor : CLR_RED);
     markFrameDirty();
   }
 
@@ -1886,10 +1931,10 @@ static void drawIdle() {
                     isCloudMode(p.config.mode) && s.connected;
     if (stateChanged || showHint != hintShown) {
       markFrameDirty();
-      const int16_t hintY = lyIdleDotY + 15;
-      tft.fillRect(0, hintY - 6, scrW, 14, CLR_BG);
+      const int16_t hintY = lyIdleDotY + LY_SC(15);
+      tft.fillRect(0, hintY - LY_SC(6), scrW, LY_SC(14), CLR_BG);
       if (showHint) {
-        setFont(tft, FONT_SMALL);
+        setFont(tft, LY_F_SMALL);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
         tft.drawString("Press to refresh", cx, hintY);
@@ -1984,12 +2029,13 @@ static void drawIdle() {
 
   if (bottomChanged) {
     markFrameDirty();
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // Round: the bottom corners are invisible — the filament/door items of the
     // square layout have no room. Show only the WiFi signal, pulled up toward
     // the center of the circle.
-    tft.fillRect(cx - 70, LY_RND_IDLE_WIFI_Y - 12, 140, 24, CLR_BG);
-    setFont(tft, FONT_BODY);
+    tft.fillRect(cx - LY_SC(70), LY_RND_IDLE_WIFI_Y - LY_SC(12),
+                 LY_SC(140), LY_SC(24), CLR_BG);
+    setFont(tft, LY_F_BODY);
     drawWifiSignalIndicator(s, LY_RND_IDLE_WIFI_Y);
 #else
     tft.fillRect(0, scrH - 18, scrW, 18, CLR_BG);
@@ -2043,7 +2089,7 @@ static void drawIdle() {
       drawIcon16(tft, scrW - 18, botCY - 8,
                  s.doorOpen ? icon_unlock : icon_lock, clr);
     }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
   }
 }
 
@@ -2666,8 +2712,10 @@ static void drawAmsZone(const BambuState& s, bool force) {
 #endif // LAYOUT_HAS_AMS_STRIP
 
 // ---------------------------------------------------------------------------
-//  Helper: draw battery icon (vertical, 8x16) at (x, y) with fill from bottom.
-//  Footprint is 8 px wide x 16 px tall: 4x2 nub on top, 8x14 body below.
+//  Helper: draw battery icon (vertical) at (x, y) with fill from bottom.
+//  Footprint is LY_BAT_W x LY_BAT_H - it used to be a hardcoded 8x16, which
+//  left an unscaled glyph mis-centred in a 2x box on the 480 round profile.
+//  At 1x the derived numbers reproduce the old drawing exactly.
 // ---------------------------------------------------------------------------
 static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
   uint16_t fg;
@@ -2680,18 +2728,25 @@ static void drawBatteryIconOnly(int16_t x, int16_t y, uint8_t pct) {
     blank = ((millis() / 500) & 1) != 0;
   }
 
+  const int16_t w    = LY_BAT_W;
+  const int16_t h    = LY_BAT_H;
+  const int16_t nubH = h / 8;          // 2 at 1x
+  const int16_t bw   = LY_SC(1);       // outline thickness
+  const int16_t inX  = x + bw;
+  const int16_t inY  = y + nubH + bw;
+  const int16_t inW  = w - 2 * bw;
+  const int16_t inH  = h - nubH - 2 * bw;
+
   uint16_t outline = blank ? CLR_BG : CLR_TEXT_DIM;
-  // Clear footprint
-  tft.fillRect(x, y, 8, 16, CLR_BG);
-  // Top nub (centered, 4 wide x 2 tall)
-  tft.fillRect(x + 2, y, 4, 2, outline);
-  // Body outline (8 wide x 14 tall, starts at y+2). Interior is 6x12 at (x+1, y+3).
-  tft.drawRect(x, y + 2, 8, 14, outline);
+  tft.fillRect(x, y, w, h, CLR_BG);                       // clear footprint
+  tft.fillRect(x + w / 4, y, w / 2, nubH, outline);       // top nub
+  for (int16_t b = 0; b < bw; b++)                        // body outline
+    tft.drawRect(x + b, y + nubH + b, w - 2 * b, h - nubH - 2 * b, outline);
 
   if (!blank) {
-    int16_t levelH = (int16_t)((12 * (uint16_t)pct + 50) / 100);
+    int16_t levelH = (int16_t)(((uint16_t)inH * pct + 50) / 100);
     if (levelH > 0) {
-      tft.fillRect(x + 1, y + 3 + (12 - levelH), 6, levelH, fg);
+      tft.fillRect(inX, inY + (inH - levelH), inW, levelH, fg);
     }
   }
 }
@@ -2717,12 +2772,12 @@ static void drawWifiSignalIndicator(const BambuState& s, int16_t wifiY = LY_WIFI
     tft.drawString(buf, LY_WIFI_X + LY_BAT_TEXT_X, wifiY);
     return;
   }
-  drawIcon16(tft, LY_WIFI_X, wifiY - 8, icon_wifi, CLR_TEXT_DIM);
+  drawIcon16(tft, LY_WIFI_X, wifiY - LY_ICON16 / 2, icon_wifi, CLR_TEXT_DIM);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   char wifiBuf[12];
   snprintf(wifiBuf, sizeof(wifiBuf), "%ddBm", s.wifiSignal);
-  tft.drawString(wifiBuf, LY_WIFI_X + 18, wifiY);
+  tft.drawString(wifiBuf, LY_WIFI_X + LY_ICON16 + LY_SC(2), wifiY);
 }
 
 // ---------------------------------------------------------------------------
@@ -3019,12 +3074,14 @@ static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
     const bool typeChanged = (gt != prevTypes[i]);
     if (typeChanged) {
       if (!fr) {
-        const int16_t clearSz = r * 2 + 4;
-        tft.fillRect(xs[i] - r - 2, cy - r - 2, clearSz, clearSz, dispSettings.bgColor);
+        const int16_t clearSz = r * 2 + LY_SC(4);   // == drawGaugeLabel maxW
+        tft.fillRect(xs[i] - r - LY_SC(2), cy - r - LY_SC(2), clearSz, clearSz,
+                     dispSettings.bgColor);
         const bool sm = dispSettings.smallLabels;
-        const int16_t labelY = cy + r + (sm ? 3 : -1);
-        const int16_t lh = sm ? 18 : 24;
-        tft.fillRect(xs[i] - r - 2, labelY - lh / 2, clearSz, lh, dispSettings.bgColor);
+        const int16_t labelY = cy + r + (sm ? LY_SC(3) : LY_SC(-1));
+        const int16_t lh = sm ? LY_SC(18) : LY_SC(24);
+        tft.fillRect(xs[i] - r - LY_SC(2), labelY - lh / 2, clearSz, lh,
+                     dispSettings.bgColor);
       }
       prevTypes[i] = gt;
       drew = true;
@@ -3155,7 +3212,7 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
 //  Shared finish-time line
 // ---------------------------------------------------------------------------
 //  Used by the printing screen, the split bands, the round print skins and the
-//  drying screen, so it MUST live outside the DISPLAY_ROUND_240 block below -
+//  drying screen, so it MUST live outside the DISPLAY_IS_ROUND block below -
 //  square builds and display_split.cpp link against it too.
 // ---------------------------------------------------------------------------
 uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
@@ -3257,7 +3314,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
 // ---------------------------------------------------------------------------
 //  Finished screen headline
 // ---------------------------------------------------------------------------
-//  Sits beside formatEtaLine() - outside the DISPLAY_ROUND_240 block below - so
+//  Sits beside formatEtaLine() - outside the DISPLAY_IS_ROUND block below - so
 //  the round finished screen links against it too.
 // ---------------------------------------------------------------------------
 void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s) {
@@ -3275,7 +3332,7 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
 
   char buf[40];
   if (clock[0] == '\0') {
-    setFont(tft, FONT_LARGE);
+    setFont(tft, LY_F_LARGE);
     tft.drawString(kMsg, cx, y);
     return;
   }
@@ -3284,21 +3341,21 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
   // short wording small -> no time, back to the full wording at full size.
   // The message itself always renders on every layout profile.
   snprintf(buf, sizeof(buf), "%s @ %s", kMsg, clock);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   if (maxW > 0 && tft.textWidth(buf) > maxW) {
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     if (tft.textWidth(buf) > maxW) {
       snprintf(buf, sizeof(buf), "%s @ %s", kMsgShort, clock);
       if (tft.textWidth(buf) > maxW) {
         strlcpy(buf, kMsg, sizeof(buf));
-        setFont(tft, FONT_LARGE);
+        setFont(tft, LY_F_LARGE);
       }
     }
   }
   tft.drawString(buf, cx, y);
 }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // ===========================================================================
 //  Round display (GC9A01): printing screen. Three skins selectable from the
 //  web UI (dispSettings.roundSkin): Rim (default), Speedo, Rings. All are
@@ -3354,20 +3411,23 @@ static void drawTempReadout(int16_t x, int16_t y, float temp, float target,
                             uint16_t color, bool squareMarker) {
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", (int)(temp + 0.5f));
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(color, CLR_BG);
   tft.drawString(buf, x, y);
   const int16_t tw = (int16_t)tft.textWidth(buf);
-  if (squareMarker) tft.fillRect(x - tw / 2 - 15, y - 4, 8, 8, color);
-  else              tft.fillCircle(x - tw / 2 - 11, y, 4, color);
-  tft.drawCircle(x + tw / 2 + 5, y - 5, 2, color);
+  if (squareMarker) tft.fillRect(x - tw / 2 - LY_SC(15), y - LY_SC(4),
+                                 LY_SC(8), LY_SC(8), color);
+  else              tft.fillCircle(x - tw / 2 - LY_SC(11), y, LY_SC(4), color);
+  tft.drawCircle(x + tw / 2 + LY_SC(5), y - LY_SC(5), LY_SC(2), color);
   if (target > 0.5f) {
-    const int16_t ax = x + tw / 2 + 10;
+    const int16_t ax = x + tw / 2 + LY_SC(10);
     if (temp < target - 2.0f)
-      tft.fillTriangle(ax, y + 4, ax + 8, y + 4, ax + 4, y - 4, CLR_ORANGE);
+      tft.fillTriangle(ax, y + LY_SC(4), ax + LY_SC(8), y + LY_SC(4),
+                       ax + LY_SC(4), y - LY_SC(4), CLR_ORANGE);
     else if (temp > target + 2.0f)
-      tft.fillTriangle(ax, y - 4, ax + 8, y - 4, ax + 4, y + 4, CLR_BLUE);
+      tft.fillTriangle(ax, y - LY_SC(4), ax + LY_SC(8), y - LY_SC(4),
+                       ax + LY_SC(4), y + LY_SC(4), CLR_BLUE);
   }
 }
 
@@ -3415,23 +3475,23 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
   if (!changed) return;
 
   markFrameDirty();
-  tft.fillRect(cx - 70, y - 11, 140, 22, CLR_BG);
+  tft.fillRect(cx - LY_SC(70), y - LY_SC(11), LY_SC(140), LY_SC(22), CLR_BG);
   tft.setTextDatum(MC_DATUM);
   if (showPower) {
     char buf[12];
     snprintf(buf, sizeof(buf), "%.0f W", watts);
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     int16_t tw = (int16_t)tft.textWidth(buf);
-    int16_t total = 16 + 2 + tw;                 // lightning icon + gap + text
+    int16_t total = LY_ICON16 + LY_SC(2) + tw;   // icon + gap + text
     int16_t x0 = cx - total / 2;
-    drawIcon16(tft, x0, y - 8, icon_lightning, CLR_YELLOW);
+    drawIcon16(tft, x0, y - LY_ICON16 / 2, icon_lightning, CLR_YELLOW);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-    tft.drawString(buf, x0 + 18, y);
+    tft.drawString(buf, x0 + LY_ICON16 + LY_SC(2), y);
   } else if (s.totalLayers > 0) {
     char buf[24];
     snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, y);
   }
@@ -3482,19 +3542,19 @@ static void drawRoundFilament(BambuState& s, int16_t cx, int16_t y,
   strlcpy(prevType, type ? type : "", sizeof(prevType));
 
   markFrameDirty();
-  tft.fillRect(cx - 40, y - 8, 80, 16, CLR_BG);
+  tft.fillRect(cx - LY_SC(40), y - LY_SC(8), LY_SC(80), LY_SC(16), CLR_BG);
   if (!type) return;
 
-  setFont(tft, FONT_SMALL);
+  setFont(tft, LY_F_SMALL);
   char clipped[16];
-  const char* txt = ellipsizeToWidth(tft, type, 62, clipped, sizeof(clipped));
+  const char* txt = ellipsizeToWidth(tft, type, LY_SC(62), clipped, sizeof(clipped));
   const int16_t tw = (int16_t)tft.textWidth(txt);
-  const int16_t x0 = cx - (13 + tw) / 2;      // dot (9) + gap (4) + text
-  tft.drawCircle(x0 + 4, y, 5, CLR_TEXT_DARK);
-  tft.fillCircle(x0 + 4, y, 4, color);
+  const int16_t x0 = cx - (LY_SC(13) + tw) / 2;   // dot (9) + gap (4) + text
+  tft.drawCircle(x0 + LY_SC(4), y, LY_SC(5), CLR_TEXT_DARK);
+  tft.fillCircle(x0 + LY_SC(4), y, LY_SC(4), color);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString(txt, x0 + 13, y);
+  tft.drawString(txt, x0 + LY_SC(13), y);
   tft.setTextDatum(MC_DATUM);
 }
 
@@ -3525,22 +3585,22 @@ static void drawRimFilamentCurved(BambuState& s, int16_t cx, bool forceRedraw) {
   // shrinking or disappearing type leaves no ghost, then draw the text
   // centered in its sub-sector above the dot.
   drawCurvedStringSector(tft, "", cx, cx, LY_RND_ARC_R, LY_RND_FIL_CLR_CAA,
-                         CLR_TEXT_DIM, FONT_SMALL, LY_RND_FIL_CLR_HDEG);
+                         CLR_TEXT_DIM, LY_F_SMALL, LY_RND_FIL_CLR_HDEG);
   if (!type) return;
 
-  setFont(tft, FONT_SMALL);
+  setFont(tft, LY_F_SMALL);
   char clipped[16];
   const char* txt = ellipsizeToWidth(tft, type, LY_RND_FIL_TXT_MAXW,
                                      clipped, sizeof(clipped));
   drawCurvedStringSector(tft, txt, cx, cx, LY_RND_ARC_R, LY_RND_FIL_TXT_CAA,
-                         CLR_TEXT_DIM, FONT_SMALL, 0);
+                         CLR_TEXT_DIM, LY_F_SMALL, 0);
 
   // Swatch dot at the sector's lower end (drawArcAA -> screen angle is +90).
   const float a = (LY_RND_FIL_DOT_AA + 90.0f) * 0.0174532925f;
   const int16_t dx = cx + (int16_t)lroundf(LY_RND_ARC_R * cosf(a));
   const int16_t dy = cx + (int16_t)lroundf(LY_RND_ARC_R * sinf(a));
-  tft.drawCircle(dx, dy, 5, CLR_TEXT_DARK);
-  tft.fillCircle(dx, dy, 4, color);
+  tft.drawCircle(dx, dy, LY_SC(5), CLR_TEXT_DARK);
+  tft.fillCircle(dx, dy, LY_SC(4), color);
 }
 
 // Right-rim mirror of the filament sector: door state when the printer has a
@@ -3573,19 +3633,19 @@ static void drawRimRightStatus(BambuState& s, int16_t cx, bool forceRedraw) {
 
   markFrameDirty();
   drawCurvedStringSector(tft, "", cx, cx, LY_RND_ARC_R, LY_RND_RSTAT_CLR_CAA,
-                         CLR_TEXT_DIM, FONT_SMALL, LY_RND_RSTAT_CLR_HDEG);
+                         CLR_TEXT_DIM, LY_F_SMALL, LY_RND_RSTAT_CLR_HDEG);
 
-  setFont(tft, FONT_SMALL);
+  setFont(tft, LY_F_SMALL);
   char clipped[16];
   const char* t = ellipsizeToWidth(tft, txt, LY_RND_RSTAT_TXT_MAXW,
                                    clipped, sizeof(clipped));
   drawCurvedStringSector(tft, t, cx, cx, LY_RND_ARC_R, LY_RND_RSTAT_TXT_CAA,
-                         clr, FONT_SMALL, 0);
+                         clr, LY_F_SMALL, 0);
 
   const float a = (LY_RND_RSTAT_DOT_AA + 90.0f) * 0.0174532925f;
   const int16_t dx = cx + (int16_t)lroundf(LY_RND_ARC_R * cosf(a));
   const int16_t dy = cx + (int16_t)lroundf(LY_RND_ARC_R * sinf(a));
-  tft.fillCircle(dx, dy, 4, clr);
+  tft.fillCircle(dx, dy, LY_SC(4), clr);
 }
 
 // Composite progress figure shared by all three skins: 7-seg digits (built-in
@@ -3603,23 +3663,23 @@ static void drawRound7segPct(uint8_t pct, int16_t cx, int16_t y,
   int16_t numW  = (int16_t)tft.textWidth(buf);
   int16_t maxW  = (int16_t)tft.textWidth("100");
   tft.setTextSize(1);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   int16_t pctW = (int16_t)tft.textWidth("%");
   int16_t pctH = (int16_t)tft.fontHeight();
-  int16_t bandW = maxW + 4 + pctW + 2;
+  int16_t bandW = maxW + LY_SC(4) + pctW + LY_SC(2);
   int16_t top   = y - halfH;
   if (y + halfH - pctH < top) top = y + halfH - pctH;  // "%" cell taller than digits
   tft.fillRect(cx - bandW / 2, top, bandW, y + halfH - top, CLR_BG);
-  int16_t x0 = cx - (numW + 4 + pctW) / 2;
+  int16_t x0 = cx - (numW + LY_SC(4) + pctW) / 2;
   tft.setTextColor(CLR_TEXT, CLR_BG);
   setFont(tft, FONT_7SEG);
   tft.setTextSize(scale);
   tft.setTextDatum(TL_DATUM);
   tft.drawString(buf, x0, y - halfH);
   tft.setTextSize(1);
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.setTextDatum(BL_DATUM);
-  tft.drawString("%", x0 + numW + 4, y + halfH);
+  tft.drawString("%", x0 + numW + LY_SC(4), y + halfH);
   tft.setTextDatum(MC_DATUM);
 }
 
@@ -3686,7 +3746,7 @@ static void drawPrintingSpeedo() {
   // === Status line curved along the top rim, inside the big arc ===
   if (stateChanged) {
     markFrameDirty();
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     // The round skins have no badge slot, so the rim status line carries the
     // state word - including the error word and its severity colour (§5.3).
     // It used to run a private copy of the ladder that left every healthy state
@@ -3696,16 +3756,18 @@ static void drawPrintingSpeedo() {
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx,
                          LY_RND_SPD_STATUS_R, false,
-                         dispSettings.printerNameColor, stColor, FONT_BODY,
-                         LY_RND_SPD_STATUS_HDEG, /*maxW=*/150);
-    tft.fillRect(cx - 30, LY_RND_SPD_DOTS_Y - 5, 60, 10, CLR_BG);
+                         dispSettings.printerNameColor, stColor, LY_F_BODY,
+                         LY_RND_SPD_STATUS_HDEG, /*maxW=*/LY_SC(150));
+    tft.fillRect(cx - LY_SC(30), LY_RND_SPD_DOTS_Y - LY_SC(5),
+                 LY_SC(60), LY_SC(10), CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_SPD_DOTS_Y);
   }
 
   // === Big progress % + layer line ===
   if (progChanged) {
     markFrameDirty();
-    drawRound7segPct(s.progress, cx, LY_RND_SPD_PCT_Y, 1.0f, 24);
+    drawRound7segPct(s.progress, cx, LY_RND_SPD_PCT_Y,
+                     LY_RND_7SEG_BG_SCALE, LY_RND_7SEG_BG_HALFH);
   }
   drawRoundLayerOrPower(s, cx, LY_RND_SPD_LAYER_Y, forceRedraw, layerChanged);
 
@@ -3715,7 +3777,8 @@ static void drawPrintingSpeedo() {
   // === Nozzle / bed readouts in the arc's bottom gap ===
   if (tempChanged) {
     markFrameDirty();
-    tft.fillRect(cx - 66, LY_RND_SPD_TEMP_Y - 11, 132, 22, CLR_BG);
+    tft.fillRect(cx - LY_SC(66), LY_RND_SPD_TEMP_Y - LY_SC(11),
+                 LY_SC(132), LY_SC(22), CLR_BG);
     drawTempReadout(LY_RND_SPD_NOZ_X, LY_RND_SPD_TEMP_Y, s.nozzleTemp,
                     s.nozzleTarget, dispSettings.nozzle.arc, false);
     drawTempReadout(LY_RND_SPD_BED_X, LY_RND_SPD_TEMP_Y, s.bedTemp,
@@ -3729,9 +3792,9 @@ static void drawPrintingSpeedo() {
     char buf[32];
     uint16_t clr = buildRoundEtaLine(
         s, buf, sizeof(buf),
-        arcBudgetPx(LY_RND_SPD_ETA_R, LY_RND_SPD_ETA_HDEG), FONT_BODY);
+        arcBudgetPx(LY_RND_SPD_ETA_R, LY_RND_SPD_ETA_HDEG), LY_F_BODY);
     drawCurvedString(tft, buf, cx, cx, LY_RND_SPD_ETA_R, true, clr,
-                     FONT_BODY, LY_RND_SPD_ETA_HDEG);
+                     LY_F_BODY, LY_RND_SPD_ETA_HDEG);
   }
 }
 
@@ -3800,7 +3863,8 @@ static void drawPrintingRings() {
     if (forceRedraw || nozShown != prevNozShown || bedShown != prevBedShown ||
         nozTgt != prevNozTgt || bedTgt != prevBedTgt) {
       markFrameDirty();
-      tft.fillRect(cx - 70, LY_RND_RGS_TEMP_Y - 11, 140, 22, CLR_BG);
+      tft.fillRect(cx - LY_SC(70), LY_RND_RGS_TEMP_Y - LY_SC(11),
+                   LY_SC(140), LY_SC(22), CLR_BG);
       drawTempReadout(LY_RND_RGS_NOZ_X, LY_RND_RGS_TEMP_Y, s.nozzleTemp,
                       s.nozzleTarget, dispSettings.nozzle.arc, false);
       drawTempReadout(LY_RND_RGS_BED_X, LY_RND_RGS_TEMP_Y, s.bedTemp,
@@ -3814,11 +3878,12 @@ static void drawPrintingRings() {
   }
 
   // === Big progress % ===
-  // 0.8x 7-seg composite like the Rim skin; the band corners (48, 45 off
-  // center -> dist 66) stay inside the r=74 center disc.
+  // Small 7-seg composite like the Rim skin; the band corners (48, 45 off
+  // center -> dist 66 at 1x) stay inside the center disc.
   if (progChanged) {
     markFrameDirty();
-    drawRound7segPct(s.progress, cx, LY_RND_RGS_PCT_Y, 0.8f, 19);
+    drawRound7segPct(s.progress, cx, LY_RND_RGS_PCT_Y,
+                     LY_RND_7SEG_SM_SCALE, LY_RND_7SEG_SM_HALFH);
   }
 
   // === ETA / alert line + multi-printer dots ===
@@ -3829,19 +3894,21 @@ static void drawPrintingRings() {
     // the widest form this skin can still render - so the font fallback below
     // stays the first line of defence and the string only shortens when even
     // FONT_SMALL would spill (mode 2 with a cross-day date).
-    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf), 116, FONT_SMALL,
+    uint16_t clr = buildRoundEtaLine(s, buf, sizeof(buf), LY_SC(116), LY_F_SMALL,
                                      /*showError=*/true);
-    tft.fillRect(cx - 58, LY_RND_RGS_ETA_Y - 11, 116, 22, CLR_BG);
-    // FONT_BODY when it fits the chord; the long date+time ETA form drops
-    // to FONT_SMALL instead of clipping.
-    setFont(tft, FONT_BODY);
-    if (tft.textWidth(buf) > 112) setFont(tft, FONT_SMALL);
+    tft.fillRect(cx - LY_SC(58), LY_RND_RGS_ETA_Y - LY_SC(11),
+                 LY_SC(116), LY_SC(22), CLR_BG);
+    // Body face when it fits the chord; the long date+time ETA form drops
+    // a tier instead of clipping.
+    setFont(tft, LY_F_BODY);
+    if (tft.textWidth(buf) > LY_SC(112)) setFont(tft, LY_F_SMALL);
     tft.setTextColor(clr, CLR_BG);
     tft.drawString(buf, cx, LY_RND_RGS_ETA_Y);
     // Dots clear kept narrow: at y=186 the corner distance of a +/-16 x +/-5
     // band is 73, just inside the r=74 center disc (the bed ring starts
     // there). Max 2 dots on round (16 px wide), so the band still covers.
-    tft.fillRect(cx - 16, LY_RND_RGS_DOTS_Y - 5, 32, 10, CLR_BG);
+    tft.fillRect(cx - LY_SC(16), LY_RND_RGS_DOTS_Y - LY_SC(5),
+                 LY_SC(32), LY_SC(10), CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_RGS_DOTS_Y);
   }
 
@@ -3884,7 +3951,7 @@ static void drawPrintingRound() {
   // === Status line: printer name + state, curved along the top rim ===
   if (stateChanged) {
     markFrameDirty();
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     // The round skins have no badge slot, so the rim status line carries the
     // state word - including the error word and its severity colour (§5.3).
     // It used to run a private copy of the ladder that left every healthy state
@@ -3894,18 +3961,20 @@ static void drawPrintingRound() {
     const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
     drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx, LY_RND_ARC_R,
                          false, dispSettings.printerNameColor, stColor,
-                         FONT_BODY, LY_RND_ARC_STATUS_HDEG,
+                         LY_F_BODY, LY_RND_ARC_STATUS_HDEG,
                          /*maxW=*/LY_RND_ARC_STATUS_MAXW);
-    tft.fillRect(cx - 30, LY_RND_DOTS_Y - 5, 60, 10, CLR_BG);
+    tft.fillRect(cx - LY_SC(30), LY_RND_DOTS_Y - LY_SC(5),
+                 LY_SC(60), LY_SC(10), CLR_BG);
     if (getActiveConnCount() > 1) drawPrinterDots(cx, LY_RND_DOTS_Y);
   }
 
   // === Big progress % ===
-  // 0.8x 7-seg composite (~38px). Full-size digits don't fit here: the wider
-  // clear band they need would reach into the status text annulus (r >= 88).
+  // Small 7-seg composite. Full-size digits don't fit here: the wider clear
+  // band they need would reach into the status text annulus.
   if (progChanged) {
     markFrameDirty();
-    drawRound7segPct(s.progress, cx, LY_RND_PRINT_PCT_Y, 0.8f, 19);
+    drawRound7segPct(s.progress, cx, LY_RND_PRINT_PCT_Y,
+                     LY_RND_7SEG_SM_SCALE, LY_RND_7SEG_SM_HALFH);
   }
 
   // === Layer line (or power, when a plug is active) ===
@@ -3924,13 +3993,15 @@ static void drawPrintingRound() {
       if (typeChanged) {
         // Square clear like the grid slot loop: AMS bars/filament tiles reach
         // the corners of the slot bounding box, so a circular clear ghosts.
-        tft.fillRect(miniX[i] - LY_RND_G_R - 2, LY_RND_G_Y - LY_RND_G_R - 2,
-                     LY_RND_G_R * 2 + 4, LY_RND_G_R * 2 + 4, CLR_BG);
+        const int16_t clearSz = LY_RND_G_R * 2 + LY_SC(4);   // == drawGaugeLabel maxW
+        tft.fillRect(miniX[i] - LY_RND_G_R - LY_SC(2),
+                     LY_RND_G_Y - LY_RND_G_R - LY_SC(2),
+                     clearSz, clearSz, CLR_BG);
         bool sm = dispSettings.smallLabels;
-        int16_t labelY = LY_RND_G_Y + LY_RND_G_R + (sm ? 3 : -1);
-        int16_t lh     = sm ? 18 : 24;
-        tft.fillRect(miniX[i] - LY_RND_G_R - 2, labelY - lh / 2,
-                     LY_RND_G_R * 2 + 4, lh, CLR_BG);
+        int16_t labelY = LY_RND_G_Y + LY_RND_G_R + (sm ? LY_SC(3) : LY_SC(-1));
+        int16_t lh     = sm ? LY_SC(18) : LY_SC(24);
+        tft.fillRect(miniX[i] - LY_RND_G_R - LY_SC(2), labelY - lh / 2,
+                     clearSz, lh, CLR_BG);
         prevMiniTypes[i] = gt;
       }
       // Smoothed arc types must also redraw while the lerp is animating,
@@ -3966,9 +4037,9 @@ static void drawPrintingRound() {
     char buf[32];
     uint16_t clr = buildRoundEtaLine(
         s, buf, sizeof(buf),
-        arcBudgetPx(LY_RND_ARC_R, LY_RND_ARC_ETA_HDEG), FONT_BODY);
+        arcBudgetPx(LY_RND_ARC_R, LY_RND_ARC_ETA_HDEG), LY_F_BODY);
     drawCurvedString(tft, buf, cx, cx, LY_RND_ARC_R, true, clr,
-                     FONT_BODY, LY_RND_ARC_ETA_HDEG);
+                     LY_F_BODY, LY_RND_ARC_ETA_HDEG);
   }
 
   // === Active filament: swatch + type curved on the upper-left rim ===
@@ -4780,12 +4851,12 @@ static void drawPrinting() {
     }
   }
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Screen: Finished (same layout as printing, but with 2 gauges + status)
 // ---------------------------------------------------------------------------
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Round (GC9A01) finished screen: gold rim ring at 100%, green checkmark,
 // centered text stack. Optional kWh line when a power plug tracked the print.
 static void drawFinishedRound() {
@@ -4806,11 +4877,13 @@ static void drawFinishedRound() {
     const uint16_t finClr = dispSettings.finishColor;
     tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R, finClr);
     tft.drawCircle(cx, LY_RND_FIN_CHK_Y, LY_RND_FIN_CHK_R - 1, finClr);
+    // Stroke stays 3 physical px on every profile; only the leg
+    // coordinates scale with the circle.
     for (int i = -1; i <= 1; i++) {
-      tft.drawLine(cx - 14, LY_RND_FIN_CHK_Y + i,
-                   cx - 4,  LY_RND_FIN_CHK_Y + 10 + i, finClr);
-      tft.drawLine(cx - 4,  LY_RND_FIN_CHK_Y + 10 + i,
-                   cx + 15, LY_RND_FIN_CHK_Y - 8 + i, finClr);
+      tft.drawLine(cx - LY_SC(14), LY_RND_FIN_CHK_Y + i,
+                   cx - LY_SC(4),  LY_RND_FIN_CHK_Y + LY_SC(10) + i, finClr);
+      tft.drawLine(cx - LY_SC(4),  LY_RND_FIN_CHK_Y + LY_SC(10) + i,
+                   cx + LY_SC(15), LY_RND_FIN_CHK_Y - LY_SC(8) + i, finClr);
     }
 
     tft.setTextDatum(MC_DATUM);
@@ -4820,9 +4893,9 @@ static void drawFinishedRound() {
     const char* rndFinName = jobDisplayName(s);
     if (rndFinName[0] != '\0') {
       char clipped[64];
-      setFont(tft, FONT_BODY);
+      setFont(tft, LY_F_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString(ellipsizeToWidth(tft, rndFinName, 150,
+      tft.drawString(ellipsizeToWidth(tft, rndFinName, LY_SC(150),
                                       clipped, sizeof(clipped)),
                      cx, LY_RND_FIN_FILE_Y);
     }
@@ -4848,15 +4921,16 @@ static void drawFinishedRound() {
                     (kwh != prevKwh);
   if (forceRedraw || kwhChanged || waitingForDoor != prevWaitDoor) {
     markFrameDirty();
-    // Band half-width 64: corner distance sqrt(64^2 + 88^2) = 109 stays
-    // inside the gold rim ring's inner edge (111).
-    tft.fillRect(cx - 64, LY_RND_FIN_TIME_Y - 10, 128, 20, CLR_BG);
+    // Band half-width 64 at 1x: corner distance sqrt(64^2 + 88^2) = 109
+    // stays inside the gold rim ring's inner edge (111). Both double.
+    tft.fillRect(cx - LY_SC(64), LY_RND_FIN_TIME_Y - LY_SC(10),
+                 LY_SC(128), LY_SC(20), CLR_BG);
     tft.setTextDatum(MC_DATUM);
-    setFont(tft, FONT_SMALL);
+    setFont(tft, LY_F_SMALL);
     if (waitingForDoor) {
       char clipped[24];
       tft.setTextColor(CLR_ORANGE, CLR_BG);
-      tft.drawString(ellipsizeToWidth(tft, "Open door to dismiss", 124,
+      tft.drawString(ellipsizeToWidth(tft, "Open door to dismiss", LY_SC(124),
                                       clipped, sizeof(clipped)),
                      cx, LY_RND_FIN_TIME_Y);
     } else if (kwh >= 0.0f) {
@@ -5163,7 +5237,7 @@ static void drawFinished() {
   prevFinTasmotaOnline = tasmotaActiveHere;
   prevFinWatts = finCurWatts;
 }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Night mode — scheduled brightness dimming
@@ -5247,7 +5321,7 @@ static void drawPowerConfirm() {
   // safe to fire the command (the frame is now committed by flushFrame()).
   if (v.phase == 2) {
     if (full) {
-      setFont(tft, FONT_LARGE);
+      setFont(tft, LY_F_LARGE);
       tft.setTextColor(CLR_TEXT, bg);
       tft.drawString("Sending...", cx, cy);
       markFrameDirty();
@@ -5259,7 +5333,7 @@ static void drawPowerConfirm() {
   // Result: success / failure flash before returning to the prior screen.
   if (v.phase == 3) {
     if (full) {
-      setFont(tft, FONT_LARGE);
+      setFont(tft, LY_F_LARGE);
       tft.setTextColor(v.resultOk ? CLR_GREEN : CLR_ORANGE, bg);
       const char* msg = v.resultOk ? (v.desiredOn ? "Turned ON" : "Turned OFF")
                                    : "Plug offline";
@@ -5279,49 +5353,54 @@ static void drawPowerConfirm() {
 #elif defined(DISPLAY_480x480)
   const int16_t RR = 84, RT = 18;
   const int16_t YSH = 0;
+#elif defined(DISPLAY_ROUND_480)
+  const int16_t RR = LY_SC(34), RT = LY_SC(8);   // 2x the round-240 dot
+  const int16_t YSH = 0;
 #else
   const int16_t RR = 34, RT = 8;
   const int16_t YSH = 0;
 #endif
-  const int16_t titleY = cy - 70 - YSH;
-  const int16_t nameY  = cy - 44 - YSH;
-  const int16_t warnY  = cy - 16 - YSH;
-  const int16_t ry     = cy + RR - 10 - YSH;   // ring center; top = cy-10-YSH
+  // LY_SC() is 1x everywhere except the 480 round profile, so these are the
+  // unchanged 240/320/480 offsets and only double on ws_lcd_28c.
+  const int16_t titleY = cy - LY_SC(70) - YSH;
+  const int16_t nameY  = cy - LY_SC(44) - YSH;
+  const int16_t warnY  = cy - LY_SC(16) - YSH;
+  const int16_t ry     = cy + RR - LY_SC(10) - YSH;   // ring center; top = cy-10-YSH
 #if !defined(DISPLAY_ROUND_240)
   const int16_t hintY  = ry + RR + 16;         // first hint line below the ring
 #endif
 
   // Wait-release / armed: question + name + hold ring.
   if (full) {
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT, bg);
     tft.drawString(v.desiredOn ? "Turn ON printer" : "Turn OFF printer", cx, titleY);
 
-    setFont(tft, FONT_LARGE);
+    setFont(tft, LY_F_LARGE);
     char nameBuf[28];
     snprintf(nameBuf, sizeof(nameBuf), "\"%s\"", (v.name && v.name[0]) ? v.name : "printer");
     tft.drawString(nameBuf, cx, nameY);
 
     if (v.warn) {
-      setFont(tft, FONT_BODY);
+      setFont(tft, LY_F_BODY);
       tft.setTextColor(CLR_TEXT, bg);
       tft.drawString("PRINTING", cx, warnY);
     }
 
-    setFont(tft, FONT_SMALL);
+    setFont(tft, LY_F_SMALL);
     tft.setTextColor(CLR_TEXT_DIM, bg);
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
     // The square stack (down to cy+110) runs off the bottom of the circle.
     // Keep the key instruction straight and prominent; curve the secondary
     // hint along the bottom rim (same style/constants as the printing ETA)
     // so it stays inside the circle and can't clip on the round bezel.
-    tft.drawString("hold to confirm", cx, cy + 64);
+    tft.drawString("hold to confirm", cx, cy + LY_SC(64));
     if (v.offline) {
       tft.setTextColor(CLR_ORANGE, bg);
-      tft.drawString("plug offline", cx, cy + 82);
+      tft.drawString("plug offline", cx, cy + LY_SC(82));
     }
     drawCurvedString(tft, "tap to cancel", cx, cy, LY_RND_ARC_R, true,
-                     CLR_TEXT_DIM, FONT_SMALL, LY_RND_ARC_ETA_HDEG);
+                     CLR_TEXT_DIM, LY_F_SMALL, LY_RND_ARC_ETA_HDEG);
 #else
     tft.drawString("hold to confirm", cx, hintY);
     tft.drawString("tap to cancel",   cx, hintY + 18);
@@ -5494,30 +5573,33 @@ static void drawHmsScreen() {
   const bool hasPrintError = (s.printError != 0);
   const uint8_t total = (uint8_t)(s.hmsCount + (hasPrintError ? 1 : 0));
 
-  setFont(tft, FONT_SMALL);
+  setFont(tft, LY_F_SMALL);
   const int16_t smallH = (int16_t)tft.fontHeight();
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   const int16_t bodyH = (int16_t)tft.fontHeight();
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round: no room for a list. Worst entry only, centered inside a chord-safe
   // band, with the count of everything else below it.
-  const int16_t maxW = 170;
+  // Width and font both double on the 480 profile, so the effective character
+  // capacity is the same ~93 - this screen does not gain the rectangular 157.
+  const int16_t maxW = LY_SC(170);
+  const int16_t topY = cx - LY_SC(78);
   uint32_t attr = 0, code = s.printError;
   if (!hasPrintError && s.hmsCount > 0) { attr = s.hms[0].attr; code = s.hms[0].code; }
 
   tft.setTextDatum(TC_DATUM);
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, bg);
-  tft.drawString("Printer error", cx, cx - 78);
+  tft.drawString("Printer error", cx, topY);
 
   if (total > 0) {
     char label[32], codeStr[HMS_CODE_STR_LEN];
     uint16_t hlColor = CLR_RED;
     hmsEntryLines(attr, code, label, sizeof(label), codeStr, sizeof(codeStr), &hlColor);
-    setFont(tft, FONT_SMALL);
+    setFont(tft, LY_F_SMALL);
     char clipped[64];
-    const int16_t hdrY = cx - 78 + bodyH + 4;
+    const int16_t hdrY = topY + bodyH + LY_SC(4);
     tft.setTextColor(hlColor, bg);
     tft.drawString(ellipsizeToWidth(tft, label, maxW, clipped, sizeof(clipped)),
                    cx, hdrY);
@@ -5525,18 +5607,19 @@ static void drawHmsScreen() {
     // the sentence, so nothing below it moves.
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString(codeStr, cx, hdrY + smallH + 1);
-    drawWrappedText(hmsEntryText(attr, code), cx, cx - 78 + bodyH + 6 + smallH * 2,
-                    maxW, smallH + 2, 3, CLR_TEXT, bg, /*centered=*/true);
+    drawWrappedText(hmsEntryText(attr, code), cx,
+                    topY + bodyH + LY_SC(6) + smallH * 2,
+                    maxW, smallH + LY_SC(2), 3, CLR_TEXT, bg, /*centered=*/true);
     if (total > 1) {
       char more[16];
       snprintf(more, sizeof(more), "+%u more", (unsigned)(total - 1));
       tft.setTextDatum(TC_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, bg);
-      tft.drawString(more, cx, cx + 46);
+      tft.drawString(more, cx, cx + LY_SC(46));
     }
   }
   drawCurvedString(tft, "tap to close", cx, cx, LY_RND_ARC_R, true,
-                   CLR_TEXT_DIM, FONT_SMALL, LY_RND_ARC_ETA_HDEG);
+                   CLR_TEXT_DIM, LY_F_SMALL, LY_RND_ARC_ETA_HDEG);
 #else
   const int16_t margin = 6;
   const int16_t maxW = W - 2 * margin;
@@ -5653,7 +5736,7 @@ static bool glowScreenEligible() {
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
-#if !defined(DISPLAY_ROUND_240)
+#if !DISPLAY_IS_ROUND
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
   if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
@@ -5701,9 +5784,9 @@ void updateDisplay() {
     lastDisplayUpdate = 0;
     markFrameDirty();
   }
-#endif // !DISPLAY_ROUND_240
+#endif // !DISPLAY_IS_ROUND
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Experimental progress-arc shimmer, per skin: Rim + Rings sweep the full
   // circle (Rings on its outer progress ring), Speedo sweeps its 240-deg arc.
   // Suppressed while the glow owns the rim ring - both draw the outer band.
@@ -5733,7 +5816,7 @@ void updateDisplay() {
   }
 
   // Edge glow ring - same eligibility + dismissal contract as the rectangular
-  // panels (see the !DISPLAY_ROUND_240 block above). Drawn after the shimmer so
+  // panels (see the !DISPLAY_IS_ROUND block above). Drawn after the shimmer so
   // it owns the rim band while active; cleanup forces a base repaint that
   // restores the gold rim / progress ring underneath.
   if (glowScreenEligible()) {
@@ -5859,7 +5942,7 @@ void updateDisplay() {
       break;
 
     case SCREEN_CLOCK:
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
       // No pong on round: rectangular walls don't fit the circle. The pong
       // setting is simply ignored and the watch-face clock always draws.
       drawClock();
@@ -5879,7 +5962,7 @@ void updateDisplay() {
       break;
   }
 
-#if !defined(DISPLAY_ROUND_240)
+#if !DISPLAY_IS_ROUND
   // The base screen may have just repainted over the band (forceRedraw, gauge
   // updates) - put it back in the same frame so the glow keeps the edge.
   if (glowIsActive() && glowScreenEligible()) {

@@ -28,6 +28,23 @@
 #define BACKLIGHT_FREQ  5000
 #define BACKLIGHT_RES   8
 
+#if defined(BOARD_IS_WS28C)
+// TCA9554 output bits. The vendor demo numbers these pins 1-8; the register
+// bit is (pin - 1), and the table below is already converted.
+#define WS28C_EXP_ADDR     0x20
+#define WS28C_EXP_LCD_RST  0
+#define WS28C_EXP_TP_RST   1
+#define WS28C_EXP_LCD_CS   2
+#define WS28C_EXP_SD_CS    3
+#define WS28C_EXP_BUZZER   7
+// Expander sits on the GT911's I2C bus; keep the pin numbers in one place.
+#define WS28C_I2C_SDA      GT911_SDA
+#define WS28C_I2C_SCL      GT911_SCL
+// Reset high, CS deselected, buzzer off.
+#define WS28C_EXP_IDLE     ((1 << WS28C_EXP_LCD_RST) | (1 << WS28C_EXP_TP_RST) | \
+                            (1 << WS28C_EXP_LCD_CS)  | (1 << WS28C_EXP_SD_CS))
+#endif
+
 // =============================================================================
 //  Color palette (RGB565)
 // =============================================================================
@@ -132,6 +149,9 @@
 // Only these two boards qualify (8 MB PSRAM + touch); BOARD_HAS_PSRAM is too
 // broad (it also covers esp32s3_zero/_320/sensecap). Every camera code path is
 // compiled behind BOARD_HAS_CAMERA; other boards link no-op stubs.
+// ws_lcd_28c also qualifies on paper (8 MB PSRAM + touch) but is deliberately
+// left out of v1 - the board is untested hardware, and a 2nd TLS socket plus
+// two 200 KB JPEG buffers is not something to debug remotely.
 #if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_WS350)
 #define BOARD_HAS_CAMERA      1
 #else
@@ -154,6 +174,19 @@
 // guarded code is AXS-typed (Panel_AXS15231B_AGFX, fixed 320x480) and is 1:1 with
 // JC today - a different full-frame panel (e.g. the CO5300 AMOLED) needs its own
 // path, not this one.
+// Round panel. All three print skins, the round clock face, the edge-glow ring
+// and the round idle/finished/AP screens are shared; only the LY_RND_* geometry
+// and the font tier differ per resolution.
+//
+// NOTE: derived here, so it is only visible to a TU that has already reached
+// this point in config.h. include/layout.h and src/display_gauges.h are both
+// included earlier than that and MUST keep the raw two-flag test.
+#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480)
+#define DISPLAY_IS_ROUND  1
+#else
+#define DISPLAY_IS_ROUND  0
+#endif
+
 #if defined(BOARD_IS_JC3248W535)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
@@ -161,13 +194,22 @@
 #endif
 
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
-// SenseCAP (PCA9535) and ws_lcd_350 (TCA9554). This cap only signals "bring up
+// SenseCAP (PCA9535), ws_lcd_350 and ws_lcd_28c (TCA9554). This cap only signals "bring up
 // Wire.h for the expander"; the per-chip register bring-up stays board-specific
 // (different chip, address and pins - see initDisplay()).
-#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350)
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS350) || defined(BOARD_IS_WS28C)
 #define PANEL_HAS_IO_EXPANDER  1
 #else
 #define PANEL_HAS_IO_EXPANDER  0
+#endif
+
+// Buzzer wired to an IO-expander output bit instead of a GPIO (ws_lcd_28c).
+// Selects buzzer_backend_expander.cpp, excludes the GPIO backend, and tells the
+// portal not to ask for a pin.
+#if defined(BOARD_IS_WS28C)
+#define BUZZER_BACKEND_TCA9554  1
+#else
+#define BUZZER_BACKEND_TCA9554  0
 #endif
 
 // ESP32-C3 radio: capping AP/STA TX power works around a C3 range/brownout issue
@@ -269,7 +311,8 @@
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
-    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216)
+    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
+    defined(BOARD_IS_WS28C)
 #define HAS_FULL_HMS_TABLE  1
 #else
 #define HAS_FULL_HMS_TABLE  0
@@ -352,6 +395,8 @@
 #define BUTTON_DEFAULT_PIN    0       // DIY: no button assumed; user configures in web UI
 #elif defined(DISPLAY_240x320)
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
+#elif defined(BOARD_IS_WS28C)
+#define BUTTON_DEFAULT_PIN    0       // 2.8C: touch is the input; GPIO4 is the battery ADC
 #elif defined(BOARD_IS_SENSECAP)
 #define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
@@ -361,7 +406,7 @@
 // =============================================================================
 //  Display refresh
 // =============================================================================
-#if defined(BOARD_IS_SENSECAP)
+#if defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_WS28C)
 #define DISPLAY_UPDATE_MS          100    // ~10 Hz refresh (PSRAM framebuffer can handle it)
 #else
 #define DISPLAY_UPDATE_MS          250    // ~4 Hz refresh rate
@@ -374,8 +419,8 @@
 #define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
 #if defined(BOARD_IS_JC3248W535)
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
-#elif defined(DISPLAY_ROUND_240)
-#define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges over SPI, 25 fps fine
+#elif DISPLAY_IS_ROUND
+#define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges, 25 fps fine
 #else
 #define GLOW_ANIM_MS             40        // ~25 fps band animation
 #endif
@@ -387,7 +432,7 @@
 #define GLOW_REMIND_EVERY_MS     300000UL  // reminder interval (5 min)
 #define GLOW_CONT_CEILING_MS     1800000UL // until-dismissed degrades to reminder after 30 min
 
-// Round ring variant (DISPLAY_ROUND_240): the glow owns an annular band at the
+// Round ring variant (DISPLAY_IS_ROUND): the glow owns an annular band at the
 // panel rim (a full circle) instead of four straight edge strips. Sweep is a
 // single-pass per-pixel band rasterizer (no fillArc, so no angular-seam specks
 // and no whole-ring strobe); Pulse and Storm use native fillArc. fillArc scans
@@ -396,7 +441,7 @@
 // rim and its anti-aliased fringe (drawn at r118, AA out to ~r119); a shy ring
 // leaves single gold pixels peeking through the moving sweep.
 #define GLOW_RING_MARGIN         0         // px from panel edge to ring outer radius
-#define GLOW_RING_T              11        // ring thickness (outer 120 -> inner 109 on 240 round)
+#define GLOW_RING_T              LY_SC(11) // ring thickness (240 round: outer 120 -> inner 109)
 #define GLOW_SWEEP_TAIL_DEG      90        // sweep comet tail length (deg of the circle)
 
 // =============================================================================
@@ -450,6 +495,11 @@
 // S3 default (GPIO 5) is this board's display SCLK — initBuzzer() drives the pin
 // as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
 // the panel after boot. Disable (0) so the SPI clock is left alone.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_WS28C)
+// Waveshare 2.8C: the buzzer is expander bit 7, not a GPIO, so there is no pin
+// to configure. 0 keeps the GPIO backend out of it - and the generic S3
+// default (GPIO 5) is this board's RGB D0.
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_SC01PLUS)
 // Panlee WT32-SC01 Plus: the generic S3 default (GPIO 5) is this board's touch

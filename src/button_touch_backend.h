@@ -12,7 +12,8 @@
 // At most one EXPLICIT driver may be selected. Zero is valid (no-touch boards -
 // esp32s3, esp32c3, the round/DIY envs). More than one is a build error.
 #if (defined(USE_XPT2046) + defined(USE_CST816) + defined(USE_CST328) \
-     + defined(USE_FT5X06) + defined(USE_FT6336) + defined(USE_AXS_TOUCH)) > 1
+     + defined(USE_FT5X06) + defined(USE_FT6336) + defined(USE_AXS_TOUCH) \
+     + defined(USE_GT911)) > 1
 #error "button_touch: more than one explicit touch driver (USE_*) selected"
 #endif
 
