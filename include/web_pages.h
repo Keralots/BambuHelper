@@ -98,8 +98,8 @@ function saveWifi(){
 //    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              leddrv, ledpin, ledping, ledpinb, ledanode, ledbr, ledfxmd,
-//              ledfxsec, ledfxbr, ledauto, ledpause, lederr, lederrsec,
-//              ledcidl, ledcprn, ledcpau, ledcfin, ledcerr, batshow
+//              ledfxsec, ledfxbr, ledauto, ledpause, lederr, lednight,
+//              lederrsec, ledcidl, ledcprn, ledcpau, ledcfin, ledcerr, batshow
 //    WiFi:     ssid, pass, showpass2, netmode, net_ip, net_gw, net_sn,
 //              net_dns, showip, importFile, otaFile
 //    Power:    tsm_cur, tsm_tar, tsm_en, tsm_pt, tsm_po, tsm_pe0..tsm_pe3, tsm_ip,
@@ -1002,6 +1002,10 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
         <label for="lederrsec">Strobe auto-off (0 = never, else 5-600 seconds)</label>
         <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="lederrsec" min="0" max="600" value="%LED_ERR_SEC%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
       </div>
+      <label class="check-row">
+        <input type="checkbox" id="lednight" %LED_NIGHT%>
+        <label for="lednight">Turn LED off during night mode</label>
+      </label>
     </div>
   </div>
 

@@ -5171,6 +5171,13 @@ static void drawFinished() {
 static unsigned long lastNightCheck = 0;
 // lastAppliedBrightness declared near setBacklight() above
 
+// Wake override: nightBrightness == 0 means a real blackout, and
+// getEffectiveBrightness() is otherwise a pure function of the wall clock - so
+// without this there is no way to express "the user just pressed the button"
+// and the panel can never be woken during the night window.
+static uint32_t nightWakeUntilMs = 0;
+static const uint32_t NIGHT_WAKE_MS = 30000;
+
 static bool isNightHour() {
   struct tm now;
   time_t t = time(nullptr);
@@ -5186,22 +5193,56 @@ static bool isNightHour() {
   return (h >= s || h < e);                // e.g. 22:00-07:00 (wraps midnight)
 }
 
+// True while scheduled night dimming should be in force. Also consumed by the
+// LED "off during night" option in the main loop.
+bool isNightModeActive() { return dpSettings.nightModeEnabled && isNightHour(); }
+
+// True while a button press is holding the panel awake through a blackout.
+static inline bool nightWakeHeld() {
+  return nightWakeUntilMs != 0 && (long)(millis() - nightWakeUntilMs) < 0;
+}
+
+// True while the night window should leave the panel fully dark. Distinct from
+// isNightModeActive(): only nightBrightness == 0 blacks out, and a wake override
+// suspends it. Consumed by the renderer (which stops drawing) and by the button
+// path (which turns the press into a wake instead of a screen action).
+bool isNightBlackout() {
+  return isNightModeActive() && dpSettings.nightBrightness == 0 && !nightWakeHeld();
+}
+
+// Button press during a blackout: light the panel for NIGHT_WAKE_MS. Clearing
+// lastNightCheck makes the next checkNightMode() apply it immediately rather
+// than at its next tick.
+void nightWake() {
+  nightWakeUntilMs = millis() + NIGHT_WAKE_MS;
+  lastNightCheck = 0;
+}
+
 uint8_t getEffectiveBrightness() {
+  // A woken blackout uses the screensaver level, not full brightness - the user
+  // set night to 0, so the peek stays as dim as the screensaver they tuned.
+  if (isNightModeActive() && dpSettings.nightBrightness == 0 && nightWakeHeld()) {
+    return dpSettings.screensaverBrightness;
+  }
   if (currentScreen == SCREEN_CLOCK) {
     // During night hours, use the dimmer of the two
-    if (dpSettings.nightModeEnabled && isNightHour()) {
+    if (isNightModeActive()) {
       return min(dpSettings.screensaverBrightness, dpSettings.nightBrightness);
     }
     return dpSettings.screensaverBrightness;
   }
-  if (dpSettings.nightModeEnabled && isNightHour()) {
+  if (isNightModeActive()) {
     return dpSettings.nightBrightness;
   }
   return brightness;
 }
 
 void checkNightMode() {
-  // Check once per minute
+  // Deliberately still once a minute. The blackout edge in updateDisplay() runs
+  // every loop and owns both ends of the wake override, so this does not need to
+  // tick fast - and must not: the portal's live brightness preview writes the
+  // backlight without touching `brightness`, so a fast tick here would stamp the
+  // slider back out from under the user.
   unsigned long now = millis();
   if (now - lastNightCheck < 60000) return;
   lastNightCheck = now;
@@ -5653,6 +5694,33 @@ static bool glowScreenEligible() {
 //  Main update (called from loop)
 // ---------------------------------------------------------------------------
 void updateDisplay() {
+  // Night blackout (nightBrightness == 0): paint the panel black once and stop
+  // rendering for the rest of the window. Backlight 0 alone is not enough -
+  // boards with BACKLIGHT_PIN < 0 (7-pin round GC9A01) have no dimming at all,
+  // so blanking the framebuffer is what actually makes them dark. SCREEN_OFF is
+  // excluded because it is already a blackout and owns its own backlight.
+  {
+    static bool prevBlackout = false;
+    // SCREEN_POWER_CONFIRM is excluded too: its PC_SENDING phase waits on the
+    // renderer to report the frame drawn, so blanking it mid-handshake would
+    // stall the modal until morning.
+    bool blackout = (currentScreen != SCREEN_OFF) &&
+                    (currentScreen != SCREEN_POWER_CONFIRM) && isNightBlackout();
+    if (blackout != prevBlackout) {
+      prevBlackout = blackout;
+      setBacklight(getEffectiveBrightness());
+      tft.fillScreen(blackout ? TFT_BLACK : dispSettings.bgColor);
+      markFrameDirty();
+      if (!blackout) {
+        // Woken: repaint the live screen from scratch this tick.
+        forceRedraw = true;
+        lastDisplayUpdate = 0;
+        triggerDisplayTransition();  // caches went stale while we were dark
+      }
+    }
+    if (blackout) return;
+  }
+
 #if !defined(DISPLAY_ROUND_240)
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.

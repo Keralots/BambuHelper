@@ -859,6 +859,7 @@ function saveRotation(){
   p.append('ledauto', document.getElementById('ledauto').checked ? '1' : '0');
   p.append('ledpause', document.getElementById('ledpause').checked ? '1' : '0');
   p.append('lederr', document.getElementById('lederr').checked ? '1' : '0');
+  p.append('lednight', document.getElementById('lednight').checked ? '1' : '0');
   p.append('lederrsec', document.getElementById('lederrsec').value);
   var bs = document.getElementById('batshow');
   if (bs) p.append('batshow', bs.checked ? '1' : '0');

@@ -44,6 +44,7 @@ LedSettings ledSettings = {
   /*colorPaused*/         LED_COLOR_PAUSED_DEFAULT,
   /*colorFinished*/       LED_COLOR_FINISHED_DEFAULT,
   /*colorError*/          LED_COLOR_ERROR_DEFAULT,
+  /*nightOff*/            false,
 };
 TasmotaSettings tasmotaSettings[TASMOTA_PLUG_COUNT] = {};
 float tasmotaTariffPerKwh = 0.0f;
@@ -816,6 +817,8 @@ void loadSettings() {
   ledSettings.colorFinished = prefs.getUInt("led_c_fin", LED_COLOR_FINISHED_DEFAULT);
   ledSettings.colorError    = prefs.getUInt("led_c_err", LED_COLOR_ERROR_DEFAULT);
 
+  ledSettings.nightOff      = prefs.getBool("led_night", false);
+
   // Tasmota power monitoring — array of N plugs with numbered NVS keys
   // One-shot migration from legacy singleton keys (tsm_en/ip/dm/pi/slot) into
   // numbered keys (tsm0_*, tsm1_*). Runs once when legacy keys exist and
@@ -1260,6 +1263,7 @@ void saveLedSettings() {
   prefs.putUInt("led_c_pau", ledSettings.colorPaused);
   prefs.putUInt("led_c_fin", ledSettings.colorFinished);
   prefs.putUInt("led_c_err", ledSettings.colorError);
+  prefs.putBool("led_night", ledSettings.nightOff);
   prefs.end();
 }
 

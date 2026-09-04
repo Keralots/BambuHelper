@@ -336,6 +336,8 @@ struct LedSettings {
   uint32_t colorPaused;
   uint32_t colorFinished;
   uint32_t colorError;
+
+  bool nightOff;               // turn the status LED off during the night window
 };
 
 // Tasmota smart plug power monitoring

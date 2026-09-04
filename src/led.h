@@ -77,6 +77,11 @@ void ledOnUserInteraction();
 // the screen state crosses the OFF boundary.
 void ledSetSuspended(bool suspended);
 
+// Night-mode coupling: while the night window is active AND ledSettings.nightOff
+// is set, the status LED goes dark like sleep. Driven from the main loop on the
+// night-window boundary crossing.
+void ledSetNightSuspended(bool suspended);
+
 // Hold-to-dim. Must be called every loop iteration regardless of hold state -
 // it owns the 2 s NVS save debounce. Returns true while this press should be
 // treated as a hold and tap actions suppressed (throughout DIM_ACTIVE including

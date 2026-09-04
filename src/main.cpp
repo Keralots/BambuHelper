@@ -287,6 +287,16 @@ static void closeHmsScreen() {
 static void doTapActions() {
   ScreenState cur = getScreenState();
 
+  // Night blackout: lift it first so the setBacklight() calls below resolve to
+  // the wake level instead of 0. On a live screen (IDLE / PRINTING / ...) the
+  // press then stops here - it would otherwise fall through into the tap cycle
+  // and shuffle screens nobody can see. A sleep-sticky screen keeps its own
+  // wake, which is the behavior the user already knows.
+  if (isNightBlackout()) {
+    nightWake();
+    if (!isSleepStickyScreen(cur)) return;
+  }
+
   if (isSleepStickyScreen(cur)) {
     setBacklight(getEffectiveBrightness());
     finishActive = false;
@@ -532,6 +542,26 @@ static void handleWakeButton() {
     ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
     if (touchPress || boardPress) { buzzerPlayClick(); ledOnUserInteraction(); }
     handlePowerConfirmInput(held);
+    wasHeldPrev = held;
+    holdConsumedThisPress = false;
+    return;
+  }
+
+  // Night blackout on a live screen: the panel is dark, so swallow the press as
+  // a wake before it reaches the multi-click buffer or the tap cycle - a
+  // double-click here would open the power-confirm modal over a screen the user
+  // cannot see. Sleep-sticky screens fall through to their existing wake (which
+  // lifts the blackout itself, in doTapActions). Placed after the modal
+  // intercept so one already up keeps working, and the dimmer is still ticked
+  // (suppressed) so its 2 s save debounce keeps draining and no dim session
+  // starts - a hold in the dark must not ramp the LED and write it to NVS.
+  if (isNightBlackout() && !isSleepStickyScreen(getScreenState())) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (touchPress || boardPress) {
+      buzzerPlayClick();
+      ledOnUserInteraction();
+      nightWake();
+    }
     wasHeldPrev = held;
     holdConsumedThisPress = false;
     return;
@@ -1446,6 +1476,16 @@ void loop() {
     if (screenOff != ledSleepSynced) {
       ledSleepSynced = screenOff;
       ledSetSuspended(screenOff);
+    }
+  }
+  // LED off during night mode (opt-in): dark for the whole night window,
+  // independent of the panel sleep state above.
+  {
+    static bool ledNightSynced = false;
+    bool nightOff = ledSettings.nightOff && isNightModeActive();
+    if (nightOff != ledNightSynced) {
+      ledNightSynced = nightOff;
+      ledSetNightSuspended(nightOff);
     }
   }
   ledTick();
