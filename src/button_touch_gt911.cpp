@@ -27,6 +27,18 @@
 static uint8_t addr     = GT911_ADDR_LOW;
 static bool    busReady = false;
 static bool    seen     = false;
+// Last published finger level. 0x814E bit7 is a data-ready EDGE, not a level:
+// between report frames it reads 0, while button.cpp's shared debouncer expects
+// a level. Reporting "not down" on those polls chops a held finger into a burst
+// of taps and breaks every hold gesture (LED dim, power-confirm ring,
+// hold-to-power-on), so the last frame's level stands until the next one.
+static bool     lastDown    = false;
+static uint32_t lastFrameMs = 0;
+// A controller that stops publishing while we believe a finger is down would
+// otherwise latch a permanent hold - which the power-confirm ring reads as a
+// deliberate hold and would act on. Nothing legitimately withholds a frame for
+// a second while touched.
+static const uint32_t DOWN_STALE_MS = 1000;
 
 // GT911 register addresses are 16-bit, MSB first (CST816/CST328 use 8-bit).
 static bool gt911Read(uint16_t reg, uint8_t* buf, size_t len) {
@@ -57,6 +69,8 @@ void touchInit() {
   // INT as an input. Re-assert the input mode defensively - nothing else should
   // be driving GPIO16, and a floating INT makes the first read look dead.
   pinMode(GT911_INT, INPUT);
+  lastDown    = false;
+  lastFrameMs = 0;
 
   Wire.begin(GT911_SDA, GT911_SCL);
   Wire.setClock(400000);
@@ -101,18 +115,22 @@ TouchPoll touchPoll() {
     seen = true;
   }
 
-  // bit7 clear = the controller has not published a new frame; the last known
-  // level stands, so report "not down" rather than an error.
+  // bit7 clear = the controller has not published a new frame, which is the
+  // normal case between report periods. Repeat the last known level and skip
+  // the acknowledge write - there is no frame to acknowledge, and the loop
+  // polls far faster than the GT911 reports.
   if ((status & 0x80) == 0) {
-    gt911Write(GT911_REG_STATUS, 0);
-    return {TouchEvent::None, false};
+    if (lastDown && (millis() - lastFrameMs) > DOWN_STALE_MS) lastDown = false;
+    return {TouchEvent::None, lastDown};
   }
 
   const uint8_t points = status & 0x0F;
-  // Always acknowledge, whatever the count - skipping this wedges the
-  // controller on its current frame and touch dies after one tap.
+  // Always acknowledge a published frame, whatever the count - skipping this
+  // wedges the controller on its current frame and touch dies after one tap.
   gt911Write(GT911_REG_STATUS, 0);
-  return {TouchEvent::None, (bool)(points > 0 && points <= GT911_MAX_POINTS)};
+  lastDown    = (points > 0 && points <= GT911_MAX_POINTS);
+  lastFrameMs = millis();
+  return {TouchEvent::None, lastDown};
 }
 
 #endif  // USE_GT911
