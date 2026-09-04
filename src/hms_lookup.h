@@ -104,6 +104,11 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code);
 // sensor is abnormal") is a real defect with no other surface, and stays.
 bool hmsIsMuted(uint32_t attr, uint32_t code);
 
+// The printer already dealt with it. Still listed everywhere, but never raises
+// the badge - so never the glow, buzzer, LED or auto-present either. Unlike
+// hmsIsMuted() there is no paired surface to check: nothing is left to act on.
+bool hmsIsSelfResolved(uint32_t attr, uint32_t code);
+
 // Feed version stamp of the compiled-in tables, or NULL when none is compiled
 // in. Reported by the portal so a stale table is diagnosable.
 const char* hmsTableVersion(void);

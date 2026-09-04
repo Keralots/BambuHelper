@@ -211,6 +211,23 @@ bool hmsIsMuted(uint32_t attr, uint32_t code) {
 }
 
 // ---------------------------------------------------------------------------
+//  Self-resolved advisories
+// ---------------------------------------------------------------------------
+// AMS runout pair, sev 3: 0003_0001 "wait while purged" + 0003_0002 "auto
+// switched to the slot with the same filament". Not faults, and auto-refill
+// leaves the slot empty so 0003_0002 stands for the rest of the job (#181).
+// Match the slot byte, not module+code: the same 0003_0001 on a unit-level
+// attr is "AMS disabled" (0x51) / "dry cooling" (0x56) / "chamber hot" (0x97).
+// Slots 0x20-0x23 = AMS A-D slots 1-4; AMS-HT A-H are always 0x20.
+bool hmsIsSelfResolved(uint32_t attr, uint32_t code) {
+  if (code != 0x00030001UL && code != 0x00030002UL) return false;
+  const uint32_t module = attr >> 24;          // 0x07 AMS, 0x18 AMS-HT
+  if (module != 0x07UL && module != 0x18UL) return false;
+  const uint32_t slot = (attr >> 8) & 0xFFUL;
+  return slot >= 0x20UL && slot <= 0x23UL;
+}
+
+// ---------------------------------------------------------------------------
 //  Error badge
 // ---------------------------------------------------------------------------
 uint16_t errorSeverityColor(uint8_t sev) {
@@ -239,13 +256,15 @@ ErrorBadge errorBadgeFor(const BambuState& s) {
     return b;
   }
 
-  // hms[] is sorted worst-first, so the first entry that survives both filters
+  // hms[] is sorted worst-first, so the first entry that survives the filters
   // is the worst one worth showing - no second pass needed.
   for (uint8_t i = 0; i < s.hmsCount; i++) {
     const uint8_t sev = hmsSeverityOf(s.hms[i].code);
     if (sev < 1 || sev > 3) continue;                       // info/unknown: listed only
     if (sev == 3 && !dispSettings.hmsSeverityAll) continue;  // "important only"
     if (hmsIsBaseline(s, s.hms[i].attr, s.hms[i].code)) continue;
+    // Listed, never alerts - the printer already handled it (issue #181).
+    if (hmsIsSelfResolved(s.hms[i].attr, s.hms[i].code)) continue;
     b.active = true;
     b.severity = sev;
     b.attr = s.hms[i].attr;
