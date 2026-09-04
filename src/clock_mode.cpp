@@ -294,9 +294,9 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
   int count = 0;
 
   if (dispSettings.showClockInfo) {
-    setFont(tft, FONT_BODY);   // set the drawing font so the ellipsize measures right
-#if defined(DISPLAY_ROUND_240)
-    const int16_t infoMaxW = 160;             // chord where the footer sits
+    setFont(tft, LY_F_BODY);   // set the drawing font so the ellipsize measures right
+#if DISPLAY_IS_ROUND
+    const int16_t infoMaxW = LY_SC(160);      // chord where the footer sits
 #else
     const int16_t infoMaxW = (int16_t)sw - 6;
 #endif

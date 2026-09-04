@@ -5407,7 +5407,7 @@ static void drawPowerConfirm() {
   const int16_t nameY  = cy - LY_SC(44) - YSH;
   const int16_t warnY  = cy - LY_SC(16) - YSH;
   const int16_t ry     = cy + RR - LY_SC(10) - YSH;   // ring center; top = cy-10-YSH
-#if !defined(DISPLAY_ROUND_240)
+#if !DISPLAY_IS_ROUND
   const int16_t hintY  = ry + RR + 16;         // first hint line below the ring
 #endif
 
