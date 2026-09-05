@@ -728,10 +728,19 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
   }
 
   // AMS drying started while on finish/kept-print screen - switch to idle so
-  // drawIdleDrying() can take over.
+  // drawIdleDrying() can take over, but only once the finish screen has had its
+  // configured window (#167). A dryer running through a finish used to steal the
+  // screen on the very next loop, so the cooldown the user just came to read was
+  // replaced by drying stats that will still be there for hours. Same expression
+  // as the finish timeout in handleDisplaySleepTimeouts(), so the two agree; with
+  // finishDisplayMins == 0 (hold until pressed) drying preempts as it always did.
+  bool finishWindowElapsed =
+      (dpSettings.finishDisplayMins == 0) ||
+      (millis() - finishScreenStart >
+       (unsigned long)dpSettings.finishDisplayMins * 60000UL);
   if ((current == SCREEN_FINISHED ||
        (current == SCREEN_PRINTING && dpSettings.keepPrintScreen && finishActive)) &&
-      s.ams.anyDrying) {
+      s.ams.anyDrying && finishWindowElapsed) {
     setScreenState(SCREEN_IDLE);
     finishActive = false;
     idleClockActive = false;
