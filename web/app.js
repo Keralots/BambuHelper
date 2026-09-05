@@ -1169,10 +1169,9 @@ function applyDisplay(){
   p.append('ssbright', document.getElementById('ssbright').value);
   p.append('rotation', document.getElementById('rotation').value);
   var ap = document.getElementById('afterprint').value;
-  var afClock = document.getElementById('afterfin').value !== 'off';
-  if (ap === 'keepon') { p.append('keepon', '1'); p.append('fmins', '0'); }
-  else if (ap === 'custom') { p.append('fmins', document.getElementById('fmins').value); if (afClock) p.append('clock', '1'); }
-  else { p.append('fmins', ap); if (afClock) p.append('clock', '1'); }
+  if (document.getElementById('keepon').checked) p.append('keepon', '1');
+  p.append('fmins', ap === 'custom' ? document.getElementById('fmins').value : ap);
+  if (document.getElementById('afterfin').value !== 'off') p.append('clock', '1');
   if (document.getElementById('dack').checked) p.append('dack', '1');
   if (document.getElementById('fintm').checked) p.append('fintm', '1');
   if (document.getElementById('kps').checked) p.append('kps', '1');
@@ -1784,12 +1783,13 @@ function factoryReset(){
 /* ============ After-print reveal ============ */
 function toggleAfterPrint(){
   var v = document.getElementById('afterprint').value;
+  var keepon = document.getElementById('keepon').checked;
   document.getElementById('customMinsWrap').style.display = (v === 'custom') ? 'block' : 'none';
-  // Destination select is meaningless when the finish screen never times out.
-  document.getElementById('afterFinWrap').style.display = (v === 'keepon') ? 'none' : 'block';
+  // Every timeout below is meaningless when the display never sleeps.
+  document.getElementById('afterPrintWrap').style.display = keepon ? 'none' : 'block';
   var pong = document.getElementById('pong');
   var row = document.getElementById('pong-row');
-  var showClock = (v !== 'keepon') && document.getElementById('afterfin').value !== 'off';
+  var showClock = !keepon && document.getElementById('afterfin').value !== 'off';
   pong.disabled = !showClock;
   if (row) row.style.opacity = showClock ? '1' : '0.4';
 }

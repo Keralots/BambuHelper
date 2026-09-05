@@ -114,6 +114,7 @@ static bool isSleepStickyScreen(ScreenState state) {
 }
 
 static void transitionToClockOrOff() {
+  if (dpSettings.keepDisplayOn) return;  // screensaver disabled - never sleep
   if (dpSettings.showClockAfterFinish || buttonType == BTN_DISABLED) {
     setScreenState(SCREEN_CLOCK);
   } else {
@@ -749,8 +750,10 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
 
 static void handleDisplayedPrinterIdleState(ScreenState current, const BambuState& s) {
   // SCREEN_CLOCK and SCREEN_OFF are sticky - only button press or
-  // new print (s.printing -> SCREEN_PRINTING) exits them.
-  if (isSleepStickyScreen(current)) return;
+  // new print (s.printing -> SCREEN_PRINTING) exits them. keepDisplayOn is the
+  // exception (#180): a screen that slept before the setting changed has to
+  // recover on its own, or a buttonless board stays on the clock forever.
+  if (isSleepStickyScreen(current) && !dpSettings.keepDisplayOn) return;
 
   ScreenState target = (dpSettings.keepPrintScreen && !s.ams.anyDrying)
                        ? SCREEN_PRINTING : SCREEN_IDLE;
@@ -1029,7 +1032,10 @@ static void handleDisplaySleepTimeouts() {
 }
 
 static void handleConnectingScreenRecovery() {
-  // Stuck-state timeout: recover if stuck in a connecting screen too long
+  // Stuck-state timeout: recover if stuck in a connecting screen too long.
+  // Skipped when the screensaver is disabled (#180): the clock is off-limits
+  // then, and IDLE only bounces straight back here on the next loop.
+  if (dpSettings.keepDisplayOn) return;
   ScreenState curConn = getScreenState();
   if (curConn == SCREEN_CONNECTING_WIFI || curConn == SCREEN_CONNECTING_MQTT) {
     if (connectingScreenStart == 0) connectingScreenStart = millis();
