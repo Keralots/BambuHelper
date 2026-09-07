@@ -365,12 +365,15 @@ static void parseTrayFields(JsonObject tray, AmsTray& t, uint8_t logIdx) {
 static uint8_t normalizeTrayIndex(const AmsState& ams,
                                   uint8_t rawUnitId, uint8_t trayInUnit) {
   if (trayInUnit >= AMS_TRAYS_PER_UNIT) return 255;
-  for (uint8_t i = 0; i < ams.unitCount; i++) {
+  // Only the first AMS_TRAY_UNITS units own tray slots. A match past that has
+  // unit-level data but no trays[] entry, so it must fall through to the
+  // overflow capture rather than index off the end of the array.
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_TRAY_UNITS; i++) {
     if (ams.units[i].id == rawUnitId)
       return i * AMS_TRAYS_PER_UNIT + trayInUnit;
   }
   // Fallback: AMS2 compat (rawId 0-3 == seqIdx)
-  if (rawUnitId < AMS_MAX_UNITS)
+  if (rawUnitId < AMS_TRAY_UNITS)
     return rawUnitId * AMS_TRAYS_PER_UNIT + trayInUnit;
   return 255;
 }
@@ -681,6 +684,11 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
               if (u.dryRemainMin > 0) s.ams.anyDrying = true;
               unitIdx++;
             }
+            // Tray-bearing units: derived here rather than in the tray pass so
+            // it is also correct on a partial update that carries the unit list
+            // without any "tray" arrays.
+            s.ams.trayUnitCount = s.ams.unitCount < AMS_TRAY_UNITS
+                                  ? s.ams.unitCount : AMS_TRAY_UNITS;
             if (unitIdx > 0) s.lastUpdate = millis();  // AMS data = connection alive
           }
 
@@ -697,7 +705,10 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             unitIdx = 0;
             for (JsonObject unit : units) {
               if (!unit["id"].is<const char*>()) continue;
-              if (unitIdx >= AMS_MAX_UNITS) continue;
+              // Tray slots only exist for the first AMS_TRAY_UNITS units. The
+              // rest keep their unit-level data from pass 1; a tray of theirs
+              // that is actually feeding is picked up by the overflow capture.
+              if (unitIdx >= AMS_TRAY_UNITS) continue;
               uint8_t seqIdx = unitIdx;
               unitIdx++;
 
@@ -799,8 +810,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             MQTT_LOG("activeTray: tray_now=%d -> normalized=%d", rawTrayNow, s.ams.activeTray);
           }
 
-          MQTT_LOG("AMS: %d units, active tray=%d, drying=%s",
-                   s.ams.unitCount, s.ams.activeTray,
+          MQTT_LOG("AMS: %d units (%d with trays), active tray=%d, drying=%s",
+                   s.ams.unitCount, s.ams.trayUnitCount, s.ams.activeTray,
                    s.ams.anyDrying ? "YES" : "no");
         }
       }
