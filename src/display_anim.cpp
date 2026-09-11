@@ -52,13 +52,13 @@ void drawAnimDots(lgfx::LovyanGFX& gfx, int16_t x, int16_t y, uint16_t color) {
   unsigned long ms = millis();
   int phase = (ms / 400) % 4;
 
-  setFont(gfx, FONT_BODY);
+  setFont(gfx, LY_F_BODY);
   gfx.setTextDatum(TL_DATUM);
 
   for (int i = 0; i < 3; i++) {
     uint16_t dotColor = (i < phase) ? color : CLR_TEXT_DARK;
     gfx.setTextColor(dotColor, CLR_BG);
-    gfx.drawString(".", x + i * 8, y);
+    gfx.drawString(".", x + i * LY_SC(8), y);
   }
 }
 

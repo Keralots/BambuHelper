@@ -46,6 +46,12 @@ FONTS = [
     # the larger canvas can afford a taller inscribed number without
     # crowding the secondary line below it.
     ("inter_22", "Inter-Bold.ttf",    26),
+    # True 2x tier - ws_lcd_28c (DISPLAY_ROUND_480) only. The round
+    # dashboard is the same design at twice the radius, so the faces are
+    # the same weights at twice the pixel size.
+    ("inter_20", "Inter-Regular.ttf", 24),   # 2x FONT_SMALL
+    ("inter_27", "Inter-Regular.ttf", 32),   # 2x FONT_BODY
+    ("inter_37", "Inter-Bold.ttf",    44),   # 2x FONT_LARGE
 ]
 
 FONTS_DIR = Path(__file__).parent.parent / "fonts"

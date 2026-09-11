@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
+#include "layout.h"   // LY_ICON16
 
 // 16x16 1-bit icons stored as PROGMEM byte arrays (1 bit per pixel).
 // Draw with: for each bit, if set draw accentColor, else skip (transparent).
@@ -228,16 +229,21 @@ const uint8_t PROGMEM icon_lightning[] = {
   0x00, 0x00,  //
 };
 
-// Helper: draw a 16x16 1-bit icon at (x, y) with given color, transparent bg
+// Helper: draw a 16x16 1-bit icon at (x, y) with given color, transparent bg.
+// LY_ICON16 is the drawn footprint - LY_SC(16) - so on a scaled profile each
+// source pixel becomes a block. Callers size their layout from LY_ICON16, not
+// from the literal 16.
 inline void drawIcon16(lgfx::LovyanGFX& gfx, int16_t x, int16_t y,
                        const uint8_t* icon, uint16_t color) {
+  constexpr int z = LY_ICON16 / 16;
   for (int row = 0; row < 16; row++) {
     uint8_t b0 = pgm_read_byte(&icon[row * 2]);
     uint8_t b1 = pgm_read_byte(&icon[row * 2 + 1]);
     uint16_t bits = (b0 << 8) | b1;
     for (int col = 0; col < 16; col++) {
       if (bits & (0x8000 >> col)) {
-        gfx.drawPixel(x + col, y + row, color);
+        if (z == 1) gfx.drawPixel(x + col, y + row, color);
+        else        gfx.fillRect(x + col * z, y + row * z, z, z, color);
       }
     }
   }
