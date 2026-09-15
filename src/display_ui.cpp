@@ -5048,7 +5048,10 @@ static void drawFinished() {
 #else
     const bool twoLineCost = false;
 #endif
-    const int16_t bandH = twoLineCost ? 34 : 18;
+    // FONT_BODY is 20 px tall. The old 16 px baseline gap made the kWh and
+    // cost glyphs overlap by roughly 4 px on the 320x240 finish screen.
+    constexpr int16_t costLineGap = 22;
+    const int16_t bandH = twoLineCost ? 43 : 18;
     tft.fillRect(0, kwhY - 9, scrW, bandH, CLR_BG);
     if (finishKwh >= 0.0f) {
       setFont(tft, FONT_BODY);
@@ -5075,7 +5078,7 @@ static void drawFinished() {
         snprintf(costBuf, sizeof(costBuf), "%.2f %s",
                  finishKwh * finishTariff, tasmotaCurrencySymbol());
         tft.setTextDatum(MC_DATUM);
-        tft.drawString(costBuf, cx, kwhY + 16);
+        tft.drawString(costBuf, cx, kwhY + costLineGap);
       }
     }
   }

@@ -218,16 +218,16 @@
 //   gauge label 83..103  (drawGaugeLabel centers at cy + R - 1, FONT_BODY)
 //   "Print Complete!" 110..138  (TEXT_Y 124, FONT_LARGE)
 //   file name        142..162  (FILE_Y 152, FONT_BODY)
-//   kWh clear band   167..201  (KWH_Y 176; the band is 34px tall, not 18, once
-//                               a Tasmota tariff turns on the second cost line,
-//                               whose ink runs to 202)
+//   kWh clear band   167..210  (KWH_Y 176; the band grows to 43px once a
+//                               tariff turns on the second cost line. Its
+//                               22px baseline gap keeps two 20px fonts apart.)
 //   bottom bar       216..236
 #define LY_LAND_FIN_GL       112   // left gauge center X (left edge x=80)
 #define LY_LAND_FIN_GR       208   // right gauge center X (right edge x=240)
 #define LY_LAND_FIN_GY        62   // gauge row center Y (R=32 → spans 30..94)
 #define LY_LAND_FIN_TEXT_Y   124   // "Print Complete!" (FONT_LARGE, 28px tall)
 #define LY_LAND_FIN_FILE_Y   152   // file name (FONT_BODY, 20px tall)
-#define LY_LAND_FIN_KWH_Y    176   // kWh row (FONT_BODY) - clear band kwhY-9 .. kwhY+25
+#define LY_LAND_FIN_KWH_Y    176   // kWh row (FONT_BODY) - cost row at kwhY+22
 #define LY_LAND_FIN_BOT_Y    216
 #define LY_LAND_FIN_BOT_H    20
 #define LY_LAND_FIN_WIFI_Y   228
