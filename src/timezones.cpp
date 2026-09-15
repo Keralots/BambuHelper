@@ -18,6 +18,7 @@ static const TimezoneRegion timezoneDatabase[] = {
   {"(UTC-06:00) Mexico City",                                    "CST6CDT,M4.1.0/02:00,M10.5.0/02:00"},
   {"(UTC-05:00) Eastern Time (New York, Toronto)",               "EST5EDT,M3.2.0/02:00,M11.1.0/02:00"},
   {"(UTC-05:00) Colombia, Peru",                                 "COT5"},
+  {"(UTC-04:00) Atlantic Standard Time (Puerto Rico)",           "AST4"},
   {"(UTC-04:00) Santiago",                                       "CLT4CLST,M9.2.0/00:00,M4.2.0/00:00"},
   {"(UTC-03:00) Buenos Aires, Sao Paulo",                        "BRT3"},
   {"(UTC) Coordinated Universal Time",                           "UTC0"},
@@ -83,6 +84,7 @@ const char* getDefaultTimezoneForOffset(int gmtOffsetMinutes) {
     case 120:   return "EET-2EEST,M3.5.0/03:00,M10.5.0/04:00";
     case 180:   return "MSK-3";
     case -300:  return "EST5EDT,M3.2.0/02:00,M11.1.0/02:00";
+    case -240:  return "AST4";
     case -360:  return "CST6CDT,M3.2.0/02:00,M11.1.0/02:00";
     case -420:  return "MST7MDT,M3.2.0/02:00,M11.1.0/02:00";
     case -480:  return "PST8PDT,M3.2.0/02:00,M11.1.0/02:00";
