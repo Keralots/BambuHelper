@@ -15,6 +15,7 @@
 
 #include <LovyanGFX.hpp>
 #include <Arduino_GFX_Library.h>
+#include "lgfx_panel_agfx_frame.hpp"
 #include <driver/gpio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -74,7 +75,7 @@ public:
 namespace lgfx {
 inline namespace v1 {
 
-class Panel_AXS15231B_AGFX : public Panel_Device {
+class Panel_AXS15231B_AGFX : public Panel_AGFX_Frame {
 public:
   Panel_AXS15231B_AGFX() {
     _cfg.memory_width  = _cfg.panel_width  = 320;
@@ -270,7 +271,7 @@ public:
   // Single-caller display path: BambuHelper only calls this from loop() on
   // core 1, and nothing else touches the framebuffer sprite during the push.
   // -------------------------------------------------------------------------
-  void pushRawPixels(uint16_t* data, uint32_t length) {
+  void pushRawPixels(uint16_t* data, uint32_t length) override {
     if (!_agfx || length == 0) return;
     // Gate on the next TE falling edge. Drain any stale pulse first, then
     // wait up to 50 ms for a fresh one. Timeout fallthrough keeps the UI

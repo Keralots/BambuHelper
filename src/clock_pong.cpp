@@ -44,7 +44,7 @@
 // effective loop rate sits well below 50 Hz, so the base 3.0 px/tick ball
 // crawls across the screen. Paddle keeps its >ball-speed margin so it can
 // still track the ball.
-#if defined(BOARD_IS_JC3248W535)
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_JC4827W543)
 #define ARK_BALL_SPEED    6.0f
 #define ARK_PADDLE_SPEED  8
 #else

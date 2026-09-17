@@ -6,7 +6,7 @@
 
 // Forward-declare the panel type so callers can use the pointer without
 // pulling in the full header (which includes Arduino_GFX headers).
-namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; } }
+namespace lgfx { inline namespace v1 { class Panel_AGFX_Frame; } }
 
 enum ScreenState {
   SCREEN_SPLASH,
@@ -103,9 +103,9 @@ extern lgfx::LovyanGFX* tft_ptr;
 // bound to the panel at static-init time, defeating the redirection.
 #define tft (*tft_ptr)
 
-// Direct pointer to the AXS15231B panel wrapper; only non-null on
-// BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
-extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
+// Direct pointer to the full-frame panel wrapper (AXS15231B on JC3248W535,
+// NV3041A on JC4827W543); nullptr on every other board. Used by the sprite direct-push diagnostic.
+extern lgfx::Panel_AGFX_Frame* g_axs_panel;
 
 void initDisplay();
 void updateDisplay();
