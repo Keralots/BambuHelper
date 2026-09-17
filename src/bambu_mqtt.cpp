@@ -993,7 +993,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     corePrintData = true;
     const char* name = print["subtask_name"];
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
-    utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the 48B buffer
+    utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the buffer
     // Studio calibration wizard jobs are named "*_calib_mode"
     // (BambuStudio get_calib_mode_name: pa_line, flow_rate_coarse, ...).
     size_t snLen = strlen(s.subtaskName);

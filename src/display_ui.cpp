@@ -1079,7 +1079,7 @@ static void drawStringClipped(const char* s, int16_t x, int16_t y, int16_t maxW)
     tft.drawString(s, x, y);
     return;
   }
-  char buf[64];
+  char buf[96];   // 300 px of narrow glyphs is ~75 bytes
   size_t n = strlen(s);
   if (n >= sizeof(buf)) n = sizeof(buf) - 1;
   memcpy(buf, s, n);
@@ -5004,7 +5004,7 @@ static void drawFinished() {
       // Trim to canvas width (font 2 ~9px/char nominal). 25 chars suited 240
       // portrait but landscape (320) can fit more — adapt to actual width by
       // shrinking until the rendered string fits in `scrW - 16`.
-      char truncName[64];
+      char truncName[96];   // 304 px of narrow glyphs is ~76 bytes
       strncpy(truncName, finName, sizeof(truncName) - 1);
       truncName[sizeof(truncName) - 1] = '\0';
       utf8TrimPartial(truncName);

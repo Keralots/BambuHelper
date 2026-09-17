@@ -140,7 +140,7 @@ struct BambuState {
   float bedTemp;
   float bedTarget;
   float chamberTemp;
-  char subtaskName[48];
+  char subtaskName[128];      // 48 cut before the screen did: a real H2C name measured 47 chars (#187)
   bool caliPrintType;         // print_type == "system" (device-initiated calibration job)
   bool caliSubtask;           // subtask_name ends with "_calib_mode" (Studio calibration wizard job)
   bool caliGcodeFile;         // gcode_file is a built-in calibration gcode (auto_cali_for_user / extrusion_cali)
