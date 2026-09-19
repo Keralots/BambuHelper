@@ -38,6 +38,12 @@ void sanitizeButtonPin() {
   if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
   if (buttonPin == AXS_TOUCH_INT) { clash("AXS touch INT"); return; }
 #endif
+#if defined(USE_GT911)
+  if (buttonPin == GT911_SDA) { clash("GT911 touch SDA"); return; }
+  if (buttonPin == GT911_SCL) { clash("GT911 touch SCL"); return; }
+  if (buttonPin == GT911_INT) { clash("GT911 touch INT"); return; }
+  if (buttonPin == GT911_RST) { clash("GT911 touch RST"); return; }
+#endif
 #if defined(USE_FT6336)
   if (buttonPin == FT6336_SDA) { clash("FT6336 touch SDA"); return; }
   if (buttonPin == FT6336_SCL) { clash("FT6336 touch SCL"); return; }

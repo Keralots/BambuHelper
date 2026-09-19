@@ -657,6 +657,20 @@ public:
   lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
 };
 static LGFX_JC3248W535 _tft_instance;
+#elif defined(BOARD_IS_JC4827W543)
+// --- Guition JC4827W543 + NV3041A 480x272 (QSPI) -----------------------------
+// Same Arduino_GFX-inside-LovyanGFX pattern as the JC3248W535; see
+// lgfx_panel_nv3041a_agfx.hpp. Backlight is a plain GPIO (BACKLIGHT_PIN=1).
+#include "lgfx_panel_nv3041a_agfx.hpp"
+class LGFX_JC4827W543 : public lgfx::LGFX_Device {
+  lgfx::Panel_NV3041A_AGFX _panel;
+public:
+  LGFX_JC4827W543() { setPanel(&_panel); }
+  // Same accessor name as the JC3248W535 class so display_ui.cpp needs no
+  // per-board branch.
+  lgfx::Panel_AGFX_Frame* panelAXS() { return &_panel; }
+};
+static LGFX_JC4827W543 _tft_instance;
 #elif defined(BOARD_IS_C3_ROUND)
 // --- ESP32-C3 Super Mini + GC9A01 1.28" round 240x240 ------------------------
 // Bare 7-pin SPI module, same wiring as the ST7789 C3 map (SCL=21, SDA=20,

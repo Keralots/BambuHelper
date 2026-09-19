@@ -258,6 +258,15 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_JC4827W543)
+  // Guition JC4827W543 (NV3041A QSPI 480x272)
+  if (pin == 21 || pin == 39 || pin == 40 || pin == 45 || pin == 47 || pin == 48) return false; // display QSPI
+  if (pin == 1) return false;                                                      // backlight
+  if (pin == 3 || pin == 4 || pin == 8 || pin == 38) return false;                 // GT911 touch INT/SCL/SDA/RST
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_C3)
   // LOLIN C3 mini
   if (pin == 6 || pin == 7 || pin == 10 || pin == 20 || pin == 21) return false;   // display SPI

@@ -110,7 +110,7 @@ lgfx::LovyanGFX* tft_ptr = &_tft_instance;
 // Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
 // other boards so the extern declaration in display_ui.h is always satisfied.
 #if PANEL_REQUIRES_AXS_FRAME_SPRITE
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+lgfx::Panel_AGFX_Frame* g_axs_panel = _tft_instance.panelAXS();
 
 // Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
 // initDisplay() (via tft_ptr), then flushed to the panel once per loop()
@@ -127,7 +127,7 @@ static bool g_frame_dirty = true;
 static unsigned long g_last_flush_ms = 0;
 static const unsigned long FRAME_KEEPALIVE_MS = 500;
 #else
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+lgfx::Panel_AGFX_Frame* g_axs_panel = nullptr;
 #endif
 
 void markFrameDirty() {
@@ -144,7 +144,7 @@ void flushFrame() {
   if (!g_frame_dirty && !keepalive_due) return;
   g_axs_panel->pushRawPixels(
     static_cast<uint16_t*>(_frame_sprite.getBuffer()),
-    320u * 480u);
+    (uint32_t)FRAME_SPRITE_W * (uint32_t)FRAME_SPRITE_H);
   g_frame_dirty = false;
   g_last_flush_ms = now;
 #endif
@@ -155,6 +155,12 @@ void flushFrame() {
 // at the sprite level (panel MADCTL stays at 0) while CYD/ws_lcd_200 use real
 // hardware MADCTL via LovyanGFX setRotation().
 static uint8_t sanitizeRotation(uint8_t r) {
+#if defined(BOARD_IS_JC4827W543)
+  // NV3041A + 480x272 frame sprite: 90/270 would make the logical canvas
+  // 272x480 and scramble the raw push. Fold to the nearest 0/180.
+  if (r == 1) return 0;
+  if (r == 3) return 2;
+#endif
   return r;
 }
 
@@ -496,10 +502,11 @@ void initDisplay() {
   // whole sprite to the panel once per loop tick via flushFrame().
   _frame_sprite.setPsram(true);
   _frame_sprite.setColorDepth(16);
-  if (_frame_sprite.createSprite(320, 480)) {
+  if (_frame_sprite.createSprite(FRAME_SPRITE_W, FRAME_SPRITE_H)) {
     _frame_sprite.setTextDatum(MC_DATUM);  // match the tft defaults used below
     tft_ptr = &_frame_sprite;
-    Serial.printf("Display: frame sprite 320x480 allocated in PSRAM, free=%u\n",
+    Serial.printf("Display: frame sprite %dx%d allocated in PSRAM, free=%u\n",
+                  FRAME_SPRITE_W, FRAME_SPRITE_H,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     tft.setRotation(sanitizeRotation(dispSettings.rotation));
     tft.fillScreen(CLR_BG);
@@ -5320,6 +5327,9 @@ static void drawPowerConfirm() {
 #if defined(DISPLAY_320x480)
   const int16_t RR = 72, RT = 16;
   const int16_t YSH = 34;               // raise the whole confirm stack
+#elif defined(DISPLAY_480x272)
+  const int16_t RR = 52, RT = 12;
+  const int16_t YSH = 10;
 #elif defined(DISPLAY_480x480)
   const int16_t RR = 84, RT = 18;
   const int16_t YSH = 0;

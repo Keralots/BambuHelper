@@ -133,6 +133,22 @@ BOARDS = {
         'build_env': 'jc3248w535',
         'board_id': 'jc3248w535',
     },
+    'jc4827w543': {                      # community (Guition 4.3" NV3041A)
+        'build_dir': '.pio/build/jc4827w543',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'jc4827w543',
+        'board_id': 'jc4827w543',
+    },
+    'jc4827w543_16mb': {
+        'build_dir': '.pio/build/jc4827w543_16mb',
+        'bootloader_offset': 0x0,
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'jc4827w543_16mb',
+        'board_id': 'jc4827w543_16mb',
+    },
     'wt32_sc01_plus': {                  # community / experimental (issue #123)
         'build_dir': '.pio/build/wt32_sc01_plus',
         'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
@@ -176,6 +192,8 @@ BOARDS = {
 }
 
 BOARD_ALIASES = {
+    'jc4827w543': 'jc4827w543',
+    'jc4827w543_16mb': 'jc4827w543_16mb',
     's3': 'esp32s3',
     'esp32s3': 'esp32s3',
     's3round': 'esp32s3_round',

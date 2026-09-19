@@ -154,10 +154,20 @@
 // guarded code is AXS-typed (Panel_AXS15231B_AGFX, fixed 320x480) and is 1:1 with
 // JC today - a different full-frame panel (e.g. the CO5300 AMOLED) needs its own
 // path, not this one.
-#if defined(BOARD_IS_JC3248W535)
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_JC4827W543)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
+#endif
+
+// Frame-sprite geometry for the boards above (native panel memory order; the
+// sprite is allocated at this size and rotated at the sprite level).
+#if defined(BOARD_IS_JC4827W543)
+#define FRAME_SPRITE_W  480
+#define FRAME_SPRITE_H  272
+#else
+#define FRAME_SPRITE_W  320
+#define FRAME_SPRITE_H  480
 #endif
 
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
@@ -269,7 +279,8 @@
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
-    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216)
+    defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
+    defined(BOARD_FLASH_16MB)
 #define HAS_FULL_HMS_TABLE  1
 #else
 #define HAS_FULL_HMS_TABLE  0
@@ -372,7 +383,7 @@
 //  Edge glow (border light effect on print complete / failed)
 // =============================================================================
 #define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
-#if defined(BOARD_IS_JC3248W535)
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_JC4827W543)
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
 #elif defined(DISPLAY_ROUND_240)
 #define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges over SPI, 25 fps fine
