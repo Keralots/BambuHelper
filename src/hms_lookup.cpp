@@ -228,6 +228,16 @@ bool hmsIsSelfResolved(uint32_t attr, uint32_t code) {
 }
 
 // ---------------------------------------------------------------------------
+//  Refused command
+// ---------------------------------------------------------------------------
+// 0500_0500_0001_0007 "MQTT Command verification failed". Only control commands
+// are verified - status pushes are exempt - so this is whatever else talks MQTT
+// to the printer, retrying. Severity 1 is why it beat every other filter (#185).
+bool hmsIsRejectedCommand(uint32_t attr, uint32_t code) {
+  return hmsKeyOf(attr, code) == 0x0500050000010007ULL;
+}
+
+// ---------------------------------------------------------------------------
 //  Error badge
 // ---------------------------------------------------------------------------
 uint16_t errorSeverityColor(uint8_t sev) {
@@ -265,6 +275,10 @@ ErrorBadge errorBadgeFor(const BambuState& s) {
     if (hmsIsBaseline(s, s.hms[i].attr, s.hms[i].code)) continue;
     // Listed, never alerts - the printer already handled it (issue #181).
     if (hmsIsSelfResolved(s.hms[i].attr, s.hms[i].code)) continue;
+    // Listed, never alerts - another program's refused command, nothing to act
+    // on here (issue #185). Ours is the exception and still alerts.
+    if (hmsIsRejectedCommand(s.hms[i].attr, s.hms[i].code) &&
+        !s.hmsOwnCmdRejected) continue;
     b.active = true;
     b.severity = sev;
     b.attr = s.hms[i].attr;

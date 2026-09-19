@@ -263,6 +263,10 @@ static bool sendLightCtrl(MqttConn& c, bool on) {
   // H2C/H2D have a second bar (chamber_light2) the app keeps in sync; control both.
   if (printers[c.slotIndex].state.hasSecondLight)
     ok &= sendLightCtrlNode(c, topic, "chamber_light2", on);
+  // Stamped even if the publish failed - the printer may still refuse it (#185).
+  // 0 means "never", so step off it.
+  unsigned long now = millis();
+  printers[c.slotIndex].state.ctrlCmdSentMs = now ? now : 1;
   return ok;
 }
 
@@ -298,6 +302,7 @@ static void clearLiveMetrics(BambuState& s) {
   s.hmsSuppressed = 0;
   s.hmsOverflow = false;
   s.hmsWorstSeverity = 0;
+  s.hmsOwnCmdRejected = false;
 #endif
 }
 
@@ -1260,6 +1265,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     s.hmsCount = 0;
     s.hmsTotal = 0;
     s.hmsSuppressed = 0;
+    bool sawRejectedCmd = false;
     for (JsonObject e : hmsArr) {
       if (!e["attr"].is<unsigned int>() || !e["code"].is<unsigned int>()) continue;
       uint32_t attr = e["attr"].as<unsigned int>();
@@ -1305,12 +1311,23 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
                         undescribed ? "not described by Bambu" : "muted: shown elsewhere");
         continue;
       }
+      // Claim the refusal if it landed right after our own control publish:
+      // errorBadgeFor() mutes everyone else's. Latched, not windowed - the alert
+      // must outlive the window while the code still stands.
+      if (hmsIsRejectedCommand(attr, code)) {
+        sawRejectedCmd = true;
+        if (s.ctrlCmdSentMs != 0 &&
+            millis() - s.ctrlCmdSentMs < HMS_OWN_CMD_WINDOW_MS)
+          s.hmsOwnCmdRejected = true;
+      }
       if (s.hmsTotal < 255) s.hmsTotal++;
       // Every entry is scanned, not just the ones we keep: the baseline set and
       // the worst-severity ranking must see the whole report.
       if (baselineWindow) hmsAddBaseline(s, attr, code);
       hmsInsertSorted(s, attr, code);
     }
+    // Code gone - drop the claim so the next one is judged on its own timing.
+    if (!sawRejectedCmd) s.hmsOwnCmdRejected = false;
     s.hmsOverflow = s.hmsTotal > s.hmsCount;
     // The subset is sorted worst-first, so hms[0] is the worst of the whole
     // report even when the tail was dropped.

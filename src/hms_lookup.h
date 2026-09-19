@@ -109,6 +109,16 @@ bool hmsIsMuted(uint32_t attr, uint32_t code);
 // hmsIsMuted() there is no paired surface to check: nothing is left to act on.
 bool hmsIsSelfResolved(uint32_t attr, uint32_t code);
 
+// Some MQTT client's command was refused by the printer. Reports on another
+// program, not on the machine - listed, never badges, same contract as
+// hmsIsSelfResolved(). Exception: BambuState.hmsOwnCmdRejected, our own refused
+// command, which nothing else here would explain.
+bool hmsIsRejectedCommand(uint32_t attr, uint32_t code);
+
+// How long after our control publish a refusal still counts as ours. One cloud
+// round trip; ties go to alerting.
+#define HMS_OWN_CMD_WINDOW_MS  30000UL
+
 // Feed version stamp of the compiled-in tables, or NULL when none is compiled
 // in. Reported by the portal so a stale table is diagnosable.
 const char* hmsTableVersion(void);
