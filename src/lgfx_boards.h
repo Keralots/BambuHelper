@@ -493,6 +493,72 @@ public:
 };
 static LGFX_WS350 _tft_instance;
 
+#elif defined(BOARD_IS_E32R40T)
+// --- LCDwiki E32R40T (4.0" ESP32-32E, ST7796S 320x480, 4-wire SPI) ----------
+// Classic ESP32-WROOM-32E; same SPI/CS/DC pinout as the CYD. LCD reset ties to
+// EN -> pin_rst=-1. The XPT2046 shares the LCD's SCK/MOSI/MISO, so it sits on
+// the SAME Bus_SPI with bus_shared=true (LovyanGFX save/restores the bus per
+// touch read). The bus muxes the real MISO(12) so the touch can read; the panel
+// stays write-only (readable=false). invert=true assumes IPS (like ws_lcd_350);
+// tester flips if colors are wrong.
+class LGFX_E32R40T : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7796   _panel;
+  lgfx::Bus_SPI        _bus;
+  lgfx::Touch_XPT2046  _touch;
+public:
+  LGFX_E32R40T() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = VSPI_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 14;
+      cfg.pin_mosi   = 13;
+      cfg.pin_miso   = 12;   // real MISO: panel stays write-only (readable=false),
+                             // but the bus must mux MISO for the shared XPT2046 read
+      cfg.pin_dc     = 2;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs    = 15;
+      cfg.pin_rst   = -1;    // tied to EN
+      cfg.pin_busy  = -1;
+      cfg.memory_width  = 320;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 320;
+      cfg.panel_height  = 480;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = 0;   // portrait-native; tester confirms
+      cfg.invert        = true;  // IPS assumption; tester flips if wrong
+      cfg.rgb_order     = false;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    {
+      auto cfg = _touch.config();
+      cfg.spi_host   = VSPI_HOST;   // same host as the LCD
+      cfg.bus_shared = true;        // LovyanGFX arbitrates LCD <-> touch on one bus
+      cfg.pin_sclk   = 14;
+      cfg.pin_mosi   = 13;
+      cfg.pin_miso   = 12;
+      cfg.pin_cs     = 33;
+      cfg.pin_int    = 36;
+      cfg.freq       = 1000000;
+      // x/y ranges irrelevant: firmware uses touch as a boolean tap, discards
+      // coordinates (button_touch_none.cpp).
+      _touch.config(cfg);
+      _panel.setTouch(&_touch);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_E32R40T _tft_instance;
+
 #elif defined(BOARD_IS_SC05X)
 // --- Panlee / Smartpanle SC05_X (ZX2D80CE02S, 2.8" ST7789 240x320) ---------
 // Vendor model mapping:

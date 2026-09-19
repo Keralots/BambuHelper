@@ -179,6 +179,19 @@
 #define BOARD_NEEDS_WIFI_TX_LIMIT  0
 #endif
 
+// A resistive XPT2046 registers a screensaver-wake touch as a long press, which
+// would ramp/save the LED and eat the press instead of waking. Both the
+// separate-HSPI backend (USE_XPT2046) and the shared-bus getTouch path (TOUCH_CS
+// with no capacitive/AXS driver) need hold-to-dim suppressed while asleep (see
+// handleWakeButton() in main.cpp).
+#if defined(USE_XPT2046) || (defined(TOUCH_CS) && !defined(USE_CST816) && \
+    !defined(USE_CST328) && !defined(USE_FT5X06) && !defined(USE_FT6336) && \
+    !defined(USE_AXS_TOUCH))
+#define TOUCH_WAKE_LONGPRESS  1
+#else
+#define TOUCH_WAKE_LONGPRESS  0
+#endif
+
 // Onboard RGB status LED. The colour LED feature itself is board-independent -
 // any board can drive a hand-wired RGB LED or a WS2812 off free GPIOs - so these
 // two capabilities only say "this board already has one soldered on", which buys
@@ -190,7 +203,7 @@
 //   BOARD_HAS_ONBOARD_RGB_PWM    three plain GPIOs, one per colour, three LEDC
 //                                channels (CYD family, common anode)
 //   BOARD_HAS_ONBOARD_RGB_PIXEL  one data line into a WS2812, bit-banged over RMT
-#if defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432)
+#if defined(DISPLAY_CYD) || defined(BOARD_IS_TZT_2432) || defined(BOARD_IS_E32R40T)
 #define BOARD_HAS_ONBOARD_RGB_PWM    1
 #else
 #define BOARD_HAS_ONBOARD_RGB_PWM    0
@@ -253,7 +266,11 @@
 // own. So the rule on a C3 is simply "codes on the screen, sentences in the
 // portal" - which is what its HMS codes already did.
 #define HAS_HMS_UI            1
-#if BOARD_IS_C3
+// E32R40T is the first 4 MB board on the 320x480 layout, which links the ~107 KB
+// inter_22 font the 240x* boards skip; dropping the print_error table (~36 KB)
+// keeps firmware.bin under the min_spiffs slot. Same "codes on screen, sentences
+// in the portal" trade as the C3s.
+#if BOARD_IS_C3 || defined(BOARD_IS_E32R40T)
 #define HAS_ERROR_TEXT_TABLE  0
 #else
 #define HAS_ERROR_TEXT_TABLE  1
@@ -350,8 +367,8 @@
 // =============================================================================
 #if defined(BOARD_IS_DIY)
 #define BUTTON_DEFAULT_PIN    0       // DIY: no button assumed; user configures in web UI
-#elif defined(DISPLAY_240x320)
-#define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
+#elif defined(DISPLAY_240x320) || defined(BOARD_IS_E32R40T)
+#define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED. E32R40T: GPIO4 is the amp enable.
 #elif defined(BOARD_IS_SENSECAP)
 #define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
@@ -458,6 +475,11 @@
 // a real I2S audio amp on LRCK=35/BCLK=36/DOUT=37; a dedicated backend could
 // drive it later, but audio is unverifiable without the hardware.)
 #define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_E32R40T)
+// LCDwiki E32R40T: audio is a DAC on GPIO26 + amp enable on GPIO4; the GPIO
+// tone backend drives neither, so a default would be silent. Disable (0); the
+// generic 320x480 fallback would otherwise hand out the S3's GPIO 5.
+#define BUZZER_DEFAULT_PIN    0
 #else
 #define BUZZER_DEFAULT_PIN    5       // S3: GPIO 5
 #endif
@@ -491,6 +513,10 @@
 #define LED_DEFAULT_PIN 0     // DIY: no status LED assumed; user configures in web UI
 #elif defined(DISPLAY_CYD)
 #define LED_DEFAULT_PIN 22    // CYD: GPIO 22 on P3 connector
+#elif defined(BOARD_IS_E32R40T)
+// Onboard LED is RGB (22/16/17); the led.cpp deny-list reserves 22 and the
+// claim-back only exempts RGB mode, so single-mode default off. RGB mode works.
+#define LED_DEFAULT_PIN 0
 #elif defined(BOARD_IS_SENSECAP)
 #define LED_DEFAULT_PIN 0     // SenseCAP Indicator: no dedicated LED pin (user must configure)
 #else
@@ -504,7 +530,11 @@
 // CYD / TZT onboard RGB is common ANODE - the shared leg sits on 3V3, so a LOW
 // level lights the channel. Red moves to GPIO 22 on the ESP32-32E clone, which
 // is a runtime variant (dispSettings.cyd32eVariant), resolved in led.cpp.
+#if defined(BOARD_IS_E32R40T)
+#define ONBOARD_RGB_R_PIN     22   // 4.0" 32E: red on GPIO22 (GPIO4 is the amp enable)
+#else
 #define ONBOARD_RGB_R_PIN     4
+#endif
 #define ONBOARD_RGB_G_PIN     16
 #define ONBOARD_RGB_B_PIN     17
 #define ONBOARD_RGB_ANODE     1
