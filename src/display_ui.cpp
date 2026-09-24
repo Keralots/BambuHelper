@@ -1120,7 +1120,7 @@ static void drawStringClipped(const char* s, int16_t x, int16_t y, int16_t maxW)
     tft.drawString(s, x, y);
     return;
   }
-  char buf[64];
+  char buf[96];   // 300 px of narrow glyphs is ~75 bytes
   size_t n = strlen(s);
   if (n >= sizeof(buf)) n = sizeof(buf) - 1;
   memcpy(buf, s, n);
@@ -1960,11 +1960,11 @@ static void drawIdle() {
   //  Portrait: horizontal strip below the gauges.
   //  Landscape: right-column vertical sidebar (drawAmsZone handles it).
 #if defined(LAYOUT_HAS_AMS_STRIP)
-  if (s.ams.present && s.ams.unitCount > 0 && isLandscape()) {
+  if (s.ams.present && s.ams.trayUnitCount > 0 && isLandscape()) {
     // Reuse the printing screen's landscape sidebar renderer. Its internal
     // caches gate the redraw, so this is a no-op when nothing changed.
     drawAmsZone(s, forceRedraw);
-  } else if (s.ams.present && s.ams.unitCount > 0 && !isLandscape()) {
+  } else if (s.ams.present && s.ams.trayUnitCount > 0 && !isLandscape()) {
     static uint8_t  prevIdleAmsCount = 0;
     static uint8_t  prevIdleAmsActive = 255;
     static uint16_t prevIdleAmsColors[AMS_MAX_TRAYS] = {0};
@@ -1974,10 +1974,10 @@ static void drawIdle() {
 
     bool enhanced = useEnhancedPortraitAms(s.ams);
     bool amsChanged = forceRedraw ||
-                      (s.ams.unitCount != prevIdleAmsCount) ||
+                      (s.ams.trayUnitCount != prevIdleAmsCount) ||
                       (s.ams.activeTray != prevIdleAmsActive);
     if (!amsChanged) {
-      for (uint8_t i = 0; i < s.ams.unitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
+      for (uint8_t i = 0; i < s.ams.trayUnitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
         amsChanged = (s.ams.trays[i].present != prevIdleAmsPresent[i]) ||
                      (s.ams.trays[i].colorRgb565 != prevIdleAmsColors[i]) ||
                      (s.ams.trays[i].remain != prevIdleAmsRemain[i]);
@@ -1988,7 +1988,7 @@ static void drawIdle() {
     }
 
     if (amsChanged) {
-      prevIdleAmsCount = s.ams.unitCount;
+      prevIdleAmsCount = s.ams.trayUnitCount;
       prevIdleAmsActive = s.ams.activeTray;
       for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
         prevIdleAmsPresent[i] = s.ams.trays[i].present;
@@ -2102,9 +2102,9 @@ static void drawIdle() {
 
 static uint8_t  prevAmsUnitCount = 0;
 static uint8_t  prevAmsActive    = 255;
-static uint8_t  prevAmsUnitIds[AMS_MAX_UNITS] = {0};
-static uint8_t  prevAmsUnitTrayCounts[AMS_MAX_UNITS] = {0};
-static bool     prevAmsUnitPresent[AMS_MAX_UNITS] = {false};
+static uint8_t  prevAmsUnitIds[AMS_TRAY_UNITS] = {0};
+static uint8_t  prevAmsUnitTrayCounts[AMS_TRAY_UNITS] = {0};
+static bool     prevAmsUnitPresent[AMS_TRAY_UNITS] = {false};
 static uint16_t prevAmsTrayColors[AMS_MAX_TRAYS] = {0};
 static bool     prevAmsTrayPresent[AMS_MAX_TRAYS] = {false};
 static int8_t   prevAmsTrayRemain[AMS_MAX_TRAYS];  // init in drawAmsZone
@@ -2295,8 +2295,8 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
   uint16_t bg = dispSettings.bgColor;
 
   const bool unitPresent = ams.present
-                        && unitIndex < AMS_MAX_UNITS
-                        && unitIndex < ams.unitCount
+                        && unitIndex < AMS_TRAY_UNITS
+                        && unitIndex < ams.trayUnitCount
                         && ams.units[unitIndex].present;
 
   // Number of bars = the unit's actual tray count, so an AMS HT (1 slot) draws
@@ -2310,9 +2310,9 @@ void drawAmsBarsGauge(int16_t cx, int16_t cy, int16_t radius,
   // arrives, then 1). That transition doesn't always come with forceRedraw, so
   // the leftover bars would ghost; track the last-drawn count per unit and wipe
   // the slot whenever it changes as well.
-  static uint8_t prevBars[AMS_MAX_UNITS] = { 0, 0, 0, 0 };
-  bool clear = forceRedraw || (unitIndex < AMS_MAX_UNITS && prevBars[unitIndex] != bars);
-  if (unitIndex < AMS_MAX_UNITS) prevBars[unitIndex] = bars;
+  static uint8_t prevBars[AMS_TRAY_UNITS] = { 0, 0, 0, 0 };
+  bool clear = forceRedraw || (unitIndex < AMS_TRAY_UNITS && prevBars[unitIndex] != bars);
+  if (unitIndex < AMS_TRAY_UNITS) prevBars[unitIndex] = bars;
   if (clear) {
     // Rect clear (not circle) - bars are top-anchored and reach into the
     // corners of the bounding square, where a circle of radius+2 would miss
@@ -2365,13 +2365,13 @@ static void drawAmsStrip(const AmsState& ams,
                          int16_t zoneY, int16_t zoneH, int16_t barH,
                          int16_t barMaxW,
                          bool showFilamentTypes) {
-  uint8_t units = ams.unitCount;
+  uint8_t units = ams.trayUnitCount;
   // Font 2 is 16px tall but our AMS labels sit near the bottom edge of the
   // nominal zone, so their descender rows fall outside zoneH. Clear a few
   // extra rows so toggling between enhanced/default layouts doesn't leave
   // residue pixels below the new layout.
   tft.fillRect(0, zoneY, LY_W, zoneH + 7, CLR_BG);
-  if (units == 0 || units > AMS_MAX_UNITS) return;
+  if (units == 0 || units > AMS_TRAY_UNITS) return;
 
   // A lone AMS unit doesn't need an "AMS A" caption - drop it and grow the
   // bars into the reclaimed band (portrait only; landscape is drawAmsZone).
@@ -2485,9 +2485,9 @@ static void drawAmsStrip(const AmsState& ams,
 // With 4+ units even 320 wide gets tight (<15px bars), so cap there.
 static bool useEnhancedPortraitAms(const AmsState& ams) {
 #if defined(DISPLAY_320x480)
-  return ams.unitCount >= 1 && ams.unitCount <= 3;
+  return ams.trayUnitCount >= 1 && ams.trayUnitCount <= 3;
 #else
-  return ams.unitCount >= 1 && ams.unitCount <= 2;
+  return ams.trayUnitCount >= 1 && ams.trayUnitCount <= 2;
 #endif
 }
 
@@ -2520,8 +2520,8 @@ static void drawAmsZone(const BambuState& s, bool force) {
                                     prevAmsErrorBadgeId != errorBadgeIdNow ||
                                     strncmp(prevAmsGcodeStateText, s.gcodeState, 15) != 0);
 
-  bool unitLayoutChanged = (s.ams.unitCount != prevAmsUnitCount);
-  for (uint8_t i = 0; i < AMS_MAX_UNITS && !unitLayoutChanged; i++) {
+  bool unitLayoutChanged = (s.ams.trayUnitCount != prevAmsUnitCount);
+  for (uint8_t i = 0; i < AMS_TRAY_UNITS && !unitLayoutChanged; i++) {
     unitLayoutChanged = (s.ams.units[i].present != prevAmsUnitPresent[i]) ||
                         (s.ams.units[i].id != prevAmsUnitIds[i]) ||
                         (s.ams.units[i].trayCount != prevAmsUnitTrayCounts[i]);
@@ -2529,10 +2529,10 @@ static void drawAmsZone(const BambuState& s, bool force) {
 
   bool amsChanged = force || badgeChanged || unitLayoutChanged;
   if (!amsChanged) {
-    amsChanged = (s.ams.unitCount != prevAmsUnitCount) ||
+    amsChanged = (s.ams.trayUnitCount != prevAmsUnitCount) ||
                  (s.ams.activeTray != prevAmsActive);
     if (!amsChanged) {
-      for (uint8_t i = 0; i < s.ams.unitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
+      for (uint8_t i = 0; i < s.ams.trayUnitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
         amsChanged = (s.ams.trays[i].present != prevAmsTrayPresent[i]) ||
                      (s.ams.trays[i].colorRgb565 != prevAmsTrayColors[i]) ||
                      (s.ams.trays[i].remain != prevAmsTrayRemain[i]);
@@ -2552,9 +2552,9 @@ static void drawAmsZone(const BambuState& s, bool force) {
   prevAmsGcodeStateText[15] = '\0';
 
   // Save state for next comparison (AMS trays)
-  prevAmsUnitCount = s.ams.unitCount;
+  prevAmsUnitCount = s.ams.trayUnitCount;
   prevAmsActive    = s.ams.activeTray;
-  for (uint8_t i = 0; i < AMS_MAX_UNITS; i++) {
+  for (uint8_t i = 0; i < AMS_TRAY_UNITS; i++) {
     prevAmsUnitPresent[i] = s.ams.units[i].present;
     prevAmsUnitIds[i] = s.ams.units[i].id;
     prevAmsUnitTrayCounts[i] = s.ams.units[i].trayCount;
@@ -2567,7 +2567,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
     prevAmsTrayTypes[i][15] = '\0';
   }
 
-  uint8_t units = s.ams.unitCount;
+  uint8_t units = s.ams.trayUnitCount;
 
   if (landscape) {
     // =====================================================================
@@ -2628,7 +2628,7 @@ static void drawAmsZone(const BambuState& s, bool force) {
                    amsBot - LY_LAND_AMS_TOP, CLR_BG);
     }
 
-    if (units == 0 || units > AMS_MAX_UNITS) return;
+    if (units == 0 || units > AMS_TRAY_UNITS) return;
 
     const int16_t totalH = amsBot - LY_LAND_AMS_TOP;
     const int16_t groupGap = 6;
@@ -2996,7 +2996,7 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
       (gt >= GAUGE_AMS_BARS_1 && gt <= GAUGE_AMS_BARS_4)) {
     const bool isBars = (gt >= GAUGE_AMS_BARS_1);
     uint8_t ui = isBars ? (gt - GAUGE_AMS_BARS_1) : (gt - GAUGE_AMS_FILAMENT_1);
-    if (s.ams.present != p.ams.present || s.ams.unitCount != p.ams.unitCount) return true;
+    if (s.ams.present != p.ams.present || s.ams.trayUnitCount != p.ams.trayUnitCount) return true;
     const AmsUnit& cu = s.ams.units[ui]; const AmsUnit& pu = p.ams.units[ui];
     // humidityRaw as well as the legacy level: the filament tile tints its
     // humidity dot through amsHumidityColor(), which prefers the raw RH when
@@ -4123,9 +4123,9 @@ static void drawPrinting() {
 #if defined(LAYOUT_HAS_AMS_STRIP)
   static uint8_t prevPrintingUnits = 0xFF;
   bool unitsZoneChanged = (prevPrintingUnits == 0xFF) ||
-                          ((prevPrintingUnits >= 1) != (s.ams.unitCount >= 1)) ||
-                          ((prevPrintingUnits <= 2) != (s.ams.unitCount <= 2));
-  prevPrintingUnits = s.ams.unitCount;
+                          ((prevPrintingUnits >= 1) != (s.ams.trayUnitCount >= 1)) ||
+                          ((prevPrintingUnits <= 2) != (s.ams.trayUnitCount <= 2));
+  prevPrintingUnits = s.ams.trayUnitCount;
   if (unitsZoneChanged) {
     stateChanged = true;   // forces header repaint with new badge layout
     etaChanged   = true;   // forces ETA clear at new width
@@ -4145,7 +4145,7 @@ static void drawPrinting() {
   // Effective Y positions — landscape on CYD uses 240x240-style positions
 #if defined(LAYOUT_HAS_AMS_STRIP)
   const bool land = isLandscape();
-  const uint8_t units = s.ams.unitCount;
+  const uint8_t units = s.ams.trayUnitCount;
   // 8-slot landscape mode: drops the AMS sidebar in favour of a 2x4 gauge
   // grid spanning the full canvas. Everything that branches on landAmsCol
   // (header clear width, ETA/bot-bar widths, sidebar badge) naturally folds
@@ -4272,7 +4272,7 @@ static void drawPrinting() {
   // === AMS-view toggle (240x240 only): swap gauge row 2 for AMS strip ===
 #if defined(LAYOUT_240x240_AMS_VIEW)
   const bool amsViewActive  = p.config.amsView;
-  const bool amsHasContent  = s.ams.present && s.ams.unitCount > 0;
+  const bool amsHasContent  = s.ams.present && s.ams.trayUnitCount > 0;
   const bool amsStripVisible = amsViewActive && amsHasContent;
   static bool prevAmsViewActive   = false;
   static bool prevAmsStripVisible = false;
@@ -4416,7 +4416,7 @@ static void drawPrinting() {
                                                     : (gt - GAUGE_AMS_FILAMENT_1);
               const bool isBars = (gt >= GAUGE_AMS_BARS_1);
               needDraw = s.ams.present != prevState.ams.present
-                      || s.ams.unitCount != prevState.ams.unitCount;
+                      || s.ams.trayUnitCount != prevState.ams.trayUnitCount;
               if (!needDraw) {
                 const AmsUnit &cu = s.ams.units[ui], &pu = prevState.ams.units[ui];
                 // Bars gauge does not show humidity, so skip the humidity diff
@@ -4582,7 +4582,7 @@ static void drawPrinting() {
      || (!isLandscape() && dispSettings.portrait9Slots)
 #endif
         ;
-  if (!skipAmsZone && (isLandscape() || (s.ams.present && s.ams.unitCount > 0))) {
+  if (!skipAmsZone && (isLandscape() || (s.ams.present && s.ams.trayUnitCount > 0))) {
     drawAmsZone(s, amsForce);
   }
 #endif
@@ -4595,11 +4595,11 @@ static void drawPrinting() {
   if (amsStripVisible) {
     bool needDraw = forceRedraw || amsStripDirty;
     if (!needDraw) {
-      needDraw = (s.ams.unitCount != prevState.ams.unitCount)
+      needDraw = (s.ams.trayUnitCount != prevState.ams.trayUnitCount)
               || (s.ams.activeTray != prevState.ams.activeTray);
     }
     if (!needDraw) {
-      for (int u = 0; u < AMS_MAX_UNITS && !needDraw; u++) {
+      for (int u = 0; u < AMS_TRAY_UNITS && !needDraw; u++) {
         const AmsUnit& cu = s.ams.units[u];
         const AmsUnit& pu = prevState.ams.units[u];
         if (cu.present != pu.present || cu.trayCount != pu.trayCount) needDraw = true;
@@ -5078,7 +5078,7 @@ static void drawFinished() {
       // Trim to canvas width (font 2 ~9px/char nominal). 25 chars suited 240
       // portrait but landscape (320) can fit more — adapt to actual width by
       // shrinking until the rendered string fits in `scrW - 16`.
-      char truncName[64];
+      char truncName[96];   // 304 px of narrow glyphs is ~76 bytes
       strncpy(truncName, finName, sizeof(truncName) - 1);
       truncName[sizeof(truncName) - 1] = '\0';
       utf8TrimPartial(truncName);
@@ -5118,11 +5118,14 @@ static void drawFinished() {
     // 240x240: only ~11px to bottom bar — single line only.
 #if defined(LAYOUT_HAS_AMS_STRIP)
     const bool twoLineCost = (finishTariff > 0.0f) &&
-                             (land || !(s.ams.present && s.ams.unitCount > 0));
+                             (land || !(s.ams.present && s.ams.trayUnitCount > 0));
 #else
     const bool twoLineCost = false;
 #endif
-    const int16_t bandH = twoLineCost ? 34 : 18;
+    // FONT_BODY is 20 px tall. The old 16 px baseline gap made the kWh and
+    // cost glyphs overlap by roughly 4 px on the 320x240 finish screen.
+    constexpr int16_t costLineGap = 22;
+    const int16_t bandH = twoLineCost ? 43 : 18;
     tft.fillRect(0, kwhY - 9, scrW, bandH, CLR_BG);
     if (finishKwh >= 0.0f) {
       setFont(tft, FONT_BODY);
@@ -5149,7 +5152,7 @@ static void drawFinished() {
         snprintf(costBuf, sizeof(costBuf), "%.2f %s",
                  finishKwh * finishTariff, tasmotaCurrencySymbol());
         tft.setTextDatum(MC_DATUM);
-        tft.drawString(costBuf, cx, kwhY + 16);
+        tft.drawString(costBuf, cx, kwhY + costLineGap);
       }
     }
   }
@@ -5157,7 +5160,7 @@ static void drawFinished() {
 
   // === AMS strip (portrait, layouts with permanent AMS strip) ===
 #if defined(LAYOUT_HAS_AMS_STRIP)
-  if (!land && s.ams.present && s.ams.unitCount > 0) {
+  if (!land && s.ams.present && s.ams.trayUnitCount > 0) {
     static uint8_t  prevFinAmsCount = 0;
     static uint8_t  prevFinAmsActive = 255;
     static uint16_t prevFinAmsColors[AMS_MAX_TRAYS] = {0};
@@ -5165,10 +5168,10 @@ static void drawFinished() {
     static int8_t   prevFinAmsRemain[AMS_MAX_TRAYS];
 
     bool amsChanged = forceRedraw ||
-                      (s.ams.unitCount != prevFinAmsCount) ||
+                      (s.ams.trayUnitCount != prevFinAmsCount) ||
                       (s.ams.activeTray != prevFinAmsActive);
     if (!amsChanged) {
-      for (uint8_t i = 0; i < s.ams.unitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
+      for (uint8_t i = 0; i < s.ams.trayUnitCount * AMS_TRAYS_PER_UNIT && !amsChanged; i++) {
         amsChanged = (s.ams.trays[i].present != prevFinAmsPresent[i]) ||
                      (s.ams.trays[i].colorRgb565 != prevFinAmsColors[i]) ||
                      (s.ams.trays[i].remain != prevFinAmsRemain[i]);
@@ -5176,7 +5179,7 @@ static void drawFinished() {
     }
 
     if (amsChanged) {
-      prevFinAmsCount = s.ams.unitCount;
+      prevFinAmsCount = s.ams.trayUnitCount;
       prevFinAmsActive = s.ams.activeTray;
       for (uint8_t i = 0; i < AMS_MAX_TRAYS; i++) {
         prevFinAmsPresent[i] = s.ams.trays[i].present;
@@ -5186,7 +5189,7 @@ static void drawFinished() {
       // Finished screen zone is too short (45px, barH=26) to fit filament-type
       // labels comfortably. For a single AMS we still shrink the bar cap so it
       // renders as a rectangle rather than near-square.
-      int16_t finCap = (s.ams.unitCount == 1) ? 20 : LY_AMS_BAR_MAX_W;
+      int16_t finCap = (s.ams.trayUnitCount == 1) ? 20 : LY_AMS_BAR_MAX_W;
       drawAmsStrip(s.ams, LY_FIN_AMS_Y, LY_FIN_AMS_H, LY_FIN_AMS_BAR_H, finCap);
       markFrameDirty();
     }

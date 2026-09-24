@@ -150,17 +150,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
 
   // --- After-print ---
   {
+    // "Disable screensaver" is its own checkbox now, independent of the
+    // finish-timeout dropdown, so the timeout keeps its own stored value.
     uint16_t fm = dpSettings.finishDisplayMins;
-    bool keepon = dpSettings.keepDisplayOn;
-    bool isPreset = (!keepon && (fm == 0 || fm == 1 || fm == 3 || fm == 5 || fm == 10));
-    if (strcmp(name, "AP_CLOCK0") == 0)    { out = (!keepon && fm == 0) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_F1") == 0)        { out = (!keepon && fm == 1) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_F3") == 0)        { out = (!keepon && fm == 3) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_F5") == 0)        { out = (!keepon && fm == 5) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_F10") == 0)       { out = (!keepon && fm == 10) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_CUSTOM") == 0)    { out = (!keepon && !isPreset && fm > 0) ? "selected" : ""; return true; }
-    if (strcmp(name, "AP_KEEPON") == 0)    { out = keepon ? "selected" : ""; return true; }
-    if (strcmp(name, "CUSTOM_DISP") == 0)  { out = (!keepon && !isPreset && fm > 0) ? "block" : "none"; return true; }
+    bool isPreset = (fm == 0 || fm == 1 || fm == 3 || fm == 5 || fm == 10);
+    if (strcmp(name, "KEEPON") == 0)       { out = dpSettings.keepDisplayOn ? "checked" : ""; return true; }
+    if (strcmp(name, "AP_WRAP_DISP") == 0) { out = dpSettings.keepDisplayOn ? "none" : "block"; return true; }
+    if (strcmp(name, "AP_CLOCK0") == 0)    { out = (fm == 0) ? "selected" : ""; return true; }
+    if (strcmp(name, "AP_F1") == 0)        { out = (fm == 1) ? "selected" : ""; return true; }
+    if (strcmp(name, "AP_F3") == 0)        { out = (fm == 3) ? "selected" : ""; return true; }
+    if (strcmp(name, "AP_F5") == 0)        { out = (fm == 5) ? "selected" : ""; return true; }
+    if (strcmp(name, "AP_F10") == 0)       { out = (fm == 10) ? "selected" : ""; return true; }
+    if (strcmp(name, "AP_CUSTOM") == 0)    { out = (!isPreset && fm > 0) ? "selected" : ""; return true; }
+    if (strcmp(name, "CUSTOM_DISP") == 0)  { out = (!isPreset && fm > 0) ? "block" : "none"; return true; }
     if (strcmp(name, "FMINS") == 0)        { out = String(fm); return true; }
     // Destination after the finish screen: clock (default) or display+LED off.
     if (strcmp(name, "AF_CLOCK") == 0)     { out = dpSettings.showClockAfterFinish ? "selected" : ""; return true; }

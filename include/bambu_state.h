@@ -20,9 +20,18 @@ enum PrinterGcodeState : uint8_t {
 inline bool isCloudMode(ConnMode m) { return m == CONN_CLOUD || m == CONN_CLOUD_ALL; }
 
 // ── AMS (Automatic Material System) ──────────────────────────────────────────
-#define AMS_MAX_UNITS      4
+// Unit-level data (id / temp / humidity / drying) is kept for more units than
+// tray data. An H2 with 3 AMS 2 Pro + 2 AMS HT reports FIVE units (ids 0, 1, 2,
+// 128, 129); the fifth used to be dropped whole, so a drying AMS HT #2 was
+// invisible - no drying screen, no (x/y) counter, and the display slept through
+// it. Tray slots stay at four: the AMS bars, the AMS gauges (GAUGE_AMS_*_1..4)
+// and the saved gauge-slot values are all built around four groups of four.
+// Units past AMS_TRAY_UNITS still report temp/humidity/drying; their trays are
+// not stored, and the feeding one is captured out-of-band in ovTray below.
+#define AMS_MAX_UNITS      6
+#define AMS_TRAY_UNITS     4
 #define AMS_TRAYS_PER_UNIT 4
-#define AMS_MAX_TRAYS      (AMS_MAX_UNITS * AMS_TRAYS_PER_UNIT)
+#define AMS_MAX_TRAYS      (AMS_TRAY_UNITS * AMS_TRAYS_PER_UNIT)
 
 // activeTray sentinel: the feeding tray belongs to an AMS unit that didn't
 // fit in units[] (5+ units, e.g. a 2nd AMS HT on H2 series). Tray data is
@@ -50,9 +59,10 @@ struct AmsUnit {
 
 struct AmsState {
   bool     present;               // any AMS data received
-  uint8_t  unitCount;             // detected AMS units (0-4)
+  uint8_t  unitCount;             // detected AMS units (0..AMS_MAX_UNITS)
+  uint8_t  trayUnitCount;         // units that own tray slots (0..AMS_TRAY_UNITS)
   uint8_t  activeTray;            // 0-15, 253 = overflow unit (see ovTray), 254 = external spool, 255 = none
-  AmsTray  trays[AMS_MAX_TRAYS];  // indexed by unit*4 + trayId
+  AmsTray  trays[AMS_MAX_TRAYS];  // indexed by unit*4 + trayId (first AMS_TRAY_UNITS units only)
   AmsUnit  units[AMS_MAX_UNITS];  // unit-level data (indexed sequentially)
   AmsTray  ovTray;                // feeding tray when activeTray == AMS_TRAY_OVERFLOW
   uint8_t  ovUnitId;              // raw AMS unit id ovTray was captured from (255 = none)
@@ -130,7 +140,7 @@ struct BambuState {
   float bedTemp;
   float bedTarget;
   float chamberTemp;
-  char subtaskName[48];
+  char subtaskName[128];      // 48 cut before the screen did: a real H2C name measured 47 chars (#187)
   bool caliPrintType;         // print_type == "system" (device-initiated calibration job)
   bool caliSubtask;           // subtask_name ends with "_calib_mode" (Studio calibration wizard job)
   bool caliGcodeFile;         // gcode_file is a built-in calibration gcode (auto_cali_for_user / extrusion_cali)
@@ -167,6 +177,8 @@ struct BambuState {
   int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
   bool hasSecondLight;        // true if printer reports chamber_light2 (H2C/H2D dual bar)
   unsigned long lightOffDueMs; // millis() deadline for a scheduled light-off, 0 = none pending
+  unsigned long ctrlCmdSentMs; // millis() of our last control publish (ledctrl), 0 = never.
+                               // Only control commands are authorization-checked (#185)
 #if HAS_HMS_UI
   uint32_t printError;        // print.print_error, 0 = none
   bool printErrorSeen;        // a value has been observed on this connection.
@@ -192,6 +204,8 @@ struct BambuState {
                               // more severe than what was kept.
   HmsEntry hmsBaseline[HMS_BASELINE_MAX];  // standing codes, never alert
   uint8_t  hmsBaselineCount;
+  bool     hmsOwnCmdRejected; // standing 0500-0500-0001-0007 is ours, not another
+                              // program's - latched while the code stands (#185)
   bool     hmsBaselineSaturated;  // more than HMS_BASELINE_MAX standing codes.
                                   // We can no longer tell a dropped baseline
                                   // member from a new code, so everything on

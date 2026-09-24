@@ -84,8 +84,8 @@ function saveWifi(){
 //  Field IDs (audited against web_server.cpp, NOT the design handoff README):
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
 //              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
-//    Display:  bright, nighten, nstart, nend, nbright, ssbright, afterprint,
-//              fmins, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
+//    Display:  bright, nighten, nstart, nend, nbright, ssbright, keepon, afterprint,
+//              fmins, afterfin, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
 //              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -505,7 +505,13 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>After a print completes</h3></div></div>
+    <div class="card-head"><div><h3>Screensaver &amp; sleep</h3><p>When the display leaves the printer screen for the clock screensaver, or turns off. Applies after a print and whenever the device sits idle.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="keepon" value="1" %KEEPON% onchange="toggleSetting('keepon',this.checked);toggleAfterPrint()">
+      <label for="keepon">Disable screensaver (display always on)</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">The clock screensaver never appears and the display never sleeps - the printer screen stays up. Pick this on a board with no button or touchscreen, where there is no way to wake the display back up.</div>
+    <div id="afterPrintWrap" style="display:%AP_WRAP_DISP%">
     <div class="field">
       <label for="afterprint">When the print finishes</label>
       <select id="afterprint" onchange="toggleAfterPrint()">
@@ -515,7 +521,6 @@ R"rawliteral(
         <option value="5" %AP_F5%>Show finish screen for 5 minutes</option>
         <option value="10" %AP_F10%>Show finish screen for 10 minutes</option>
         <option value="custom" %AP_CUSTOM%>Custom duration</option>
-        <option value="keepon" %AP_KEEPON%>Keep finish screen visible</option>
       </select>
     </div>
     <div id="customMinsWrap" class="field" style="display:%CUSTOM_DISP%">
@@ -529,6 +534,7 @@ R"rawliteral(
         <option value="off" %AF_OFF%>Turn display and LED off</option>
       </select>
       <div class="hint">Turning the display off needs a button or touchscreen to wake the device. A new print wakes it automatically.</div>
+    </div>
     </div>
     <label class="check-row">
       <input type="checkbox" id="dack" value="1" %DACK% onchange="toggleSetting('dack',this.checked)">

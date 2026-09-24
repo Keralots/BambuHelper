@@ -167,10 +167,7 @@ static void readDisplayFromForm() {
   if (server.hasArg("warn_clr"))
     dispSettings.warnColor = htmlToRgb565(server.arg("warn_clr").c_str());
   dpSettings.keepDisplayOn = server.hasArg("keepon");
-  // "Keep finish screen visible" sends no clock arg - preserve the stored
-  // clock-vs-off destination instead of silently resetting it to off.
-  if (!dpSettings.keepDisplayOn)
-    dpSettings.showClockAfterFinish = server.hasArg("clock");
+  dpSettings.showClockAfterFinish = server.hasArg("clock");
   dpSettings.doorAckEnabled = server.hasArg("dack");
   dpSettings.keepPrintScreen = server.hasArg("kps");
   dpSettings.finishShowTime = server.hasArg("fintm");
@@ -698,6 +695,8 @@ static void handleDebug() {
     }
     p["hms_baseline_n"] = st.hmsBaselineCount;
     if (st.hmsBaselineSaturated) p["hms_baseline_saturated"] = true;
+    // Flips the badge answer below, so the dump has to carry it (issue #185).
+    if (st.hmsOwnCmdRejected) p["hms_own_cmd_rejected"] = true;
     // What the on-screen badge resolves to, so a "why is nothing showing"
     // report can be answered without a panel in front of you.
     {

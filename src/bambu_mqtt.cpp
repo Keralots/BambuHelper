@@ -263,6 +263,10 @@ static bool sendLightCtrl(MqttConn& c, bool on) {
   // H2C/H2D have a second bar (chamber_light2) the app keeps in sync; control both.
   if (printers[c.slotIndex].state.hasSecondLight)
     ok &= sendLightCtrlNode(c, topic, "chamber_light2", on);
+  // Stamped even if the publish failed - the printer may still refuse it (#185).
+  // 0 means "never", so step off it.
+  unsigned long now = millis();
+  printers[c.slotIndex].state.ctrlCmdSentMs = now ? now : 1;
   return ok;
 }
 
@@ -298,6 +302,7 @@ static void clearLiveMetrics(BambuState& s) {
   s.hmsSuppressed = 0;
   s.hmsOverflow = false;
   s.hmsWorstSeverity = 0;
+  s.hmsOwnCmdRejected = false;
 #endif
 }
 
@@ -365,12 +370,15 @@ static void parseTrayFields(JsonObject tray, AmsTray& t, uint8_t logIdx) {
 static uint8_t normalizeTrayIndex(const AmsState& ams,
                                   uint8_t rawUnitId, uint8_t trayInUnit) {
   if (trayInUnit >= AMS_TRAYS_PER_UNIT) return 255;
-  for (uint8_t i = 0; i < ams.unitCount; i++) {
+  // Only the first AMS_TRAY_UNITS units own tray slots. A match past that has
+  // unit-level data but no trays[] entry, so it must fall through to the
+  // overflow capture rather than index off the end of the array.
+  for (uint8_t i = 0; i < ams.unitCount && i < AMS_TRAY_UNITS; i++) {
     if (ams.units[i].id == rawUnitId)
       return i * AMS_TRAYS_PER_UNIT + trayInUnit;
   }
   // Fallback: AMS2 compat (rawId 0-3 == seqIdx)
-  if (rawUnitId < AMS_MAX_UNITS)
+  if (rawUnitId < AMS_TRAY_UNITS)
     return rawUnitId * AMS_TRAYS_PER_UNIT + trayInUnit;
   return 255;
 }
@@ -681,6 +689,11 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
               if (u.dryRemainMin > 0) s.ams.anyDrying = true;
               unitIdx++;
             }
+            // Tray-bearing units: derived here rather than in the tray pass so
+            // it is also correct on a partial update that carries the unit list
+            // without any "tray" arrays.
+            s.ams.trayUnitCount = s.ams.unitCount < AMS_TRAY_UNITS
+                                  ? s.ams.unitCount : AMS_TRAY_UNITS;
             if (unitIdx > 0) s.lastUpdate = millis();  // AMS data = connection alive
           }
 
@@ -697,7 +710,10 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             unitIdx = 0;
             for (JsonObject unit : units) {
               if (!unit["id"].is<const char*>()) continue;
-              if (unitIdx >= AMS_MAX_UNITS) continue;
+              // Tray slots only exist for the first AMS_TRAY_UNITS units. The
+              // rest keep their unit-level data from pass 1; a tray of theirs
+              // that is actually feeding is picked up by the overflow capture.
+              if (unitIdx >= AMS_TRAY_UNITS) continue;
               uint8_t seqIdx = unitIdx;
               unitIdx++;
 
@@ -799,8 +815,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             MQTT_LOG("activeTray: tray_now=%d -> normalized=%d", rawTrayNow, s.ams.activeTray);
           }
 
-          MQTT_LOG("AMS: %d units, active tray=%d, drying=%s",
-                   s.ams.unitCount, s.ams.activeTray,
+          MQTT_LOG("AMS: %d units (%d with trays), active tray=%d, drying=%s",
+                   s.ams.unitCount, s.ams.trayUnitCount, s.ams.activeTray,
                    s.ams.anyDrying ? "YES" : "no");
         }
       }
@@ -982,7 +998,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     corePrintData = true;
     const char* name = print["subtask_name"];
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
-    utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the 48B buffer
+    utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the buffer
     // Studio calibration wizard jobs are named "*_calib_mode"
     // (BambuStudio get_calib_mode_name: pa_line, flow_rate_coarse, ...).
     size_t snLen = strlen(s.subtaskName);
@@ -1249,6 +1265,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     s.hmsCount = 0;
     s.hmsTotal = 0;
     s.hmsSuppressed = 0;
+    bool sawRejectedCmd = false;
     for (JsonObject e : hmsArr) {
       if (!e["attr"].is<unsigned int>() || !e["code"].is<unsigned int>()) continue;
       uint32_t attr = e["attr"].as<unsigned int>();
@@ -1294,12 +1311,23 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
                         undescribed ? "not described by Bambu" : "muted: shown elsewhere");
         continue;
       }
+      // Claim the refusal if it landed right after our own control publish:
+      // errorBadgeFor() mutes everyone else's. Latched, not windowed - the alert
+      // must outlive the window while the code still stands.
+      if (hmsIsRejectedCommand(attr, code)) {
+        sawRejectedCmd = true;
+        if (s.ctrlCmdSentMs != 0 &&
+            millis() - s.ctrlCmdSentMs < HMS_OWN_CMD_WINDOW_MS)
+          s.hmsOwnCmdRejected = true;
+      }
       if (s.hmsTotal < 255) s.hmsTotal++;
       // Every entry is scanned, not just the ones we keep: the baseline set and
       // the worst-severity ranking must see the whole report.
       if (baselineWindow) hmsAddBaseline(s, attr, code);
       hmsInsertSorted(s, attr, code);
     }
+    // Code gone - drop the claim so the next one is judged on its own timing.
+    if (!sawRejectedCmd) s.hmsOwnCmdRejected = false;
     s.hmsOverflow = s.hmsTotal > s.hmsCount;
     // The subset is sorted worst-first, so hms[0] is the worst of the whole
     // report even when the tail was dropped.

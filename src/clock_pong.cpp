@@ -635,7 +635,8 @@ void resetPongClock() {
 
 // ========== Tick (call from loop, runs at own cadence) ==========
 void tickPongClock() {
-  if (!dpSettings.showClockAfterFinish && !dpSettings.keepDisplayOn) return;
+  // No point simulating a screensaver that can never be shown.
+  if (dpSettings.keepDisplayOn || !dpSettings.showClockAfterFinish) return;
   if (!dispSettings.pongClock) return;
 
   PongLayout prevLayout = pongLayout;

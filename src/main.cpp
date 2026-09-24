@@ -25,6 +25,10 @@ static bool finishActive = false;          // guards finishScreenStart against m
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
 static bool finishDismissedByWake = false;  // true once user taps to wake while printer is GCODE_FINISH; cleared on printer state change
+// Tap override of the finish-vs-AMS-drying screen (#183): +1 drying, -1 finish,
+// 0 automatic. Only applies to the slot it was set on.
+static int8_t  finishDryView = 0;
+static uint8_t finishDryViewSlot = 0xFF;
 static unsigned long connectingScreenStart = 0;  // for stuck-state timeout
 static PrinterGcodeState prevGcodeStateId[MAX_ACTIVE_PRINTERS] = { GCODE_UNKNOWN };
 static bool prevGcodeStateSeen[MAX_ACTIVE_PRINTERS] = { false };
@@ -114,6 +118,8 @@ static bool isSleepStickyScreen(ScreenState state) {
 }
 
 static void transitionToClockOrOff() {
+  if (dpSettings.keepDisplayOn) return;  // screensaver disabled - never sleep
+  finishDryView = 0;
   if (dpSettings.showClockAfterFinish || buttonType == BTN_DISABLED) {
     setScreenState(SCREEN_CLOCK);
   } else {
@@ -281,6 +287,40 @@ static void closeHmsScreen() {
   setScreenState(SCREEN_PRINTING);
 }
 
+// --- Finish vs AMS drying (#183) --------------------------------------------
+// Automatic choice is unchanged: the finish screen keeps the display for its
+// configured window, then drying takes over. A tap overrides it either way.
+static bool finishWindowElapsed() {
+  return (dpSettings.finishDisplayMins == 0) ||
+         (millis() - finishScreenStart >
+          (unsigned long)dpSettings.finishDisplayMins * 60000UL);
+}
+
+static bool finishShowsDrying() {
+  if (finishDryView != 0 && finishDryViewSlot == rotState.displayIndex)
+    return finishDryView > 0;
+  return finishWindowElapsed();
+}
+
+// The situation the toggle applies to: shown printer done printing, dryer running.
+static bool finishDryChoiceActive() {
+  if (!isPrinterActivityStateFresh(rotState.displayIndex)) return false;
+  BambuState& s = displayedPrinter().state;
+  return s.gcodeStateId == GCODE_FINISH && !s.printing && s.ams.anyDrying;
+}
+
+static void applyFinishDryView() {
+  if (finishShowsDrying()) {
+    setScreenState(SCREEN_IDLE);
+    finishActive = false;
+  } else {
+    setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
+    finishScreenStart = millis();
+    finishActive = true;
+  }
+  idleClockActive = false;
+}
+
 // Existing on-press behavior, factored out so it can be invoked either on
 // press-edge (LED disabled path: unchanged behavior) or on release-edge
 // (LED enabled path: deferred until tap/hold disambiguation completes).
@@ -372,6 +412,25 @@ static void doTapActions() {
     return;
   }
   if (cur == SCREEN_PRINTING && openDryPeek()) return;
+
+  // Finish / AMS drying toggle (#183). Tapping out returns to the automatic
+  // choice and advances the printer, the same shape as the camera and peek stops.
+  if (finishDryChoiceActive() &&
+      (cur == SCREEN_FINISHED || cur == SCREEN_IDLE ||
+       (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen && finishActive))) {
+    bool wasOverridden = (finishDryView != 0 &&
+                          finishDryViewSlot == rotState.displayIndex);
+    if (wasOverridden) {
+      finishDryView = 0;
+      applyFinishDryView();
+      if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
+    } else {
+      finishDryViewSlot = rotState.displayIndex;
+      finishDryView = finishShowsDrying() ? -1 : 1;
+      applyFinishDryView();
+    }
+    return;
+  }
 
   if (getActiveConnCount() >= 2) {
     cycleDisplayedPrinterFromButton();
@@ -706,7 +765,7 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
   }
 
   if (current != SCREEN_FINISHED && !isSleepStickyScreen(current) &&
-      !(current == SCREEN_IDLE && s.ams.anyDrying) &&
+      !(current == SCREEN_IDLE && s.ams.anyDrying && finishShowsDrying()) &&
       !(current == SCREEN_PRINTING && finishActive) &&
       !(current == SCREEN_IDLE && finishDismissedByWake)) {
     setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
@@ -728,10 +787,11 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
   }
 
   // AMS drying started while on finish/kept-print screen - switch to idle so
-  // drawIdleDrying() can take over.
+  // drawIdleDrying() can take over, once the finish screen has had its window
+  // (#167) and unless the tap toggle says otherwise (#183).
   if ((current == SCREEN_FINISHED ||
        (current == SCREEN_PRINTING && dpSettings.keepPrintScreen && finishActive)) &&
-      s.ams.anyDrying) {
+      s.ams.anyDrying && finishShowsDrying()) {
     setScreenState(SCREEN_IDLE);
     finishActive = false;
     idleClockActive = false;
@@ -740,8 +800,10 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
 
 static void handleDisplayedPrinterIdleState(ScreenState current, const BambuState& s) {
   // SCREEN_CLOCK and SCREEN_OFF are sticky - only button press or
-  // new print (s.printing -> SCREEN_PRINTING) exits them.
-  if (isSleepStickyScreen(current)) return;
+  // new print (s.printing -> SCREEN_PRINTING) exits them. keepDisplayOn is the
+  // exception (#180): a screen that slept before the setting changed has to
+  // recover on its own, or a buttonless board stays on the clock forever.
+  if (isSleepStickyScreen(current) && !dpSettings.keepDisplayOn) return;
 
   ScreenState target = (dpSettings.keepPrintScreen && !s.ams.anyDrying)
                        ? SCREEN_PRINTING : SCREEN_IDLE;
@@ -756,6 +818,7 @@ static void handleDisplayedPrinterIdleState(ScreenState current, const BambuStat
 static void handleDisplayedPrinterConnectedState(ScreenState current, BambuState& s) {
   if (s.gcodeStateId != GCODE_FINISH) {
     finishDismissedByWake = false;
+    if (finishDryViewSlot == rotState.displayIndex) finishDryView = 0;
   }
   if (s.printing) {
     if (current != SCREEN_PRINTING) {
@@ -1020,7 +1083,10 @@ static void handleDisplaySleepTimeouts() {
 }
 
 static void handleConnectingScreenRecovery() {
-  // Stuck-state timeout: recover if stuck in a connecting screen too long
+  // Stuck-state timeout: recover if stuck in a connecting screen too long.
+  // Skipped when the screensaver is disabled (#180): the clock is off-limits
+  // then, and IDLE only bounces straight back here on the next loop.
+  if (dpSettings.keepDisplayOn) return;
   ScreenState curConn = getScreenState();
   if (curConn == SCREEN_CONNECTING_WIFI || curConn == SCREEN_CONNECTING_MQTT) {
     if (connectingScreenStart == 0) connectingScreenStart = millis();

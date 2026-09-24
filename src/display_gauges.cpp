@@ -1643,8 +1643,8 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
   // would render a vanished AMS as if filaments were still loaded. NEVER fall
   // back to unit 0 — selecting a non-existent AMS must show all-X, not unit 0's data.
   const bool unitPresent = ams.present
-                        && unitIndex < AMS_MAX_UNITS
-                        && unitIndex < ams.unitCount
+                        && unitIndex < AMS_TRAY_UNITS
+                        && unitIndex < ams.trayUnitCount
                         && ams.units[unitIndex].present;
 
   uint16_t hColor = unitPresent
