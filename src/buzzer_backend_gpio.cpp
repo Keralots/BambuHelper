@@ -3,8 +3,10 @@
 #include "settings.h"
 #include "config.h"
 
-// I2S audio boards (ES8311 codec, NS4168 amp) have their own backends
-#if !defined(BOARD_HAS_ES8311_AUDIO) && !defined(BOARD_HAS_NS4168_AUDIO)
+// Boards whose buzzer is not a plain GPIO have their own backends: the I2S
+// audio boards (ES8311 codec, NS4168 amp) and the IO-expander one.
+#if !defined(BOARD_HAS_ES8311_AUDIO) && !defined(BOARD_HAS_NS4168_AUDIO) && \
+    !BUZZER_BACKEND_TCA9554
 
 // CYD ESP32-32E clone: the speaker amp (FM8002E) is gated by a control pin on
 // GPIO4 that is ACTIVE LOW - per lcdwiki "Audio enable signal, low level

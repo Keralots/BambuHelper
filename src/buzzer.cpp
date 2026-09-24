@@ -5,6 +5,11 @@
 #include <time.h>
 
 void sanitizeBuzzerPin() {
+#if BUZZER_BACKEND_TCA9554
+  // The buzzer is an expander bit here, so there is no pin to validate - and a
+  // stale NVS value from another board must never be driven as a GPIO.
+  buzzerSettings.pin = 0;
+#else
   // Pin 0 = disabled (no buzzer). Pin 255 is invalid on ESP32 — clamp to 0.
   // This also handles stale NVS values from firmware that used 255 as "disabled".
   if (buzzerSettings.pin == 0 || buzzerSettings.pin == 255) {
@@ -161,6 +166,7 @@ void sanitizeBuzzerPin() {
     buzzerSettings.pin = 0;
   }
 #endif
+#endif  // BUZZER_BACKEND_TCA9554
 }
 
 // ---------------------------------------------------------------------------

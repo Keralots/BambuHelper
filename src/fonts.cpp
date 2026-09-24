@@ -13,6 +13,12 @@
 // keep the C3 / S3 Mini flash footprints unchanged.
 #include "fonts/inter_22.h"
 #endif
+#if defined(DISPLAY_ROUND_480)
+// 2x tier for the 480 round profile, ~478 KB. 16 MB board only.
+#include "fonts/inter_20.h"
+#include "fonts/inter_27.h"
+#include "fonts/inter_37.h"
+#endif
 
 static FontID currentFont = FONT_NONE;
 
@@ -23,6 +29,9 @@ static void applyBitmapFallback(lgfx::LovyanGFX& gfx, FontID id) {
         case FONT_BODY:   gfx.setTextFont(2); break;  // 16px
         case FONT_LARGE:  gfx.setTextFont(4); break;  // 26px
         case FONT_XLARGE: gfx.setTextFont(4); break;  // no bitmap equivalent
+        case FONT_SMALL_2X: gfx.setTextFont(2); break;
+        case FONT_BODY_2X:  gfx.setTextFont(4); break;
+        case FONT_LARGE_2X: gfx.setTextFont(4); break;
         default:          gfx.setTextFont(2); break;
     }
 }
@@ -45,6 +54,27 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
             if (!gfx.loadFont(inter_22)) applyBitmapFallback(gfx, FONT_XLARGE);
 #else
             // Font blob not linked on this board - fall back to FONT_LARGE.
+            if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
+#endif
+            break;
+        case FONT_SMALL_2X:
+#if defined(DISPLAY_ROUND_480)
+            if (!gfx.loadFont(inter_20)) applyBitmapFallback(gfx, FONT_SMALL_2X);
+#else
+            if (!gfx.loadFont(inter_10)) applyBitmapFallback(gfx, FONT_SMALL);
+#endif
+            break;
+        case FONT_BODY_2X:
+#if defined(DISPLAY_ROUND_480)
+            if (!gfx.loadFont(inter_27)) applyBitmapFallback(gfx, FONT_BODY_2X);
+#else
+            if (!gfx.loadFont(inter_14)) applyBitmapFallback(gfx, FONT_BODY);
+#endif
+            break;
+        case FONT_LARGE_2X:
+#if defined(DISPLAY_ROUND_480)
+            if (!gfx.loadFont(inter_37)) applyBitmapFallback(gfx, FONT_LARGE_2X);
+#else
             if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
 #endif
             break;
@@ -71,6 +101,15 @@ bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
             return gfx.loadFont(inter_22);
 #else
             return gfx.loadFont(inter_19);
+#endif
+#if defined(DISPLAY_ROUND_480)
+        case FONT_SMALL_2X: return gfx.loadFont(inter_20);
+        case FONT_BODY_2X:  return gfx.loadFont(inter_27);
+        case FONT_LARGE_2X: return gfx.loadFont(inter_37);
+#else
+        case FONT_SMALL_2X: return gfx.loadFont(inter_10);
+        case FONT_BODY_2X:  return gfx.loadFont(inter_14);
+        case FONT_LARGE_2X: return gfx.loadFont(inter_19);
 #endif
         default:          return false;
     }
