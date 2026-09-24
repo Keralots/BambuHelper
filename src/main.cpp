@@ -572,7 +572,7 @@ static void handleWakeButton() {
   uint32_t boardHoldMs = boardButtonHoldDurationMs();
   uint32_t holdMs = (touchHoldMs > boardHoldMs) ? touchHoldMs : boardHoldMs;
   bool suppressDim = isBoardButton3Held();
-#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH)
+#if TOUCH_WAKE_LONGPRESS
   // Resistive panels (CYD, TZT) register a wake touch as a long press that
   // easily crosses the 300ms hold threshold. That would ramp the LED (default
   // direction is up, toward max), save it, and consume the press so the screen

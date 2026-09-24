@@ -221,6 +221,9 @@ template <class PanelT, bool InvertColors, uint8_t RotationOffset>
 class LGFX_CYD_Impl : public lgfx::LGFX_Device {
   PanelT          _panel;
   lgfx::Bus_SPI   _bus;
+#if defined(BOARD_IS_CYD_BL27)
+  lgfx::Touch_XPT2046 _touch;
+#endif
 public:
   LGFX_CYD_Impl() {
     {
@@ -231,7 +234,11 @@ public:
       cfg.freq_read  = 16000000;
       cfg.pin_sclk   = 14;
       cfg.pin_mosi   = 13;
+#if defined(BOARD_IS_CYD_BL27)
+      cfg.pin_miso   = 12;  // shared with the XPT2046 DOUT
+#else
       cfg.pin_miso   = -1;
+#endif
       cfg.pin_dc     = 2;
       cfg.use_lock   = true;
       _bus.config(cfg);
@@ -240,7 +247,11 @@ public:
     {
       auto cfg = _panel.config();
       cfg.pin_cs    = 15;
+#if defined(BOARD_IS_CYD_BL27)
+      cfg.pin_rst   = -1;   // GPIO12 is the bus MISO here
+#else
       cfg.pin_rst   = 12;
+#endif
       cfg.pin_busy  = -1;
       cfg.memory_width  = 240;
       cfg.memory_height = 320;
@@ -254,6 +265,26 @@ public:
       cfg.readable      = false;
       _panel.config(cfg);
     }
+#if defined(BOARD_IS_CYD_BL27)
+    // #186: XPT2046 sits on the LCD bus (2432S024 layout), not the stock CYD
+    // soft-SPI pins. Explicit pins: VSPI is default_spi_host, and -1 there makes
+    // LovyanGFX re-begin SPI on 18/19/23 and steal the panel's pins.
+    {
+      auto cfg = _touch.config();
+      cfg.spi_host   = VSPI_HOST;
+      cfg.pin_sclk   = 14;
+      cfg.pin_mosi   = 13;
+      cfg.pin_miso   = 12;
+      cfg.pin_cs     = TOUCH_CS;
+      cfg.pin_int    = -1;  // IRQ pin unconfirmed (21 measured, 36 on the S024 spec) - poll instead
+      cfg.bus_shared = true;
+      cfg.freq       = 2500000;
+      cfg.x_min = 300; cfg.x_max = 3600;
+      cfg.y_min = 300; cfg.y_max = 3600;
+      _touch.config(cfg);
+      _panel.setTouch(&_touch);
+    }
+#endif
     setPanel(&_panel);
   }
 };

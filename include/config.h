@@ -170,6 +170,15 @@
 #define PANEL_HAS_IO_EXPANDER  0
 #endif
 
+// Touch panels where a wake tap reads as a long press (resistive XPT2046 - both the
+// library driver and the LovyanGFX shared-bus one on cyd_bl27 - and AXS15231B).
+// main.cpp suppresses hold-to-dim on the sleep screens for these.
+#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(BOARD_IS_CYD_BL27)
+#define TOUCH_WAKE_LONGPRESS  1
+#else
+#define TOUCH_WAKE_LONGPRESS  0
+#endif
+
 // ESP32-C3 radio: capping AP/STA TX power works around a C3 range/brownout issue
 // (see wifi_manager.cpp). Expressed as a capability so the workaround is portable
 // if another board ever needs it.
