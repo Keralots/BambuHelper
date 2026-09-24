@@ -893,18 +893,18 @@ static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode m
   tft.setTextDatum(MC_DATUM);
 
   if (mode == POM_STARTING) {
-    setFont(tft, FONT_BODY);
+    setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT, CLR_BG);
     tft.drawString("Printer starting...", cx, cy);
     return;
   }
 
   // POM_OFF
-  setFont(tft, FONT_LARGE);
+  setFont(tft, LY_F_LARGE);
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.drawString("Printer Off", cx, cy - 24);
+  tft.drawString("Printer Off", cx, cy - LY_SC(24));
 
-  setFont(tft, FONT_BODY);
+  setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   char infoBuf[40];
   if (isCloudMode(p.config.mode))
@@ -913,19 +913,19 @@ static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode m
   else
     snprintf(infoBuf, sizeof(infoBuf), "[LAN] %s",
              strlen(p.config.ip) > 0 ? p.config.ip : "no IP!");
-  tft.drawString(infoBuf, cx, cy + 6);
+  tft.drawString(infoBuf, cx, cy + LY_SC(6));
 
   // Power-on hint - only when the button gesture can actually turn it on. Match
   // powerControlAvailableForSlot's condition (buttonPowerControl + a control
   // plug); do NOT gate on buttonType, which would hide it on a board whose
   // built-in button works but whose configured/touch button is disabled.
   if (dispSettings.buttonPowerControl && tasmotaControlPlugForSlot(slot) != 0xFF) {
-    setFont(tft, FONT_SMALL);
+    setFont(tft, LY_F_SMALL);
     tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
     char hint[40];
     tft.drawString(ellipsizeToWidth(tft, "Hold to power on",
-                                    uiW() - 12, hint, sizeof(hint)),
-                   cx, cy + 34);
+                                    uiW() - LY_SC(12), hint, sizeof(hint)),
+                   cx, cy + LY_SC(34));
   }
 }
 
