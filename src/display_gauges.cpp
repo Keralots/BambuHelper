@@ -94,7 +94,7 @@ static bool shimmerPaused = false;
 static unsigned long shimmerPauseStart = 0;
 
 static const int16_t SHIMMER_W = 12;       // width of highlight
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // Arc shimmer cadence, tuned on round hardware. Only the rim/speedo arc
 // sweep runs on round builds; the LED-bar sweep below is compiled out.
 static const uint16_t SHIMMER_INTERVAL = 20;  // ms between steps (~50fps)
@@ -462,7 +462,7 @@ void drawArcFill(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
   }
 }
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
 // ---------------------------------------------------------------------------
 //  Full-circle rim ring (round displays): progress fill runs clockwise from
 //  12 o'clock. drawArcAA's angle space has 0 at 6 o'clock increasing
@@ -911,7 +911,7 @@ void drawCurvedStringSector(lgfx::LovyanGFX& gfx, const char* str,
   drawCurvedStringImpl(gfx, str, cx, cy, r, centerAA, false,
                        color, font, clearHalfDeg);
 }
-#endif // DISPLAY_ROUND_240
+#endif // DISPLAY_IS_ROUND
 
 // ---------------------------------------------------------------------------
 //  Helper: clear gauge center and prepare for text
@@ -933,12 +933,12 @@ static void clearGaugeCenter(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy,
 // ---------------------------------------------------------------------------
 static void fitValueFont(lgfx::LovyanGFX& gfx, const char* s,
                          int16_t radius, int16_t thickness, FontID base) {
-  if (radius >= 30) { setFont(gfx, base); return; }
-  FontID f = (base == FONT_SMALL) ? FONT_SMALL : FONT_BODY;
+  if (radius >= LY_SC(30)) { setFont(gfx, base); return; }
+  FontID f = (base == LY_F_SMALL) ? LY_F_SMALL : LY_F_BODY;
   setFont(gfx, f);
-  if (f != FONT_SMALL) {
+  if (f != LY_F_SMALL) {
     const int16_t innerW = 2 * (radius - thickness - 1) - 2;
-    if (gfx.textWidth(s) > innerW) setFont(gfx, FONT_SMALL);
+    if (gfx.textWidth(s) > innerW) setFont(gfx, LY_F_SMALL);
   }
 }
 
@@ -969,29 +969,29 @@ const char* ellipsizeToWidth(lgfx::LovyanGFX& gfx, const char* s, int16_t maxW,
 void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                     const char* label, uint16_t lblColor, uint16_t bg) {
   // maxW matches the per-slot clear band (gR*2+4).
-  const int16_t maxW = radius * 2 + 4;
+  const int16_t maxW = radius * 2 + LY_SC(4);
   // Font is purely the global "Smaller gauge labels" toggle - never per-label, so
   // every gauge label on a screen is the same size. That toggle also raises the
   // web input cap (8 -> 12 chars), so longer custom labels are only entered when
   // the small font is on and they can actually fit.
   const bool sm = dispSettings.smallLabels;
-  setFont(gfx, sm ? FONT_SMALL : FONT_BODY);
+  setFont(gfx, sm ? LY_F_SMALL : LY_F_BODY);
 
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Round mini slots: the rim ring runs right behind the label band and the
   // 62 px slot pitch leaves no spare width, so label ink must never exceed
   // the slot. Step down to FONT_SMALL first (keeps "Nozzle R" / "Progress"
   // whole), then hard-trim whatever still overflows. The clamped clear below
   // and the Rim slot loop's type-change clear both rely on this cap -
   // without it a wide label leaves edge ghosts when the slot changes type.
-  if (!sm && gfx.textWidth(label) > maxW) setFont(gfx, FONT_SMALL);
+  if (!sm && gfx.textWidth(label) > maxW) setFont(gfx, LY_F_SMALL);
 #endif
 
   // Safety trim (no "..") so a long label can't bleed into a neighbor. Only long
   // labels (> 8) are trimmed; short ones (incl. the dynamic "Nozzle R/L") draw in
   // full even if a hair wider than the slot, matching pre-#124 behavior. Round
   // trims unconditionally: ink wider than the slot can never be fully erased.
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   const bool mustTrim = gfx.textWidth(label) > maxW;
 #else
   const bool mustTrim = strlen(label) > 8 && gfx.textWidth(label) > maxW;
@@ -1011,18 +1011,18 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
     draw = buf;
   }
 
-  const int16_t ly = cy + radius + (sm ? 3 : -1);
+  const int16_t ly = cy + radius + (sm ? LY_SC(3) : LY_SC(-1));
   // Clear the actual drawn extent so a previous, wider label leaves no ghost
   // (e.g. "Nozzle R" -> "Nozzle L" on a side flip, or a full label > maxW).
   const int16_t fh = gfx.fontHeight();
-#if defined(DISPLAY_ROUND_240)
+#if DISPLAY_IS_ROUND
   // Side-gauge labels sit close to the rim ring; a wider-than-slot clear band
   // would cut a rectangular notch into it. Cap at the slot width — ghosts are
   // impossible in practice (labels here only flip between short strings).
   const int16_t clearW = maxW;
 #else
   const int16_t tw = gfx.textWidth(draw);
-  const int16_t clearW = (tw + 4 > maxW) ? (int16_t)(tw + 4) : maxW;
+  const int16_t clearW = (tw + LY_SC(4) > maxW) ? (int16_t)(tw + LY_SC(4)) : maxW;
 #endif
   gfx.fillRect(cx - clearW / 2, ly - fh / 2 - 1, clearW, fh + 2, bg);
 
@@ -1037,19 +1037,19 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 static FontID fitHumidityValueFont(lgfx::LovyanGFX& gfx, const char* value,
                                    int16_t radius, int16_t thickness,
                                    FontID base, int16_t suffixGap) {
-  setFont(gfx, FONT_SMALL);
+  setFont(gfx, LY_F_SMALL);
   const int16_t suffixW = gfx.textWidth("%");
   const int16_t innerW = 2 * (radius - thickness - 1) - 2;
 
-  FontID candidates[] = { base, FONT_LARGE, FONT_BODY, FONT_SMALL };
+  FontID candidates[] = { base, LY_F_LARGE, LY_F_BODY, LY_F_SMALL };
   for (FontID f : candidates) {
-    if (radius < 30 && (f == FONT_LARGE || f == FONT_XLARGE)) continue;
+    if (radius < LY_SC(30) && (f == LY_F_LARGE || f == FONT_XLARGE)) continue;
     setFont(gfx, f);
     if (gfx.textWidth(value) + suffixGap + suffixW <= innerW) return f;
   }
 
-  setFont(gfx, FONT_SMALL);
-  return FONT_SMALL;
+  setFont(gfx, LY_F_SMALL);
+  return LY_F_SMALL;
 }
 
 // Draw gauge value/secondary text transparently on every panel. The center
@@ -1173,11 +1173,12 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     gfx.setTextDatum(MC_DATUM);
     setGaugeClearedTextColor(gfx, gc.value, bg);
     fitValueFont(gfx, pctBuf, radius, thickness, LY_GAUGE_VALUE_FONT);
-    gfx.drawString(pctBuf, cx, cy - (compact ? 4 : 8) + LY_GAUGE_VALUE_NUDGE_Y);
+    gfx.drawString(pctBuf, cx, cy - (compact ? LY_SC(4) : LY_SC(8)) +
+                   LY_GAUGE_VALUE_NUDGE_Y);
 
-    setFont(gfx, compact ? FONT_SMALL : FONT_BODY);
+    setFont(gfx, compact ? LY_F_SMALL : LY_F_BODY);
     setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
-    gfx.drawString(timeBuf, cx, cy + (compact ? 10 : 18));
+    gfx.drawString(timeBuf, cx, cy + (compact ? LY_SC(10) : LY_SC(18)));
 
     if (compact) {
       drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.progress, "Progress"), gc.label, bg);
@@ -1247,12 +1248,12 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
     // an explicit background on the rotated JC sprite, where alpha blending
     // leaves hollow-looking glyphs (bright outline, dark interior).
     setGaugeClearedTextColor(gfx, valColor, bg);
-    gfx.drawString(tempBuf, cx, hasTarget ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
+    gfx.drawString(tempBuf, cx, hasTarget ? (cy - LY_SC(4) + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTarget) {
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
-      gfx.drawString(targetBuf, cx, cy + 10);
+      gfx.drawString(targetBuf, cx, cy + LY_SC(10));
     }
 
     drawGaugeLabel(gfx, cx, cy, radius, label, lblColor, bg);
@@ -1361,13 +1362,13 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       // clearable inner circle (mirrors fitHumidityValueFont but measures the
       // actual "W"/"kW" suffix, which is wider than "%").
       const int16_t suffixGap = 1;
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       const int16_t suffixW = gfx.textWidth(suffix);
       const int16_t innerW  = 2 * (radius - thickness - 1) - 2;
-      FontID candidates[] = { LY_GAUGE_VALUE_FONT, FONT_LARGE, FONT_BODY, FONT_SMALL };
-      FontID valueFont = FONT_SMALL;
+      FontID candidates[] = { LY_GAUGE_VALUE_FONT, LY_F_LARGE, LY_F_BODY, LY_F_SMALL };
+      FontID valueFont = LY_F_SMALL;
       for (FontID f : candidates) {
-        if (radius < 30 && (f == FONT_LARGE || f == FONT_XLARGE)) continue;
+        if (radius < LY_SC(30) && (f == LY_F_LARGE || f == FONT_XLARGE)) continue;
         setFont(gfx, f);
         if (gfx.textWidth(valueBuf) + suffixGap + suffixW <= innerW) { valueFont = f; break; }
       }
@@ -1380,7 +1381,7 @@ void drawPowerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       setGaugeClearedTextColor(gfx, dispSettings.power.value, bg);
       gfx.drawString(valueBuf, splitX, cy);
 
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       gfx.setTextDatum(ML_DATUM);
       setGaugeClearedTextColor(gfx, dispSettings.power.value, bg);
       gfx.drawString(suffix, splitX + suffixGap, cy);
@@ -1454,7 +1455,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t rad
       FontID valueFont = fitHumidityValueFont(
           gfx, valueBuf, radius, thickness, LY_GAUGE_VALUE_FONT, suffixGap);
       const int16_t valueW = gfx.textWidth(valueBuf);
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       const int16_t suffixW = gfx.textWidth("%");
       const int16_t splitX = cx - (valueW + suffixGap + suffixW) / 2 + valueW;
 
@@ -1463,7 +1464,7 @@ void drawHumidityGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t rad
       setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
       gfx.drawString(valueBuf, splitX, cy);
 
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       gfx.setTextDatum(ML_DATUM);
       setGaugeClearedTextColor(gfx, CLR_TEXT, bg);
       gfx.drawString("%", splitX + suffixGap, cy);
@@ -1517,18 +1518,18 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
     int digits = strlen(layerBuf) + strlen(totalBuf);
     bool useSmall = (digits > 7);
 
-    fitValueFont(gfx, layerBuf, radius, thickness, useSmall ? FONT_BODY : LY_GAUGE_VALUE_FONT);
+    fitValueFont(gfx, layerBuf, radius, thickness, useSmall ? LY_F_BODY : LY_GAUGE_VALUE_FONT);
     setGaugeClearedTextColor(gfx, dispSettings.layer.value, bg);
-    gfx.drawString(layerBuf, cx, hasTot ? (cy - 4 + LY_GAUGE_VALUE_NUDGE_Y) : cy);
+    gfx.drawString(layerBuf, cx, hasTot ? (cy - LY_SC(4) + LY_GAUGE_VALUE_NUDGE_Y) : cy);
 
     if (hasTot) {
       // Secondary "/total" line uses FONT_SMALL, matching the temp gauge's
       // target line. FONT_BODY here was a taller glyph box at the same tight
       // cy+10 offset, so its top climbed up into the main layer number — and
       // in compact mode (main capped at FONT_BODY) the two lines collided.
-      fitValueFont(gfx, totalBuf, radius, thickness, FONT_SMALL);
+      fitValueFont(gfx, totalBuf, radius, thickness, LY_F_SMALL);
       setGaugeClearedTextColor(gfx, CLR_TEXT_DIM, bg);
-      gfx.drawString(totalBuf, cx, cy + (useSmall ? 8 : 10));
+      gfx.drawString(totalBuf, cx, cy + (useSmall ? LY_SC(8) : LY_SC(10)));
     }
 
     drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.layer, "Layer"), dispSettings.layer.label, bg);
@@ -1694,14 +1695,14 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
       int16_t snX = fx + (qSlotX[qi] > 0 ? fw - 8 : 6);
       int16_t snY = fy + (qSlotY[qi] > 0 ? fh - 8 : 4);
       gfx.setTextDatum(TL_DATUM);
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       gfx.setTextColor(txtColor, swatchColor);
       gfx.drawString(slotNumBuf, snX, snY);
 
       // Type label
       const char* typeLabel = getFilamentTypeLabel(tray.type);
       gfx.setTextDatum(MC_DATUM);
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       gfx.setTextColor(txtColor, swatchColor);
       gfx.drawString(typeLabel, tCX, tCY - 6);
 
@@ -1712,7 +1713,7 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
       } else {
         strlcpy(remainBuf, "--%", sizeof(remainBuf));
       }
-      setFont(gfx, FONT_SMALL);
+      setFont(gfx, LY_F_SMALL);
       gfx.setTextColor(txtColor, swatchColor);
       gfx.drawString(remainBuf, tCX, tCY + 8);
 #endif
@@ -1757,14 +1758,14 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
   }
 
   // Center humidity indicator (only when unit actually present)
-  const int16_t humCircleR = (radius >= 60) ? 16 : 11;
+  const int16_t humCircleR = (radius >= LY_SC(60)) ? LY_SC(16) : LY_SC(11);
   gfx.fillCircle(cx, cy, humCircleR, bg);
   gfx.drawCircle(cx, cy, humCircleR, dim);
   if (unitPresent) {
     char humBuf[4];
     snprintf(humBuf, sizeof(humBuf), "H%d", ams.units[unitIndex].humidity);
     gfx.setTextDatum(MC_DATUM);
-    setFont(gfx, radius >= 60 ? FONT_BODY : FONT_SMALL);
+    setFont(gfx, radius >= LY_SC(60) ? LY_F_BODY : LY_F_SMALL);
     gfx.setTextColor(hColor, bg);
     gfx.drawString(humBuf, cx, cy);
   }

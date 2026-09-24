@@ -205,6 +205,23 @@ const BOARDS = {
       { t: 'product page', u: 'https://www.waveshare.com/product/esp32-s3-touch-lcd-3.5.htm' },
     ],
   },
+  ws_lcd_28c: {
+    chipFamily: 'ESP32-S3',
+    label: 'Waveshare ESP32-S3-Touch-LCD-2.8C (480x480 round) - community (not owned by maintainer)',
+    name: 'Waveshare ESP32-S3-Touch-LCD-2.8C',
+    badge: 'community',
+    display: '2.8" ST7701 IPS, 480x480 round, RGB',
+    touch: 'GT911 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Round all-in-one with ESP32-S3R8 (16MB flash, 8MB PSRAM). Runs ' +
+          'the round dashboard at 2x with its three print skins (Rim / ' +
+          'Speedo / Rings). The buzzer sits on an IO expander, so it is ' +
+          'on/off only - melodies play as rhythm without pitch.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.8c.htm' },
+      { t: 'hardware notes (#171)', u: 'https://github.com/Keralots/BambuHelper/issues/171' },
+    ],
+  },
   wt32_sc01_plus: {
     chipFamily: 'ESP32-S3',
     label: 'Panlee WT32-SC01 Plus 3.5" (320x480) - community (not owned by maintainer)',

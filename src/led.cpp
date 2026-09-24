@@ -265,6 +265,20 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 11 && pin <= 17) return false;                                        // flash/PSRAM
   if (pin > 21) return false;
 
+#elif defined(BOARD_IS_WS28C)
+  // Waveshare ESP32-S3-Touch-LCD-2.8C (ST7701 480x480 RGB)
+  if (pin >= 8 && pin <= 21) return false;                       // RGB data D3-D10, D13-D15 + touch INT
+  if (pin >= 1 && pin <= 5) return false;                        // SPI MOSI/SCLK, D12, battery ADC, D0
+  if (pin >= 38 && pin <= 41) return false;                      // RGB HSYNC/VSYNC/DE/PCLK
+  if (pin == 45 || pin == 46 || pin == 47 || pin == 48) return false; // RGB D1, D11, D3, D2
+  if (pin == 6) return false;                                    // backlight PWM
+  if (pin == 7 || pin == 15) return false;                       // I2C SCL / SDA (GT911 + TCA9554)
+  if (pin == 19 || pin == 20) return false;                      // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                      // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+  // Leaves 42/43/44 free (43/44 are UART0). LCD reset, LCD CS, touch reset and
+  // the buzzer are expander bits, not GPIOs, so nothing else to reserve.
+
 #elif defined(BOARD_IS_SENSECAP)
   // SenseCAP Indicator (ESP32-S3 + ST7701S 480x480 RGB)
   // RGB565 data pins: D0-D15 = GPIOs 15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0

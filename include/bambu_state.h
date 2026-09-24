@@ -140,7 +140,7 @@ struct BambuState {
   float bedTemp;
   float bedTarget;
   float chamberTemp;
-  char subtaskName[48];
+  char subtaskName[128];      // 48 cut before the screen did: a real H2C name measured 47 chars (#187)
   bool caliPrintType;         // print_type == "system" (device-initiated calibration job)
   bool caliSubtask;           // subtask_name ends with "_calib_mode" (Studio calibration wizard job)
   bool caliGcodeFile;         // gcode_file is a built-in calibration gcode (auto_cali_for_user / extrusion_cali)
@@ -177,6 +177,8 @@ struct BambuState {
   int8_t lightState;          // chamber_light from lights_report: -1 unknown, 0 off, 1 on
   bool hasSecondLight;        // true if printer reports chamber_light2 (H2C/H2D dual bar)
   unsigned long lightOffDueMs; // millis() deadline for a scheduled light-off, 0 = none pending
+  unsigned long ctrlCmdSentMs; // millis() of our last control publish (ledctrl), 0 = never.
+                               // Only control commands are authorization-checked (#185)
 #if HAS_HMS_UI
   uint32_t printError;        // print.print_error, 0 = none
   bool printErrorSeen;        // a value has been observed on this connection.
@@ -202,6 +204,8 @@ struct BambuState {
                               // more severe than what was kept.
   HmsEntry hmsBaseline[HMS_BASELINE_MAX];  // standing codes, never alert
   uint8_t  hmsBaselineCount;
+  bool     hmsOwnCmdRejected; // standing 0500-0500-0001-0007 is ours, not another
+                              // program's - latched while the code stands (#185)
   bool     hmsBaselineSaturated;  // more than HMS_BASELINE_MAX standing codes.
                                   // We can no longer tell a dropped baseline
                                   // member from a new code, so everything on
