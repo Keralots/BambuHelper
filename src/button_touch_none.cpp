@@ -2,7 +2,7 @@
 // Two sub-cases (see button_touch_backend.h):
 //   - a board that exposes a LovyanGFX-handled resistive panel via TOUCH_CS but
 //     no dedicated driver -> poll getTouch() on the panel device. Used by
-//     cyd_bl27 (#186, XPT2046 shared with the LCD bus); cyd/tzt define
+//     cyd_2432s024 (#186, XPT2046 shared with the LCD bus); cyd/tzt define
 //     USE_XPT2046, which wins over TOUCH_CS.
 //   - no touchscreen at all (esp32s3, esp32c3, the round/DIY envs) -> a true no-op.
 #include "button_touch_backend.h"

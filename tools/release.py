@@ -58,6 +58,7 @@ WEB_FLASHER_BOARDS = [
     "jc3248w535",
     "cyd",
     "tzt_2432",
+    "cyd_2432s024",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

@@ -283,6 +283,22 @@ const BOARDS = {
           '"TZT ESP32 LVGL 2.4 inch LCD TFT 240*320 With Touch".',
     links: [],
   },
+  cyd_2432s024: {
+    chipFamily: 'ESP32',
+    label: 'CYD 2.4" / ESP32-2432S024 (ILI9341, 240x320) - community (not owned by maintainer)',
+    name: 'CYD 2.4" / ESP32-2432S024',
+    badge: 'community',
+    display: '2.4" ILI9341, 240x320, SPI',
+    touch: 'XPT2046 resistive',
+    printers: '1 (RAM limit)',
+    desc: 'The 2.4" sibling of the classic CYD, printed ESP32-2432S024 on ' +
+          'the back. Backlight on GPIO27 and the touch chip shares the ' +
+          'display SPI bus, so neither the cyd nor the tzt_2432 build works ' +
+          'on it. Hardware-confirmed by the requester in issue #186.',
+    links: [
+      { t: 'Issue #186', u: 'https://github.com/Keralots/BambuHelper/issues/186' },
+    ],
+  },
 };
 
 const DEFAULT_BOARD = 'esp32s3';

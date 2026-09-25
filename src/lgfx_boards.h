@@ -221,7 +221,7 @@ template <class PanelT, bool InvertColors, uint8_t RotationOffset>
 class LGFX_CYD_Impl : public lgfx::LGFX_Device {
   PanelT          _panel;
   lgfx::Bus_SPI   _bus;
-#if defined(BOARD_IS_CYD_BL27)
+#if defined(BOARD_IS_CYD_2432S024)
   lgfx::Touch_XPT2046 _touch;
 #endif
 public:
@@ -234,7 +234,7 @@ public:
       cfg.freq_read  = 16000000;
       cfg.pin_sclk   = 14;
       cfg.pin_mosi   = 13;
-#if defined(BOARD_IS_CYD_BL27)
+#if defined(BOARD_IS_CYD_2432S024)
       cfg.pin_miso   = 12;  // shared with the XPT2046 DOUT
 #else
       cfg.pin_miso   = -1;
@@ -247,7 +247,7 @@ public:
     {
       auto cfg = _panel.config();
       cfg.pin_cs    = 15;
-#if defined(BOARD_IS_CYD_BL27)
+#if defined(BOARD_IS_CYD_2432S024)
       cfg.pin_rst   = -1;   // GPIO12 is the bus MISO here
 #else
       cfg.pin_rst   = 12;
@@ -260,12 +260,16 @@ public:
       cfg.offset_x      = 0;
       cfg.offset_y      = 0;
       cfg.offset_rotation = RotationOffset;
+#if defined(BOARD_IS_CYD_2432S024)
+      cfg.invert        = false;  // S024 panel is native INVOFF (#186)
+#else
       cfg.invert        = InvertColors;
+#endif
       cfg.rgb_order     = false;
       cfg.readable      = false;
       _panel.config(cfg);
     }
-#if defined(BOARD_IS_CYD_BL27)
+#if defined(BOARD_IS_CYD_2432S024)
     // #186: XPT2046 sits on the LCD bus (2432S024 layout), not the stock CYD
     // soft-SPI pins. Explicit pins: VSPI is default_spi_host, and -1 there makes
     // LovyanGFX re-begin SPI on 18/19/23 and steal the panel's pins.
