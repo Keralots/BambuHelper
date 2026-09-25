@@ -6,6 +6,7 @@ Usage:
     python merge_bins.py                    # auto-reads version, builds esp32s3
     python merge_bins.py --board cyd        # build CYD firmware
     python merge_bins.py --board tzt_2432   # build TZT L1435-2.4 firmware
+    python merge_bins.py --board cyd_2432s024 # build CYD 2.4" ESP32-2432S024 firmware
     python merge_bins.py --board esp32c3    # build ESP32-C3 firmware
     python merge_bins.py --board esp32s3_round  # build ESP32-S3 + GC9A01 round firmware
     python merge_bins.py --board esp32c3_round  # build ESP32-C3 + GC9A01 round firmware
@@ -92,6 +93,14 @@ BOARDS = {
         'firmware_offset': 0x10000,
         'build_env': 'tzt_2432',
         'board_id': 'tzt_2432',
+    },
+    'cyd_2432s024': {
+        'build_dir': '.pio/build/cyd_2432s024',
+        'bootloader_offset': 0x1000,    # Standard ESP32 starts at 0x1000
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'cyd_2432s024',
+        'board_id': 'cyd_2432s024',
     },
     'ws_lcd_200': {
         'build_dir': '.pio/build/ws_lcd_200',
@@ -196,6 +205,8 @@ BOARD_ALIASES = {
     's3_zero_320': 'esp32s3_zero_320',
     'esp32s3_zero_320': 'esp32s3_zero_320',
     'cyd': 'cyd',
+    'cyd_2432s024': 'cyd_2432s024',
+    'cyd24': 'cyd_2432s024',
     'tzt': 'tzt_2432',
     'tzt_2432': 'tzt_2432',
     'ws': 'ws_lcd_200',

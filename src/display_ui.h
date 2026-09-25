@@ -103,6 +103,10 @@ extern lgfx::LovyanGFX* tft_ptr;
 // bound to the panel at static-init time, defeating the redirection.
 #define tft (*tft_ptr)
 
+// The physical panel device. Touch (getTouch / setTouchCalibrate) lives on
+// LGFX_Device, not LovyanGFX, so it cannot go through `tft`.
+lgfx::LGFX_Device& displayDevice();
+
 // Direct pointer to the AXS15231B panel wrapper; only non-null on
 // BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
 extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;

@@ -203,6 +203,15 @@
 #define PANEL_HAS_IO_EXPANDER  0
 #endif
 
+// Touch panels where a wake tap reads as a long press (resistive XPT2046 - both the
+// library driver and the LovyanGFX shared-bus one on cyd_2432s024 - and AXS15231B).
+// main.cpp suppresses hold-to-dim on the sleep screens for these.
+#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(BOARD_IS_CYD_2432S024)
+#define TOUCH_WAKE_LONGPRESS  1
+#else
+#define TOUCH_WAKE_LONGPRESS  0
+#endif
+
 // Buzzer wired to an IO-expander output bit instead of a GPIO (ws_lcd_28c).
 // Selects buzzer_backend_expander.cpp, excludes the GPIO backend, and tells the
 // portal not to ask for a pin.
