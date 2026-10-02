@@ -176,6 +176,8 @@ static void completeWiFiStartup() {
 }
 
 static void beginStaConnectAttempt() {
+  // DHCP option 12; the core applies it to the STA netif inside WiFi.mode().
+  WiFi.setHostname(netSettings.hostname);
   WiFi.mode(WIFI_STA);
   applyStaticNetworkConfig();
   WiFi.begin(wifiSSID, wifiPass);

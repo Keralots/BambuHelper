@@ -1155,7 +1155,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <div class="field">
       <label for="mdns_host">Hostname</label>
       <input type="text" id="mdns_host" class="mono" value="%MDNS_HOST%" placeholder="bambuhelper" maxlength="31">
-      <div class="hint">Reach the device at <span class="mono">name.local</span> in a browser.</div>
+      <div class="hint">Shown in your router's client list. With mDNS on, also reach the device at <span class="mono">name.local</span>.</div>
     </div>
     <dl class="kv" id="wifiInfo" style="margin-top:var(--sp-3)">
       <dt>Signal</dt><dd id="wifiRssi">-</dd>
