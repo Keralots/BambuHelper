@@ -275,7 +275,7 @@
 // through an off-screen sprite. The 240x320 profile (both orientations) and the
 // 240x240 profile; links two extra VLW blobs (inter_card_num / inter_card_lbl).
 // PSRAM only: the internal-RAM band fallback renders garbage on the CYD
-// (ILI9341, no PSRAM) - cause not found yet, see CARD_BAND_TEST in display_card.cpp.
+// (ILI9341, no PSRAM) - cause not found, path removed; it is in git history (116345f).
 #if defined(DISPLAY_240x320) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1
 #elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \

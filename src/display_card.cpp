@@ -18,7 +18,7 @@
 
 // ---------------------------------------------------------------------------
 //  Frame snapshot. Everything the card shows, captured once per tick; the
-//  scene is drawn from this alone so every band pass sees identical data.
+//  scene is drawn from this alone.
 //  Zeroed with memset before filling, so a whole-struct memcmp is safe.
 // ---------------------------------------------------------------------------
 enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2 };
@@ -83,6 +83,7 @@ struct CardFrame {
 static CardFrame g_cur, g_last;
 static bool      g_lastValid = false;
 static const uint16_t* g_thumbPx = nullptr;   // pixels behind f.thumbShow (swapped RGB565)
+static int16_t g_marqueeOff = 0;              // job-name scroll offset (px), see tickCardMarquee
 
 
 static const CardGeo& geo() {
@@ -92,33 +93,13 @@ static const CardGeo& geo() {
 }
 
 // ---------------------------------------------------------------------------
-//  Off-screen target. PSRAM full frame where available (kept, re-created on a
-//  rotation change), otherwise a short band sprite in internal RAM allocated
-//  per frame and freed after the push so it never sits on the TLS heap.
+//  Off-screen target: one PSRAM full frame, kept and re-created on a rotation
+//  change. Card is PSRAM-only (HAS_CARD_SKIN).
 // ---------------------------------------------------------------------------
-#define CARD_BAND_H 20     // 320x20x2 = 12.8 KB, kept while Card is up
-
-static lgfx::LGFX_Sprite* g_band = nullptr;
-
-// Band sprite for boards without PSRAM. Allocated once and kept: creating it
-// per frame churned the internal heap until the allocation started failing.
-static lgfx::LGFX_Sprite* allocBand(int16_t w) {
-  if (g_band && g_band->width() == w) return g_band;
-  if (!g_band) {
-    g_band = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
-    if (!g_band) return nullptr;
-    g_band->setColorDepth(16);
-    g_band->setPsram(false);
-  }
-  g_band->deleteSprite();
-  if (g_band->createSprite(w, CARD_BAND_H)) return g_band;
-  return nullptr;
-}
-
 static lgfx::LGFX_Sprite* g_full = nullptr;
 
 static lgfx::LGFX_Sprite* allocFull(int16_t w, int16_t h) {
-#if defined(BOARD_HAS_PSRAM) && !defined(CARD_FORCE_BANDS)
+#if defined(BOARD_HAS_PSRAM)
   if (g_full && g_full->width() == w && g_full->height() == h) return g_full;
   if (!g_full) {
     g_full = new lgfx::LGFX_Sprite(&tft);
@@ -136,7 +117,7 @@ static lgfx::LGFX_Sprite* allocFull(int16_t w, int16_t h) {
 }
 
 // Draw context: the scene draws in screen coordinates; (ox, oy) shift them into
-// the current target (band, shimmer strip). Font state is tracked here, never
+// the current target (shimmer strip, scratch sprite). Font state is tracked here, never
 // through setFont(), whose cache follows the panel only.
 struct Cv {
   lgfx::LGFX_Sprite* g;
@@ -578,18 +559,6 @@ static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
   }
 }
 
-// Width drawDuration() will take for these minutes.
-static int16_t durationWidth(Cv& cv, uint16_t minutes) {
-  char hBuf[8], mBuf[8];
-  uint16_t h = minutes / 60, m = minutes % 60;
-  snprintf(hBuf, sizeof(hBuf), "%u", h);
-  snprintf(mBuf, sizeof(mBuf), "%u", m);
-  cv.useFont(FONT_BODY);
-  int16_t w = cv.width("m") + (h ? cv.width("h") + 6 : 0);
-  cv.useFont(FONT_LARGE);
-  w += cv.width(mBuf) + 1 + (h ? cv.width(hBuf) + 1 : 0);
-  return w;
-}
 
 // Active filament: swatch + type, left-aligned at x, centred on cy.
 static int16_t activeFilWidth(Cv& cv, const CardFrame& f) {
@@ -607,20 +576,22 @@ static void drawActiveFil(Cv& cv, const CardFrame& f, int16_t x, int16_t cy, int
 }
 
 // "2h 14m": numbers in FONT_LARGE, units dim in FONT_BODY, right-aligned at xr.
-static void drawDuration(Cv& cv, int16_t xr, int16_t base, uint16_t minutes, const CardFrame& f) {
-  char hBuf[8], mBuf[8];
-  uint16_t h = minutes / 60, m = minutes % 60;
-  snprintf(hBuf, sizeof(hBuf), "%u", h);
-  snprintf(mBuf, sizeof(mBuf), "%u", m);
-  cv.useFont(FONT_BODY);  int16_t wu_m = cv.width("m"), wu_h = cv.width("h");
-  cv.useFont(FONT_LARGE); int16_t wm = cv.width(mBuf), wh = cv.width(hBuf);
+static int16_t drawDuration(Cv& cv, int16_t xr, int16_t base, uint16_t minutes, const CardFrame& f) {
+  char buf[8];
+  const uint16_t h = minutes / 60;
   int16_t x = xr;
-  x -= wu_m; cv.text("m", x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
-  x -= wm + 1; cv.text(mBuf, x, base, FONT_LARGE, f.etaClr, lgfx::textdatum_t::baseline_left);
-  if (h > 0) {
-    x -= 6 + wu_h; cv.text("h", x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
-    x -= wh + 1;   cv.text(hBuf, x, base, FONT_LARGE, f.etaClr, lgfx::textdatum_t::baseline_left);
+  // Right to left: "m", minutes, then "h" and hours when there are any.
+  for (int part = 0; part < (h ? 2 : 1); part++) {
+    snprintf(buf, sizeof(buf), "%u", part ? h : minutes % 60);
+    const char* unit = part ? "h" : "m";
+    cv.useFont(FONT_BODY);
+    x -= cv.width(unit) + (part ? 6 : 0);
+    cv.text(unit, x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
+    cv.useFont(FONT_LARGE);
+    x -= cv.width(buf) + 1;
+    cv.text(buf, x, base, FONT_LARGE, f.etaClr, lgfx::textdatum_t::baseline_left);
   }
+  return xr - x;
 }
 
 static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rule) {
@@ -800,8 +771,15 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
 
   char buf[64];
   cv.useFont(FONT_BODY);
-  fitText(cv, buf, sizeof(buf), f.job[0] ? f.job : "--", hw);
-  cv.text(buf, hx, g.nameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+  if (cv.width(f.job) > hw) {
+    // Too long: drawn at the marquee's current offset (tickCardMarquee scrolls it),
+    // clipped to the hero column so a full repaint lands on the same frame.
+    cv.g->setClipRect(hx - cv.ox, g.nameCy - 10 - cv.oy, hw, 20);
+    cv.text(f.job, hx - g_marqueeOff, g.nameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+    cv.g->clearClipRect();
+  } else {
+    cv.text(f.job[0] ? f.job : "--", hx, g.nameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+  }
 
   // Big percent
   char pct[6];
@@ -817,16 +795,36 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   // or the line's right end (ETA dropped) where there is no room for a row.
   const int16_t cy = pThumb ? g.tbLineCy : g.lineCy;
   const bool remOnLine = pThumb && g.tbRemOnLine;
+  int16_t remW = 0;                         // width REMAINING's value took (top-right form)
+  FontID remLblFont;
   if (!remOnLine) {
     const int16_t remLbl = pThumb ? g.tbRemLblY : g.remLblY;
     const int16_t remBase = pThumb ? g.tbRemBase : g.bigBase;
-    if (pThumb) cv.text("REMAINING", hx, remLbl + 14, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-    else        cv.text("REMAINING", hr, remLbl, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
-    if (f.remainMin > 0) drawDuration(cv, hr, remBase, f.remainMin, f);
-    else cv.text("--", hr, remBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
+    // The label at body size where the top-right corner has room; the small
+    // caps face when a wide percent ("100%") would run into it.
+    cv.useFont(FONT_BODY);
+    remLblFont = (pThumb || hr - cv.width("REMAINING") > pctEnd + 8) ? FONT_BODY : FONT_CARD_LBL;
+    if (pThumb) cv.text("REMAINING", hx, remLbl + 14, remLblFont, f.dim, lgfx::textdatum_t::top_left);
+    else        cv.text("REMAINING", hr, remLbl - (remLblFont == FONT_BODY ? 3 : 0), remLblFont, f.dim,
+                        lgfx::textdatum_t::top_right);
+    if (f.remainMin > 0) {
+      remW = drawDuration(cv, hr, remBase, f.remainMin, f);
+    } else {
+      cv.text("--", hr, remBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
+    }
   }
 
   drawBar(cv, f, g, -1);
+
+  // Active filament: gap beside the percent if it fits, else the line (which
+  // then drops its "LAYER" word to make room); the landscape thumb column has its own spot.
+  const bool filWanted = f.showActiveFil && f.activeFil.known && !(f.thumbShow && g.amsColW);
+  const int16_t filNeed = filWanted ? activeFilWidth(cv, f) : 0;
+  int16_t gapL = pctEnd + 8, gapR = hr;
+  if (pThumb) gapR = g.W - g.pad - g.thumbSize - 6;
+  else if (!remOnLine) gapR = hr - (f.remainMin > 0 ? remW : 20) - 8;   // level with the value
+  const bool filInGap = filWanted && gapR - gapL >= filNeed;
+  const bool filOnLine = filWanted && !filInGap;
 
   // Layer / stage (left), ETA or REMAINING (right), active filament (middle when there is room)
   int16_t leftEnd = hx;
@@ -836,9 +834,12 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.text(buf, hx, cy, FONT_BODY, f.accent, lgfx::textdatum_t::middle_left);
     leftEnd = hx + cv.width(buf);
   } else if (f.layers > 0) {
-    cv.text("LAYER", hx, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
-    cv.useFont(FONT_CARD_LBL);
-    int16_t x = hx + cv.width("LAYER") + 5;
+    int16_t x = hx;
+    if (!filOnLine) {
+      cv.text("LAYER", hx, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
+      cv.useFont(FONT_CARD_LBL);
+      x += cv.width("LAYER") + 5;
+    }
     snprintf(buf, sizeof(buf), "%u", f.layer);
     cv.text(buf, x, cy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
     cv.useFont(FONT_BODY);
@@ -859,29 +860,15 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.useFont(FONT_CARD_LBL);
     rightStart = ex - cv.width("ETA");
   }
-  if (f.showActiveFil && f.activeFil.known) {
-    const int16_t need = activeFilWidth(cv, f);
-    if (f.thumbShow && g.amsColW) {
-      // Landscape: the column under the thumbnail.
-      drawActiveFil(cv, f, g.pad, g.hdrRule + 10 + g.thumbSize + 16, g.thumbSize);
-    } else {
-      // Gap between the percent and whatever sits right of it (REMAINING or
-      // the thumbnail); the line in between ETA and layer when that is too tight.
-      int16_t gapR;
-      if (pThumb) gapR = g.W - g.pad - g.thumbSize - 6;
-      else if (!remOnLine) {
-        cv.useFont(FONT_CARD_LBL);
-        int16_t rw = std::max<int16_t>(cv.width("REMAINING"),
-                                       f.remainMin > 0 ? durationWidth(cv, f.remainMin) : 20);
-        gapR = hr - rw - 8;
-      } else gapR = hr;
-      const int16_t gapL = pctEnd + 8;
-      if (gapR - gapL >= need) {
-        drawActiveFil(cv, f, gapL + (gapR - gapL - need) / 2, g.bigBase - 20, need);
-      } else if (rightStart - leftEnd > need + 16) {
-        drawActiveFil(cv, f, (leftEnd + rightStart) / 2 - need / 2, cy, need);
-      }
-    }
+  if (f.showActiveFil && f.activeFil.known && f.thumbShow && g.amsColW) {
+    // Landscape: the column under the thumbnail, below its own rule.
+    const int16_t ry = g.hdrRule + 10 + g.thumbSize + 10;
+    cv.hline(g.pad, ry, g.thumbSize, f.track);
+    drawActiveFil(cv, f, g.pad, ry + (g.botRuleAms - ry) / 2, g.thumbSize);
+  } else if (filInGap) {
+    drawActiveFil(cv, f, gapL + (gapR - gapL - filNeed) / 2, g.bigBase - 20, filNeed);
+  } else if (filOnLine && rightStart - leftEnd > filNeed + 12) {
+    drawActiveFil(cv, f, (leftEnd + rightStart) / 2 - filNeed / 2, cy, filNeed);
   }
   drawBottom(cv, f, g, bottomRule(f, g));
 }
@@ -1010,50 +997,14 @@ static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
 static bool present(bool force) {
   if (!force && g_lastValid && memcmp(&g_cur, &g_last, sizeof(CardFrame)) == 0) return true;
   const CardGeo& g = geo();
-#ifdef CARD_BAND_TEST
-  // Debug: render through the band path, also composing the bands into the
-  // full sprite so /card.bmp shows exactly what a no-PSRAM board pushes.
-  if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
-    lgfx::LGFX_Sprite band(&tft);
-    band.setColorDepth(16);
-    band.setPsram(false);
-    if (band.createSprite(g.W, CARD_BAND_H)) {
-      for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
-        Cv cv{&band, 0, y, FONT_NONE};
-        band.fillSprite(g_cur.bg);
-        drawScene(cv, g_cur, g);
-        band.pushSprite(full, 0, y);
-      }
-      band.unloadFont();
-      band.deleteSprite();
-      full->pushSprite(&tft, 0, 0);
-      memcpy(&g_last, &g_cur, sizeof(CardFrame));
-      g_lastValid = true;
-      return true;
-    }
-  }
-#endif
   if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
     Cv cv{full, 0, 0, FONT_NONE};
     full->fillSprite(g_cur.bg);
     drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
   } else {
-    lgfx::LGFX_Sprite* band = allocBand(g.W);
-    if (!band) {
-      // Keep whatever Card frame is on screen and retry next tick; dropping to
-      // the classic screen here made the panel flap between the two.
-      return g_lastValid;
-    }
-    tft.startWrite();
-    for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
-      Cv cv{band, 0, y, FONT_NONE};
-      band->fillSprite(g_cur.bg);
-      drawScene(cv, g_cur, g);
-      band->pushSprite(&tft, 0, y);
-    }
-    tft.endWrite();
-    band->unloadFont();
+    // No PSRAM frame: keep whatever Card frame is on screen and retry next tick.
+    return g_lastValid;
   }
   memcpy(&g_last, &g_cur, sizeof(CardFrame));
   g_lastValid = true;
@@ -1068,6 +1019,57 @@ static bool present(bool force) {
 static const uint16_t SHIMMER_INTERVAL = 25;    // ms per step
 static const uint16_t SHIMMER_PAUSE    = 1200;  // ms between sweeps
 static const int16_t  SHIMMER_STEP     = 3;     // px per step
+
+// ---------------------------------------------------------------------------
+//  Job-name marquee: a name wider than the hero column scrolls back and forth,
+//  redrawing only its 20 px strip (~9 KB PSRAM sprite) about 33 px/s. The strip
+//  stays clear of the header rule above it, or every step would erase it.
+// ---------------------------------------------------------------------------
+bool tickCardMarquee() {
+  static lgfx::LGFX_Sprite* strip = nullptr;
+  static unsigned long lastMs = 0, holdUntil = 0;
+  static int8_t dir = 1;
+  static char shown[64];
+  if (!g_lastValid || g_last.kind != CK_PRINTING || !g_full) return false;
+
+  const CardGeo& g = geo();
+  int16_t hx, hw;
+  heroX(g_last, g, hx, hw);
+  if (!strip) {
+    strip = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!strip) return false;
+    strip->setPsram(true);
+    strip->setColorDepth(16);
+  }
+  if (strip->width() != hw) {
+    strip->deleteSprite();
+    if (!strip->createSprite(hw, 20)) return false;
+    loadFontInto(*strip, FONT_BODY);         // once: per-tick loads would churn the heap
+  }
+  const int16_t span = (int16_t)strip->textWidth(g_last.job) - hw;
+  const unsigned long now = millis();
+  if (strcmp(shown, g_last.job) != 0) {      // new job: start over from the left
+    strlcpy(shown, g_last.job, sizeof(shown));
+    g_marqueeOff = 0;
+    dir = 1;
+    holdUntil = now + 2000;
+  }
+  if (span <= 0) { g_marqueeOff = 0; return false; }
+  if ((long)(now - holdUntil) < 0 || now - lastMs < 30) return false;
+  lastMs = now;
+  g_marqueeOff += dir;
+  if (g_marqueeOff >= span || g_marqueeOff <= 0) {   // pause at either end, then turn
+    g_marqueeOff = g_marqueeOff <= 0 ? 0 : span;
+    dir = -dir;
+    holdUntil = now + 1500;
+  }
+  strip->fillSprite(g_last.bg);
+  strip->setTextDatum(lgfx::textdatum_t::middle_left);
+  strip->setTextColor(g_last.txt);
+  strip->drawString(g_last.job, -g_marqueeOff, 10);
+  strip->pushSprite(&tft, hx, g.nameCy - 10);
+  return true;
+}
 
 bool tickCardShimmer() {
   static int16_t pos = -1;                 // offset into the filled part, -1 = paused

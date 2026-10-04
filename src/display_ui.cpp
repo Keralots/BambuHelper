@@ -5842,6 +5842,7 @@ void updateDisplay() {
     // Card has no LED bar; it shimmers its own progress bar instead.
     if (cardShownLast) {
       if (tickCardShimmer()) markFrameDirty();
+      if (tickCardMarquee()) markFrameDirty();
     } else {
       BambuState& sh = displayedPrinter().state;
       tickProgressShimmer(tft, 0, sh.progress, sh.printing);
