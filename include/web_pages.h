@@ -659,7 +659,7 @@ R"rawliteral(
 
   <details class="card card-collapsible">
     <summary>
-      <div><h3>Gauge Appearance</h3><p>Pick a preset or paint individual gauges, and rename any gauge label. Bulk pickers update the form only - click Apply to save.</p></div>
+      <div><h3>Colors</h3><p>Pick a preset or paint individual gauges, and rename any gauge label. Bulk pickers update the form only - click Apply to save. The Cards print style uses Background, Track, Progress Bar, Finish time, the accents below, Door, and each gauge&#39;s value color for its temperature.</p></div>
     </summary>
     <div class="card-body">
       <div class="swatch-row">

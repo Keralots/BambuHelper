@@ -23,7 +23,7 @@
 enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2 };
 
 struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; };
-struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; };
+struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
 struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; };
 
 enum : uint8_t { CU_DEG = 0, CU_PCT = 1, CU_OF5 = 2 };
@@ -31,7 +31,7 @@ enum : uint8_t { CU_DEG = 0, CU_PCT = 1, CU_OF5 = 2 };
 struct CardFrame {
   uint8_t  kind, slot, rotation, left, bottom;
   // palette
-  uint16_t bg, txt, dim, track, bar, pname, accent, finish, nozAccent;
+  uint16_t bg, txt, dim, track, bar, pname, accent, finish, nozAccent, etaClr;
   // header
   char     name[24];
   uint8_t  dotCount, dotActive;
@@ -262,7 +262,7 @@ static void activeFilament(const BambuState& s, CardChip& c) {
 }
 
 static void addCell(CardFrame& f, const char* lbl, const char* shortLbl, float v,
-                    uint8_t unit, bool accent = false) {
+                    uint8_t unit, uint16_t vclr, bool accent = false) {
   if (f.cellCount >= LY_CARD_TEMP_MAX) return;
   CardCell& c = f.cells[f.cellCount++];
   strlcpy(c.lbl, lbl, sizeof(c.lbl));
@@ -270,6 +270,7 @@ static void addCell(CardFrame& f, const char* lbl, const char* shortLbl, float v
   c.val = (int16_t)lroundf(v);
   c.unit = unit;
   c.accent = accent ? 1 : 0;
+  c.vclr = vclr;
 }
 
 // P1P/P1S/A1/A1 mini have no chamber sensor; they still send a placeholder
@@ -296,19 +297,19 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
   // Temperatures: only what this printer reports. Nozzles first, then bed and
   // chamber - the square's AMS row keeps just the first three.
   if (s.dualNozzle) {
-    addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG, s.activeNozzle == 1);
-    addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG, s.activeNozzle == 0);
+    addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG, dispSettings.nozzle.value, s.activeNozzle == 1);
+    addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG, dispSettings.nozzle.value, s.activeNozzle == 0);
   } else {
-    addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG);
+    addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG, dispSettings.nozzle.value);
   }
-  addCell(f, "BED", "BED", s.bedTemp, CU_DEG);
-  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f) addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG);
+  addCell(f, "BED", "BED", s.bedTemp, CU_DEG, dispSettings.bed.value);
+  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f) addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG, dispSettings.chamberTemp.value);
   int8_t u = displayAmsUnit(s.ams);
   if (u >= 0) {
     const AmsUnit& au = s.ams.units[u];
-    if (au.temp > 0.5f) addCell(f, "AMS", "AMS", au.temp, CU_DEG);
-    if (au.humidityRaw > 0)    addCell(f, "HUMIDITY", "HUM", au.humidityRaw, CU_PCT);
-    else if (au.humidity > 0)  addCell(f, "HUMIDITY", "HUM", au.humidity, CU_OF5);
+    if (au.temp > 0.5f) addCell(f, "AMS", "AMS", au.temp, CU_DEG, dispSettings.textColor);
+    if (au.humidityRaw > 0)    addCell(f, "HUMIDITY", "HUM", au.humidityRaw, CU_PCT, dispSettings.textColor);
+    else if (au.humidity > 0)  addCell(f, "HUMIDITY", "HUM", au.humidity, CU_OF5, dispSettings.textColor);
   }
 }
 
@@ -385,7 +386,8 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   f.txt = dispSettings.textColor;
   f.dim = dispSettings.textDimColor;
   f.track = dispSettings.trackColor;
-  f.bar = dispSettings.progress.arc;
+  f.bar = dispSettings.progressBarColor;       // "Progress Bar" picker
+  f.etaClr = dispSettings.etaColor;               // "Finish time" picker: ETA + REMAINING
   f.pname = dispSettings.printerNameColor;
   f.accent = dispSettings.statusOkColor;
   f.finish = dispSettings.finishColor;
@@ -596,10 +598,10 @@ static void drawDuration(Cv& cv, int16_t xr, int16_t base, uint16_t minutes, con
   cv.useFont(FONT_LARGE); int16_t wm = cv.width(mBuf), wh = cv.width(hBuf);
   int16_t x = xr;
   x -= wu_m; cv.text("m", x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
-  x -= wm + 1; cv.text(mBuf, x, base, FONT_LARGE, f.txt, lgfx::textdatum_t::baseline_left);
+  x -= wm + 1; cv.text(mBuf, x, base, FONT_LARGE, f.etaClr, lgfx::textdatum_t::baseline_left);
   if (h > 0) {
     x -= 6 + wu_h; cv.text("h", x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
-    x -= wh + 1;   cv.text(hBuf, x, base, FONT_LARGE, f.txt, lgfx::textdatum_t::baseline_left);
+    x -= wh + 1;   cv.text(hBuf, x, base, FONT_LARGE, f.etaClr, lgfx::textdatum_t::baseline_left);
   }
 }
 
@@ -692,7 +694,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     cv.text(lbl, x, top + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     char v[8];
     snprintf(v, sizeof(v), "%d", c.val);
-    uint16_t vc = c.accent ? f.nozAccent : f.txt;
+    uint16_t vc = c.accent ? f.nozAccent : c.vclr;
     cv.text(v, x, base, FONT_LARGE, vc, lgfx::textdatum_t::baseline_left);
     cv.useFont(FONT_LARGE);
     int16_t vx = x + cv.width(v) + 1;
@@ -829,7 +831,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     if (f.remainMin > 0) drawDuration(cv, hr, cy + 8, f.remainMin, f);
     rightStart = hr - 70;
   } else if (f.eta[0]) {
-    cv.text(f.eta, hr, cy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_right);
+    cv.text(f.eta, hr, cy, FONT_BODY, f.etaClr, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_BODY);
     int16_t ex = hr - cv.width(f.eta) - 5;
     cv.text("ETA", ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
