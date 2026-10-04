@@ -90,6 +90,8 @@ static int16_t g_marqueeOff = 0;              // job-name scroll offset (px), se
 static const CardGeo& geo() {
   const int32_t w = tft.width(), h = tft.height();
   if (w == h) return CARD_GEO_SQ;
+  if (w >= 480) return CARD_GEO_LAND_L;
+  if (h >= 480) return CARD_GEO_PORT_L;
   return (w > h) ? CARD_GEO_LAND : CARD_GEO_PORT;
 }
 
@@ -124,8 +126,27 @@ struct Cv {
   lgfx::LGFX_Sprite* g;
   int16_t ox, oy;
   FontID  font;
+  int16_t k;                                // CardGeo::k - 150 = the 1.5x tier
+  bool    noTier = false;                   // draw the named face as-is (job name on 1.5x)
 
+  Cv(lgfx::LGFX_Sprite* g_, int16_t ox_, int16_t oy_, FontID f_, int16_t k_ = 100)
+      : g(g_), ox(ox_), oy(oy_), font(f_), k(k_) {}
+
+  // Fixed sizes (radii, gaps, chip boxes) scaled to the geometry.
+  int16_t S(int16_t v) const { return (int16_t)((v * k + 50) / 100); }
+  // The scene names the 1x faces; the 1.5x tier swaps in its own.
+  FontID tier(FontID id) const {
+    if (k <= 100) return id;
+    switch (id) {
+      case FONT_CARD_NUM: return FONT_CARD_NUM_L;
+      case FONT_CARD_LBL: return FONT_CARD_LBL_L;
+      case FONT_BODY:     return FONT_SMALL_2X;
+      case FONT_LARGE:    return FONT_XLARGE;
+      default:            return id;
+    }
+  }
   void useFont(FontID id) {
+    if (!noTier) id = tier(id);
     if (id == font) return;
     if (!loadFontInto(*g, id)) { g->unloadFont(); g->setTextFont(id == FONT_CARD_LBL ? 1 : 2); }
     font = id;
@@ -438,8 +459,9 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
 //  Scene pieces. All coordinates are screen coordinates.
 // ---------------------------------------------------------------------------
 static void drawDeg(Cv& cv, int16_t x, int16_t capTop, uint16_t c) {
-  cv.ring(x + 3, capTop + 3, 3, c);
-  cv.ring(x + 3, capTop + 3, 2, c);
+  const int16_t r = cv.S(3);
+  cv.ring(x + r, capTop + r, r, c);
+  cv.ring(x + r, capTop + r, r - 1, c);
 }
 
 static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
@@ -451,10 +473,10 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
   cv.rrect(px, g.hdrCy - g.pillH / 2, pw, g.pillH, g.pillH / 2, f.pillColor);
   cv.text(f.pill, px + pw / 2, g.hdrCy + 1, FONT_CARD_LBL, f.bg, lgfx::textdatum_t::middle_center);
 
-  int16_t limit = px - 8;
+  int16_t limit = px - cv.S(8);
   // Battery
   if (f.batShow) {
-    const int16_t bw = 18, bh = 9;
+    const int16_t bw = cv.S(18), bh = cv.S(9);
     int16_t bx = limit - bw - 2, by = g.hdrCy - bh / 2;
     uint16_t c = f.batCharging ? f.accent : (f.batPct <= 15 ? CLR_RED : f.dim);
     cv.rrectOutline(bx, by, bw, bh, 2, c);
@@ -482,12 +504,13 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
   // Multi-printer dots, centred (or left of whatever sits on the right). The
   // name wins: on a crowded header the dots go before the name gets cut.
   if (f.dotCount > 1) {
-    int16_t span = (f.dotCount - 1) * 10;
+    const int16_t dp = cv.S(10);
+    int16_t span = (f.dotCount - 1) * dp;
     int16_t x0 = std::min<int16_t>(g.W / 2 - span / 2, limit - span - 4);
     cv.useFont(FONT_BODY);
     if (x0 - 10 - g.pad >= cv.width(f.name)) {
       for (uint8_t k = 0; k < f.dotCount; k++)
-        cv.dot(x0 + k * 10, g.hdrCy, 3, k == f.dotActive ? f.accent : CLR_TEXT_DARK);
+        cv.dot(x0 + k * dp, g.hdrCy, cv.S(3), k == f.dotActive ? f.accent : CLR_TEXT_DARK);
       limit = x0 - 10;
     }
   }
@@ -500,9 +523,9 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
 }
 
 static void drawChipDot(Cv& cv, int16_t cx, int16_t cy, const CardChip& c, const CardFrame& f) {
-  if (c.active) cv.dot(cx, cy, 7, f.txt);
-  cv.dot(cx, cy, 5, c.known ? c.color : f.track);
-  if (c.known && c.color == f.bg) cv.ring(cx, cy, 5, f.dim);  // swatch the colour of the background
+  if (c.active) cv.dot(cx, cy, cv.S(7), f.txt);
+  cv.dot(cx, cy, cv.S(5), c.known ? c.color : f.track);
+  if (c.known && c.color == f.bg) cv.ring(cx, cy, cv.S(5), f.dim);  // swatch the colour of the background
 }
 
 // One AMS slot (chip + type), shared by the column and the strip.
@@ -510,27 +533,29 @@ static void drawSlot(Cv& cv, const CardTray& t, const CardFrame& f,
                      int16_t x, int16_t y, int16_t w, int16_t h) {
   uint16_t fg = t.present ? f.txt : f.dim;
   if (t.active) {
-    cv.rrect(x - 2, y, w + 4, h, 4, f.txt);
+    cv.rrect(x - 2, y, w + 4, h, cv.S(4), f.txt);
     fg = f.bg;
   }
   int16_t cy = y + h / 2;
+  const int16_t cs = cv.S(12);
   if (t.present) {
-    cv.rrect(x + 2, cy - 6, 12, 12, 3, t.color);
-    if (t.color == (t.active ? f.txt : f.bg)) cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
+    cv.rrect(x + 2, cy - cs / 2, cs, cs, cv.S(3), t.color);
+    if (t.color == (t.active ? f.txt : f.bg)) cv.rrectOutline(x + 2, cy - cs / 2, cs, cs, cv.S(3), f.dim);
   } else {
-    cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
+    cv.rrectOutline(x + 2, cy - cs / 2, cs, cs, cv.S(3), f.dim);
   }
   char buf[12];
   cv.useFont(FONT_CARD_LBL);
   // Too narrow for "PLA Matte": the material word alone beats "PLA ..".
-  if (cv.width(t.type) > w - 20) {
+  const int16_t tx = cv.S(19);
+  if (cv.width(t.type) > w - tx - 1) {
     strlcpy(buf, t.type, sizeof(buf));
     if (char* sp = strchr(buf, ' ')) *sp = '\0';
-    if (cv.width(buf) > w - 20) fitText(cv, buf, sizeof(buf), t.type, w - 20);
+    if (cv.width(buf) > w - tx - 1) fitText(cv, buf, sizeof(buf), t.type, w - tx - 1);
   } else {
     strlcpy(buf, t.type, sizeof(buf));
   }
-  cv.text(buf, x + 19, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
+  cv.text(buf, x + tx, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
 }
 
 static void drawAmsColumn(Cv& cv, const CardFrame& f, const CardGeo& g) {
@@ -564,16 +589,16 @@ static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
 // Active filament: swatch + type, left-aligned at x, centred on cy.
 static int16_t activeFilWidth(Cv& cv, const CardFrame& f) {
   cv.useFont(FONT_CARD_LBL);
-  return 14 + cv.width(f.activeFil.type);
+  return cv.S(14) + cv.width(f.activeFil.type);
 }
 static void drawActiveFil(Cv& cv, const CardFrame& f, int16_t x, int16_t cy, int16_t maxW) {
   CardChip c = f.activeFil;
   c.active = 0;
-  drawChipDot(cv, x + 5, cy, c, f);
+  drawChipDot(cv, x + cv.S(5), cy, c, f);
   char buf[12];
   cv.useFont(FONT_CARD_LBL);
-  fitText(cv, buf, sizeof(buf), c.type, maxW - 14);
-  cv.text(buf, x + 14, cy + 1, FONT_CARD_LBL, f.txt, lgfx::textdatum_t::middle_left);
+  fitText(cv, buf, sizeof(buf), c.type, maxW - cv.S(14));
+  cv.text(buf, x + cv.S(14), cy + 1, FONT_CARD_LBL, f.txt, lgfx::textdatum_t::middle_left);
 }
 
 // "2h 14m": numbers in FONT_LARGE, units dim in FONT_BODY, right-aligned at xr.
@@ -586,7 +611,7 @@ static int16_t drawDuration(Cv& cv, int16_t xr, int16_t base, uint16_t minutes, 
     snprintf(buf, sizeof(buf), "%u", part ? h : minutes % 60);
     const char* unit = part ? "h" : "m";
     cv.useFont(FONT_BODY);
-    x -= cv.width(unit) + (part ? 6 : 0);
+    x -= cv.width(unit) + (part ? cv.S(6) : 0);
     cv.text(unit, x, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
     cv.useFont(FONT_LARGE);
     x -= cv.width(buf) + 1;
@@ -603,7 +628,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     cv.text("FILAMENTS", x0, rule + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     // List form when every filament gets its own row: swatch, type, a bar of
     // what is left on the spool in its colour, and the percentage.
-    const int16_t rowH = 22, listTop = rule + g.cellLblOff + 22;
+    const int16_t rowH = cv.S(22), listTop = rule + g.cellLblOff + cv.S(22);
     if (!f.chipMore && f.chipCount * rowH <= yMax - listTop + rowH / 2) {
       cv.useFont(FONT_BODY);
       const int16_t pctW = cv.width("100%");
@@ -611,20 +636,21 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       int16_t typeW = 0;
       for (uint8_t i = 0; i < f.chipCount; i++) typeW = std::max<int16_t>(typeW, cv.width(f.chips[i].type));
       const int16_t barEnd = x0 + w - pctW - 8;
-      const int16_t barX = std::min<int16_t>(x0 + 19 + typeW + 10, barEnd - 40);
+      const int16_t barX = std::min<int16_t>(x0 + cv.S(19) + typeW + 10, barEnd - cv.S(40));
       const int16_t barW = barEnd - barX;
       for (uint8_t i = 0; i < f.chipCount; i++) {
         const CardChip& c = f.chips[i];
         const int16_t cy = listTop + i * rowH;
-        drawChipDot(cv, x0 + 7, cy, c, f);
+        drawChipDot(cv, x0 + cv.S(7), cy, c, f);
         char buf[12];
         cv.useFont(FONT_BODY);
-        fitText(cv, buf, sizeof(buf), c.type, barX - x0 - 26);
-        cv.text(buf, x0 + 19, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
-        cv.rrect(barX, cy - 3, barW, 6, 3, f.track);
+        fitText(cv, buf, sizeof(buf), c.type, barX - x0 - cv.S(26));
+        cv.text(buf, x0 + cv.S(19), cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+        const int16_t bh = cv.S(6);
+        cv.rrect(barX, cy - bh / 2, barW, bh, bh / 2, f.track);
         if (c.known && c.remain >= 0) {
           const int16_t fw = (int16_t)((int32_t)barW * (c.remain > 100 ? 100 : c.remain) / 100);
-          if (fw >= 6) cv.rrect(barX, cy - 3, fw, 6, 3, c.color == f.bg ? f.txt : c.color);
+          if (fw >= bh) cv.rrect(barX, cy - bh / 2, fw, bh, bh / 2, c.color == f.bg ? f.txt : c.color);
           snprintf(buf, sizeof(buf), "%d%%", c.remain);
         } else {
           strlcpy(buf, "--", sizeof(buf));
@@ -644,14 +670,14 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       cv.useFont(FONT_CARD_LBL);
       const int16_t pw = pct[0] ? cv.width(pct) + 4 : 0;
       cv.useFont(FONT_BODY);
-      const int16_t need = 19 + cv.width(c.type) + pw;
-      const bool canWrap = cy + 24 + 8 <= yMax;
-      if (x > x0 && x + need > x0 + w && canWrap) { x = x0; cy += 24; }
+      const int16_t need = cv.S(19) + cv.width(c.type) + pw;
+      const bool canWrap = cy + cv.S(24) + 8 <= yMax;
+      if (x > x0 && x + need > x0 + w && canWrap) { x = x0; cy += cv.S(24); }
       // Keep room for a "+N" unless this is the last chip and nothing is hidden.
       const bool reserve = (i + 1 < f.chipCount) || hidden;
       if (x + need > x0 + w - (reserve && !canWrap ? moreW : 0)) { hidden += f.chipCount - i; break; }
-      drawChipDot(cv, x + 7, cy, c, f);
-      cv.text(c.type, x + 19, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+      drawChipDot(cv, x + cv.S(7), cy, c, f);
+      cv.text(c.type, x + cv.S(19), cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
       if (pct[0]) cv.text(pct, x + need, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
       cv.useFont(FONT_BODY);
       x += need + 12;
@@ -672,7 +698,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     cv.text(f.amsLabel, x0, top + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     if (f.amsHum[0])
       cv.text(f.amsHum, x0 + w, top + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
-    const int16_t slotW = w / 4, h = 19;
+    const int16_t slotW = w / 4, h = cv.S(19);
     const int16_t y = top + g.cellBaseOff - h + 3;
     uint8_t n = 0;
     for (uint8_t r = 0; r < f.trayCount + (f.extShow ? 1 : 0) && n < 4; r++, n++) {
@@ -694,7 +720,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       const bool nozzle = strncmp(c.lblShort, "NOZ", 3) == 0;
       const char* tmpl = (nozzle || c.val >= 100 || c.val <= -10) ? "888" : "88";
       cv.useFont(FONT_LARGE);
-      int16_t vw = cv.width(tmpl) + (c.unit == CU_DEG ? 8 : 16);
+      int16_t vw = cv.width(tmpl) + cv.S(c.unit == CU_DEG ? 8 : 16);
       cv.useFont(FONT_CARD_LBL);
       int16_t lw = cv.width(c.lblShort);
       need[i] = std::max(vw, lw);
@@ -730,7 +756,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     cv.useFont(FONT_LARGE);
     int16_t vx = x + cv.width(v) + 1;
     if (c.unit == CU_DEG) {
-      drawDeg(cv, vx, base - 16, f.dim);
+      drawDeg(cv, vx, base - g.valCap, f.dim);
     } else if (c.unit == CU_PCT) {
       cv.text("%", vx, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
     } else {
@@ -741,8 +767,8 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
 
 // Hero column: beside the AMS column / thumbnail in landscape, full width otherwise.
 static void heroX(const CardFrame& f, const CardGeo& g, int16_t& x, int16_t& w) {
-  if (g.amsColW && f.thumbShow)     x = g.pad + g.thumbSize + 14;
-  else if (g.amsColW && f.amsShow)  x = g.pad + g.amsColW + 14;
+  if (g.amsColW && f.thumbShow)     x = g.pad + g.thumbSize + (g.k > 100 ? 21 : 14);
+  else if (g.amsColW && f.amsShow)  x = g.pad + g.amsColW + (g.k > 100 ? 21 : 14);
   else                              x = g.pad;
   w = g.W - g.pad - x;
 }
@@ -797,7 +823,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   const bool pThumb = besideThumb(f, g);
   if (f.thumbShow) {
     if (g.amsColW) {
-      drawThumb(cv, g.pad, g.hdrRule + 10, g.thumbSize);
+      drawThumb(cv, g.pad, g.hdrRule + cv.S(10), g.thumbSize);
       int16_t rx = g.pad + g.thumbSize + 7;
       cv.vline(rx, g.hdrRule + 8, g.botRuleAms - g.hdrRule - 16, f.track);
     } else {
@@ -809,6 +835,8 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   const int16_t hr = hx + hw;
 
   char buf[64];
+  // Job name in the 1x body face on every tier: at 1.5x it outweighed the hero.
+  cv.noTier = true;
   cv.useFont(FONT_BODY);
   if (cv.width(f.job) > hw) {
     // Too long: drawn at the marquee's current offset (tickCardMarquee scrolls it),
@@ -819,6 +847,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   } else {
     cv.text(f.job[0] ? f.job : "--", hx, g.nameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
   }
+  cv.noTier = false;
 
   // Big percent
   char pct[6];
@@ -841,9 +870,10 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     // The label at body size where the top-right corner has room; the small
     // caps face when a wide percent ("100%") would run into it.
     cv.useFont(FONT_BODY);
-    remLblFont = (pThumb || hr - cv.width("REMAINING") > pctEnd + 8) ? FONT_BODY : FONT_CARD_LBL;
-    if (pThumb) cv.text("REMAINING", hx, remLbl + 14, remLblFont, f.dim, lgfx::textdatum_t::top_left);
-    else        cv.text("REMAINING", hr, remLbl - (remLblFont == FONT_BODY ? 3 : 0), remLblFont, f.dim,
+    remLblFont = (g.k <= 100 && (pThumb || hr - cv.width("REMAINING") > pctEnd + 8))
+                     ? FONT_BODY : FONT_CARD_LBL;   // body face only at 1x - too big at 1.5x
+    if (pThumb) cv.text("REMAINING", hx, remLbl + cv.S(14), remLblFont, f.dim, lgfx::textdatum_t::top_left);
+    else        cv.text("REMAINING", hr, remLbl - (remLblFont == FONT_BODY ? cv.S(3) : 0), remLblFont, f.dim,
                         lgfx::textdatum_t::top_right);
     if (f.remainMin > 0) {
       drawDuration(cv, hr, remBase, f.remainMin, f);
@@ -858,11 +888,25 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   // column has its own spot under the thumbnail).
   const bool filOnLine = f.showActiveFil && f.activeFil.known && !(f.thumbShow && g.amsColW);
 
-  // Layer / stage (left), ETA or REMAINING (right), active filament (middle when there is room)
+  // ETA (right) first, then the stage label or layer count (left) in what is left.
+  int16_t rightStart = hr;
+  if (f.eta[0]) {
+    cv.text(f.eta, hr, cy, FONT_BODY, f.etaClr, lgfx::textdatum_t::middle_right);
+    cv.useFont(FONT_BODY);
+    int16_t ex = hr - cv.width(f.eta) - cv.S(5);
+    if (f.etaDay[0]) {                     // ends on a later day: "+1" before the time
+      cv.text(f.etaDay, ex, cy + 1, FONT_CARD_LBL, f.etaClr, lgfx::textdatum_t::middle_right);
+      cv.useFont(FONT_CARD_LBL);
+      ex -= cv.width(f.etaDay) + cv.S(5);
+    }
+    cv.text("ETA", ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
+    cv.useFont(FONT_CARD_LBL);
+    rightStart = ex - cv.width("ETA");
+  }
   int16_t leftEnd = hx;
   if (f.stage[0]) {
     cv.useFont(FONT_BODY);
-    fitText(cv, buf, sizeof(buf), f.stage, hw - 70);
+    fitText(cv, buf, sizeof(buf), f.stage, rightStart - hx - cv.S(10));
     cv.text(buf, hx, cy, FONT_BODY, f.accent, lgfx::textdatum_t::middle_left);
     leftEnd = hx + cv.width(buf);
   } else if (f.layers > 0) {
@@ -875,29 +919,13 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.text(buf, x, cy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
     leftEnd = x + cv.width(buf);
   }
-  int16_t rightStart = hr;
-  // A beside-thumb layout without a REMAINING row keeps the ETA here: the
-  // finish time is the more useful of the two (owner's call).
-  if (f.eta[0]) {
-    cv.text(f.eta, hr, cy, FONT_BODY, f.etaClr, lgfx::textdatum_t::middle_right);
-    cv.useFont(FONT_BODY);
-    int16_t ex = hr - cv.width(f.eta) - 5;
-    if (f.etaDay[0]) {                     // ends on a later day: "+1" before the time
-      cv.text(f.etaDay, ex, cy + 1, FONT_CARD_LBL, f.etaClr, lgfx::textdatum_t::middle_right);
-      cv.useFont(FONT_CARD_LBL);
-      ex -= cv.width(f.etaDay) + 5;
-    }
-    cv.text("ETA", ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
-    cv.useFont(FONT_CARD_LBL);
-    rightStart = ex - cv.width("ETA");
-  }
   if (f.showActiveFil && f.activeFil.known && f.thumbShow && g.amsColW) {
     // Landscape: the column under the thumbnail, below its own rule.
-    const int16_t ry = g.hdrRule + 10 + g.thumbSize + 10;
+    const int16_t ry = g.hdrRule + cv.S(10) + g.thumbSize + cv.S(10);
     cv.hline(g.pad, ry, g.thumbSize, f.track);
     drawActiveFil(cv, f, g.pad, ry + (g.botRuleAms - ry) / 2, g.thumbSize);
-  } else if (filOnLine && rightStart - leftEnd > 40) {
-    drawActiveFil(cv, f, leftEnd + 10, cy, rightStart - leftEnd - 18);
+  } else if (filOnLine && rightStart - leftEnd > cv.S(40)) {
+    drawActiveFil(cv, f, leftEnd + cv.S(10), cy, rightStart - leftEnd - cv.S(18));
   }
   drawBottom(cv, f, g, bottomRule(f, g));
 }
@@ -906,7 +934,7 @@ static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
   drawHeader(cv, f, g);
   const bool col = (f.amsShow || f.thumbShow) && g.amsColW;
   if (f.thumbShow && g.amsColW) {
-    drawThumb(cv, g.pad, g.hdrRule + 10, g.thumbSize);
+    drawThumb(cv, g.pad, g.hdrRule + cv.S(10), g.thumbSize);
     cv.vline(g.pad + g.thumbSize + 7, g.hdrRule + 8, g.finBotRule - g.hdrRule - 16, f.track);
   } else if (col) {
     drawAmsColumn(cv, f, g);
@@ -952,7 +980,7 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
   cv.text(f.head, x0, g.idleHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
   char buf[64];
   cv.useFont(FONT_BODY);
-  fitText(cv, buf, sizeof(buf), f.job, g.idleClockRight == 1 ? 170 : xr - x0);
+  fitText(cv, buf, sizeof(buf), f.job, g.idleClockRight == 1 ? cv.S(170) : xr - x0);
   cv.text(buf, x0, g.idleSubCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
   if (f.clock[0]) {
     if (g.idleClockRight == 2) {                     // square: small clock beside the headline
@@ -980,21 +1008,22 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.text("AMS", x0, g.idleAmsY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     const int16_t s = g.idleSw;
     const int16_t yLimit = g.idleBotRule - 4;
-    int16_t x = x0, y = g.idleAmsY + 14;
+    int16_t x = x0, y = g.idleAmsY + cv.S(14);
+    const int16_t gap = cv.S(4), htW = cv.S(22);
     for (uint8_t i = 0; i < f.swCount; i++) {
       const CardTray& t = f.sw[i];
       // Width of the block starting here (one unit, or the "HT" label + HT swatches).
       if (t.type[0] == '|' || t.type[0] == '/' || i == 0) {
         bool ht = (t.type[0] == '/');
-        int16_t bw = ht ? 22 : 0;
+        int16_t bw = ht ? htW : 0;
         uint8_t j = (t.type[0] == 'x') ? i : i + 1;
-        for (; j < f.swCount && f.sw[j].type[0] == 'x'; j++) bw += s + 4;
+        for (; j < f.swCount && f.sw[j].type[0] == 'x'; j++) bw += s + gap;
         if (t.type[0] == '|') x += 6;
         if (x > x0 && ((ht && g.idleHtNewRow) || x + bw - 4 > xr)) { x = x0; y += s + 8; }
         if (ht) {
           if (x > x0) x += 6;
           cv.text("HT", x, y + s / 2 + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
-          x += 22;
+          x += htW;
         }
         if (t.type[0] != 'x') continue;
       }
@@ -1006,7 +1035,7 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
       } else {
         cv.rrectOutline(x, y, s, s, 4, f.dim);
       }
-      x += s + 4;
+      x += s + gap;
     }
   }
   drawBottom(cv, f, g, g.idleBotRule);
@@ -1028,6 +1057,7 @@ static bool present(bool force) {
   const CardGeo& g = geo();
   if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
     Cv cv{full, 0, 0, FONT_NONE};
+    cv.k = g.k;
     full->fillSprite(g_cur.bg);
     drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
@@ -1070,9 +1100,10 @@ bool tickCardMarquee() {
     strip->setPsram(true);
     strip->setColorDepth(16);
   }
-  if (strip->width() != hw) {
+  const int16_t sh = 20;                     // 1x body face on every tier, as the scene
+  if (strip->width() != hw || strip->height() != sh) {
     strip->deleteSprite();
-    if (!strip->createSprite(hw, 20)) return false;
+    if (!strip->createSprite(hw, sh)) return false;
     loadFontInto(*strip, FONT_BODY);         // once: per-tick loads would churn the heap
   }
   const int16_t span = (int16_t)strip->textWidth(g_last.job) - hw;
@@ -1095,8 +1126,8 @@ bool tickCardMarquee() {
   strip->fillSprite(g_last.bg);
   strip->setTextDatum(lgfx::textdatum_t::middle_left);
   strip->setTextColor(g_last.txt);
-  strip->drawString(g_last.job, -g_marqueeOff, 10);
-  strip->pushSprite(&tft, hx, g.nameCy - 10);
+  strip->drawString(g_last.job, -g_marqueeOff, sh / 2);
+  strip->pushSprite(&tft, hx, g.nameCy - sh / 2);
   return true;
 }
 
@@ -1131,6 +1162,7 @@ bool tickCardShimmer() {
   }
   const int16_t by = barY(g_last, g);
   Cv cv{strip, hx, by, FONT_NONE};
+  cv.k = g.k;
   strip->fillSprite(g_last.bg);
   pos += SHIMMER_STEP;
   const bool done = pos >= fw + SHIMMER_HALF;

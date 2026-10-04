@@ -756,7 +756,7 @@ static void handleCardBmp() {
   server.setContentLength(fileSize);
   server.send(200, "image/bmp", "");
   server.sendContent((const char*)hdr, sizeof(hdr));
-  uint8_t row[320 * 3 + 4];
+  uint8_t row[480 * 3 + 4];
   if (rowBytes > sizeof(row)) return;
   for (int16_t y = h - 1; y >= 0; y--) {          // BMP rows run bottom-up
     memset(row, 0, rowBytes);

@@ -24,6 +24,9 @@ enum FontID : uint8_t {
     // back to FONT_LARGE / FONT_SMALL.
     FONT_CARD_NUM = 11,  // Inter Bold 60 px, digits + " -.:" only
     FONT_CARD_LBL = 12,  // Inter Bold 10 px, ASCII + degree + middot
+    // 1.5x Card tier, DISPLAY_320x480 boards with HAS_CARD_SKIN only.
+    FONT_CARD_NUM_L = 13,  // Inter Bold 72 px, digits + " -.:"
+    FONT_CARD_LBL_L = 14,  // Inter Bold 14 px, ASCII + degree + middot
 };
 
 // Sets the active font. Caches the last selection - calling setFont() repeatedly

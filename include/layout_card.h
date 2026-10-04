@@ -34,6 +34,8 @@ struct CardGeo {
   int16_t tbBarY, tbLineCy, tbRemLblY, tbRemBase, tbRule;
   int16_t tbRemOnLine;       // 1 = REMAINING replaces ETA on the line (no own row)
   int16_t noAms;             // 1 = no room for an AMS column / strip
+  int16_t k;                 // size scale in percent for fixed sizes and the font tier (100 / 150)
+  int16_t valCap;            // cap height of the value face (degree ring placement)
 };
 
 // 320x240 landscape. Outer pad 10 > GLOW_THICKNESS_PX (8).
@@ -51,6 +53,7 @@ static const CardGeo CARD_GEO_LAND = {
   84, 40,
   0, 0, 0, 0, 0, 0,
   0,
+  100, 16,
 };
 
 // 240x320 portrait: hero at the full 216 px width (same as the landscape hero
@@ -69,6 +72,7 @@ static const CardGeo CARD_GEO_PORT = {
   76, 52,
   136, 154, 160, 188, 198, 0,
   0,
+  100, 16,
 };
 
 // 240x240 square: S1 layout. No AMS column/strip; temperatures 3x2 with
@@ -87,6 +91,43 @@ static const CardGeo CARD_GEO_SQ = {
   56, 54,                // below the name strip (32..52), or the marquee clips it
   112, 132, 0, 0, 144, 1,
   1,
+  100, 16,
+};
+
+// 1.5x sets for the 320x480 profile (jc3248w535 and friends): fonts come from
+// the large tier (Cv maps them), fixed sizes go through Cv::S().
+static const CardGeo CARD_GEO_LAND_L = {      // 480x320
+  480, 320, 15,
+  22, 44, 22, 10,
+  64, 96, 154, 170, 9, 196,
+  102, 56, 76, 30,
+  0, 0, 0,
+  0, 0,
+  232, 232, 0, 60,
+  76, 108, 136, 160, 192, 214, 232,
+  82, 118, 130, 1, 152, 24, 1, 232,
+  10, 62,
+  126, 0,
+  0, 0, 0, 0, 0, 0,
+  0,
+  150, 19,
+};
+
+static const CardGeo CARD_GEO_PORT_L = {      // 320x480
+  320, 480, 15,
+  22, 44, 22, 10,
+  63, 93, 150, 164, 9, 192,
+  0, 0, 0, 0,
+  228, 246, 28,
+  2, 33,
+  318, 243, 3, 72,
+  78, 108, 135, 159, 189, 222, 249,
+  75, 108, 201, 0, 219, 26, 0, 321,
+  12, 69,
+  114, 78,
+  204, 231, 240, 282, 297, 0,
+  0,
+  150, 19,
 };
 
 #define LY_CARD_TEMP_MAX   6

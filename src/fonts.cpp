@@ -14,9 +14,14 @@
 // keep the C3 / S3 Mini flash footprints unchanged.
 #include "fonts/inter_22.h"
 #endif
-#if defined(DISPLAY_ROUND_480)
-// 2x tier for the 480 round profile, ~478 KB. 16 MB board only.
+#if defined(DISPLAY_ROUND_480) || (defined(DISPLAY_320x480) && HAS_CARD_SKIN)
+// inter_20 (24 px regular): 2x body on the 480 round profile, Card body text
+// at 1.5x on the 320x480 boards. 16 MB boards only.
 #include "fonts/inter_20.h"
+#define HAVE_INTER_20 1
+#endif
+#if defined(DISPLAY_ROUND_480)
+// Rest of the 2x tier for the 480 round profile.
 #include "fonts/inter_27.h"
 #include "fonts/inter_37.h"
 #endif
@@ -24,6 +29,11 @@
 #if HAS_CARD_SKIN
 #include "fonts/inter_card_num.h"   // ~15 KB
 #include "fonts/inter_card_lbl.h"   // ~7 KB
+#if defined(DISPLAY_320x480)
+#include "fonts/inter_card_num_l.h" // ~23 KB
+#include "fonts/inter_card_lbl_l.h" // ~10 KB
+#define HAVE_CARD_L 1
+#endif
 #endif
 
 static FontID currentFont = FONT_NONE;
@@ -66,7 +76,7 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
 #endif
             break;
         case FONT_SMALL_2X:
-#if defined(DISPLAY_ROUND_480)
+#if defined(HAVE_INTER_20)
             if (!gfx.loadFont(inter_20)) applyBitmapFallback(gfx, FONT_SMALL_2X);
 #else
             if (!gfx.loadFont(inter_10)) applyBitmapFallback(gfx, FONT_SMALL);
@@ -100,6 +110,10 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
             if (!gfx.loadFont(inter_10)) applyBitmapFallback(gfx, FONT_SMALL);
 #endif
             break;
+        case FONT_CARD_NUM_L:
+        case FONT_CARD_LBL_L:
+            if (!loadFontInto(gfx, id)) applyBitmapFallback(gfx, FONT_LARGE);
+            break;
         case FONT_7SEG:
             gfx.unloadFont();
             gfx.setTextFont(7);
@@ -129,9 +143,20 @@ bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
         case FONT_BODY_2X:  return gfx.loadFont(inter_27);
         case FONT_LARGE_2X: return gfx.loadFont(inter_37);
 #else
+#if defined(HAVE_INTER_20)
+        case FONT_SMALL_2X: return gfx.loadFont(inter_20);
+#else
         case FONT_SMALL_2X: return gfx.loadFont(inter_10);
+#endif
         case FONT_BODY_2X:  return gfx.loadFont(inter_14);
         case FONT_LARGE_2X: return gfx.loadFont(inter_19);
+#endif
+#if defined(HAVE_CARD_L)
+        case FONT_CARD_NUM_L: return gfx.loadFont(inter_card_num_l);
+        case FONT_CARD_LBL_L: return gfx.loadFont(inter_card_lbl_l);
+#else
+        case FONT_CARD_NUM_L: return gfx.loadFont(inter_19);
+        case FONT_CARD_LBL_L: return gfx.loadFont(inter_10);
 #endif
 #if HAS_CARD_SKIN
         case FONT_CARD_NUM: return gfx.loadFont(inter_card_num);
