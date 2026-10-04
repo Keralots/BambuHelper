@@ -25,7 +25,7 @@ enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2 };
 
 struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; };
 struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
-struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; };
+struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; };
 
 enum : uint8_t { CU_DEG = 0, CU_PCT = 1, CU_OF5 = 2 };
 
@@ -227,14 +227,14 @@ static void fillTray(CardTray& t, const AmsTray& src, bool active) {
 static void resolveMapEntry(const BambuState& s, uint16_t raw, CardChip& c) {
   const AmsState& a = s.ams;
   const uint8_t uid = (uint8_t)(raw >> 8), tid = (uint8_t)(raw & 0xFF);
-  c.known = 0; c.active = 0; c.color = dispSettings.textDimColor;
+  c.known = 0; c.active = 0; c.color = dispSettings.textDimColor; c.remain = -1;
   strlcpy(c.type, "?", sizeof(c.type));
   for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++) {
     if (!a.units[i].present || a.units[i].id != uid) continue;
     if (i < AMS_TRAY_UNITS && tid < AMS_TRAYS_PER_UNIT) {
       const AmsTray& t = a.trays[i * AMS_TRAYS_PER_UNIT + tid];
       if (!t.present) return;
-      c.known = 1; c.color = t.colorRgb565;
+      c.known = 1; c.color = t.colorRgb565; c.remain = t.remain;
       copyType(c.type, sizeof(c.type), t.type);
       c.active = (a.activeTray == i * AMS_TRAYS_PER_UNIT + tid) ? 1 : 0;
       return;
@@ -242,7 +242,7 @@ static void resolveMapEntry(const BambuState& s, uint16_t raw, CardChip& c) {
     break;
   }
   if (a.ovUnitId == uid && a.ovTrayId == tid && a.ovTray.present) {
-    c.known = 1; c.color = a.ovTray.colorRgb565;
+    c.known = 1; c.color = a.ovTray.colorRgb565; c.remain = a.ovTray.remain;
     copyType(c.type, sizeof(c.type), a.ovTray.type);
     c.active = (a.activeTray == AMS_TRAY_OVERFLOW) ? 1 : 0;
   }
@@ -601,13 +601,50 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
   cv.hline(x0, rule, w, f.track);
   if (f.bandFilaments) {
     cv.text("FILAMENTS", x0, rule + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    // List form when every filament gets its own row: swatch, type, a bar of
+    // what is left on the spool in its colour, and the percentage.
+    const int16_t rowH = 22, listTop = rule + g.cellLblOff + 22;
+    if (!f.chipMore && f.chipCount * rowH <= yMax - listTop + rowH / 2) {
+      cv.useFont(FONT_BODY);
+      const int16_t pctW = cv.width("100%");
+      // Bar starts after the longest name, but keeps at least 40 px.
+      int16_t typeW = 0;
+      for (uint8_t i = 0; i < f.chipCount; i++) typeW = std::max<int16_t>(typeW, cv.width(f.chips[i].type));
+      const int16_t barEnd = x0 + w - pctW - 8;
+      const int16_t barX = std::min<int16_t>(x0 + 19 + typeW + 10, barEnd - 40);
+      const int16_t barW = barEnd - barX;
+      for (uint8_t i = 0; i < f.chipCount; i++) {
+        const CardChip& c = f.chips[i];
+        const int16_t cy = listTop + i * rowH;
+        drawChipDot(cv, x0 + 7, cy, c, f);
+        char buf[12];
+        cv.useFont(FONT_BODY);
+        fitText(cv, buf, sizeof(buf), c.type, barX - x0 - 26);
+        cv.text(buf, x0 + 19, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+        cv.rrect(barX, cy - 3, barW, 6, 3, f.track);
+        if (c.known && c.remain >= 0) {
+          const int16_t fw = (int16_t)((int32_t)barW * (c.remain > 100 ? 100 : c.remain) / 100);
+          if (fw >= 6) cv.rrect(barX, cy - 3, fw, 6, 3, c.color == f.bg ? f.txt : c.color);
+          snprintf(buf, sizeof(buf), "%d%%", c.remain);
+        } else {
+          strlcpy(buf, "--", sizeof(buf));
+        }
+        cv.text(buf, x0 + w, cy + 1, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
+      }
+      return;
+    }
     int16_t x = x0, cy = rule + g.cellBaseOff - 7;
     unsigned hidden = f.chipMore;
     cv.useFont(FONT_BODY);
     const int16_t moreW = cv.width("+8") + 8;
     for (uint8_t i = 0; i < f.chipCount; i++) {
       const CardChip& c = f.chips[i];
-      const int16_t need = 19 + cv.width(c.type);
+      char pct[6] = "";
+      if (c.known && c.remain >= 0) snprintf(pct, sizeof(pct), "%d%%", c.remain);
+      cv.useFont(FONT_CARD_LBL);
+      const int16_t pw = pct[0] ? cv.width(pct) + 4 : 0;
+      cv.useFont(FONT_BODY);
+      const int16_t need = 19 + cv.width(c.type) + pw;
       const bool canWrap = cy + 24 + 8 <= yMax;
       if (x > x0 && x + need > x0 + w && canWrap) { x = x0; cy += 24; }
       // Keep room for a "+N" unless this is the last chip and nothing is hidden.
@@ -615,6 +652,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       if (x + need > x0 + w - (reserve && !canWrap ? moreW : 0)) { hidden += f.chipCount - i; break; }
       drawChipDot(cv, x + 7, cy, c, f);
       cv.text(c.type, x + 19, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+      if (pct[0]) cv.text(pct, x + need, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
       cv.useFont(FONT_BODY);
       x += need + 12;
     }
