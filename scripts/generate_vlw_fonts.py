@@ -10,7 +10,8 @@ VLW format (Bodmer/TFT_eSPI smooth font):
   Glyph bitmaps: 8-bit alpha, row-major, width*height bytes each.
 
 Usage:
-  python scripts/generate_vlw_fonts.py
+  python scripts/generate_vlw_fonts.py            # every font
+  python scripts/generate_vlw_fonts.py inter_card_num inter_card_lbl   # only these
 """
 
 import struct
@@ -36,7 +37,12 @@ CHARSET = (
     + [0x20AC]                       # Euro sign
 )
 
-# Font sizes to generate: (name, ttf_filename, pixel_size)
+# Card print-screen faces (HAS_CARD_SKIN): a digits-only hero numeral and a
+# small bold label face. Tiny charsets keep both blobs a few KB.
+CARD_NUM_CHARSET = [ord(c) for c in " -.0123456789:"]
+CARD_LBL_CHARSET = list(range(0x20, 0x7F)) + [0xB0, 0xB7]   # ASCII + degree + middot
+
+# Font sizes to generate: (name, ttf_filename, pixel_size[, charset])
 # Mixed weights match TFT_eSPI bitmap fonts: Font 1/2 were medium, Font 4 was bold.
 FONTS = [
     ("inter_10", "Inter-Regular.ttf", 12),
@@ -52,19 +58,22 @@ FONTS = [
     ("inter_20", "Inter-Regular.ttf", 24),   # 2x FONT_SMALL
     ("inter_27", "Inter-Regular.ttf", 32),   # 2x FONT_BODY
     ("inter_37", "Inter-Bold.ttf",    44),   # 2x FONT_LARGE
+    # Card skin (HAS_CARD_SKIN boards only).
+    ("inter_card_num", "Inter-Bold.ttf", 60, CARD_NUM_CHARSET),
+    ("inter_card_lbl", "Inter-Bold.ttf", 10, CARD_LBL_CHARSET),
 ]
 
 FONTS_DIR = Path(__file__).parent.parent / "fonts"
 OUT_DIR = Path(__file__).parent.parent / "include" / "fonts"
 
 
-def generate_vlw(ttf_path: str, pixel_size: int) -> bytes:
+def generate_vlw(ttf_path: str, pixel_size: int, charset=None) -> bytes:
     """Generate VLW binary data for the given font and size."""
     face = freetype.Face(str(ttf_path))
     face.set_pixel_sizes(0, pixel_size)
 
     glyphs = []
-    for codepoint in CHARSET:
+    for codepoint in sorted(charset or CHARSET):
         # Skip codepoints the TTF has no glyph for (e.g. U+00AD, U+0149 in
         # Inter). Emitting a .notdef box would waste flash and confuse the
         # reader; the header glyph_count below is len(glyphs), so skipping
@@ -163,14 +172,19 @@ def vlw_to_header(name: str, vlw_data: bytes) -> str:
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    for name, ttf_filename, size in FONTS:
+    only = set(sys.argv[1:])
+    for entry in FONTS:
+        name, ttf_filename, size = entry[:3]
+        charset = entry[3] if len(entry) > 3 else None
+        if only and name not in only:
+            continue
         ttf_path = FONTS_DIR / ttf_filename
         if not ttf_path.exists():
             print(f"TTF not found: {ttf_path}")
             sys.exit(1)
 
         print(f"Generating {name} ({ttf_filename} @ {size}px)...", end=" ")
-        vlw_data = generate_vlw(str(ttf_path), size)
+        vlw_data = generate_vlw(str(ttf_path), size, charset)
         header = vlw_to_header(name, vlw_data)
 
         out_path = OUT_DIR / f"{name}.h"

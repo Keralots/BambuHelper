@@ -1,6 +1,7 @@
 #include "display_ui.h"
 #include "display_gauges.h"
 #include "display_split.h"
+#include "display_card.h"
 #include "display_anim.h"
 #include "display_edge_glow.h"
 #include "clock_mode.h"
@@ -62,7 +63,7 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
 //
 // On boards without the HMS feature both collapse to constant false and the
 // ladder is what is left.
-static const char* stateBadgeText(const BambuState& s) {
+const char* stateBadgeText(const BambuState& s) {
   if (errorBadgeActive(s))   return ERROR_BADGE_TEXT;
   if (printerWasCanceled(s)) return CANCELED_STATE_TEXT;
   return s.gcodeState;
@@ -78,7 +79,7 @@ static bool stateBadgeOverrideColor(const BambuState& s, uint16_t& out) {
   return false;
 }
 
-static uint16_t stateBadgeColor(const BambuState& s) {
+uint16_t stateBadgeColor(const BambuState& s) {
   uint16_t override_;
   if (stateBadgeOverrideColor(s, override_)) return override_;
   // FINISH and IDLE are healthy states, so they take the same accent RUNNING
@@ -636,6 +637,25 @@ void triggerDisplayTransition() {
   // while idle), the fillScreen above wiped it; reset its private cache so it
   // repaints whole instead of leaving a single stale digit on a blank screen.
   resetActiveClockCache();
+}
+
+// Card print-screen style (HAS_CARD_SKIN). cardShownLast: the previous display
+// tick rendered Card, so the top LED bar / shimmer stay off and a renderer
+// coming back to its classic layout repaints from scratch.
+static bool cardShownLast = false;
+static bool cardShownNow  = false;
+
+static bool tryCard(bool (*draw)(PrinterSlot&, bool), PrinterSlot& p) {
+  if (cardSkinActive() && draw(p, forceRedraw || !cardShownLast)) {
+    cardShownNow = true;
+    gaugesAnimating = false;
+    return true;
+  }
+  if (cardShownLast) {
+    cardShownLast = false;
+    triggerDisplayTransition();   // classic screen repaints whole this tick
+  }
+  return false;
 }
 
 void setScreenState(ScreenState state) {
@@ -1671,7 +1691,7 @@ static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
 // (the user turned the timestamp off, or the print finished before NTP had a
 // valid clock). Shared by the finished-screen headline and the idle status
 // badge so both agree on the 12h/24h wording.
-static bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
+bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
   buf[0] = '\0';
   if (!dpSettings.finishShowTime || s.finishEpoch == 0) return false;
   // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
@@ -1783,6 +1803,8 @@ static void drawIdle() {
     resetBatteryRedrawCache();
     forceRedraw = true;
   }
+
+  if (tryCard(drawCardIdle, p)) return;
 
   // Effective screen dimensions. In landscape, always reserve the right
   // column for the AMS sidebar even when no AMS is present yet — otherwise
@@ -4103,6 +4125,8 @@ static void drawPrinting() {
     }
   }
 
+  if (tryCard(drawCardPrinting, p)) return;
+
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
   bool progChanged = forceRedraw || (s.progress != prevState.progress);
@@ -4956,6 +4980,8 @@ static void drawFinished() {
   static bool  prevFinTasmotaOnline = false;
   static float prevFinWatts = -2.0f;
   static float prevFinKwh = -2.0f;
+
+  if (tryCard(drawCardFinished, p)) return;
 
   // Effective screen dimensions — finished uses full screen (no AMS sidebar)
 #if defined(LAYOUT_HAS_AMS_STRIP)
@@ -5811,8 +5837,9 @@ void updateDisplay() {
 #if !DISPLAY_IS_ROUND
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
-  if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
+  if (currentScreen == SCREEN_PRINTING && !glowIsActive() && !cardShownLast) {
     // The glow band owns the top edge while it runs - shimmer would fight it.
+    // Card has no LED bar to shimmer.
     BambuState& sh = displayedPrinter().state;
     tickProgressShimmer(tft, 0, sh.progress, sh.printing);
     markFrameDirty();
@@ -5948,6 +5975,7 @@ void updateDisplay() {
     prev9Slots = dispSettings.portrait9Slots;
   }
 
+  cardShownNow = false;
   switch (currentScreen) {
     case SCREEN_SPLASH:
       // Splash shown in initDisplay(), auto-advance handled by main.cpp
@@ -6033,6 +6061,8 @@ void updateDisplay() {
       }
       break;
   }
+
+  cardShownLast = cardShownNow;
 
 #if !DISPLAY_IS_ROUND
   // The base screen may have just repainted over the band (forceRedraw, gauge

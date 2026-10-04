@@ -768,6 +768,11 @@ static void handleToggleSetting() {
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;
   else if (key == "rskin")   dispSettings.roundSkin = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+#if HAS_CARD_SKIN
+  else if (key == "card")    dispSettings.cardStyle  = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+  else if (key == "cleft")   dispSettings.cardLeft   = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+  else if (key == "cbot")    dispSettings.cardBottom = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+#endif
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
@@ -816,6 +821,7 @@ static void handleToggleSetting() {
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
+  if (key == "card" || key == "cleft" || key == "cbot") triggerDisplayTransition();
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
@@ -1671,6 +1677,9 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.doorClosedColor, buf); disp["doorClosedColor"] = String(buf);
   rgb565ToHtml(dispSettings.doorOpenColor, buf);   disp["doorOpenColor"] = String(buf);
   disp["roundSkin"] = dispSettings.roundSkin;
+  disp["cardStyle"] = dispSettings.cardStyle;
+  disp["cardLeft"] = dispSettings.cardLeft;
+  disp["cardBottom"] = dispSettings.cardBottom;
   disp["glowMode"] = dispSettings.glowMode;
   rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
   disp["glowStyle"] = dispSettings.glowStyle;
@@ -2051,6 +2060,9 @@ static void handleSettingsImportFinish() {
     if (disp["doorClosedColor"].is<const char*>()) dispSettings.doorClosedColor = htmlToRgb565(disp["doorClosedColor"]);
     if (disp["doorOpenColor"].is<const char*>())   dispSettings.doorOpenColor = htmlToRgb565(disp["doorOpenColor"]);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
+    if (disp["cardStyle"].is<int>())  { int v = disp["cardStyle"].as<int>();  dispSettings.cardStyle  = (v == 1) ? 1 : 0; }
+    if (disp["cardLeft"].is<int>())   { int v = disp["cardLeft"].as<int>();   dispSettings.cardLeft   = (v == 1) ? 1 : 0; }
+    if (disp["cardBottom"].is<int>()) { int v = disp["cardBottom"].as<int>(); dispSettings.cardBottom = (v == 1) ? 1 : 0; }
     if (disp["glowMode"].is<int>())  { int gm = disp["glowMode"].as<int>();  dispSettings.glowMode = (gm >= 0 && gm <= 2) ? (uint8_t)gm : 0; }
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
     if (disp["glowStyle"].is<int>()) { int gs = disp["glowStyle"].as<int>(); dispSettings.glowStyle = (gs >= 0 && gs <= 2) ? (uint8_t)gs : 0; }

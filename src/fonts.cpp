@@ -1,4 +1,5 @@
 #include "fonts.h"
+#include "config.h"   // HAS_CARD_SKIN
 
 // VLW font tables are huge PROGMEM blobs. Including them in a header would
 // give every translation unit its own copy (each `const uint8_t name[]` at
@@ -20,6 +21,11 @@
 #include "fonts/inter_37.h"
 #endif
 
+#if HAS_CARD_SKIN
+#include "fonts/inter_card_num.h"   // ~15 KB
+#include "fonts/inter_card_lbl.h"   // ~7 KB
+#endif
+
 static FontID currentFont = FONT_NONE;
 
 static void applyBitmapFallback(lgfx::LovyanGFX& gfx, FontID id) {
@@ -32,6 +38,8 @@ static void applyBitmapFallback(lgfx::LovyanGFX& gfx, FontID id) {
         case FONT_SMALL_2X: gfx.setTextFont(2); break;
         case FONT_BODY_2X:  gfx.setTextFont(4); break;
         case FONT_LARGE_2X: gfx.setTextFont(4); break;
+        case FONT_CARD_NUM: gfx.setTextFont(4); break;
+        case FONT_CARD_LBL: gfx.setTextFont(1); break;
         default:          gfx.setTextFont(2); break;
     }
 }
@@ -78,6 +86,20 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
             if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
 #endif
             break;
+        case FONT_CARD_NUM:
+#if HAS_CARD_SKIN
+            if (!gfx.loadFont(inter_card_num)) applyBitmapFallback(gfx, FONT_CARD_NUM);
+#else
+            if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
+#endif
+            break;
+        case FONT_CARD_LBL:
+#if HAS_CARD_SKIN
+            if (!gfx.loadFont(inter_card_lbl)) applyBitmapFallback(gfx, FONT_CARD_LBL);
+#else
+            if (!gfx.loadFont(inter_10)) applyBitmapFallback(gfx, FONT_SMALL);
+#endif
+            break;
         case FONT_7SEG:
             gfx.unloadFont();
             gfx.setTextFont(7);
@@ -110,6 +132,13 @@ bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
         case FONT_SMALL_2X: return gfx.loadFont(inter_10);
         case FONT_BODY_2X:  return gfx.loadFont(inter_14);
         case FONT_LARGE_2X: return gfx.loadFont(inter_19);
+#endif
+#if HAS_CARD_SKIN
+        case FONT_CARD_NUM: return gfx.loadFont(inter_card_num);
+        case FONT_CARD_LBL: return gfx.loadFont(inter_card_lbl);
+#else
+        case FONT_CARD_NUM: return gfx.loadFont(inter_19);
+        case FONT_CARD_LBL: return gfx.loadFont(inter_10);
 #endif
         default:          return false;
     }

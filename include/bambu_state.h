@@ -125,6 +125,8 @@ inline uint64_t hmsKeyOf(uint32_t attr, uint32_t code) {
 #define LIGHT_OFF_ON_FAILED 0x02  // turn light off after a failed/cancelled print
 #define LIGHT_ON_AT_START   0x04  // turn light on when a print starts
 
+#define PRINT_MAP_MAX 8
+
 struct BambuState {
   bool connected;
   bool printing;
@@ -141,6 +143,11 @@ struct BambuState {
   float bedTarget;
   float chamberTemp;
   char subtaskName[128];      // 48 cut before the screen did: a real H2C name measured 47 chars (#187)
+  // print.mapping: one entry per slicer filament the job uses, (amsUnitId<<8)|trayId
+  // (unused 65535 entries dropped, slicer order kept). Cleared when the job name changes.
+  uint16_t printMap[PRINT_MAP_MAX];
+  uint8_t printMapCount;      // entries stored in printMap
+  uint8_t printMapTotal;      // used entries the printer reported (> count = truncated)
   bool caliPrintType;         // print_type == "system" (device-initiated calibration job)
   bool caliSubtask;           // subtask_name ends with "_calib_mode" (Studio calibration wizard job)
   bool caliGcodeFile;         // gcode_file is a built-in calibration gcode (auto_cali_for_user / extrusion_cali)

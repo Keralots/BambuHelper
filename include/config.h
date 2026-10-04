@@ -271,6 +271,15 @@
 #error "A board with an onboard WS2812 cannot drop the pixel driver"
 #endif
 
+// "Card" print-screen style (big percent, temperature row, AMS column), rendered
+// through an off-screen sprite. Landscape 320x240 on the 240x320 profile for now;
+// links two extra VLW blobs (inter_card_num / inter_card_lbl).
+#if defined(DISPLAY_240x320)
+#define HAS_CARD_SKIN  1
+#else
+#define HAS_CARD_SKIN  0
+#endif
+
 // HMS / print_error reporting. Four independent capabilities:
 //
 //   HAS_HMS_UI           the feature exists at all - state fields, parser,

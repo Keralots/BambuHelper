@@ -86,7 +86,7 @@ function saveWifi(){
 //              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, keepon, afterprint,
 //              fmins, afterfin, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
-//              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
+//              cydcls, cyd32e, rskin, card, cleft, cbot, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, clr_eta, clr_fin, clr_stok,
@@ -477,6 +477,7 @@ R"rawliteral(
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
 %ROUND_SKIN_ROW%
+%CARD_SKIN_ROW%
   </div>
 
   <div class="card" style="%BL_DISP%">
@@ -668,6 +669,7 @@ R"rawliteral(
         <button type="button" class="swatch" onclick="applyTheme('warm')"><span class="blob" style="background:#E0623A"></span> Warm</button>
         <button type="button" class="swatch" onclick="applyTheme('ocean')"><span class="blob" style="background:#2DB8C4"></span> Ocean</button>
         <button type="button" class="swatch" onclick="applyTheme('paper')"><span class="blob" style="background:#E8E8E8"></span> Paper</button>
+        <button type="button" class="swatch" onclick="applyTheme('warm')"><span class="blob" style="background:#E4E1DA"></span> Warm paper</button>
       </div>
 
       <div class="bulk-color-row">

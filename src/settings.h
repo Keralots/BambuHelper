@@ -90,6 +90,9 @@ struct DisplaySettings {
                             // 0 = Rim (rim progress ring + mini gauges),
                             // 1 = Speedo (one large 240-degree arc),
                             // 2 = Rings (concentric progress/nozzle/bed).
+  uint8_t  cardStyle;       // HAS_CARD_SKIN, landscape only: 0 = gauges, 1 = Card
+  uint8_t  cardLeft;        // Card left column: 0 = AMS slots, 1 = none
+  uint8_t  cardBottom;      // Card bottom band: 0 = temperatures, 1 = print filaments
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip

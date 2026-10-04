@@ -204,4 +204,13 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
 // gives up the message. The caller has already cleared the band.
 void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s);
 
+// Status badge wording / colour with the error and cancel overrides applied.
+// Returns s.gcodeState itself when no override is active.
+const char* stateBadgeText(const BambuState& s);
+uint16_t stateBadgeColor(const BambuState& s);
+
+// Print completion time ("14:05" / "2:05 PM") into buf; false and "" when the
+// user turned the timestamp off or the finish was never dated.
+bool formatFinishClock(char* buf, size_t n, const BambuState& s);
+
 #endif // DISPLAY_UI_H

@@ -363,6 +363,35 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "CARD_SKIN_ROW") == 0) {
+#if HAS_CARD_SKIN
+    // Landscape print-screen style + its two options. Same /save/toggle path
+    // as the round skin picker.
+    auto opt = [&](String& o, uint8_t cur, uint8_t v, const char* label) {
+      o += "<option value=\""; o += v; o += "\""; if (cur == v) o += " selected";
+      o += ">"; o += label; o += "</option>";
+    };
+    out  = "<div class=\"field\"><label for=\"card\">Print screen style (landscape)</label>";
+    out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value)\">";
+    opt(out, dispSettings.cardStyle, 0, "Gauges");
+    opt(out, dispSettings.cardStyle, 1, "Card (big percent + temperature row)");
+    out += "</select>";
+    out += "<span class=\"text-dim small\">portrait and split view keep the gauges</span></div>";
+    out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
+    out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
+    opt(out, dispSettings.cardLeft, 0, "AMS slots");
+    opt(out, dispSettings.cardLeft, 1, "None");
+    out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"cbot\">Card: bottom row</label>";
+    out += "<select id=\"cbot\" onchange=\"toggleSetting('cbot',this.value)\">";
+    opt(out, dispSettings.cardBottom, 0, "Temperatures");
+    opt(out, dispSettings.cardBottom, 1, "Filaments of this print");
+    out += "</select></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "ROUND_SKIN_ROW") == 0) {
 #if DISPLAY_IS_ROUND
     // Round boards only: printing dashboard skin picker. Posts through the

@@ -188,6 +188,9 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.cydPanelClassic = false;
   ds.cyd32eVariant = false;
   ds.roundSkin = 0;
+  ds.cardStyle = 0;
+  ds.cardLeft = 0;
+  ds.cardBottom = 0;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT_DEFAULT;
@@ -576,6 +579,12 @@ void loadSettings() {
   dispSettings.cyd32eVariant = prefs.getBool("dsp_cyd32e", def.cyd32eVariant);
   dispSettings.roundSkin = prefs.getUChar("dsp_rskin", def.roundSkin);
   if (dispSettings.roundSkin > 2) dispSettings.roundSkin = 0;
+  dispSettings.cardStyle = prefs.getUChar("dsp_card", def.cardStyle);
+  if (dispSettings.cardStyle > 1) dispSettings.cardStyle = 0;
+  dispSettings.cardLeft = prefs.getUChar("dsp_cleft", def.cardLeft);
+  if (dispSettings.cardLeft > 1) dispSettings.cardLeft = 0;
+  dispSettings.cardBottom = prefs.getUChar("dsp_cbot", def.cardBottom);
+  if (dispSettings.cardBottom > 1) dispSettings.cardBottom = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT_DEFAULT);
@@ -946,6 +955,9 @@ void saveSettings() {
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
   prefs.putBool("dsp_cyd32e", dispSettings.cyd32eVariant);
   prefs.putUChar("dsp_rskin", dispSettings.roundSkin);
+  prefs.putUChar("dsp_card", dispSettings.cardStyle);
+  prefs.putUChar("dsp_cleft", dispSettings.cardLeft);
+  prefs.putUChar("dsp_cbot", dispSettings.cardBottom);
   prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
   prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);

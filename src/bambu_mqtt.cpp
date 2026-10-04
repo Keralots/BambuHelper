@@ -473,6 +473,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   pf["ctc"]["info"]["temp"] = true;           // legacy/alternate chamber temp path
   pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
+  pf["mapping"] = true;     // slicer filament -> AMS tray map of the current job
   pf["print_type"] = true;  // "system" = device-initiated calibration (issue #149)
   pf["gcode_file"] = true;  // built-in calibration gcode names (issue #149)
   pf["layer_num"] = true;
@@ -997,6 +998,12 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   if (print["subtask_name"].is<const char*>()) {
     corePrintData = true;
     const char* name = print["subtask_name"];
+    // New job: drop the previous job's filament map before this message's
+    // mapping (if any) is applied below.
+    if (strncmp(s.subtaskName, name, sizeof(s.subtaskName) - 1) != 0) {
+      s.printMapCount = 0;
+      s.printMapTotal = 0;
+    }
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
     utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the buffer
     // Studio calibration wizard jobs are named "*_calib_mode"
@@ -1004,6 +1011,21 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     size_t snLen = strlen(s.subtaskName);
     s.caliSubtask = snLen >= 11 &&
                     strcmp(s.subtaskName + snLen - 11, "_calib_mode") == 0;
+  }
+
+  // A present array replaces the whole map (an empty one clears it); absent
+  // means "unchanged" like every other delta field.
+  if (print["mapping"].is<JsonArrayConst>()) {
+    uint8_t n = 0, total = 0;
+    for (JsonVariantConst v : print["mapping"].as<JsonArrayConst>()) {
+      if (!v.is<long>()) continue;
+      long raw = v.as<long>();
+      if (raw < 0 || raw >= 0xFFFF) continue;   // 65535 = slicer slot unused
+      if (total < 255) total++;
+      if (n < PRINT_MAP_MAX) s.printMap[n++] = (uint16_t)raw;
+    }
+    s.printMapCount = n;
+    s.printMapTotal = total;
   }
 
   // Calibration-print markers (issue #149). Each flag updates only when its
