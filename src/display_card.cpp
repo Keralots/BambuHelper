@@ -53,8 +53,8 @@ struct CardFrame {
   // plate thumbnail (left column landscape, beside the percent portrait)
   uint8_t  thumbShow;
   uint32_t thumbGen;
-  // AMS column / strip
-  uint8_t  amsShow;
+  // AMS column / strip; amsInBand = square: the slots replace the 2nd temperature row
+  uint8_t  amsShow, amsInBand;
   char     amsLabel[12];
   char     amsHum[8];
   uint8_t  trayCount;
@@ -293,15 +293,16 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
     if (s.printMapTotal > s.printMapCount) f.chipMore = s.printMapTotal - s.printMapCount;
     return;
   }
-  // Temperatures: only what this printer reports.
-  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f) addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG);
-  addCell(f, "BED", "BED", s.bedTemp, CU_DEG);
+  // Temperatures: only what this printer reports. Nozzles first, then bed and
+  // chamber - the square's AMS row keeps just the first three.
   if (s.dualNozzle) {
     addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG, s.activeNozzle == 1);
     addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG, s.activeNozzle == 0);
   } else {
     addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG);
   }
+  addCell(f, "BED", "BED", s.bedTemp, CU_DEG);
+  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f) addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG);
   int8_t u = displayAmsUnit(s.ams);
   if (u >= 0) {
     const AmsUnit& au = s.ams.units[u];
@@ -414,7 +415,10 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   f.pillColor = stateBadgeColor(s);
   copyRenderable(f.job, sizeof(f.job), jobDisplayName(s));
   snapAmsColumn(f, s);
-  if (geo().noAms) f.amsShow = 0;
+  if (geo().noAms && f.amsShow) {
+    f.amsShow = 0;
+    f.amsInBand = (f.trayCount || f.extShow) ? 1 : 0;
+  }
   snapBottom(f, s, p.config.serial);
   // Plate preview replaces the AMS column once a thumbnail exists. Needs the
   // full-frame sprite: the band path has nowhere to copy it from.
@@ -423,6 +427,7 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
     if (thumbGet(size, f.bg, &g_thumbPx, &f.thumbGen)) {
       f.thumbShow = 1;
       f.amsShow = 0;
+      f.amsInBand = 0;                    // preview instead of AMS, as elsewhere
     }
   }
 }
@@ -515,7 +520,14 @@ static void drawSlot(Cv& cv, const CardTray& t, const CardFrame& f,
   }
   char buf[12];
   cv.useFont(FONT_CARD_LBL);
-  fitText(cv, buf, sizeof(buf), t.type, w - 20);
+  // Too narrow for "PLA Matte": the material word alone beats "PLA ..".
+  if (cv.width(t.type) > w - 20) {
+    strlcpy(buf, t.type, sizeof(buf));
+    if (char* sp = strchr(buf, ' ')) *sp = '\0';
+    if (cv.width(buf) > w - 20) fitText(cv, buf, sizeof(buf), t.type, w - 20);
+  } else {
+    strlcpy(buf, t.type, sizeof(buf));
+  }
   cv.text(buf, x + 19, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
 }
 
@@ -623,13 +635,28 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
   }
   if (f.cellCount == 0) return;
   const int16_t cols = g.cellCols ? g.cellCols : f.cellCount;
+  // AMS row in the band: one row of temperatures, the slots below it.
+  const uint8_t nCells = f.amsInBand ? (uint8_t)std::min<int16_t>(f.cellCount, cols) : f.cellCount;
+  if (f.amsInBand) {
+    const int16_t top = rule + g.cellRowH;
+    cv.text(f.amsLabel, x0, top + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    if (f.amsHum[0])
+      cv.text(f.amsHum, x0 + w, top + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
+    const int16_t slotW = w / 4, h = 19;
+    const int16_t y = top + g.cellBaseOff - h + 3;
+    uint8_t n = 0;
+    for (uint8_t r = 0; r < f.trayCount + (f.extShow ? 1 : 0) && n < 4; r++, n++) {
+      const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
+      drawSlot(cv, t, f, x0 + n * slotW, y, slotW - 6, h);
+    }
+  }
   // One row: each cell gets what its label/value needs plus an even share of
   // the slack, so a "250" next to "33" no longer runs into it. Grid: equal.
   int16_t cellX[LY_CARD_TEMP_MAX + 1];
   cellX[0] = x0;
   if (!g.cellCols) {
     int16_t need[LY_CARD_TEMP_MAX], sum = 0;
-    for (uint8_t i = 0; i < f.cellCount; i++) {
+    for (uint8_t i = 0; i < nCells; i++) {
       const CardCell& c = f.cells[i];
       char v[8];
       snprintf(v, sizeof(v), "%d", c.val);
@@ -640,20 +667,20 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       need[i] = std::max(vw, lw);
       sum += need[i];
     }
-    int16_t slack = (w - sum) / f.cellCount;
+    int16_t slack = (w - sum) / nCells;
     if (slack < 0) slack = 0;
-    for (uint8_t i = 0; i < f.cellCount; i++) cellX[i + 1] = cellX[i] + need[i] + slack;
+    for (uint8_t i = 0; i < nCells; i++) cellX[i + 1] = cellX[i] + need[i] + slack;
   } else {
-    for (uint8_t i = 0; i < f.cellCount; i++) cellX[i + 1] = x0 + ((i + 1) % cols) * (w / cols);
+    for (uint8_t i = 0; i < nCells; i++) cellX[i + 1] = x0 + ((i + 1) % cols) * (w / cols);
   }
   // One label length for the whole band: "NOZZLE L" beside "NOZ R" reads as a bug.
   bool shortLbl = false;
   cv.useFont(FONT_CARD_LBL);
-  for (uint8_t i = 0; i < f.cellCount && !shortLbl; i++) {
+  for (uint8_t i = 0; i < nCells && !shortLbl; i++) {
     const int16_t cw = g.cellCols ? (w / cols) : (cellX[i + 1] - cellX[i]);
     shortLbl = cv.width(f.cells[i].lbl) > cw - 4;
   }
-  for (uint8_t i = 0; i < f.cellCount; i++) {
+  for (uint8_t i = 0; i < nCells; i++) {
     const CardCell& c = f.cells[i];
     const int16_t x = g.cellCols ? (x0 + (i % cols) * (w / cols)) : cellX[i];
     const int16_t cw = g.cellCols ? (w / cols) : (cellX[i + 1] - cellX[i]);
@@ -1074,7 +1101,7 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
   if (tasmotaIsActiveForSlot(rotState.displayIndex))
     snprintf(f.watts, sizeof(f.watts), "%.0f W", tasmotaGetWattsForSlot(rotState.displayIndex));
   // Active filament on the layer line only when nothing else on screen shows it.
-  f.showActiveFil = (!f.amsShow && !f.bandFilaments) ? 1 : 0;
+  f.showActiveFil = (!f.amsShow && !f.amsInBand && !f.bandFilaments) ? 1 : 0;
   if (f.showActiveFil) activeFilament(s, f.activeFil);
   return present(force);
 }
@@ -1104,6 +1131,7 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   CardFrame& f = g_cur;
   snapCommon(f, CK_IDLE, p);
   f.amsShow = 0;                          // idle lists every unit as swatches instead
+  f.amsInBand = 0;
   if (s.gcodeStateId == GCODE_FINISH) {
     strlcpy(f.head, "Print complete", sizeof(f.head));
     f.headColor = f.finish;               // job name stays as the sub line
