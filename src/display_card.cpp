@@ -335,6 +335,33 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s) {
   }
 }
 
+// Copy UTF-8 text keeping only code points the VLW pack has (ASCII, Latin-1,
+// Latin Extended-A, Romanian S/T comma, euro); others would draw as boxes.
+static void copyRenderable(char* dst, size_t n, const char* src) {
+  size_t o = 0;
+  const uint8_t* p = (const uint8_t*)src;
+  while (*p && o + 1 < n) {
+    uint32_t cp; int len;
+    if (*p < 0x80)              { cp = *p; len = 1; }
+    else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1F; len = 2; }
+    else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0F; len = 3; }
+    else if ((*p & 0xF8) == 0xF0) { cp = *p & 0x07; len = 4; }
+    else { p++; continue; }
+    int k = 1;
+    for (; k < len && (p[k] & 0xC0) == 0x80; k++) cp = (cp << 6) | (p[k] & 0x3F);
+    if (k < len) { p += k; continue; }       // truncated sequence
+    bool ok = (cp >= 0x20 && cp < 0x7F) || (cp >= 0xA0 && cp < 0x180) ||
+              (cp >= 0x218 && cp <= 0x21B) || cp == 0x20AC;
+    if (ok) {
+      if (o + len >= n) break;
+      memcpy(dst + o, p, len);
+      o += len;
+    }
+    p += len;
+  }
+  dst[o] = '\0';
+}
+
 static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   memset(&f, 0, sizeof(f));
   const BambuState& s = p.state;
@@ -353,7 +380,7 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   f.finish = dispSettings.finishColor;
   f.nozAccent = dispSettings.nozzle.arc;
 
-  strlcpy(f.name, p.config.name[0] ? p.config.name : "Printer", sizeof(f.name));
+  copyRenderable(f.name, sizeof(f.name), p.config.name[0] ? p.config.name : "Printer");
   if (getActiveConnCount() > 1) {
     for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
       if (!isPrinterConfigured(i)) continue;
@@ -370,7 +397,7 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
 #endif
   strlcpy(f.pill, pillWord(s), sizeof(f.pill));
   f.pillColor = stateBadgeColor(s);
-  strlcpy(f.job, jobDisplayName(s), sizeof(f.job));
+  copyRenderable(f.job, sizeof(f.job), jobDisplayName(s));
   snapAmsColumn(f, s);
   snapBottom(f, s, p.config.serial);
 }
@@ -409,7 +436,10 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.text(f.watts, limit, g.hdrCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_BODY);
     int16_t ix = limit - cv.width(f.watts) - 15;
-    cv.icon(ix, g.hdrCy - 8, icon_lightning, CLR_YELLOW);
+    // Yellow vanishes on a light background; take the amber there.
+    const uint16_t bg = f.bg;
+    const bool lightBg = (((bg >> 11) & 0x1F) * 2 + ((bg >> 5) & 0x3F) + (bg & 0x1F) * 2) > 120;
+    cv.icon(ix, g.hdrCy - 8, icon_lightning, lightBg ? 0xC400 : CLR_YELLOW);
     limit = ix - 6;
   }
   // Multi-printer dots, centred (or left of whatever sits on the right)
@@ -472,12 +502,14 @@ static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
   const int16_t x0 = g.pad, w = g.W - 2 * g.pad;
   cv.text(f.amsLabel, x0, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
   if (f.amsHum[0]) cv.text(f.amsHum, x0 + w, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
-  const int16_t slotW = w / 4;
+  const int16_t cols = g.stripCols ? g.stripCols : 4;
+  const int16_t slotW = w / cols;
+  const int16_t rowH = g.stripCols ? g.stripRowH : 0;
   uint8_t n = 0;
-  for (uint8_t r = 0; r < f.trayCount && n < 4; r++, n++)
-    drawSlot(cv, f.trays[r], f, x0 + n * slotW, g.stripY, slotW - 6, g.stripH);
-  if (f.extShow && n < 4)
-    drawSlot(cv, f.ext, f, x0 + n * slotW, g.stripY, slotW - 6, g.stripH);
+  for (uint8_t r = 0; r < f.trayCount + (f.extShow ? 1 : 0) && n < 4; r++, n++) {
+    const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
+    drawSlot(cv, t, f, x0 + (n % cols) * slotW, g.stripY + (n / cols) * rowH, slotW - 8, g.stripH);
+  }
 }
 
 // "2h 14m": numbers in FONT_LARGE, units dim in FONT_BODY, right-aligned at xr.
@@ -509,14 +541,14 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     const int16_t moreW = cv.width("+8") + 8;
     for (uint8_t i = 0; i < f.chipCount; i++) {
       const CardChip& c = f.chips[i];
-      const int16_t need = 15 + cv.width(c.type);
+      const int16_t need = 19 + cv.width(c.type);
       const bool canWrap = cy + 24 + 8 <= yMax;
       if (x > x0 && x + need > x0 + w && canWrap) { x = x0; cy += 24; }
       // Keep room for a "+N" unless this is the last chip and nothing is hidden.
       const bool reserve = (i + 1 < f.chipCount) || hidden;
       if (x + need > x0 + w - (reserve && !canWrap ? moreW : 0)) { hidden += f.chipCount - i; break; }
-      drawChipDot(cv, x + 6, cy, c, f);
-      cv.text(c.type, x + 15, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+      drawChipDot(cv, x + 7, cy, c, f);
+      cv.text(c.type, x + 19, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
       cv.useFont(FONT_BODY);
       x += need + 12;
     }
@@ -529,15 +561,45 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
   }
   if (f.cellCount == 0) return;
   const int16_t cols = g.cellCols ? g.cellCols : f.cellCount;
-  const int16_t cw = w / cols;
+  // One row: each cell gets what its label/value needs plus an even share of
+  // the slack, so a "250" next to "33" no longer runs into it. Grid: equal.
+  int16_t cellX[LY_CARD_TEMP_MAX + 1];
+  cellX[0] = x0;
+  if (!g.cellCols) {
+    int16_t need[LY_CARD_TEMP_MAX], sum = 0;
+    for (uint8_t i = 0; i < f.cellCount; i++) {
+      const CardCell& c = f.cells[i];
+      char v[8];
+      snprintf(v, sizeof(v), "%d", c.val);
+      cv.useFont(FONT_LARGE);
+      int16_t vw = cv.width(v) + (c.unit == CU_DEG ? 8 : 16);
+      cv.useFont(FONT_CARD_LBL);
+      int16_t lw = cv.width(c.lblShort);
+      need[i] = std::max(vw, lw);
+      sum += need[i];
+    }
+    int16_t slack = (w - sum) / f.cellCount;
+    if (slack < 0) slack = 0;
+    for (uint8_t i = 0; i < f.cellCount; i++) cellX[i + 1] = cellX[i] + need[i] + slack;
+  } else {
+    for (uint8_t i = 0; i < f.cellCount; i++) cellX[i + 1] = x0 + ((i + 1) % cols) * (w / cols);
+  }
+  // One label length for the whole band: "NOZZLE L" beside "NOZ R" reads as a bug.
+  bool shortLbl = false;
+  cv.useFont(FONT_CARD_LBL);
+  for (uint8_t i = 0; i < f.cellCount && !shortLbl; i++) {
+    const int16_t cw = g.cellCols ? (w / cols) : (cellX[i + 1] - cellX[i]);
+    shortLbl = cv.width(f.cells[i].lbl) > cw - 4;
+  }
   for (uint8_t i = 0; i < f.cellCount; i++) {
     const CardCell& c = f.cells[i];
-    const int16_t x = x0 + (i % cols) * cw;
+    const int16_t x = g.cellCols ? (x0 + (i % cols) * (w / cols)) : cellX[i];
+    const int16_t cw = g.cellCols ? (w / cols) : (cellX[i + 1] - cellX[i]);
     const int16_t top = rule + (i / cols) * g.cellRowH;
     const int16_t base = top + 46;
     if (base > yMax) break;
     cv.useFont(FONT_CARD_LBL);
-    const char* lbl = (cv.width(c.lbl) <= cw - 4) ? c.lbl : c.lblShort;
+    const char* lbl = shortLbl ? c.lblShort : c.lbl;
     cv.text(lbl, x, top + 8, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     char v[8];
     snprintf(v, sizeof(v), "%d", c.val);

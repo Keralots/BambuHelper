@@ -16,6 +16,7 @@ struct CardGeo {
   // AMS: a left column (amsColW > 0, landscape) or a strip under the hero
   int16_t amsColW, amsHdrY, amsRowY, amsRowH;
   int16_t stripLblY, stripY, stripH;
+  int16_t stripCols, stripRowH;   // 0 = one row of 4 slots
   // bottom band
   int16_t botRuleAms, botRuleNoAms;
   int16_t cellCols;          // 0 = every cell on one row
@@ -34,20 +35,22 @@ static const CardGeo CARD_GEO_LAND = {
   44, 70, 120, 130, 6, 152,
   68, 38, 51, 22,
   0, 0, 0,
+  0, 0,
   174, 174, 0, 42,
   52, 76, 96, 116, 140, 158, 174,
   58, 84, 92, 1, 112, 18, 1, 174,
 };
 
 // 240x320 portrait: hero at the full 216 px width (same as the landscape hero
-// beside the AMS column), AMS as a 4-slot strip, temperatures on a 3x2 grid.
+// beside the AMS column), AMS as a 2x2 slot grid, temperatures on a 3x2 grid.
 static const CardGeo CARD_GEO_PORT = {
   240, 320, 12,
   15, 30, 15, 7,
-  44, 68, 112, 122, 6, 144,
+  42, 62, 106, 114, 6, 134,
   0, 0, 0, 0,
-  154, 166, 20,
-  200, 166, 3, 42,
+  152, 164, 19,
+  2, 22,
+  212, 162, 3, 48,
   52, 72, 90, 106, 126, 148, 166,
   50, 72, 134, 0, 146, 18, 0, 214,
 };
