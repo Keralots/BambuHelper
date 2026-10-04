@@ -36,9 +36,9 @@ struct CardGeo {
   int16_t noAms;             // 1 = no room for an AMS column / strip
 };
 
-// 320x240 landscape. Outer pad 12 > GLOW_THICKNESS_PX (8).
+// 320x240 landscape. Outer pad 10 > GLOW_THICKNESS_PX (8).
 static const CardGeo CARD_GEO_LAND = {
-  320, 240, 12,
+  320, 240, 10,
   15, 30, 15, 7,
   44, 70, 120, 130, 6, 152,
   68, 38, 51, 22,
@@ -56,7 +56,7 @@ static const CardGeo CARD_GEO_LAND = {
 // 240x320 portrait: hero at the full 216 px width (same as the landscape hero
 // beside the AMS column), AMS as a 2x2 slot grid, temperatures on a 3x2 grid.
 static const CardGeo CARD_GEO_PORT = {
-  240, 320, 12,
+  240, 320, 10,
   15, 30, 15, 7,
   42, 62, 106, 114, 6, 134,
   0, 0, 0, 0,
@@ -74,7 +74,7 @@ static const CardGeo CARD_GEO_PORT = {
 // 240x240 square: S1 layout. No AMS column/strip; temperatures 3x2 with
 // tighter rows; idle clock small beside "Ready" (idleClockRight == 2).
 static const CardGeo CARD_GEO_SQ = {
-  240, 240, 12,
+  240, 240, 10,
   15, 30, 15, 7,
   42, 56, 100, 112, 6, 132,
   0, 0, 0, 0,
@@ -84,7 +84,7 @@ static const CardGeo CARD_GEO_SQ = {
   48, 64, 82, 96, 116, 132, 144,
   48, 70, 48, 2, 86, 16, 0, 148,
   6, 38,
-  56, 48,
+  56, 54,                // below the name strip (32..52), or the marquee clips it
   112, 132, 0, 0, 144, 1,
   1,
 };
