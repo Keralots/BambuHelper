@@ -758,7 +758,10 @@ static void handleCardBmp() {
   server.sendContent((const char*)hdr, sizeof(hdr));
   uint8_t row[480 * 3 + 4];
   if (rowBytes > sizeof(row)) return;
+  const unsigned long t0 = millis();
   for (int16_t y = h - 1; y >= 0; y--) {          // BMP rows run bottom-up
+    // A slow or vanished client must not hold the loop (display, MQTT) hostage.
+    if (!server.client().connected() || millis() - t0 > 5000) { server.client().stop(); return; }
     memset(row, 0, rowBytes);
     const uint16_t* src = buf + (uint32_t)y * w;
     for (int16_t x = 0; x < w; x++) {

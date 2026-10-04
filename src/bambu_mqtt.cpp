@@ -1005,6 +1005,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     if (strncmp(s.subtaskName, name, sizeof(s.subtaskName) - 1) != 0) {
       s.printMapCount = 0;
       s.printMapTotal = 0;
+      s.taskId[0] = 0;          // re-sent with the new job; never pair it with the old one
+      s.plateIdx = 0;
     }
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
     utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the buffer
@@ -1015,13 +1017,28 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
                     strcmp(s.subtaskName + snLen - 11, "_calib_mode") == 0;
   }
 
-  if (print["task_id"].is<const char*>()) {
-    strlcpy(s.taskId, print["task_id"].as<const char*>(), sizeof(s.taskId));
-  } else if (print["task_id"].is<long long>()) {
-    snprintf(s.taskId, sizeof(s.taskId), "%lld", print["task_id"].as<long long>());
+  {
+    char tid[sizeof(s.taskId)] = "";
+    if (print["task_id"].is<const char*>()) {
+      strlcpy(tid, print["task_id"].as<const char*>(), sizeof(tid));
+    } else if (print["task_id"].is<long long>()) {
+      snprintf(tid, sizeof(tid), "%lld", print["task_id"].as<long long>());
+    }
+    if (tid[0] && strcmp(tid, s.taskId) != 0) {
+      // Different job under the same name: its map and plate come fresh too.
+      if (s.taskId[0]) { s.printMapCount = 0; s.printMapTotal = 0; s.plateIdx = 0; }
+      strlcpy(s.taskId, tid, sizeof(s.taskId));
+    }
   }
 
-  if (print["plate_idx"].is<int>()) s.plateIdx = (uint16_t)constrain(print["plate_idx"].as<int>(), 0, 999);
+  if (print["plate_idx"].is<int>()) {
+    s.plateIdx = (uint16_t)constrain(print["plate_idx"].as<int>(), 0, 999);
+  } else if (s.plateIdx == 0 && print["gcode_file"].is<const char*>()) {
+    // "/data/Metadata/plate_3.gcode": the plate also rides on gcode_file, which
+    // comes with the job start even when plate_idx does not.
+    const char* pl = strstr(print["gcode_file"].as<const char*>(), "plate_");
+    if (pl) s.plateIdx = (uint16_t)constrain(atoi(pl + 6), 0, 999);
+  }
 
   // A present array replaces the whole map (an empty one clears it); absent
   // means "unchanged" like every other delta field.

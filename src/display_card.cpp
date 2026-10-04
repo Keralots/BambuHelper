@@ -890,7 +890,10 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
 
   // ETA (right) first, then the stage label or layer count (left) in what is left.
   int16_t rightStart = hr;
-  if (f.eta[0]) {
+  if (remOnLine && !f.eta[0] && f.remainMin > 0) {
+    // No synced clock means no ETA - the remaining time is better than nothing.
+    rightStart = hr - drawDuration(cv, hr, cy + cv.S(8), f.remainMin, f);
+  } else if (f.eta[0]) {
     cv.text(f.eta, hr, cy, FONT_BODY, f.etaClr, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_BODY);
     int16_t ex = hr - cv.width(f.eta) - cv.S(5);
@@ -1062,8 +1065,10 @@ static bool present(bool force) {
     drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
   } else {
-    // No PSRAM frame: keep whatever Card frame is on screen and retry next tick.
-    return g_lastValid;
+    // No PSRAM frame (e.g. re-creating it for a new rotation failed): hand the
+    // screen back to the classic renderer rather than leave a stale frame up.
+    g_lastValid = false;
+    return false;
   }
   memcpy(&g_last, &g_cur, sizeof(CardFrame));
   g_lastValid = true;

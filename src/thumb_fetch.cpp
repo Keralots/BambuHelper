@@ -158,7 +158,8 @@ void thumbService() {
   if (!j) return;
   if (!loadCloudToken(j->token, sizeof(j->token)) || !j->token[0]) {
     heap_caps_free(j);
-    g_fails = MAX_FAILS;                    // not signed in: nothing to retry
+    g_failAt = millis();                    // not signed in (yet): look again in a minute
+    g_backoff = 60000;
     return;
   }
   strlcpy(j->taskId, s.taskId, sizeof(j->taskId));

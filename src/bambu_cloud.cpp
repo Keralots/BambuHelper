@@ -220,6 +220,31 @@ bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion r
 //  a serial off a label - a wrong serial connects happily and then shows no
 //  data, which is the single most common cloud misconfiguration.
 // ---------------------------------------------------------------------------
+// String sink that refuses to grow past a cap - writeToStream() decodes chunked
+// replies too, which getSize() cannot bound (it reports -1 for those).
+class CappedSink : public Stream {
+ public:
+  explicit CappedSink(size_t cap) : cap_(cap) { body.reserve(4096); }
+  String body;
+  bool over = false;
+  size_t write(uint8_t c) override {
+    if (body.length() >= cap_) { over = true; return 0; }
+    body += (char)c;
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t n) override {
+    if (body.length() + n > cap_) { over = true; return 0; }
+    body.concat((const char*)b, n);
+    return n;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+ private:
+  size_t cap_;
+};
+
 bool cloudFetchPlateThumbUrl(const char* token, CloudRegion region, const char* taskId,
                              int plateIdx, char* url, size_t urlLen) {
   url[0] = '\0';
@@ -240,8 +265,14 @@ bool cloudFetchPlateThumbUrl(const char* token, CloudRegion region, const char* 
     http.end();
     return false;
   }
-  String body = http.getString();
+  CappedSink sink(32768);
+  const int wrote = http.writeToStream(&sink);
   http.end();
+  if (wrote < 0 || sink.over) {
+    Serial.printf("THUMB: task body rejected (%d, over=%d)\n", wrote, sink.over);
+    return false;
+  }
+  const String& body = sink.body;
 
   JsonDocument filter;
   filter["context"]["plates"][0]["index"] = true;
