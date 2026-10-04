@@ -804,7 +804,7 @@ static void handleToggleSetting() {
   else if (key == "rskin")   dispSettings.roundSkin = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
 #if HAS_CARD_SKIN
   else if (key == "card")    dispSettings.cardStyle  = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
-  else if (key == "cleft")   dispSettings.cardLeft   = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+  else if (key == "cleft")   dispSettings.cardLeft   = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "cbot")    dispSettings.cardBottom = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
 #endif
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
@@ -1124,28 +1124,6 @@ static void handleCloudSelfTest() {
 }
 
 #endif // HAS_CLOUD_LOGIN
-
-// Thumbnail spike (temporary): which cloud endpoint returns a plate-specific
-// thumbnail for the displayed printer's task. Only these fixed paths.
-static void handleCloudThumbProbe() {
-  PrinterSlot& p = displayedPrinter();
-  const char* task = p.state.taskId;
-  int v = server.hasArg("v") ? server.arg("v").toInt() : 1;
-  char path[160];
-  switch (v) {
-    case 1: case 2: snprintf(path, sizeof(path), "/v1/iot-service/api/user/task/%s", task); break;
-    case 3: case 4: snprintf(path, sizeof(path), "/v1/user-service/my/tasks?deviceId=%s&limit=1", p.config.serial); break;
-    default: server.send(400, "text/plain", "v=1..4"); return;
-  }
-  static char token[1200];
-  if (!loadCloudToken(token, sizeof(token))) { server.send(400, "text/plain", "no cloud token"); return; }
-  String body;
-  int code = cloudProbeGet(token, p.config.region, path, v == 2 || v == 4, body);
-  memset(token, 0, sizeof(token));
-  String out = "HTTP " + String(code) + " task=" + String(task) + " len=" + String(body.length()) + "\n";
-  out += body.substring(0, 8000);
-  server.send(200, "text/plain", out);
-}
 
 // "Test" button next to the edge-glow settings: preview the configured effect
 // for ~5 s on whatever screen is up. Accepts the picker's current color so the
@@ -2117,7 +2095,7 @@ static void handleSettingsImportFinish() {
     if (disp["doorOpenColor"].is<const char*>())   dispSettings.doorOpenColor = htmlToRgb565(disp["doorOpenColor"]);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
     if (disp["cardStyle"].is<int>())  { int v = disp["cardStyle"].as<int>();  dispSettings.cardStyle  = (v == 1) ? 1 : 0; }
-    if (disp["cardLeft"].is<int>())   { int v = disp["cardLeft"].as<int>();   dispSettings.cardLeft   = (v == 1) ? 1 : 0; }
+    if (disp["cardLeft"].is<int>())   { int v = disp["cardLeft"].as<int>();   dispSettings.cardLeft   = (v >= 0 && v <= 2) ? (uint8_t)v : 0; }
     if (disp["cardBottom"].is<int>()) { int v = disp["cardBottom"].as<int>(); dispSettings.cardBottom = (v == 1) ? 1 : 0; }
     if (disp["glowMode"].is<int>())  { int gm = disp["glowMode"].as<int>();  dispSettings.glowMode = (gm >= 0 && gm <= 2) ? (uint8_t)gm : 0; }
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
@@ -2734,7 +2712,6 @@ void initWebServer() {
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);
   server.on("/card.bmp", HTTP_GET, handleCardBmp);
-  server.on("/cloud/thumbprobe", HTTP_GET, handleCloudThumbProbe);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);

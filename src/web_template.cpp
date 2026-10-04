@@ -381,6 +381,9 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
     opt(out, dispSettings.cardLeft, 0, "AMS slots");
     opt(out, dispSettings.cardLeft, 1, "None");
+#if HAS_CARD_THUMB
+    opt(out, dispSettings.cardLeft, 2, "Plate preview (Bambu cloud sign-in, else AMS)");
+#endif
     out += "</select></div>";
     out += "<div class=\"field\"><label for=\"cbot\">Card: bottom row</label>";
     out += "<select id=\"cbot\" onchange=\"toggleSetting('cbot',this.value)\">";

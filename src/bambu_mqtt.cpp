@@ -474,7 +474,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
   pf["mapping"] = true;
-  pf["task_id"] = true;     // cloud job id - plate thumbnail lookup     // slicer filament -> AMS tray map of the current job
+  pf["task_id"] = true;     // cloud job id - plate thumbnail lookup
+  pf["plate_idx"] = true;     // slicer filament -> AMS tray map of the current job
   pf["print_type"] = true;  // "system" = device-initiated calibration (issue #149)
   pf["gcode_file"] = true;  // built-in calibration gcode names (issue #149)
   pf["layer_num"] = true;
@@ -1019,6 +1020,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   } else if (print["task_id"].is<long long>()) {
     snprintf(s.taskId, sizeof(s.taskId), "%lld", print["task_id"].as<long long>());
   }
+
+  if (print["plate_idx"].is<int>()) s.plateIdx = (uint16_t)constrain(print["plate_idx"].as<int>(), 0, 999);
 
   // A present array replaces the whole map (an empty one clears it); absent
   // means "unchanged" like every other delta field.

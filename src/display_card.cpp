@@ -13,6 +13,7 @@
 #include "hms_lookup.h"      // printerWasCanceled, ERROR_BADGE_TEXT
 #include "tasmota.h"         // plug watts / kWh
 #include "battery.h"
+#include "thumb_fetch.h"
 
 // ---------------------------------------------------------------------------
 //  Frame snapshot. Everything the card shows, captured once per tick; the
@@ -47,6 +48,9 @@ struct CardFrame {
   uint16_t layer, layers;
   uint8_t  showActiveFil;
   CardChip activeFil;
+  // plate thumbnail (left column landscape, beside the percent portrait)
+  uint8_t  thumbShow;
+  uint32_t thumbGen;
   // AMS column / strip
   uint8_t  amsShow;
   char     amsLabel[12];
@@ -75,6 +79,11 @@ struct CardFrame {
 
 static CardFrame g_cur, g_last;
 static bool      g_lastValid = false;
+static const uint16_t* g_thumbPx = nullptr;   // pixels behind f.thumbShow (swapped RGB565)
+
+// Plate thumbnail sizes: landscape left column, portrait beside the percent.
+static const int16_t THUMB_LAND = 84;
+static const int16_t THUMB_PORT = 76;
 
 static const CardGeo& geo() {
   return (dispSettings.rotation & 1) ? CARD_GEO_LAND : CARD_GEO_PORT;
@@ -302,7 +311,7 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
 }
 
 static void snapAmsColumn(CardFrame& f, const BambuState& s) {
-  if (dispSettings.cardLeft != 0) return;
+  if (dispSettings.cardLeft == 1) return;
   const AmsState& a = s.ams;
   int8_t u = displayAmsUnit(a);
   if (u < 0 || u >= AMS_TRAY_UNITS) {
@@ -400,6 +409,15 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   copyRenderable(f.job, sizeof(f.job), jobDisplayName(s));
   snapAmsColumn(f, s);
   snapBottom(f, s, p.config.serial);
+  // Plate preview replaces the AMS column once a thumbnail exists. Needs the
+  // full-frame sprite: the band path has nowhere to copy it from.
+  if (dispSettings.cardLeft == 2 && kind != CK_IDLE && g_full) {
+    const int16_t size = (dispSettings.rotation & 1) ? THUMB_LAND : THUMB_PORT;
+    if (thumbGet(size, f.bg, &g_thumbPx, &f.thumbGen)) {
+      f.thumbShow = 1;
+      f.amsShow = 0;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -617,14 +635,30 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
   }
 }
 
-// Hero column: beside the AMS column in landscape, full width otherwise.
+// Hero column: beside the AMS column / thumbnail in landscape, full width otherwise.
 static void heroX(const CardFrame& f, const CardGeo& g, int16_t& x, int16_t& w) {
-  x = (f.amsShow && g.amsColW) ? (g.pad + g.amsColW + 14) : g.pad;
+  if (g.amsColW && f.thumbShow)     x = g.pad + THUMB_LAND + 14;
+  else if (g.amsColW && f.amsShow)  x = g.pad + g.amsColW + 14;
+  else                              x = g.pad;
   w = g.W - g.pad - x;
 }
 
+// Portrait with a thumbnail: the thumb sits right of the percent, so the bar,
+// the layer line and REMAINING move below it.
+static const int16_t PT_BAR_Y = 134, PT_LINE_CY = 154, PT_REM_LBL_Y = 170, PT_REM_BASE = 200,
+                     PT_RULE = 212;
+
+static bool portraitThumb(const CardFrame& f, const CardGeo& g) { return f.thumbShow && !g.amsColW; }
+static int16_t barY(const CardFrame& f, const CardGeo& g) { return portraitThumb(f, g) ? PT_BAR_Y : g.barY; }
+
 static int16_t bottomRule(const CardFrame& f, const CardGeo& g) {
+  if (portraitThumb(f, g)) return PT_RULE;
   return (f.amsShow && !g.amsColW) ? g.botRuleAms : g.botRuleNoAms;
+}
+
+static void drawThumb(Cv& cv, int16_t x, int16_t y, int16_t size) {
+  if (!g_thumbPx) return;
+  cv.g->pushImage(x - cv.ox, y - cv.oy, size, size, (const lgfx::swap565_t*)g_thumbPx);
 }
 
 // Progress bar, optionally with the shimmer highlight centred at shimmerX.
@@ -640,10 +674,11 @@ static const int16_t SHIMMER_HALF = 12;   // highlight half-width, px
 static void drawBar(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t shimmerX) {
   int16_t hx, hw;
   heroX(f, g, hx, hw);
-  cv.rrect(hx, g.barY, hw, g.barH, g.barH / 2, f.track);
+  const int16_t by = barY(f, g);
+  cv.rrect(hx, by, hw, g.barH, g.barH / 2, f.track);
   int16_t fw = (int16_t)((int32_t)hw * (f.pct > 100 ? 100 : f.pct) / 100);
   if (fw < g.barH) return;
-  cv.rrect(hx, g.barY, fw, g.barH, g.barH / 2, f.bar);
+  cv.rrect(hx, by, fw, g.barH, g.barH / 2, f.bar);
   if (shimmerX < 0) return;
   // Soft triangular highlight toward white, kept off the rounded ends.
   const int16_t lo = hx + g.barH / 2, hi = hx + fw - g.barH / 2;
@@ -651,13 +686,23 @@ static void drawBar(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t shimme
     if (x < lo || x >= hi) continue;
     int16_t d = abs(x - shimmerX);
     uint8_t a = (uint8_t)(170 * (SHIMMER_HALF - d) / SHIMMER_HALF);
-    cv.rect(x, g.barY, 1, g.barH, blend565(a, CLR_TEXT_DEFAULT, f.bar));
+    cv.rect(x, by, 1, g.barH, blend565(a, CLR_TEXT_DEFAULT, f.bar));
   }
 }
 
 static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   drawHeader(cv, f, g);
   if (f.amsShow) { if (g.amsColW) drawAmsColumn(cv, f, g); else drawAmsStrip(cv, f, g); }
+  const bool pThumb = portraitThumb(f, g);
+  if (f.thumbShow) {
+    if (g.amsColW) {
+      drawThumb(cv, g.pad, g.hdrRule + 10, THUMB_LAND);
+      int16_t rx = g.pad + THUMB_LAND + 7;
+      cv.vline(rx, g.hdrRule + 8, g.botRuleAms - g.hdrRule - 16, f.track);
+    } else {
+      drawThumb(cv, g.W - g.pad - THUMB_PORT, g.nameCy + 10, THUMB_PORT);
+    }
+  }
   int16_t hx, hw;
   heroX(f, g, hx, hw);
   const int16_t hr = hx + hw;
@@ -675,15 +720,18 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   int16_t px = hx - 2 + cv.width(pct) + 3;
   cv.text("%", px, g.bigBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_left);
 
-  // Remaining
-  cv.text("REMAINING", hr, g.remLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
-  if (f.remainMin > 0) drawDuration(cv, hr, g.bigBase, f.remainMin, f);
-  else cv.text("--", hr, g.bigBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
+  // Remaining: top right, or its own row under the line when a portrait thumb takes that spot
+  const int16_t remLbl = pThumb ? PT_REM_LBL_Y : g.remLblY;
+  const int16_t remBase = pThumb ? PT_REM_BASE : g.bigBase;
+  if (pThumb) cv.text("REMAINING", hx, remLbl + 14, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  else        cv.text("REMAINING", hr, remLbl, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
+  if (f.remainMin > 0) drawDuration(cv, hr, remBase, f.remainMin, f);
+  else cv.text("--", hr, remBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
 
   drawBar(cv, f, g, -1);
 
   // Layer / stage (left), ETA (right), active filament (middle when there is room)
-  const int16_t cy = g.lineCy;
+  const int16_t cy = pThumb ? PT_LINE_CY : g.lineCy;
   int16_t leftEnd = hx;
   if (f.stage[0]) {
     cv.useFont(FONT_BODY);
@@ -726,9 +774,17 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
 
 static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
   drawHeader(cv, f, g);
-  const bool col = f.amsShow && g.amsColW;
-  if (col) drawAmsColumn(cv, f, g);
-  int16_t hx = col ? (g.pad + g.amsColW + 14) : g.pad;
+  const bool col = (f.amsShow || f.thumbShow) && g.amsColW;
+  if (f.thumbShow && g.amsColW) {
+    drawThumb(cv, g.pad, g.hdrRule + 10, THUMB_LAND);
+    cv.vline(g.pad + THUMB_LAND + 7, g.hdrRule + 8, g.finBotRule - g.hdrRule - 16, f.track);
+  } else if (col) {
+    drawAmsColumn(cv, f, g);
+  }
+  int16_t hx, hw0;
+  heroX(f, g, hx, hw0);
+  (void)hw0;
+  if (!col) hx = g.pad;
   int16_t hw = g.W - g.pad - hx;
   char buf[64];
   cv.useFont(FONT_LARGE);
@@ -898,12 +954,13 @@ bool tickCardShimmer() {
     strip->deleteSprite();
     if (!strip->createSprite(hw, g.barH)) return false;   // ~3 KB
   }
-  Cv cv{strip, hx, g.barY, FONT_NONE};
+  const int16_t by = barY(g_last, g);
+  Cv cv{strip, hx, by, FONT_NONE};
   strip->fillSprite(g_last.bg);
   pos += SHIMMER_STEP;
   const bool done = pos >= fw + SHIMMER_HALF;
   drawBar(cv, g_last, g, done ? -1 : hx + pos - SHIMMER_HALF);
-  strip->pushSprite(&tft, hx, g.barY);
+  strip->pushSprite(&tft, hx, by);
   if (done) { pos = -1; pauseStart = now; }
   return true;
 }
@@ -953,7 +1010,7 @@ bool drawCardFinished(PrinterSlot& p, bool force) {
   const BambuState& s = p.state;
   CardFrame& f = g_cur;
   snapCommon(f, CK_FINISHED, p);
-  if (!(dispSettings.rotation & 1)) f.amsShow = 0;   // portrait finish has no strip
+  if (!(dispSettings.rotation & 1)) { f.amsShow = 0; f.thumbShow = 0; }   // portrait finish: neither
   if (printerWasCanceled(s)) {
     strlcpy(f.head, "Print canceled", sizeof(f.head)); f.headColor = CLR_YELLOW;
   } else if (s.gcodeStateId == GCODE_FAILED) {

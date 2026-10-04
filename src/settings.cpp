@@ -582,7 +582,7 @@ void loadSettings() {
   dispSettings.cardStyle = prefs.getUChar("dsp_card", def.cardStyle);
   if (dispSettings.cardStyle > 1) dispSettings.cardStyle = 0;
   dispSettings.cardLeft = prefs.getUChar("dsp_cleft", def.cardLeft);
-  if (dispSettings.cardLeft > 1) dispSettings.cardLeft = 0;
+  if (dispSettings.cardLeft > 2) dispSettings.cardLeft = 0;
   dispSettings.cardBottom = prefs.getUChar("dsp_cbot", def.cardBottom);
   if (dispSettings.cardBottom > 1) dispSettings.cardBottom = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);

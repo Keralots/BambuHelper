@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "display_ui.h"
+#include "thumb_fetch.h"
 #include "settings.h"
 #include "wifi_manager.h"
 #include "web_server.h"
@@ -1572,6 +1573,7 @@ void loop() {
   }
 #endif
 
+  thumbService();
   updateDisplay();
 
   // MQTT and rotation after display update - TLS reconnect can block for

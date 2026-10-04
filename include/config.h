@@ -280,6 +280,14 @@
 #define HAS_CARD_SKIN  0
 #endif
 
+// Plate thumbnail in the Card left column, fetched from Bambu Cloud. Needs
+// PSRAM for the 512x512 decode and the downloaded PNG.
+#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM)
+#define HAS_CARD_THUMB  1
+#else
+#define HAS_CARD_THUMB  0
+#endif
+
 // HMS / print_error reporting. Four independent capabilities:
 //
 //   HAS_HMS_UI           the feature exists at all - state fields, parser,
