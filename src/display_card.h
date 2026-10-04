@@ -17,12 +17,16 @@ bool drawCardFinished(PrinterSlot& p, bool force);
 bool drawCardIdle(PrinterSlot& p, bool force);
 // Progress-bar shimmer for the card on screen; true when it drew this call.
 bool tickCardShimmer();
+// Last full Card frame (PSRAM boards only): byte-swapped RGB565, w x h.
+// False when no full-frame sprite exists. Used by the /card.bmp endpoint.
+bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h);
 #else
 inline bool cardSkinActive() { return false; }
 inline bool drawCardPrinting(PrinterSlot&, bool) { return false; }
 inline bool drawCardFinished(PrinterSlot&, bool) { return false; }
 inline bool drawCardIdle(PrinterSlot&, bool) { return false; }
 inline bool tickCardShimmer() { return false; }
+inline bool cardFrameView(const uint16_t**, int16_t*, int16_t*) { return false; }
 #endif
 
 #endif // DISPLAY_CARD_H

@@ -849,6 +849,14 @@ bool tickCardShimmer() {
 // ---------------------------------------------------------------------------
 //  Public entry points
 // ---------------------------------------------------------------------------
+bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h) {
+  if (!g_full || !g_lastValid || !g_full->getBuffer()) return false;
+  *buf = static_cast<const uint16_t*>(g_full->getBuffer());
+  *w = (int16_t)g_full->width();
+  *h = (int16_t)g_full->height();
+  return true;
+}
+
 bool cardSkinActive() {
   return dispSettings.cardStyle == 1;
 }

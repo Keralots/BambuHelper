@@ -11,6 +11,7 @@
 #include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
+#include "display_card.h"
 #include "display_edge_glow.h"
 #include "config.h"
 #include "button.h"
@@ -736,6 +737,38 @@ static void handleDebug() {
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// Last Card frame as a 24-bit BMP - the panel itself cannot be read back.
+static void handleCardBmp() {
+  const uint16_t* buf; int16_t w, h;
+  if (!cardFrameView(&buf, &w, &h)) {
+    server.send(404, "text/plain", "No Card frame (Card style off, or board without PSRAM)");
+    return;
+  }
+  const uint32_t rowBytes = ((uint32_t)w * 3 + 3) & ~3u;
+  const uint32_t dataSize = rowBytes * h, fileSize = 54 + dataSize;
+  uint8_t hdr[54] = {'B', 'M'};
+  auto put32 = [&](int off, uint32_t v) { for (int i = 0; i < 4; i++) hdr[off + i] = (uint8_t)(v >> (8 * i)); };
+  put32(2, fileSize); put32(10, 54); put32(14, 40); put32(18, (uint32_t)w); put32(22, (uint32_t)h);
+  hdr[26] = 1; hdr[28] = 24; put32(34, dataSize);
+  server.setContentLength(fileSize);
+  server.send(200, "image/bmp", "");
+  server.sendContent((const char*)hdr, sizeof(hdr));
+  uint8_t row[320 * 3 + 4];
+  if (rowBytes > sizeof(row)) return;
+  for (int16_t y = h - 1; y >= 0; y--) {          // BMP rows run bottom-up
+    memset(row, 0, rowBytes);
+    const uint16_t* src = buf + (uint32_t)y * w;
+    for (int16_t x = 0; x < w; x++) {
+      uint16_t v = (uint16_t)((src[x] >> 8) | (src[x] << 8));   // sprite stores swapped RGB565
+      uint8_t r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
+      row[x * 3 + 0] = (uint8_t)((b << 3) | (b >> 2));
+      row[x * 3 + 1] = (uint8_t)((g << 2) | (g >> 4));
+      row[x * 3 + 2] = (uint8_t)((r << 3) | (r >> 2));
+    }
+    server.sendContent((const char*)row, rowBytes);
+  }
 }
 
 static void handleDebugToggle() {
@@ -2677,6 +2710,7 @@ void initWebServer() {
   server.on("/reset", HTTP_GET, handleReset);
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);
+  server.on("/card.bmp", HTTP_GET, handleCardBmp);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);
