@@ -272,17 +272,22 @@
 #endif
 
 // "Card" print-screen style (big percent, temperature row, AMS column), rendered
-// through an off-screen sprite. Landscape 320x240 on the 240x320 profile for now;
-// links two extra VLW blobs (inter_card_num / inter_card_lbl).
+// through an off-screen sprite. The 240x320 profile (both orientations) and the
+// 240x240 profile; links two extra VLW blobs (inter_card_num / inter_card_lbl).
 #if defined(DISPLAY_240x320)
 #define HAS_CARD_SKIN  1
+#elif !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
+      !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
+#define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
 #else
 #define HAS_CARD_SKIN  0
 #endif
 
 // Plate thumbnail in the Card left column, fetched from Bambu Cloud. Needs
 // PSRAM for the 512x512 decode and the downloaded PNG.
-#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM)
+// The S3-Zero pair is left out on flash: the fetch + PNG decoder cost ~18 KB and
+// esp32s3_zero_320 overflowed its 1.75 MB slot by 6 KB with it (2026-10-04).
+#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM) && !defined(BOARD_IS_S3_ZERO)
 #define HAS_CARD_THUMB  1
 #else
 #define HAS_CARD_THUMB  0
