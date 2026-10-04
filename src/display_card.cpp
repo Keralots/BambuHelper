@@ -46,7 +46,8 @@ struct CardFrame {
   char     job[64];
   uint8_t  pct, printing;
   uint16_t remainMin;
-  char     eta[12];
+  char     eta[16];
+  char     etaDay[8];  // "+1".."+6" when the print ends on a later day, else ""
   char     stage[28];
   uint16_t layer, layers;
   uint8_t  showActiveFil;
@@ -837,13 +838,17 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     leftEnd = x + cv.width(buf);
   }
   int16_t rightStart = hr;
-  if (remOnLine) {
-    if (f.remainMin > 0) drawDuration(cv, hr, cy + 8, f.remainMin, f);
-    rightStart = hr - 70;
-  } else if (f.eta[0]) {
+  // A beside-thumb layout without a REMAINING row keeps the ETA here: the
+  // finish time is the more useful of the two (owner's call).
+  if (f.eta[0]) {
     cv.text(f.eta, hr, cy, FONT_BODY, f.etaClr, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_BODY);
     int16_t ex = hr - cv.width(f.eta) - 5;
+    if (f.etaDay[0]) {                     // ends on a later day: "+1" before the time
+      cv.text(f.etaDay, ex, cy + 1, FONT_CARD_LBL, f.etaClr, lgfx::textdatum_t::middle_right);
+      cv.useFont(FONT_CARD_LBL);
+      ex -= cv.width(f.etaDay) + 5;
+    }
     cv.text("ETA", ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_CARD_LBL);
     rightStart = ex - cv.width("ETA");
@@ -1124,8 +1129,28 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
   if (s.remainingMinutes > 0 && clockSynced()) {
     // Rounded to the minute so the frame does not change every second.
     time_t now = time(nullptr);
-    formatClock(now - (now % 60) + (time_t)s.remainingMinutes * 60, f.eta, sizeof(f.eta),
-                nullptr, 0);
+    const time_t etaT = now - (now % 60) + (time_t)s.remainingMinutes * 60;
+    char ampm[4];
+    formatClock(etaT, f.eta, sizeof(f.eta), ampm, sizeof(ampm));
+    if (ampm[0]) { strlcat(f.eta, " ", sizeof(f.eta)); strlcat(f.eta, ampm, sizeof(f.eta)); }
+    // Later day: "+N" in front for up to a week, the date beyond that.
+    struct tm tn, te;
+    localtime_r(&now, &tn);
+    localtime_r(&etaT, &te);
+    // Calendar-day difference (no mktime: DST shifts would skew a seconds diff).
+    int days = te.tm_yday - tn.tm_yday;
+    if (te.tm_year != tn.tm_year) {
+      const int y = tn.tm_year + 1900;
+      days += ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) ? 366 : 365;
+    }
+    if (days >= 1 && days <= 6) {
+      snprintf(f.etaDay, sizeof(f.etaDay), "+%d", days);
+    } else if (days > 6) {
+      char t[16];
+      strlcpy(t, f.eta, sizeof(t));
+      if (netSettings.use24h) snprintf(f.eta, sizeof(f.eta), "%02d.%02d. %s", te.tm_mday, te.tm_mon + 1, t);
+      else                    snprintf(f.eta, sizeof(f.eta), "%d/%d %s", te.tm_mon + 1, te.tm_mday, t);
+    }
   }
   if (const char* st = runningStageLabel(s)) strlcpy(f.stage, st, sizeof(f.stage));
   f.layer = s.layerNum;
