@@ -145,6 +145,7 @@ struct BambuState {
   char subtaskName[128];      // 48 cut before the screen did: a real H2C name measured 47 chars (#187)
   // print.mapping: one entry per slicer filament the job uses, (amsUnitId<<8)|trayId
   // (unused 65535 entries dropped, slicer order kept). Cleared when the job name changes.
+  char taskId[24];            // print.task_id of the current/last job ("" = none, "0" = local)
   uint16_t printMap[PRINT_MAP_MAX];
   uint8_t printMapCount;      // entries stored in printMap
   uint8_t printMapTotal;      // used entries the printer reported (> count = truncated)

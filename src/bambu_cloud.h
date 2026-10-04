@@ -20,4 +20,9 @@ bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion r
 // picks the fields it needs; the payload lists every printer bound to it.
 bool cloudFetchDeviceList(const char* token, CloudRegion region, String& response);
 
+// Thumbnail spike: Bearer GET of an allow-listed API path on the api host
+// (siteProxy=false) or under the bambulab.com/api proxy. Returns the HTTP code.
+int cloudProbeGet(const char* token, CloudRegion region, const char* path,
+                  bool siteProxy, String& response);
+
 #endif // BAMBU_CLOUD_H

@@ -473,7 +473,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   pf["ctc"]["info"]["temp"] = true;           // legacy/alternate chamber temp path
   pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
-  pf["mapping"] = true;     // slicer filament -> AMS tray map of the current job
+  pf["mapping"] = true;
+  pf["task_id"] = true;     // cloud job id - plate thumbnail lookup     // slicer filament -> AMS tray map of the current job
   pf["print_type"] = true;  // "system" = device-initiated calibration (issue #149)
   pf["gcode_file"] = true;  // built-in calibration gcode names (issue #149)
   pf["layer_num"] = true;
@@ -1011,6 +1012,12 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     size_t snLen = strlen(s.subtaskName);
     s.caliSubtask = snLen >= 11 &&
                     strcmp(s.subtaskName + snLen - 11, "_calib_mode") == 0;
+  }
+
+  if (print["task_id"].is<const char*>()) {
+    strlcpy(s.taskId, print["task_id"].as<const char*>(), sizeof(s.taskId));
+  } else if (print["task_id"].is<long long>()) {
+    snprintf(s.taskId, sizeof(s.taskId), "%lld", print["task_id"].as<long long>());
   }
 
   // A present array replaces the whole map (an empty one clears it); absent

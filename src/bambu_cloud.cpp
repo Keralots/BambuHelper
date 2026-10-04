@@ -219,6 +219,15 @@ bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion r
 //  a serial off a label - a wrong serial connects happily and then shows no
 //  data, which is the single most common cloud misconfiguration.
 // ---------------------------------------------------------------------------
+int cloudProbeGet(const char* token, CloudRegion region, const char* path,
+                  bool siteProxy, String& response) {
+  String url = siteProxy ? String(getBambuSiteBase(region)) + "/api" : String(getBambuApiBase(region));
+  url += path;
+  int code = httpsRequest("GET", url.c_str(), nullptr, token, response);
+  Serial.printf("CLOUD probe %s -> HTTP %d, len=%d\n", url.c_str(), code, response.length());
+  return code;
+}
+
 bool cloudFetchDeviceList(const char* token, CloudRegion region, String& response) {
   // Deliberately the site host, not api.bambulab.com: measured on hardware, the
   // direct path answers this device with a Cloudflare block page (403, ~5.4 KB

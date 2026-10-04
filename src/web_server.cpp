@@ -513,6 +513,7 @@ static void handleStatus() {
   doc["fan"] = st.coolingFanPct;
   doc["layer"] = st.layerNum;
   doc["layers"] = st.totalLayers;
+  doc["task_id"] = st.taskId;
   doc["display_off"] = (getScreenState() == SCREEN_OFF);
   doc["name"] = printers[slot].config.name;
   doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
@@ -1123,6 +1124,28 @@ static void handleCloudSelfTest() {
 }
 
 #endif // HAS_CLOUD_LOGIN
+
+// Thumbnail spike (temporary): which cloud endpoint returns a plate-specific
+// thumbnail for the displayed printer's task. Only these fixed paths.
+static void handleCloudThumbProbe() {
+  PrinterSlot& p = displayedPrinter();
+  const char* task = p.state.taskId;
+  int v = server.hasArg("v") ? server.arg("v").toInt() : 1;
+  char path[160];
+  switch (v) {
+    case 1: case 2: snprintf(path, sizeof(path), "/v1/iot-service/api/user/task/%s", task); break;
+    case 3: case 4: snprintf(path, sizeof(path), "/v1/user-service/my/tasks?deviceId=%s&limit=1", p.config.serial); break;
+    default: server.send(400, "text/plain", "v=1..4"); return;
+  }
+  static char token[1200];
+  if (!loadCloudToken(token, sizeof(token))) { server.send(400, "text/plain", "no cloud token"); return; }
+  String body;
+  int code = cloudProbeGet(token, p.config.region, path, v == 2 || v == 4, body);
+  memset(token, 0, sizeof(token));
+  String out = "HTTP " + String(code) + " task=" + String(task) + " len=" + String(body.length()) + "\n";
+  out += body.substring(0, 8000);
+  server.send(200, "text/plain", out);
+}
 
 // "Test" button next to the edge-glow settings: preview the configured effect
 // for ~5 s on whatever screen is up. Accepts the picker's current color so the
@@ -2711,6 +2734,7 @@ void initWebServer() {
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);
   server.on("/card.bmp", HTTP_GET, handleCardBmp);
+  server.on("/cloud/thumbprobe", HTTP_GET, handleCloudThumbProbe);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);
