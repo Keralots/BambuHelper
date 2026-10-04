@@ -5837,12 +5837,16 @@ void updateDisplay() {
 #if !DISPLAY_IS_ROUND
   // Shimmer runs at its own cadence (~40fps), independent of display refresh.
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
-  if (currentScreen == SCREEN_PRINTING && !glowIsActive() && !cardShownLast) {
+  if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
     // The glow band owns the top edge while it runs - shimmer would fight it.
-    // Card has no LED bar to shimmer.
-    BambuState& sh = displayedPrinter().state;
-    tickProgressShimmer(tft, 0, sh.progress, sh.printing);
-    markFrameDirty();
+    // Card has no LED bar; it shimmers its own progress bar instead.
+    if (cardShownLast) {
+      if (tickCardShimmer()) markFrameDirty();
+    } else {
+      BambuState& sh = displayedPrinter().state;
+      tickProgressShimmer(tft, 0, sh.progress, sh.printing);
+      markFrameDirty();
+    }
   }
   if ((currentScreen == SCREEN_IDLE || currentScreen == SCREEN_DRY_PEEK) &&
       isPrinterConfigured(rotState.displayIndex)) {

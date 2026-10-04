@@ -1,51 +1,57 @@
 #ifndef LAYOUT_CARD_H
 #define LAYOUT_CARD_H
 
-// "Card" print-screen geometry (HAS_CARD_SKIN). One set today: 320x240
-// landscape. 240x240 / portrait sets come later as #if branches here.
+#include <stdint.h>
 
-#define LY_CARD_W          320
-#define LY_CARD_H          240
-#define LY_CARD_PAD        12     // outer margin, > GLOW_THICKNESS_PX (8)
+// "Card" print-screen geometry (HAS_CARD_SKIN). One set per orientation of the
+// 240x320 panel, picked at render time. Bottom-band rows sit at a fixed offset
+// from their rule: labels at rule + 8, value baseline at rule + 46.
 
-// Header
-#define LY_CARD_HDR_CY     15     // name + pill centre line
-#define LY_CARD_HDR_RULE   30     // rule under the header
-#define LY_CARD_PILL_H     15
-#define LY_CARD_PILL_PADX  7
+struct CardGeo {
+  int16_t W, H, pad;
+  // header
+  int16_t hdrCy, hdrRule, pillH, pillPadX;
+  // printing hero
+  int16_t nameCy, remLblY, bigBase, barY, barH, lineCy;
+  // AMS: a left column (amsColW > 0, landscape) or a strip under the hero
+  int16_t amsColW, amsHdrY, amsRowY, amsRowH;
+  int16_t stripLblY, stripY, stripH;
+  // bottom band
+  int16_t botRuleAms, botRuleNoAms;
+  int16_t cellCols;          // 0 = every cell on one row
+  int16_t cellRowH;
+  // finished
+  int16_t finHeadCy, finLblY, finNameCy, finRowY, finRowCy, finDoorCy, finBotRule;
+  // idle
+  int16_t idleHeadCy, idleSubCy, idleClockBase, idleClockRight;
+  int16_t idleAmsY, idleSw, idleHtNewRow, idleBotRule;
+};
 
-// Left AMS column (cardLeft == 0)
-#define LY_CARD_AMS_X      LY_CARD_PAD
-#define LY_CARD_AMS_W      68
-#define LY_CARD_AMS_HDR_Y  38     // "AMS 1" / humidity row (top)
-#define LY_CARD_AMS_ROW_Y  51     // first tray row (top)
-#define LY_CARD_AMS_ROW_H  22
-#define LY_CARD_AMS_RULE_X (LY_CARD_AMS_X + LY_CARD_AMS_W + 6)
-#define LY_CARD_HERO_X_AMS (LY_CARD_AMS_RULE_X + 8)
+// 320x240 landscape. Outer pad 12 > GLOW_THICKNESS_PX (8).
+static const CardGeo CARD_GEO_LAND = {
+  320, 240, 12,
+  15, 30, 15, 7,
+  44, 70, 120, 130, 6, 152,
+  68, 38, 51, 22,
+  0, 0, 0,
+  174, 174, 0, 42,
+  52, 76, 96, 116, 140, 158, 174,
+  58, 84, 92, 1, 112, 18, 1, 174,
+};
 
-// Hero (right column, or full width)
-#define LY_CARD_NAME_Y     44     // job name centre line
-#define LY_CARD_REM_LBL_Y  70     // "REMAINING" (top)
-#define LY_CARD_BIG_BASE   120    // baseline of the big percent / remaining value
-#define LY_CARD_BAR_Y      130
-#define LY_CARD_BAR_H      6
-#define LY_CARD_LINE_CY    152    // layer / ETA line centre
+// 240x320 portrait: hero at the full 216 px width (same as the landscape hero
+// beside the AMS column), AMS as a 4-slot strip, temperatures on a 3x2 grid.
+static const CardGeo CARD_GEO_PORT = {
+  240, 320, 12,
+  15, 30, 15, 7,
+  44, 68, 112, 122, 6, 144,
+  0, 0, 0, 0,
+  154, 166, 20,
+  200, 166, 3, 42,
+  52, 72, 90, 106, 126, 148, 166,
+  50, 72, 134, 0, 146, 18, 0, 214,
+};
 
-// Bottom band
-#define LY_CARD_BOT_RULE   174
-#define LY_CARD_BOT_LBL_Y  182    // cell labels (top)
-#define LY_CARD_BOT_BASE   220    // value baseline
 #define LY_CARD_TEMP_MAX   6
-
-// Finished / idle hero
-#define LY_CARD_FIN_HEAD_CY  52
-#define LY_CARD_FIN_LBL_Y    76
-#define LY_CARD_FIN_NAME_CY  96
-#define LY_CARD_FIN_ROW_Y    116  // DONE / FILAMENT labels (top)
-#define LY_CARD_FIN_ROW_CY   140
-#define LY_CARD_IDLE_HEAD_CY 58
-#define LY_CARD_IDLE_SUB_CY  84
-#define LY_CARD_IDLE_AMS_Y   112  // AMS label (top); swatches below
-#define LY_CARD_IDLE_SW      18   // swatch size
 
 #endif // LAYOUT_CARD_H

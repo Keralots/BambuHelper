@@ -8,9 +8,10 @@
 #include "display_ui.h"      // tft, markFrameDirty, stateBadgeText/Color, formatFinishClock
 #include "settings.h"        // dispSettings, netSettings, dpSettings
 #include "fonts.h"           // loadFontInto, FontID
+#include "icons.h"           // drawIcon16, icon_lightning
 #include "bambu_mqtt.h"      // getActiveConnCount, isPrinterConfigured
 #include "hms_lookup.h"      // printerWasCanceled, ERROR_BADGE_TEXT
-#include "tasmota.h"         // tasmotaIsActiveForSlot, tasmotaGetPrintKwhUsedForSlot
+#include "tasmota.h"         // plug watts / kWh
 #include "battery.h"
 
 // ---------------------------------------------------------------------------
@@ -34,18 +35,19 @@ struct CardFrame {
   char     name[24];
   uint8_t  dotCount, dotActive;
   uint8_t  batPct, batShow, batCharging;
+  char     watts[10];
   char     pill[12];
   uint16_t pillColor;
   // hero
   char     job[64];
-  uint8_t  pct;
+  uint8_t  pct, printing;
   uint16_t remainMin;
   char     eta[12];
   char     stage[28];
   uint16_t layer, layers;
   uint8_t  showActiveFil;
   CardChip activeFil;
-  // AMS column
+  // AMS column / strip
   uint8_t  amsShow;
   char     amsLabel[12];
   char     amsHum[8];
@@ -68,39 +70,49 @@ struct CardFrame {
   char     clock[8];
   char     ampm[4];
   uint8_t  swCount;
-  CardTray sw[AMS_MAX_TRAYS + AMS_TRAY_UNITS];   // trays + unit separators
+  CardTray sw[AMS_MAX_TRAYS + AMS_TRAY_UNITS];   // trays + unit markers
 };
 
 static CardFrame g_cur, g_last;
 static bool      g_lastValid = false;
 
+static const CardGeo& geo() {
+  return (dispSettings.rotation & 1) ? CARD_GEO_LAND : CARD_GEO_PORT;
+}
+
 // ---------------------------------------------------------------------------
-//  Off-screen target. PSRAM full frame where available (kept), otherwise a
-//  short band sprite in internal RAM, allocated per frame and freed after the
-//  push so it never sits on the heap the TLS stack needs.
+//  Off-screen target. PSRAM full frame where available (kept, re-created on a
+//  rotation change), otherwise a short band sprite in internal RAM allocated
+//  per frame and freed after the push so it never sits on the TLS heap.
 // ---------------------------------------------------------------------------
 #define CARD_BAND_H 40
 
 static lgfx::LGFX_Sprite* g_full = nullptr;
 
-static lgfx::LGFX_Sprite* allocFull() {
+static lgfx::LGFX_Sprite* allocFull(int16_t w, int16_t h) {
 #if defined(BOARD_HAS_PSRAM) && !defined(CARD_FORCE_BANDS)
-  if (g_full) return g_full;
-  lgfx::LGFX_Sprite* s = new lgfx::LGFX_Sprite(&tft);
-  s->setPsram(true);
-  s->setColorDepth(16);
-  if (s->createSprite(LY_CARD_W, LY_CARD_H)) { g_full = s; return s; }
-  delete s;
+  if (g_full && g_full->width() == w && g_full->height() == h) return g_full;
+  if (!g_full) {
+    g_full = new lgfx::LGFX_Sprite(&tft);
+    g_full->setPsram(true);
+    g_full->setColorDepth(16);
+  }
+  g_full->deleteSprite();
+  if (g_full->createSprite(w, h)) return g_full;
+  delete g_full;
+  g_full = nullptr;
+#else
+  (void)w; (void)h;
 #endif
   return nullptr;
 }
 
-// Draw context: the scene draws in screen coordinates; oy shifts them into
-// the current band. Font state is tracked here, never through setFont(),
-// whose cache follows the panel only.
+// Draw context: the scene draws in screen coordinates; (ox, oy) shift them into
+// the current target (band, shimmer strip). Font state is tracked here, never
+// through setFont(), whose cache follows the panel only.
 struct Cv {
   lgfx::LGFX_Sprite* g;
-  int16_t oy;
+  int16_t ox, oy;
   FontID  font;
 
   void useFont(FontID id) {
@@ -114,15 +126,16 @@ struct Cv {
     useFont(f);
     g->setTextDatum(d);
     g->setTextColor(c);                     // transparent: blends with sprite pixels
-    g->drawString(s, x, y - oy);
+    g->drawString(s, x - ox, y - oy);
   }
-  void rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) { g->fillRect(x, y - oy, w, h, c); }
-  void rrect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t c) { g->fillSmoothRoundRect(x, y - oy, w, h, r, c); }
-  void rrectOutline(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t c) { g->drawRoundRect(x, y - oy, w, h, r, c); }
-  void hline(int16_t x, int16_t y, int16_t w, uint16_t c) { g->drawFastHLine(x, y - oy, w, c); }
-  void vline(int16_t x, int16_t y, int16_t h, uint16_t c) { g->drawFastVLine(x, y - oy, h, c); }
-  void dot(int16_t x, int16_t y, int16_t r, uint16_t c) { g->fillSmoothCircle(x, y - oy, r, c); }
-  void ring(int16_t x, int16_t y, int16_t r, uint16_t c) { g->drawCircle(x, y - oy, r, c); }
+  void rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) { g->fillRect(x - ox, y - oy, w, h, c); }
+  void rrect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t c) { g->fillSmoothRoundRect(x - ox, y - oy, w, h, r, c); }
+  void rrectOutline(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t c) { g->drawRoundRect(x - ox, y - oy, w, h, r, c); }
+  void hline(int16_t x, int16_t y, int16_t w, uint16_t c) { g->drawFastHLine(x - ox, y - oy, w, c); }
+  void vline(int16_t x, int16_t y, int16_t h, uint16_t c) { g->drawFastVLine(x - ox, y - oy, h, c); }
+  void dot(int16_t x, int16_t y, int16_t r, uint16_t c) { g->fillSmoothCircle(x - ox, y - oy, r, c); }
+  void ring(int16_t x, int16_t y, int16_t r, uint16_t c) { g->drawCircle(x - ox, y - oy, r, c); }
+  void icon(int16_t x, int16_t y, const uint8_t* ic, uint16_t c) { drawIcon16(*g, x - ox, y - oy, ic, c); }
 };
 
 // Copy into dst, cutting with ".." until it fits maxW in the current font.
@@ -370,22 +383,20 @@ static void drawDeg(Cv& cv, int16_t x, int16_t capTop, uint16_t c) {
   cv.ring(x + 3, capTop + 3, 2, c);
 }
 
-static void drawHeader(Cv& cv, const CardFrame& f) {
-  const int16_t right = LY_CARD_W - LY_CARD_PAD;
+static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  const int16_t right = g.W - g.pad;
   // State pill
   cv.useFont(FONT_CARD_LBL);
-  int16_t tw = cv.width(f.pill);
-  int16_t pw = tw + 2 * LY_CARD_PILL_PADX;
+  int16_t pw = cv.width(f.pill) + 2 * g.pillPadX;
   int16_t px = right - pw;
-  int16_t py = LY_CARD_HDR_CY - LY_CARD_PILL_H / 2;
-  cv.rrect(px, py, pw, LY_CARD_PILL_H, LY_CARD_PILL_H / 2, f.pillColor);
-  cv.text(f.pill, px + pw / 2, LY_CARD_HDR_CY + 1, FONT_CARD_LBL, f.bg, lgfx::textdatum_t::middle_center);
+  cv.rrect(px, g.hdrCy - g.pillH / 2, pw, g.pillH, g.pillH / 2, f.pillColor);
+  cv.text(f.pill, px + pw / 2, g.hdrCy + 1, FONT_CARD_LBL, f.bg, lgfx::textdatum_t::middle_center);
 
   int16_t limit = px - 8;
   // Battery
   if (f.batShow) {
     const int16_t bw = 18, bh = 9;
-    int16_t bx = limit - bw - 2, by = LY_CARD_HDR_CY - bh / 2;
+    int16_t bx = limit - bw - 2, by = g.hdrCy - bh / 2;
     uint16_t c = f.batCharging ? f.accent : (f.batPct <= 15 ? CLR_RED : f.dim);
     cv.rrectOutline(bx, by, bw, bh, 2, c);
     cv.rect(bx + bw, by + 3, 2, 3, c);
@@ -393,19 +404,28 @@ static void drawHeader(Cv& cv, const CardFrame& f) {
     if (fw > 0) cv.rect(bx + 2, by + 2, fw, bh - 4, c);
     limit = bx - 8;
   }
-  // Multi-printer dots, centred
+  // Plug power while printing
+  if (f.watts[0]) {
+    cv.text(f.watts, limit, g.hdrCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
+    cv.useFont(FONT_BODY);
+    int16_t ix = limit - cv.width(f.watts) - 15;
+    cv.icon(ix, g.hdrCy - 8, icon_lightning, CLR_YELLOW);
+    limit = ix - 6;
+  }
+  // Multi-printer dots, centred (or left of whatever sits on the right)
   if (f.dotCount > 1) {
-    int16_t x0 = LY_CARD_W / 2 - (f.dotCount - 1) * 5;
+    int16_t span = (f.dotCount - 1) * 10;
+    int16_t x0 = std::min<int16_t>(g.W / 2 - span / 2, limit - span - 4);
     for (uint8_t k = 0; k < f.dotCount; k++)
-      cv.dot(x0 + k * 10, LY_CARD_HDR_CY, 3, k == f.dotActive ? f.accent : CLR_TEXT_DARK);
-    limit = std::min<int16_t>(limit, x0 - 10);
+      cv.dot(x0 + k * 10, g.hdrCy, 3, k == f.dotActive ? f.accent : CLR_TEXT_DARK);
+    limit = x0 - 10;
   }
   // Printer name
   char buf[24];
   cv.useFont(FONT_BODY);
-  fitText(cv, buf, sizeof(buf), f.name, limit - LY_CARD_PAD);
-  cv.text(buf, LY_CARD_PAD, LY_CARD_HDR_CY, FONT_BODY, f.pname, lgfx::textdatum_t::middle_left);
-  cv.hline(LY_CARD_PAD, LY_CARD_HDR_RULE, LY_CARD_W - 2 * LY_CARD_PAD, f.track);
+  fitText(cv, buf, sizeof(buf), f.name, limit - g.pad);
+  cv.text(buf, g.pad, g.hdrCy, FONT_BODY, f.pname, lgfx::textdatum_t::middle_left);
+  cv.hline(g.pad, g.hdrRule, g.W - 2 * g.pad, f.track);
 }
 
 static void drawChipDot(Cv& cv, int16_t cx, int16_t cy, const CardChip& c, const CardFrame& f) {
@@ -414,32 +434,50 @@ static void drawChipDot(Cv& cv, int16_t cx, int16_t cy, const CardChip& c, const
   if (c.known && c.color == f.bg) cv.ring(cx, cy, 5, f.dim);  // swatch the colour of the background
 }
 
-static void drawAmsColumn(Cv& cv, const CardFrame& f) {
-  const int16_t x = LY_CARD_AMS_X, w = LY_CARD_AMS_W;
-  cv.text(f.amsLabel, x, LY_CARD_AMS_HDR_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-  if (f.amsHum[0]) cv.text(f.amsHum, x + w, LY_CARD_AMS_HDR_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
+// One AMS slot (chip + type), shared by the column and the strip.
+static void drawSlot(Cv& cv, const CardTray& t, const CardFrame& f,
+                     int16_t x, int16_t y, int16_t w, int16_t h) {
+  uint16_t fg = t.present ? f.txt : f.dim;
+  if (t.active) {
+    cv.rrect(x - 2, y, w + 4, h, 4, f.txt);
+    fg = f.bg;
+  }
+  int16_t cy = y + h / 2;
+  if (t.present) {
+    cv.rrect(x + 2, cy - 6, 12, 12, 3, t.color);
+    if (t.color == (t.active ? f.txt : f.bg)) cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
+  } else {
+    cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
+  }
+  char buf[12];
+  cv.useFont(FONT_CARD_LBL);
+  fitText(cv, buf, sizeof(buf), t.type, w - 20);
+  cv.text(buf, x + 19, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
+}
+
+static void drawAmsColumn(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  const int16_t x = g.pad, w = g.amsColW;
+  cv.text(f.amsLabel, x, g.amsHdrY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  if (f.amsHum[0]) cv.text(f.amsHum, x + w, g.amsHdrY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
   uint8_t rows = f.trayCount + (f.extShow ? 1 : 0);
   for (uint8_t r = 0; r < rows; r++) {
     const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
-    int16_t y = LY_CARD_AMS_ROW_Y + r * LY_CARD_AMS_ROW_H;
-    uint16_t fg = t.present ? f.txt : f.dim;
-    if (t.active) {
-      cv.rrect(x - 2, y, w + 4, LY_CARD_AMS_ROW_H - 3, 4, f.txt);
-      fg = f.bg;
-    }
-    int16_t cy = y + (LY_CARD_AMS_ROW_H - 3) / 2;
-    if (t.present) {
-      cv.rrect(x + 2, cy - 6, 12, 12, 3, t.color);
-      if (t.color == (t.active ? f.txt : f.bg)) cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
-    } else {
-      cv.rrectOutline(x + 2, cy - 6, 12, 12, 3, f.dim);
-    }
-    char buf[12];
-    cv.useFont(FONT_CARD_LBL);
-    fitText(cv, buf, sizeof(buf), t.type, w - 20);
-    cv.text(buf, x + 19, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
+    drawSlot(cv, t, f, x, g.amsRowY + r * g.amsRowH, w, g.amsRowH - 3);
   }
-  cv.vline(LY_CARD_AMS_RULE_X, LY_CARD_HDR_RULE + 8, LY_CARD_BOT_RULE - LY_CARD_HDR_RULE - 16, f.track);
+  int16_t rx = g.pad + g.amsColW + 6;
+  cv.vline(rx, g.hdrRule + 8, g.botRuleAms - g.hdrRule - 16, f.track);
+}
+
+static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  const int16_t x0 = g.pad, w = g.W - 2 * g.pad;
+  cv.text(f.amsLabel, x0, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  if (f.amsHum[0]) cv.text(f.amsHum, x0 + w, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
+  const int16_t slotW = w / 4;
+  uint8_t n = 0;
+  for (uint8_t r = 0; r < f.trayCount && n < 4; r++, n++)
+    drawSlot(cv, f.trays[r], f, x0 + n * slotW, g.stripY, slotW - 6, g.stripH);
+  if (f.extShow && n < 4)
+    drawSlot(cv, f.ext, f, x0 + n * slotW, g.stripY, slotW - 6, g.stripH);
 }
 
 // "2h 14m": numbers in FONT_LARGE, units dim in FONT_BODY, right-aligned at xr.
@@ -459,94 +497,131 @@ static void drawDuration(Cv& cv, int16_t xr, int16_t base, uint16_t minutes, con
   }
 }
 
-static void drawBottom(Cv& cv, const CardFrame& f) {
-  const int16_t x0 = LY_CARD_PAD, w = LY_CARD_W - 2 * LY_CARD_PAD;
-  cv.hline(x0, LY_CARD_BOT_RULE, w, f.track);
+static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rule) {
+  const int16_t x0 = g.pad, w = g.W - 2 * g.pad;
+  const int16_t yMax = g.H - g.pad;
+  cv.hline(x0, rule, w, f.track);
   if (f.bandFilaments) {
-    cv.text("FILAMENTS", x0, LY_CARD_BOT_LBL_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-    const int16_t cy = LY_CARD_BOT_BASE - 7;
-    int16_t x = x0;
+    cv.text("FILAMENTS", x0, rule + 8, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    int16_t x = x0, cy = rule + 39;
     unsigned hidden = f.chipMore;
-    char more[8];
     cv.useFont(FONT_BODY);
     const int16_t moreW = cv.width("+8") + 8;
     for (uint8_t i = 0; i < f.chipCount; i++) {
       const CardChip& c = f.chips[i];
       const int16_t need = 15 + cv.width(c.type);
+      const bool canWrap = cy + 24 + 8 <= yMax;
+      if (x > x0 && x + need > x0 + w && canWrap) { x = x0; cy += 24; }
       // Keep room for a "+N" unless this is the last chip and nothing is hidden.
       const bool reserve = (i + 1 < f.chipCount) || hidden;
-      if (x + need > x0 + w - (reserve ? moreW : 0)) { hidden += f.chipCount - i; break; }
+      if (x + need > x0 + w - (reserve && !canWrap ? moreW : 0)) { hidden += f.chipCount - i; break; }
       drawChipDot(cv, x + 6, cy, c, f);
       cv.text(c.type, x + 15, cy + 1, FONT_BODY, c.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
       cv.useFont(FONT_BODY);
       x += need + 12;
     }
-    more[0] = '\0';
-    if (hidden) snprintf(more, sizeof(more), "+%u", hidden);
-    if (more[0]) cv.text(more, x0 + w, cy + 1, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
+    if (hidden) {
+      char more[8];
+      snprintf(more, sizeof(more), "+%u", hidden);
+      cv.text(more, x0 + w, cy + 1, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
+    }
     return;
   }
   if (f.cellCount == 0) return;
-  const int16_t cw = w / f.cellCount;
+  const int16_t cols = g.cellCols ? g.cellCols : f.cellCount;
+  const int16_t cw = w / cols;
   for (uint8_t i = 0; i < f.cellCount; i++) {
     const CardCell& c = f.cells[i];
-    int16_t x = x0 + i * cw;
+    const int16_t x = x0 + (i % cols) * cw;
+    const int16_t top = rule + (i / cols) * g.cellRowH;
+    const int16_t base = top + 46;
+    if (base > yMax) break;
     cv.useFont(FONT_CARD_LBL);
     const char* lbl = (cv.width(c.lbl) <= cw - 4) ? c.lbl : c.lblShort;
-    cv.text(lbl, x, LY_CARD_BOT_LBL_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(lbl, x, top + 8, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     char v[8];
     snprintf(v, sizeof(v), "%d", c.val);
     uint16_t vc = c.accent ? f.nozAccent : f.txt;
-    cv.text(v, x, LY_CARD_BOT_BASE, FONT_LARGE, vc, lgfx::textdatum_t::baseline_left);
+    cv.text(v, x, base, FONT_LARGE, vc, lgfx::textdatum_t::baseline_left);
     cv.useFont(FONT_LARGE);
     int16_t vx = x + cv.width(v) + 1;
     if (c.unit == CU_DEG) {
-      drawDeg(cv, vx, LY_CARD_BOT_BASE - 16, f.dim);
+      drawDeg(cv, vx, base - 16, f.dim);
     } else if (c.unit == CU_PCT) {
-      cv.text("%", vx, LY_CARD_BOT_BASE, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
+      cv.text("%", vx, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
     } else {
-      cv.text("/5", vx, LY_CARD_BOT_BASE, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
+      cv.text("/5", vx, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
     }
   }
 }
 
-static void sceneHeroX(const CardFrame& f, int16_t& x, int16_t& w) {
-  x = f.amsShow ? LY_CARD_HERO_X_AMS : LY_CARD_PAD;
-  w = LY_CARD_W - LY_CARD_PAD - x;
+// Hero column: beside the AMS column in landscape, full width otherwise.
+static void heroX(const CardFrame& f, const CardGeo& g, int16_t& x, int16_t& w) {
+  x = (f.amsShow && g.amsColW) ? (g.pad + g.amsColW + 14) : g.pad;
+  w = g.W - g.pad - x;
 }
 
-static void scenePrinting(Cv& cv, const CardFrame& f) {
-  drawHeader(cv, f);
-  if (f.amsShow) drawAmsColumn(cv, f);
+static int16_t bottomRule(const CardFrame& f, const CardGeo& g) {
+  return (f.amsShow && !g.amsColW) ? g.botRuleAms : g.botRuleNoAms;
+}
+
+// Progress bar, optionally with the shimmer highlight centred at shimmerX.
+static uint16_t blend565(uint8_t a, uint16_t fg, uint16_t bg) {
+  uint32_t r = (((fg >> 11) & 0x1F) * a + ((bg >> 11) & 0x1F) * (255 - a)) / 255;
+  uint32_t gr = (((fg >> 5) & 0x3F) * a + ((bg >> 5) & 0x3F) * (255 - a)) / 255;
+  uint32_t b = ((fg & 0x1F) * a + (bg & 0x1F) * (255 - a)) / 255;
+  return (uint16_t)((r << 11) | (gr << 5) | b);
+}
+
+static const int16_t SHIMMER_HALF = 12;   // highlight half-width, px
+
+static void drawBar(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t shimmerX) {
   int16_t hx, hw;
-  sceneHeroX(f, hx, hw);
+  heroX(f, g, hx, hw);
+  cv.rrect(hx, g.barY, hw, g.barH, g.barH / 2, f.track);
+  int16_t fw = (int16_t)((int32_t)hw * (f.pct > 100 ? 100 : f.pct) / 100);
+  if (fw < g.barH) return;
+  cv.rrect(hx, g.barY, fw, g.barH, g.barH / 2, f.bar);
+  if (shimmerX < 0) return;
+  // Soft triangular highlight toward white, kept off the rounded ends.
+  const int16_t lo = hx + g.barH / 2, hi = hx + fw - g.barH / 2;
+  for (int16_t x = shimmerX - SHIMMER_HALF; x <= shimmerX + SHIMMER_HALF; x++) {
+    if (x < lo || x >= hi) continue;
+    int16_t d = abs(x - shimmerX);
+    uint8_t a = (uint8_t)(170 * (SHIMMER_HALF - d) / SHIMMER_HALF);
+    cv.rect(x, g.barY, 1, g.barH, blend565(a, CLR_TEXT_DEFAULT, f.bar));
+  }
+}
+
+static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  drawHeader(cv, f, g);
+  if (f.amsShow) { if (g.amsColW) drawAmsColumn(cv, f, g); else drawAmsStrip(cv, f, g); }
+  int16_t hx, hw;
+  heroX(f, g, hx, hw);
   const int16_t hr = hx + hw;
 
   char buf[64];
   cv.useFont(FONT_BODY);
   fitText(cv, buf, sizeof(buf), f.job[0] ? f.job : "--", hw);
-  cv.text(buf, hx, LY_CARD_NAME_Y, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+  cv.text(buf, hx, g.nameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
 
   // Big percent
   char pct[6];
   snprintf(pct, sizeof(pct), "%u", f.pct);
-  cv.text(pct, hx - 2, LY_CARD_BIG_BASE, FONT_CARD_NUM, f.txt, lgfx::textdatum_t::baseline_left);
+  cv.text(pct, hx - 2, g.bigBase, FONT_CARD_NUM, f.txt, lgfx::textdatum_t::baseline_left);
   cv.useFont(FONT_CARD_NUM);
   int16_t px = hx - 2 + cv.width(pct) + 3;
-  cv.text("%", px, LY_CARD_BIG_BASE, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_left);
+  cv.text("%", px, g.bigBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_left);
 
   // Remaining
-  cv.text("REMAINING", hr, LY_CARD_REM_LBL_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
-  if (f.remainMin > 0) drawDuration(cv, hr, LY_CARD_BIG_BASE, f.remainMin, f);
-  else cv.text("--", hr, LY_CARD_BIG_BASE, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
+  cv.text("REMAINING", hr, g.remLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
+  if (f.remainMin > 0) drawDuration(cv, hr, g.bigBase, f.remainMin, f);
+  else cv.text("--", hr, g.bigBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
 
-  // Progress bar
-  cv.rrect(hx, LY_CARD_BAR_Y, hw, LY_CARD_BAR_H, LY_CARD_BAR_H / 2, f.track);
-  int16_t fw = (int16_t)((int32_t)hw * (f.pct > 100 ? 100 : f.pct) / 100);
-  if (fw >= LY_CARD_BAR_H) cv.rrect(hx, LY_CARD_BAR_Y, fw, LY_CARD_BAR_H, LY_CARD_BAR_H / 2, f.bar);
+  drawBar(cv, f, g, -1);
 
   // Layer / stage (left), ETA (right), active filament (middle when there is room)
-  const int16_t cy = LY_CARD_LINE_CY;
+  const int16_t cy = g.lineCy;
   int16_t leftEnd = hx;
   if (f.stage[0]) {
     cv.useFont(FONT_BODY);
@@ -577,80 +652,96 @@ static void scenePrinting(Cv& cv, const CardFrame& f) {
   if (f.showActiveFil && f.activeFil.known) {
     cv.useFont(FONT_CARD_LBL);
     int16_t need = 14 + cv.width(f.activeFil.type);
-    int16_t mid = (leftEnd + rightStart) / 2;
     if (rightStart - leftEnd > need + 16) {
-      int16_t x = mid - need / 2;
+      int16_t x = (leftEnd + rightStart) / 2 - need / 2;
       CardChip c = f.activeFil; c.active = 0;
       drawChipDot(cv, x + 5, cy, c, f);
       cv.text(c.type, x + 14, cy + 1, FONT_CARD_LBL, f.txt, lgfx::textdatum_t::middle_left);
     }
   }
-  drawBottom(cv, f);
+  drawBottom(cv, f, g, bottomRule(f, g));
 }
 
-static void sceneFinished(Cv& cv, const CardFrame& f) {
-  drawHeader(cv, f);
-  if (f.amsShow) drawAmsColumn(cv, f);
-  int16_t hx, hw;
-  sceneHeroX(f, hx, hw);
+static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  drawHeader(cv, f, g);
+  const bool col = f.amsShow && g.amsColW;
+  if (col) drawAmsColumn(cv, f, g);
+  int16_t hx = col ? (g.pad + g.amsColW + 14) : g.pad;
+  int16_t hw = g.W - g.pad - hx;
   char buf[64];
   cv.useFont(FONT_LARGE);
   fitText(cv, buf, sizeof(buf), f.head, hw);
-  cv.text(buf, hx, LY_CARD_FIN_HEAD_CY, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
-  cv.text("LAST PRINT", hx, LY_CARD_FIN_LBL_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  cv.text(buf, hx, g.finHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
+  cv.text("LAST PRINT", hx, g.finLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
   cv.useFont(FONT_BODY);
   fitText(cv, buf, sizeof(buf), f.job[0] ? f.job : "--", hw);
-  cv.text(buf, hx, LY_CARD_FIN_NAME_CY, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+  cv.text(buf, hx, g.finNameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
 
-  // DONE / ENERGY / door prompt row
   int16_t x = hx;
   if (f.doneClock[0]) {
-    cv.text("DONE", x, LY_CARD_FIN_ROW_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-    cv.text(f.doneClock, x, LY_CARD_FIN_ROW_CY, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+    cv.text("DONE", x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(f.doneClock, x, g.finRowCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
     cv.useFont(FONT_BODY);
     x += std::max<int16_t>(cv.width(f.doneClock), 30) + 18;
   }
   if (f.kwh[0]) {
-    cv.text("ENERGY", x, LY_CARD_FIN_ROW_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-    cv.text(f.kwh, x, LY_CARD_FIN_ROW_CY, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
+    cv.text("ENERGY", x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(f.kwh, x, g.finRowCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
   }
-  if (f.doorWait) {
-    cv.text("Open door to dismiss", hx, LY_CARD_LINE_CY + 6, FONT_BODY, CLR_ORANGE, lgfx::textdatum_t::middle_left);
-  }
-  drawBottom(cv, f);
+  if (f.doorWait)
+    cv.text("Open door to dismiss", hx, g.finDoorCy, FONT_BODY, CLR_ORANGE, lgfx::textdatum_t::middle_left);
+  drawBottom(cv, f, g, g.finBotRule);
 }
 
-static void sceneIdle(Cv& cv, const CardFrame& f) {
-  drawHeader(cv, f);
-  const int16_t x0 = LY_CARD_PAD, xr = LY_CARD_W - LY_CARD_PAD;
-  cv.text(f.head, x0, LY_CARD_IDLE_HEAD_CY, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
+static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  drawHeader(cv, f, g);
+  const int16_t x0 = g.pad, xr = g.W - g.pad;
+  cv.text(f.head, x0, g.idleHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
   char buf[64];
   cv.useFont(FONT_BODY);
-  fitText(cv, buf, sizeof(buf), f.job, 170);
-  cv.text(buf, x0, LY_CARD_IDLE_SUB_CY, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
+  fitText(cv, buf, sizeof(buf), f.job, g.idleClockRight ? 170 : xr - x0);
+  cv.text(buf, x0, g.idleSubCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
   if (f.clock[0]) {
-    int16_t x = xr;
-    if (f.ampm[0]) {
-      cv.text(f.ampm, x, LY_CARD_IDLE_SUB_CY + 8, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::baseline_right);
-      cv.useFont(FONT_CARD_LBL);
-      x -= cv.width(f.ampm) + 4;
+    if (g.idleClockRight) {
+      int16_t x = xr;
+      if (f.ampm[0]) {
+        cv.text(f.ampm, x, g.idleClockBase, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::baseline_right);
+        cv.useFont(FONT_CARD_LBL);
+        x -= cv.width(f.ampm) + 4;
+      }
+      cv.text(f.clock, x, g.idleClockBase, FONT_CARD_NUM, f.dim, lgfx::textdatum_t::baseline_right);
+    } else {
+      cv.text(f.clock, x0 - 2, g.idleClockBase, FONT_CARD_NUM, f.dim, lgfx::textdatum_t::baseline_left);
+      if (f.ampm[0]) {
+        cv.useFont(FONT_CARD_NUM);
+        cv.text(f.ampm, x0 + cv.width(f.clock) + 4, g.idleClockBase, FONT_CARD_LBL, f.dim,
+                lgfx::textdatum_t::baseline_left);
+      }
     }
-    cv.text(f.clock, x, LY_CARD_IDLE_SUB_CY + 8, FONT_CARD_NUM, f.dim, lgfx::textdatum_t::baseline_right);
   }
   if (f.swCount) {
-    cv.text("AMS", x0, LY_CARD_IDLE_AMS_Y, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-    const int16_t s = LY_CARD_IDLE_SW;
-    int16_t x = x0, y = LY_CARD_IDLE_AMS_Y + 14;
+    cv.text("AMS", x0, g.idleAmsY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    const int16_t s = g.idleSw;
+    const int16_t yLimit = g.idleBotRule - 4;
+    int16_t x = x0, y = g.idleAmsY + 14;
     for (uint8_t i = 0; i < f.swCount; i++) {
       const CardTray& t = f.sw[i];
-      if (t.type[0] == '|') { x += 6; continue; }          // unit gap
-      if (t.type[0] == '/') {                               // AMS HT row
-        y += s + 8;
-        cv.text("HT", x0, y + s / 2 + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
-        x = x0 + 22;
-        continue;
+      // Width of the block starting here (one unit, or the "HT" label + HT swatches).
+      if (t.type[0] == '|' || t.type[0] == '/' || i == 0) {
+        bool ht = (t.type[0] == '/');
+        int16_t bw = ht ? 22 : 0;
+        uint8_t j = (t.type[0] == 'x') ? i : i + 1;
+        for (; j < f.swCount && f.sw[j].type[0] == 'x'; j++) bw += s + 4;
+        if (t.type[0] == '|') x += 6;
+        if (x > x0 && ((ht && g.idleHtNewRow) || x + bw - 4 > xr)) { x = x0; y += s + 8; }
+        if (ht) {
+          if (x > x0) x += 6;
+          cv.text("HT", x, y + s / 2 + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
+          x += 22;
+        }
+        if (t.type[0] != 'x') continue;
       }
-      if (x + s > xr) continue;
+      if (y + s > yLimit || x + s > xr) continue;
       if (t.present) {
         if (t.active) cv.rrect(x - 2, y - 2, s + 4, s + 4, 5, f.txt);
         cv.rrect(x, y, s, s, 4, t.color);
@@ -661,14 +752,14 @@ static void sceneIdle(Cv& cv, const CardFrame& f) {
       x += s + 4;
     }
   }
-  drawBottom(cv, f);
+  drawBottom(cv, f, g, g.idleBotRule);
 }
 
-static void drawScene(Cv& cv, const CardFrame& f) {
+static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
   switch (f.kind) {
-    case CK_PRINTING: scenePrinting(cv, f); break;
-    case CK_FINISHED: sceneFinished(cv, f); break;
-    default:          sceneIdle(cv, f);     break;
+    case CK_PRINTING: scenePrinting(cv, f, g); break;
+    case CK_FINISHED: sceneFinished(cv, f, g); break;
+    default:          sceneIdle(cv, f, g);     break;
   }
 }
 
@@ -677,25 +768,25 @@ static void drawScene(Cv& cv, const CardFrame& f) {
 // ---------------------------------------------------------------------------
 static bool present(bool force) {
   if (!force && g_lastValid && memcmp(&g_cur, &g_last, sizeof(CardFrame)) == 0) return true;
-
-  if (lgfx::LGFX_Sprite* full = allocFull()) {
-    Cv cv{full, 0, FONT_NONE};
+  const CardGeo& g = geo();
+  if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
+    Cv cv{full, 0, 0, FONT_NONE};
     full->fillSprite(g_cur.bg);
-    drawScene(cv, g_cur);
+    drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
   } else {
     lgfx::LGFX_Sprite band(&tft);
     band.setColorDepth(16);
     band.setPsram(false);
-    if (!band.createSprite(LY_CARD_W, CARD_BAND_H)) {
+    if (!band.createSprite(g.W, CARD_BAND_H)) {
       g_lastValid = false;
       return false;
     }
     tft.startWrite();
-    for (int16_t y = 0; y < LY_CARD_H; y += CARD_BAND_H) {
-      Cv cv{&band, y, FONT_NONE};
+    for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
+      Cv cv{&band, 0, y, FONT_NONE};
       band.fillSprite(g_cur.bg);
-      drawScene(cv, g_cur);
+      drawScene(cv, g_cur, g);
       band.pushSprite(&tft, 0, y);
     }
     tft.endWrite();
@@ -709,10 +800,57 @@ static bool present(bool force) {
 }
 
 // ---------------------------------------------------------------------------
+//  Progress-bar shimmer: redraws only the bar strip, ~40 fps, honouring the
+//  "Animated progress bar" setting like the LED-bar shimmer does.
+// ---------------------------------------------------------------------------
+static const uint16_t SHIMMER_INTERVAL = 25;    // ms per step
+static const uint16_t SHIMMER_PAUSE    = 1200;  // ms between sweeps
+static const int16_t  SHIMMER_STEP     = 3;     // px per step
+
+bool tickCardShimmer() {
+  static int16_t pos = -1;                 // offset into the filled part, -1 = paused
+  static unsigned long lastMs = 0, pauseStart = 0;
+  static lgfx::LGFX_Sprite* strip = nullptr;
+  if (!dispSettings.animatedBar || !g_lastValid || g_last.kind != CK_PRINTING || !g_last.printing) return false;
+
+  const CardGeo& g = geo();
+  int16_t hx, hw;
+  heroX(g_last, g, hx, hw);
+  const int16_t fw = (int16_t)((int32_t)hw * (g_last.pct > 100 ? 100 : g_last.pct) / 100);
+  if (fw < 2 * SHIMMER_HALF + 8) return false;
+
+  const unsigned long now = millis();
+  if (pos < 0) {
+    if (now - pauseStart < SHIMMER_PAUSE) return false;
+    pos = 0;
+  }
+  if (now - lastMs < SHIMMER_INTERVAL) return false;
+  lastMs = now;
+
+  if (!strip) {
+    strip = new lgfx::LGFX_Sprite(&tft);
+    strip->setColorDepth(16);
+    strip->setPsram(false);
+  }
+  if (strip->width() != hw || strip->height() != g.barH) {
+    strip->deleteSprite();
+    if (!strip->createSprite(hw, g.barH)) return false;   // ~3 KB
+  }
+  Cv cv{strip, hx, g.barY, FONT_NONE};
+  strip->fillSprite(g_last.bg);
+  pos += SHIMMER_STEP;
+  const bool done = pos >= fw + SHIMMER_HALF;
+  drawBar(cv, g_last, g, done ? -1 : hx + pos - SHIMMER_HALF);
+  strip->pushSprite(&tft, hx, g.barY);
+  if (done) { pos = -1; pauseStart = now; }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 //  Public entry points
 // ---------------------------------------------------------------------------
 bool cardSkinActive() {
-  return dispSettings.cardStyle == 1 && (dispSettings.rotation & 1);
+  return dispSettings.cardStyle == 1;
 }
 
 static bool clockSynced() { return time(nullptr) > (time_t)NTP_SYNCED_EPOCH; }
@@ -722,6 +860,7 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
   CardFrame& f = g_cur;
   snapCommon(f, CK_PRINTING, p);
   f.pct = s.progress > 100 ? 100 : s.progress;
+  f.printing = (s.printing && s.gcodeStateId == GCODE_RUNNING) ? 1 : 0;
   f.remainMin = s.remainingMinutes;
   if (s.remainingMinutes > 0 && clockSynced()) {
     // Rounded to the minute so the frame does not change every second.
@@ -732,6 +871,8 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
   if (const char* st = runningStageLabel(s)) strlcpy(f.stage, st, sizeof(f.stage));
   f.layer = s.layerNum;
   f.layers = s.totalLayers;
+  if (tasmotaIsActiveForSlot(rotState.displayIndex))
+    snprintf(f.watts, sizeof(f.watts), "%.0f W", tasmotaGetWattsForSlot(rotState.displayIndex));
   // Active filament on the layer line only when nothing else on screen shows it.
   f.showActiveFil = (!f.amsShow && !f.bandFilaments) ? 1 : 0;
   if (f.showActiveFil) activeFilament(s, f.activeFil);
@@ -742,6 +883,7 @@ bool drawCardFinished(PrinterSlot& p, bool force) {
   const BambuState& s = p.state;
   CardFrame& f = g_cur;
   snapCommon(f, CK_FINISHED, p);
+  if (!(dispSettings.rotation & 1)) f.amsShow = 0;   // portrait finish has no strip
   if (printerWasCanceled(s)) {
     strlcpy(f.head, "Print canceled", sizeof(f.head)); f.headColor = CLR_YELLOW;
   } else if (s.gcodeStateId == GCODE_FAILED) {
@@ -764,8 +906,7 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   f.amsShow = 0;                          // idle lists every unit as swatches instead
   if (s.gcodeStateId == GCODE_FINISH) {
     strlcpy(f.head, "Print complete", sizeof(f.head));
-    f.headColor = f.finish;
-    // job stays as the sub line
+    f.headColor = f.finish;               // job name stays as the sub line
   } else {
     strlcpy(f.head, s.connected ? "Ready" : "Offline", sizeof(f.head));
     f.headColor = f.txt;
@@ -773,8 +914,8 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   }
   if (clockSynced()) formatClock(time(nullptr), f.clock, sizeof(f.clock), f.ampm, sizeof(f.ampm));
 
-  // Row 1: 4-slot AMS units. Row 2: AMS HT units (one slot each). Markers in
-  // type[0]: '|' unit gap, '/' next row; real swatches carry 'x'.
+  // Units first, then AMS HT units. Markers in type[0]: '|' unit gap,
+  // '/' start of the HT group; real swatches carry 'x'.
   const AmsState& a = s.ams;
   const uint8_t cap = sizeof(f.sw) / sizeof(f.sw[0]);
   auto mark = [&](const char* m) { if (f.swCount < cap) strlcpy(f.sw[f.swCount++].type, m, sizeof(f.sw[0].type)); };
@@ -787,13 +928,14 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
     if (n > AMS_TRAYS_PER_UNIT) n = AMS_TRAYS_PER_UNIT;
     for (uint8_t t = 0; t < n && f.swCount < cap; t++) {
       uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
-      fillTray(f.sw[f.swCount++], a.trays[idx], a.activeTray == idx);
+      fillTray(f.sw[f.swCount], a.trays[idx], a.activeTray == idx);
+      f.sw[f.swCount++].type[0] = 'x';
     }
   }
-  bool htRow = false;
+  bool htGroup = false;
   for (uint8_t u = 0; u < a.unitCount && u < AMS_MAX_UNITS; u++) {
     if (!a.units[u].present || a.units[u].id < 128) continue;
-    if (!htRow) { mark("/"); htRow = true; }
+    if (!htGroup) { mark("/"); htGroup = true; }
     if (f.swCount >= cap) break;
     CardTray& c = f.sw[f.swCount++];
     if (u < AMS_TRAY_UNITS) {
@@ -804,9 +946,8 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
     } else {
       memset(&c, 0, sizeof(c));                                   // tray data not stored for 5th+ unit
     }
+    c.type[0] = 'x';
   }
-  for (uint8_t i = 0; i < f.swCount; i++)
-    if (f.sw[i].type[0] != '|' && f.sw[i].type[0] != '/') f.sw[i].type[0] = 'x';
   return present(force);
 }
 
