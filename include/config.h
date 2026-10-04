@@ -274,9 +274,11 @@
 // "Card" print-screen style (big percent, temperature row, AMS column), rendered
 // through an off-screen sprite. The 240x320 profile (both orientations) and the
 // 240x240 profile; links two extra VLW blobs (inter_card_num / inter_card_lbl).
-#if defined(DISPLAY_240x320)
+// PSRAM only: the internal-RAM band fallback renders garbage on the CYD
+// (ILI9341, no PSRAM) - cause not found yet, see CARD_BAND_TEST in display_card.cpp.
+#if defined(DISPLAY_240x320) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1
-#elif !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
+#elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
       !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
 #else

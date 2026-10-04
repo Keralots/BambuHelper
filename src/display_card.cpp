@@ -4,6 +4,7 @@
 
 #include <time.h>
 #include <algorithm>
+#include <new>
 #include "layout_card.h"
 #include "display_ui.h"      // tft, markFrameDirty, stateBadgeText/Color, formatFinishClock
 #include "settings.h"        // dispSettings, netSettings, dpSettings
@@ -95,7 +96,24 @@ static const CardGeo& geo() {
 //  rotation change), otherwise a short band sprite in internal RAM allocated
 //  per frame and freed after the push so it never sits on the TLS heap.
 // ---------------------------------------------------------------------------
-#define CARD_BAND_H 40
+#define CARD_BAND_H 20     // 320x20x2 = 12.8 KB, kept while Card is up
+
+static lgfx::LGFX_Sprite* g_band = nullptr;
+
+// Band sprite for boards without PSRAM. Allocated once and kept: creating it
+// per frame churned the internal heap until the allocation started failing.
+static lgfx::LGFX_Sprite* allocBand(int16_t w) {
+  if (g_band && g_band->width() == w) return g_band;
+  if (!g_band) {
+    g_band = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!g_band) return nullptr;
+    g_band->setColorDepth(16);
+    g_band->setPsram(false);
+  }
+  g_band->deleteSprite();
+  if (g_band->createSprite(w, CARD_BAND_H)) return g_band;
+  return nullptr;
+}
 
 static lgfx::LGFX_Sprite* g_full = nullptr;
 
@@ -660,10 +678,13 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     int16_t need[LY_CARD_TEMP_MAX], sum = 0;
     for (uint8_t i = 0; i < nCells; i++) {
       const CardCell& c = f.cells[i];
-      char v[8];
-      snprintf(v, sizeof(v), "%d", c.val);
+      // Size from a digit template, not the live value: proportional digits
+      // made the whole row shift by a pixel or two as a nozzle warmed up.
+      // Nozzles always reserve three digits.
+      const bool nozzle = strncmp(c.lblShort, "NOZ", 3) == 0;
+      const char* tmpl = (nozzle || c.val >= 100 || c.val <= -10) ? "888" : "88";
       cv.useFont(FONT_LARGE);
-      int16_t vw = cv.width(v) + (c.unit == CU_DEG ? 8 : 16);
+      int16_t vw = cv.width(tmpl) + (c.unit == CU_DEG ? 8 : 16);
       cv.useFont(FONT_CARD_LBL);
       int16_t lw = cv.width(c.lblShort);
       need[i] = std::max(vw, lw);
@@ -989,29 +1010,50 @@ static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
 static bool present(bool force) {
   if (!force && g_lastValid && memcmp(&g_cur, &g_last, sizeof(CardFrame)) == 0) return true;
   const CardGeo& g = geo();
+#ifdef CARD_BAND_TEST
+  // Debug: render through the band path, also composing the bands into the
+  // full sprite so /card.bmp shows exactly what a no-PSRAM board pushes.
+  if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
+    lgfx::LGFX_Sprite band(&tft);
+    band.setColorDepth(16);
+    band.setPsram(false);
+    if (band.createSprite(g.W, CARD_BAND_H)) {
+      for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
+        Cv cv{&band, 0, y, FONT_NONE};
+        band.fillSprite(g_cur.bg);
+        drawScene(cv, g_cur, g);
+        band.pushSprite(full, 0, y);
+      }
+      band.unloadFont();
+      band.deleteSprite();
+      full->pushSprite(&tft, 0, 0);
+      memcpy(&g_last, &g_cur, sizeof(CardFrame));
+      g_lastValid = true;
+      return true;
+    }
+  }
+#endif
   if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
     Cv cv{full, 0, 0, FONT_NONE};
     full->fillSprite(g_cur.bg);
     drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
   } else {
-    lgfx::LGFX_Sprite band(&tft);
-    band.setColorDepth(16);
-    band.setPsram(false);
-    if (!band.createSprite(g.W, CARD_BAND_H)) {
-      g_lastValid = false;
-      return false;
+    lgfx::LGFX_Sprite* band = allocBand(g.W);
+    if (!band) {
+      // Keep whatever Card frame is on screen and retry next tick; dropping to
+      // the classic screen here made the panel flap between the two.
+      return g_lastValid;
     }
     tft.startWrite();
     for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
-      Cv cv{&band, 0, y, FONT_NONE};
-      band.fillSprite(g_cur.bg);
+      Cv cv{band, 0, y, FONT_NONE};
+      band->fillSprite(g_cur.bg);
       drawScene(cv, g_cur, g);
-      band.pushSprite(&tft, 0, y);
+      band->pushSprite(&tft, 0, y);
     }
     tft.endWrite();
-    band.unloadFont();
-    band.deleteSprite();
+    band->unloadFont();
   }
   memcpy(&g_last, &g_cur, sizeof(CardFrame));
   g_lastValid = true;
