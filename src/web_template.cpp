@@ -374,7 +374,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out  = "<div class=\"field\"><label for=\"card\">Print screen style</label>";
     out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value)\">";
     opt(out, dispSettings.cardStyle, 0, "Gauges");
-    opt(out, dispSettings.cardStyle, 1, "Card (big percent + temperature row)");
+    opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
     out += "</select>";
     out += "<span class=\"text-dim small\">split view keeps the gauges</span></div>";
     out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";

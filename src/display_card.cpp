@@ -37,6 +37,8 @@ struct CardFrame {
   uint8_t  dotCount, dotActive;
   uint8_t  batPct, batShow, batCharging;
   char     watts[10];
+  uint8_t  doorShow, doorOpen;
+  uint16_t doorClr;
   char     pill[12];
   uint16_t pillColor;
   // hero
@@ -403,6 +405,11 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
     f.batCharging = Battery::isCharging() ? 1 : 0;
   }
 #endif
+  if (s.doorSensorPresent) {
+    f.doorShow = 1;
+    f.doorOpen = s.doorOpen ? 1 : 0;
+    f.doorClr = s.doorOpen ? dispSettings.doorOpenColor : dispSettings.doorClosedColor;
+  }
   strlcpy(f.pill, pillWord(s), sizeof(f.pill));
   f.pillColor = stateBadgeColor(s);
   copyRenderable(f.job, sizeof(f.job), jobDisplayName(s));
@@ -449,6 +456,11 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
     if (fw > 0) cv.rect(bx + 2, by + 2, fw, bh - 4, c);
     limit = bx - 8;
   }
+  // Door: closed lock / open lock, in the door colours
+  if (f.doorShow) {
+    cv.icon(limit - 16, g.hdrCy - 8, f.doorOpen ? icon_unlock : icon_lock, f.doorClr);
+    limit -= 16 + 6;
+  }
   // Plug power while printing
   if (f.watts[0]) {
     cv.text(f.watts, limit, g.hdrCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_right);
@@ -460,13 +472,17 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.icon(ix, g.hdrCy - 8, icon_lightning, lightBg ? 0xC400 : CLR_YELLOW);
     limit = ix - 6;
   }
-  // Multi-printer dots, centred (or left of whatever sits on the right)
+  // Multi-printer dots, centred (or left of whatever sits on the right). The
+  // name wins: on a crowded header the dots go before the name gets cut.
   if (f.dotCount > 1) {
     int16_t span = (f.dotCount - 1) * 10;
     int16_t x0 = std::min<int16_t>(g.W / 2 - span / 2, limit - span - 4);
-    for (uint8_t k = 0; k < f.dotCount; k++)
-      cv.dot(x0 + k * 10, g.hdrCy, 3, k == f.dotActive ? f.accent : CLR_TEXT_DARK);
-    limit = x0 - 10;
+    cv.useFont(FONT_BODY);
+    if (x0 - 10 - g.pad >= cv.width(f.name)) {
+      for (uint8_t k = 0; k < f.dotCount; k++)
+        cv.dot(x0 + k * 10, g.hdrCy, 3, k == f.dotActive ? f.accent : CLR_TEXT_DARK);
+      limit = x0 - 10;
+    }
   }
   // Printer name
   char buf[24];
@@ -528,6 +544,34 @@ static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
     const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
     drawSlot(cv, t, f, x0 + (n % cols) * slotW, g.stripY + (n / cols) * rowH, slotW - 8, g.stripH);
   }
+}
+
+// Width drawDuration() will take for these minutes.
+static int16_t durationWidth(Cv& cv, uint16_t minutes) {
+  char hBuf[8], mBuf[8];
+  uint16_t h = minutes / 60, m = minutes % 60;
+  snprintf(hBuf, sizeof(hBuf), "%u", h);
+  snprintf(mBuf, sizeof(mBuf), "%u", m);
+  cv.useFont(FONT_BODY);
+  int16_t w = cv.width("m") + (h ? cv.width("h") + 6 : 0);
+  cv.useFont(FONT_LARGE);
+  w += cv.width(mBuf) + 1 + (h ? cv.width(hBuf) + 1 : 0);
+  return w;
+}
+
+// Active filament: swatch + type, left-aligned at x, centred on cy.
+static int16_t activeFilWidth(Cv& cv, const CardFrame& f) {
+  cv.useFont(FONT_CARD_LBL);
+  return 14 + cv.width(f.activeFil.type);
+}
+static void drawActiveFil(Cv& cv, const CardFrame& f, int16_t x, int16_t cy, int16_t maxW) {
+  CardChip c = f.activeFil;
+  c.active = 0;
+  drawChipDot(cv, x + 5, cy, c, f);
+  char buf[12];
+  cv.useFont(FONT_CARD_LBL);
+  fitText(cv, buf, sizeof(buf), c.type, maxW - 14);
+  cv.text(buf, x + 14, cy + 1, FONT_CARD_LBL, f.txt, lgfx::textdatum_t::middle_left);
 }
 
 // "2h 14m": numbers in FONT_LARGE, units dim in FONT_BODY, right-aligned at xr.
@@ -716,6 +760,8 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   cv.useFont(FONT_CARD_NUM);
   int16_t px = hx - 2 + cv.width(pct) + 3;
   cv.text("%", px, g.bigBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_left);
+  cv.useFont(FONT_LARGE);
+  const int16_t pctEnd = px + cv.width("%");
 
   // Remaining: top right; with a beside-thumb either its own row under the line
   // or the line's right end (ETA dropped) where there is no room for a row.
@@ -764,13 +810,27 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     rightStart = ex - cv.width("ETA");
   }
   if (f.showActiveFil && f.activeFil.known) {
-    cv.useFont(FONT_CARD_LBL);
-    int16_t need = 14 + cv.width(f.activeFil.type);
-    if (rightStart - leftEnd > need + 16) {
-      int16_t x = (leftEnd + rightStart) / 2 - need / 2;
-      CardChip c = f.activeFil; c.active = 0;
-      drawChipDot(cv, x + 5, cy, c, f);
-      cv.text(c.type, x + 14, cy + 1, FONT_CARD_LBL, f.txt, lgfx::textdatum_t::middle_left);
+    const int16_t need = activeFilWidth(cv, f);
+    if (f.thumbShow && g.amsColW) {
+      // Landscape: the column under the thumbnail.
+      drawActiveFil(cv, f, g.pad, g.hdrRule + 10 + g.thumbSize + 16, g.thumbSize);
+    } else {
+      // Gap between the percent and whatever sits right of it (REMAINING or
+      // the thumbnail); the line in between ETA and layer when that is too tight.
+      int16_t gapR;
+      if (pThumb) gapR = g.W - g.pad - g.thumbSize - 6;
+      else if (!remOnLine) {
+        cv.useFont(FONT_CARD_LBL);
+        int16_t rw = std::max<int16_t>(cv.width("REMAINING"),
+                                       f.remainMin > 0 ? durationWidth(cv, f.remainMin) : 20);
+        gapR = hr - rw - 8;
+      } else gapR = hr;
+      const int16_t gapL = pctEnd + 8;
+      if (gapR - gapL >= need) {
+        drawActiveFil(cv, f, gapL + (gapR - gapL - need) / 2, g.bigBase - 20, need);
+      } else if (rightStart - leftEnd > need + 16) {
+        drawActiveFil(cv, f, (leftEnd + rightStart) / 2 - need / 2, cy, need);
+      }
     }
   }
   drawBottom(cv, f, g, bottomRule(f, g));
