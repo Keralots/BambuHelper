@@ -907,6 +907,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     rightStart = ex - cv.width("ETA");
   }
   int16_t leftEnd = hx;
+  cv.noTier = true;                        // layer count / stage at the 1x body face on every tier
   if (f.stage[0]) {
     cv.useFont(FONT_BODY);
     fitText(cv, buf, sizeof(buf), f.stage, rightStart - hx - cv.S(10));
@@ -922,6 +923,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     cv.text(buf, x, cy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
     leftEnd = x + cv.width(buf);
   }
+  cv.noTier = false;
   if (f.showActiveFil && f.activeFil.known && f.thumbShow && g.amsColW) {
     // Landscape: the column under the thumbnail, below its own rule.
     const int16_t ry = g.hdrRule + cv.S(10) + g.thumbSize + cv.S(10);
