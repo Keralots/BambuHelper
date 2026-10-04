@@ -795,7 +795,6 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   // or the line's right end (ETA dropped) where there is no room for a row.
   const int16_t cy = pThumb ? g.tbLineCy : g.lineCy;
   const bool remOnLine = pThumb && g.tbRemOnLine;
-  int16_t remW = 0;                         // width REMAINING's value took (top-right form)
   FontID remLblFont;
   if (!remOnLine) {
     const int16_t remLbl = pThumb ? g.tbRemLblY : g.remLblY;
@@ -808,7 +807,7 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     else        cv.text("REMAINING", hr, remLbl - (remLblFont == FONT_BODY ? 3 : 0), remLblFont, f.dim,
                         lgfx::textdatum_t::top_right);
     if (f.remainMin > 0) {
-      remW = drawDuration(cv, hr, remBase, f.remainMin, f);
+      drawDuration(cv, hr, remBase, f.remainMin, f);
     } else {
       cv.text("--", hr, remBase, FONT_LARGE, f.dim, lgfx::textdatum_t::baseline_right);
     }
@@ -816,15 +815,9 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
 
   drawBar(cv, f, g, -1);
 
-  // Active filament: gap beside the percent if it fits, else the line (which
-  // then drops its "LAYER" word to make room); the landscape thumb column has its own spot.
-  const bool filWanted = f.showActiveFil && f.activeFil.known && !(f.thumbShow && g.amsColW);
-  const int16_t filNeed = filWanted ? activeFilWidth(cv, f) : 0;
-  int16_t gapL = pctEnd + 8, gapR = hr;
-  if (pThumb) gapR = g.W - g.pad - g.thumbSize - 6;
-  else if (!remOnLine) gapR = hr - (f.remainMin > 0 ? remW : 20) - 8;   // level with the value
-  const bool filInGap = filWanted && gapR - gapL >= filNeed;
-  const bool filOnLine = filWanted && !filInGap;
+  // Active filament sits right after the layer count (the landscape thumb
+  // column has its own spot under the thumbnail).
+  const bool filOnLine = f.showActiveFil && f.activeFil.known && !(f.thumbShow && g.amsColW);
 
   // Layer / stage (left), ETA or REMAINING (right), active filament (middle when there is room)
   int16_t leftEnd = hx;
@@ -835,11 +828,6 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     leftEnd = hx + cv.width(buf);
   } else if (f.layers > 0) {
     int16_t x = hx;
-    if (!filOnLine) {
-      cv.text("LAYER", hx, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
-      cv.useFont(FONT_CARD_LBL);
-      x += cv.width("LAYER") + 5;
-    }
     snprintf(buf, sizeof(buf), "%u", f.layer);
     cv.text(buf, x, cy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
     cv.useFont(FONT_BODY);
@@ -865,10 +853,8 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     const int16_t ry = g.hdrRule + 10 + g.thumbSize + 10;
     cv.hline(g.pad, ry, g.thumbSize, f.track);
     drawActiveFil(cv, f, g.pad, ry + (g.botRuleAms - ry) / 2, g.thumbSize);
-  } else if (filInGap) {
-    drawActiveFil(cv, f, gapL + (gapR - gapL - filNeed) / 2, g.bigBase - 20, filNeed);
-  } else if (filOnLine && rightStart - leftEnd > filNeed + 12) {
-    drawActiveFil(cv, f, (leftEnd + rightStart) / 2 - filNeed / 2, cy, filNeed);
+  } else if (filOnLine && rightStart - leftEnd > 40) {
+    drawActiveFil(cv, f, leftEnd + 10, cy, rightStart - leftEnd - 18);
   }
   drawBottom(cv, f, g, bottomRule(f, g));
 }
