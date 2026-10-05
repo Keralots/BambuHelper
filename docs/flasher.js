@@ -491,8 +491,16 @@ function checkBrowserSupport() {
 async function init() {
   checkBrowserSupport();
   populateBoardSelect();
-  renderBoardCard(DEFAULT_BOARD);
+  const sel = document.getElementById('board-select');
+  renderBoardCard(sel.value);
   wireMonitor();
+
+  // Listen before the VERSION fetch: a pick made while it is in flight must
+  // still reach the install button, or it would flash the default board.
+  sel.addEventListener('change', () => {
+    renderBoardCard(sel.value);
+    if (_version) renderInstallButton(sel.value, effectiveVersion(sel.value));
+  });
 
   try {
     _version = await loadVersion();
@@ -501,15 +509,11 @@ async function init() {
     return;
   }
 
+  // Always the select's current value, never DEFAULT_BOARD - it may have
+  // changed (or been restored by the browser) while VERSION was loading.
   showVersion(_version);
-  renderBoardCard(DEFAULT_BOARD);
-  renderInstallButton(DEFAULT_BOARD, effectiveVersion(DEFAULT_BOARD));
-
-  document.getElementById('board-select').addEventListener('change', (e) => {
-    const boardId = e.target.value;
-    renderBoardCard(boardId);
-    renderInstallButton(boardId, effectiveVersion(boardId));
-  });
+  renderBoardCard(sel.value);
+  renderInstallButton(sel.value, effectiveVersion(sel.value));
 }
 
 // ────────── serial monitor ──────────
