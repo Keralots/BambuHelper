@@ -202,6 +202,9 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.buttonPowerControl = false;  // #136: default OFF (opt-in per device)
+  ds.gestTap = GT_SMART;
+  ds.gestDouble = GD_OFF;
+  ds.gestHold = GH_LED;
   ds.showBatteryIndicator = false;  // default OFF on all boards; enable per device
   ds.glowMode = 0;             // edge glow off
   ds.glowColor = CLR_GREEN;
@@ -604,6 +607,16 @@ void loadSettings() {
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
   dispSettings.buttonPowerControl = prefs.getBool("dsp_btpw", def.buttonPowerControl);
+  dispSettings.gestTap  = prefs.getUChar("dsp_gtap", def.gestTap);
+  if (dispSettings.gestTap > GT_WAKE) dispSettings.gestTap = GT_SMART;
+  // Before the gesture card, double-click = plug power was the dsp_btpw checkbox.
+  dispSettings.gestDouble = prefs.isKey("dsp_gdbl")
+      ? prefs.getUChar("dsp_gdbl", def.gestDouble)
+      : (dispSettings.buttonPowerControl ? GD_PLUG : GD_OFF);
+  if (dispSettings.gestDouble > GD_NEXT) dispSettings.gestDouble = GD_OFF;
+  dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  dispSettings.gestHold = prefs.getUChar("dsp_ghold", def.gestHold);
+  if (dispSettings.gestHold > GH_NONE) dispSettings.gestHold = GH_LED;
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
   {
@@ -972,6 +985,9 @@ void saveSettings() {
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
   prefs.putBool("dsp_btpw", dispSettings.buttonPowerControl);
+  prefs.putUChar("dsp_gtap", dispSettings.gestTap);
+  prefs.putUChar("dsp_gdbl", dispSettings.gestDouble);
+  prefs.putUChar("dsp_ghold", dispSettings.gestHold);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
   prefs.putBool("dsp_hidlp", dispSettings.hideStatusReadout);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);

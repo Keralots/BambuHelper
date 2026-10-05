@@ -872,6 +872,11 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do - on the external button, the touchscreen and built-in buttons alike. Always fixed: a hold on the Printer Off screen powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+%GESTURE_ROWS%
+  </div>
+
+  <div class="card">
     <div class="card-head"><div><h3>Buzzer</h3><p>Passive buzzer. Beeps on print complete and errors.</p></div></div>
     <div class="field">
       <label for="buzzen">Buzzer</label>
@@ -1363,7 +1368,7 @@ R"rawliteral(
   <div class="card">
     <div class="card-head"><div><h3>Button power control</h3></div></div>
     <label class="check-row">
-      <input type="checkbox" id="btnpwr" value="1" %BTN_PWR% onchange="toggleSetting('btnpwr',this.checked)">
+      <input type="checkbox" id="btnpwr" value="1" %BTN_PWR% onchange="toggleSetting('btnpwr',this.checked);var g=document.getElementById('gdbl');if(g){if(this.checked)g.value='1';else if(g.value==='1')g.value='0';}">
       <label for="btnpwr">Double-click device button to turn the plug on/off</label>
     </label>
     <div class="help-text" style="padding-left:28px">Double- or triple-click the device button (or touchscreen) to open a full-screen confirmation for the printer on screen, then hold to toggle its plug (red warning if it is printing). Only active when a plug is configured for the shown printer; while armed it adds a short delay to single-tap printer switching.</div>

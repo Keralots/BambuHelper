@@ -204,6 +204,16 @@ The button type and GPIO pin are configurable in the web interface (Multi-Printe
 
 The same button (or the built-in touchscreen) can also switch the printer's smart plug on and off - see **Power Monitoring -> Button power control** below.
 
+What each gesture does is set under **Hardware -> Button & touch gestures**:
+
+| Gesture | Choices |
+|---|---|
+| **Tap** | Smart cycle (default: error details, camera, drying view, the Cards AMS page, then the next printer), next printer only, AMS page, or wake the screen only |
+| **Double tap** | Nothing (default), smart-plug power on/off, AMS page, or next printer |
+| **Hold** | Status LED brightness (default), AMS page, or nothing |
+
+A wake tap always wakes, and any double-tap action makes a single tap wait about half a second for a possible second one. The AMS page choices appear only on boards with the Cards style.
+
 ### MQTT Reconnect Backoff
 
 When a printer is physically powered off, BambuHelper uses exponential backoff to avoid wasting resources on repeated connection attempts:

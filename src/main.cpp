@@ -435,7 +435,9 @@ static void doTapActions() {
   }
 
   // AMS page (Cards): a stop on Ready / Print complete; the next tap moves on.
+  // Left out when a double tap or a hold already opens it.
   if ((cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
+      dispSettings.gestDouble != GD_AMS && dispSettings.gestHold != GH_AMS &&
       cardAmsPeekToggle(displayedPrinter().state)) return;
 
   if (getActiveConnCount() >= 2) {
@@ -491,13 +493,69 @@ static void openPowerConfirm(uint8_t slot, bool preArmedHold = false, uint32_t h
   setScreenState(SCREEN_POWER_CONFIRM);
 }
 
-// Replaces the direct doTapActions() call at both tap dispatch sites. Buffers
-// clicks only when power control is armed for the shown printer; otherwise the
-// tap is dispatched immediately with no pending state and no rotation-hold.
+// --- Gestures (Hardware > Button & touch gestures) ---------------------------
+static const uint32_t GESTURE_HOLD_MS = 600;
+
+static bool amsGestureAvailable() {
+  ScreenState s = getScreenState();
+  return cardSkinActive() && (s == SCREEN_IDLE || s == SCREEN_FINISHED);
+}
+
+static bool nextPrinterGestureAvailable() {
+  ScreenState s = getScreenState();
+  return getActiveConnCount() >= 2 &&
+         (s == SCREEN_IDLE || s == SCREEN_PRINTING || s == SCREEN_FINISHED);
+}
+
+// The multi-click buffer is armed only when the double-tap action can run here,
+// so every other screen keeps a zero-latency tap.
+static bool doubleTapArmedForSlot(uint8_t slot) {
+  switch (dispSettings.gestDouble) {
+    case GD_PLUG: return powerControlAvailableForSlot(slot);
+    case GD_AMS:  return amsGestureAvailable();
+    case GD_NEXT: return nextPrinterGestureAvailable();
+    default:      return false;
+  }
+}
+
+static void runDoubleTap(uint8_t slot) {
+  switch (dispSettings.gestDouble) {
+    case GD_PLUG: openPowerConfirm(slot); break;
+    case GD_AMS:  cardAmsPeekToggle(displayedPrinter().state); break;
+    case GD_NEXT: cycleDisplayedPrinterFromButton(); break;
+    default:      break;
+  }
+}
+
+static void runSingleTap() {
+  ScreenState cur = getScreenState();
+  // Waking and closing an open overlay work the same whatever the mapping.
+  bool passThrough = isNightBlackout() || isSleepStickyScreen(cur) ||
+                     cur == SCREEN_HMS || cur == SCREEN_DRY_PEEK;
+#if BOARD_HAS_CAMERA
+  if (cur == SCREEN_CAMERA) passThrough = true;
+#endif
+  if (passThrough || dispSettings.gestTap == GT_SMART) { doTapActions(); return; }
+  switch (dispSettings.gestTap) {
+    case GT_NEXT:
+      if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
+      break;
+    case GT_AMS:
+      if (amsGestureAvailable()) cardAmsPeekToggle(displayedPrinter().state);
+      else doTapActions();
+      break;
+    default:                                         // GT_WAKE: nothing on a live screen
+      break;
+  }
+}
+
+// Entry for every tap. Buffers clicks only when a double-tap action is armed for
+// the shown printer; otherwise the tap is dispatched immediately with no pending
+// state and no rotation-hold.
 static void registerTap() {
   uint8_t slot = rotState.displayIndex;
-  if (!powerControlAvailableForSlot(slot)) {
-    doTapActions();
+  if (!doubleTapArmedForSlot(slot)) {
+    runSingleTap();
     return;
   }
   uint32_t now = millis();
@@ -632,17 +690,21 @@ static void handleWakeButton() {
     return;
   }
 
-  // Flush a buffered multi-click once the window closes: 1 click = the normal tap
-  // action, 2+ = open the power-confirm modal for the frozen target slot.
+  // Flush a buffered multi-click once the window closes: 1 click = the tap
+  // gesture, 2+ = the double-tap gesture for the frozen target slot.
   if (pcPendingClicks > 0 && (millis() - pcLastTapMs) > POWER_MULTICLICK_MS) {
     uint8_t n = pcPendingClicks;
     pcPendingClicks = 0;
-    if (n >= 2) { openPowerConfirm(pcPendingSlot); return; }
-    doTapActions();
+    if (n >= 2) { runDoubleTap(pcPendingSlot); return; }
+    runSingleTap();
   }
 
+  // Hold gesture: LED dimming only when it is mapped there.
+  const bool holdLed = dispSettings.gestHold == GH_LED && ledSettings.enabled;
+  const bool holdAms = dispSettings.gestHold == GH_AMS && cardSkinActive();
+
   // Tick the dimmer every loop regardless of state - it owns the 2 s save debounce.
-  bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim);
+  bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim || !holdLed);
 
   // #177: a single hold on the "Printer Off" screen opens the power-confirm modal
   // pre-armed for ON (no double-click, no wait-for-release). suppressDim above kept
@@ -662,10 +724,21 @@ static void handleWakeButton() {
     offHoldFired = false;
   }
 
-  // LED disabled or unconfigured: take the ORIGINAL press-edge path (with the new
-  // multi-click shim). The dimmer's entry guard prevents any dim session, so
-  // holdConsumed is always false here.
-  if (!ledSettings.enabled) {
+  // Hold = AMS page: fires once per press; the release is then not a tap.
+  static bool amsHoldFired = false;
+  if (!held) {
+    amsHoldFired = false;
+  } else if (holdAms && !suppressDim && !amsHoldFired && holdMs >= GESTURE_HOLD_MS &&
+             amsGestureAvailable()) {
+    amsHoldFired = true;
+    pcPendingClicks = 0;
+    cardAmsPeekToggle(displayedPrinter().state);
+  }
+  if (amsHoldFired) holdConsumed = true;
+
+  // No hold gesture in use: take the ORIGINAL press-edge path (with the
+  // multi-click shim). holdConsumed is always false here.
+  if (!holdLed && !holdAms) {
     if (touchPress || boardPress) {
       buzzerPlayClick();
       ledOnUserInteraction();
@@ -674,7 +747,7 @@ static void handleWakeButton() {
     return;
   }
 
-  // LED enabled: tap/hold disambiguation.
+  // A hold gesture is in use: tap/hold disambiguation, the tap fires on release.
   if (touchPress || boardPress) {
     // Press edge - immediate feedback (preserves today's snappy feel).
     buzzerPlayClick();

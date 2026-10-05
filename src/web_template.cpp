@@ -313,6 +313,44 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "HIDELP") == 0) { out = dispSettings.hideStatusReadout ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
   if (strcmp(name, "BTN_PWR") == 0) { out = dispSettings.buttonPowerControl ? "checked" : ""; return true; }
+  if (strcmp(name, "GESTURE_ROWS") == 0) {
+    // AMS page entries only where the Cards style exists.
+    auto opt = [&](uint8_t cur, uint8_t v, const char* label) {
+      out += "<option value=\""; out += v; out += "\""; if (cur == v) out += " selected";
+      out += ">"; out += label; out += "</option>";
+    };
+    out  = "<div class=\"field\"><label for=\"gtap\">Tap</label>";
+    out += "<select id=\"gtap\" onchange=\"toggleSetting('gtap',this.value)\">";
+    opt(dispSettings.gestTap, GT_SMART, "Smart cycle (errors, camera, drying, AMS, next printer)");
+    opt(dispSettings.gestTap, GT_NEXT,  "Next printer only");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestTap, GT_AMS,   "AMS page (Cards)");
+#endif
+    opt(dispSettings.gestTap, GT_WAKE,  "Wake the screen only");
+    out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"gdbl\">Double tap</label>";
+    out += "<select id=\"gdbl\" onchange=\"toggleSetting('gdbl',this.value);var c=document.getElementById('btnpwr');if(c)c.checked=this.value==='1'\">";
+    opt(dispSettings.gestDouble, GD_OFF,  "Nothing");
+    opt(dispSettings.gestDouble, GD_PLUG, "Plug power on/off (confirm screen)");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestDouble, GD_AMS,  "AMS page (Cards)");
+#endif
+    opt(dispSettings.gestDouble, GD_NEXT, "Next printer");
+    out += "</select><span class=\"text-dim small\">Any double-tap action makes a single tap wait about half a second for a possible second one.</span></div>";
+    out += "<div class=\"field\"><label for=\"ghold\">Hold</label>";
+    out += "<select id=\"ghold\" onchange=\"toggleSetting('ghold',this.value)\">";
+    opt(dispSettings.gestHold, GH_LED,  "Status LED brightness");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestHold, GH_AMS,  "AMS page (Cards)");
+#endif
+    opt(dispSettings.gestHold, GH_NONE, "Nothing");
+    out += "</select>";
+#if TOUCH_WAKE_LONGPRESS
+    out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
+#endif
+    out += "</div>";
+    return true;
+  }
   if (strcmp(name, "AMST_ROW") == 0) {
     // Per-tray filament-type labels only render in the enhanced portrait AMS
     // strip, and only 320x480 (Guition / ws_lcd_350) drives the 3-AMS case

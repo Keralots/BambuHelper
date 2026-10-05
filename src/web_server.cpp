@@ -816,7 +816,17 @@ static void handleToggleSetting() {
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
-  else if (key == "btnpwr")  dispSettings.buttonPowerControl = on;
+  else if (key == "btnpwr") {
+    if (on) dispSettings.gestDouble = GD_PLUG;
+    else if (dispSettings.gestDouble == GD_PLUG) dispSettings.gestDouble = GD_OFF;
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  }
+  else if (key == "gtap")    dispSettings.gestTap  = (uint8_t)constrain(server.arg("val").toInt(), 0, GT_WAKE);
+  else if (key == "gdbl") {
+    dispSettings.gestDouble = (uint8_t)constrain(server.arg("val").toInt(), 0, GD_NEXT);
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  }
+  else if (key == "ghold")   dispSettings.gestHold = (uint8_t)constrain(server.arg("val").toInt(), 0, GH_NONE);
   else if (key == "glowm") {
     dispSettings.glowMode = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
     if (dispSettings.glowMode == 0) glowDismiss();  // switched off mid-animation
@@ -1690,6 +1700,9 @@ static void handleSettingsExport() {
   disp["showClockInfo"] = dispSettings.showClockInfo;
   disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
   disp["buttonPowerControl"] = dispSettings.buttonPowerControl;
+  disp["gestTap"] = dispSettings.gestTap;
+  disp["gestDouble"] = dispSettings.gestDouble;
+  disp["gestHold"] = dispSettings.gestHold;
   disp["animatedBar"] = dispSettings.animatedBar;
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
@@ -2068,7 +2081,15 @@ static void handleSettingsImportFinish() {
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();
     if (disp["amsTrayTypes"].is<bool>())  dispSettings.amsTrayTypes = disp["amsTrayTypes"].as<bool>();
-    if (disp["buttonPowerControl"].is<bool>()) dispSettings.buttonPowerControl = disp["buttonPowerControl"].as<bool>();
+    if (disp["buttonPowerControl"].is<bool>()) {
+      // Backups from before the gesture card carry only this flag.
+      if (disp["buttonPowerControl"].as<bool>()) dispSettings.gestDouble = GD_PLUG;
+      else if (dispSettings.gestDouble == GD_PLUG) dispSettings.gestDouble = GD_OFF;
+    }
+    if (disp["gestTap"].is<int>())    { int v = disp["gestTap"].as<int>();    dispSettings.gestTap    = (v >= 0 && v <= GT_WAKE) ? (uint8_t)v : GT_SMART; }
+    if (disp["gestDouble"].is<int>()) { int v = disp["gestDouble"].as<int>(); dispSettings.gestDouble = (v >= 0 && v <= GD_NEXT) ? (uint8_t)v : GD_OFF; }
+    if (disp["gestHold"].is<int>())   { int v = disp["gestHold"].as<int>();   dispSettings.gestHold   = (v >= 0 && v <= GH_NONE) ? (uint8_t)v : GH_LED; }
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
     if (disp["animatedBar"].is<bool>())       dispSettings.animatedBar = disp["animatedBar"].as<bool>();
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
