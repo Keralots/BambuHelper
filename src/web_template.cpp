@@ -372,11 +372,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
       o += ">"; o += label; o += "</option>";
     };
     out  = "<div class=\"field\"><label for=\"card\">Print screen style</label>";
-    out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value)\">";
+    out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value);applyCardsHints()\">";
     opt(out, dispSettings.cardStyle, 0, "Gauges");
     opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
     out += "</select>";
-    out += "<span class=\"text-dim small\">split view keeps the gauges</span></div>";
+    out += "<span class=\"text-dim small\">Settings marked <em>Gauges only</em> do not apply to Cards; split view keeps the gauges.</span></div>";
     out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
     out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
     opt(out, dispSettings.cardLeft, 0, "AMS slots");

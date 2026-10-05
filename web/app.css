@@ -532,3 +532,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   transition: opacity var(--motion);
 }
 html[data-theme="dark"] .topbar::after { opacity: 0.5; }
+
+/* Cards print style: settings it ignores (see applyCardsHints in app.js). */
+.go-badge { display: none; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; color: var(--text-dim); border: 1px solid var(--line-soft); }
+.go-toggle { display: none; white-space: nowrap; }
+.go-off .go-badge { display: inline-block; }
+.go-off { opacity: 0.55; }
+.go-off:focus-within, .go-off.go-open { opacity: 1; }
+.card.go-off .go-toggle { display: inline-flex; }
+.card.go-off:not(.go-open) > :not(.card-head) { display: none; }
+.card.go-off:not(.go-open) { opacity: 1; }
+.card.go-off:not(.go-open) > .card-head > div { opacity: 0.55; }
+.card.go-off:not(.go-open) .card-head > .btn:not(.go-toggle) { display: none; }

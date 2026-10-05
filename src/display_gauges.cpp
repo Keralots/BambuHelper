@@ -1189,6 +1189,11 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
 // ---------------------------------------------------------------------------
 //  Temperature arc gauge
 // ---------------------------------------------------------------------------
+bool tempOverWarn(float current, float maxTemp) {
+  return dispSettings.warnThresholdPct > 0 && maxTemp > 0 &&
+         (current / maxTemp) * 100.0f >= (float)dispSettings.warnThresholdPct;
+}
+
 void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
                    float current, float target, float maxTemp,
                    uint16_t accentColor, const char* label,
@@ -1217,8 +1222,7 @@ void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,
   // Optional warning color: follows the ACTUAL reading (the displayed number),
   // not the smoothed arc, so the value text color always matches the number.
   // Recolors the arc fill and the value text. 0 = feature off.
-  bool warn = (dispSettings.warnThresholdPct > 0 && maxTemp > 0 &&
-               (current / maxTemp) * 100.0f >= (float)dispSettings.warnThresholdPct);
+  bool warn = tempOverWarn(current, maxTemp);
   uint16_t tempColor = arcColor;
   if (warn) { tempColor = dispSettings.warnColor; valColor = dispSettings.warnColor; }
 

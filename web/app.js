@@ -1230,6 +1230,37 @@ function applyDisplay(){
 /* ============ Whitelisted toggle ============ */
 /* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
    their string value through unchanged. */
+/* Cards print style: settings it ignores get a "Gauges only" badge and are
+   dimmed; the Gauge Layout card folds as well (data-gauges-only="fold").
+   Boards without Cards have no #card select, so nothing changes there. */
+function applyCardsHints(){
+  var sel = document.getElementById('card');
+  var on = !!sel && sel.value === '1';
+  document.querySelectorAll('[data-gauges-only]').forEach(function(el){
+    if (!el.querySelector('.go-badge') && !el.classList.contains('help-text')) {
+      var b = document.createElement('span');
+      b.className = 'go-badge';
+      // Split view still draws gauges from the layout's first four slots.
+      b.textContent = el.dataset.gaugesOnly === 'fold' ? 'Gauges / split view' : 'Gauges only';
+      var host = el.querySelector('h3') || el.querySelector('label:not(.check-row)') ||
+                 el.querySelector('label') || el;
+      host.appendChild(b);
+      if (el.dataset.gaugesOnly === 'fold') {
+        var t = document.createElement('button');
+        t.type = 'button';
+        t.className = 'btn btn-ghost btn-sm go-toggle';
+        t.textContent = 'Show';
+        t.onclick = function(){
+          var open = el.classList.toggle('go-open');
+          t.textContent = open ? 'Hide' : 'Show';
+        };
+        el.querySelector('.card-head').appendChild(t);
+      }
+    }
+    el.classList.toggle('go-off', on);
+  });
+}
+
 function toggleSetting(key, on){
   var val = (on === true) ? '1' : (on === false) ? '0' : String(on);
   fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+encodeURIComponent(val)})
@@ -1838,6 +1869,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   toggleBtnPin();
   toggleLed();
   toggleAfterPrint();
+  applyCardsHints();
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it
   // joins the list only when the page actually carries it.

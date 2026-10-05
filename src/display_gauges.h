@@ -87,6 +87,10 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
                      int16_t thickness, uint8_t progress, uint8_t prevProgress,
                      uint16_t remainingMin, bool forceRedraw);
 
+// True when a temperature reading has reached the "Warning threshold" share of
+// its gauge scale (feature off at 0). Shared by the arc gauges and the Card.
+bool tempOverWarn(float current, float maxTemp);
+
 // Draw temperature arc gauge with current/target
 // arcValue: smooth value for arc position, current: actual value for text display
 void drawTempGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius,

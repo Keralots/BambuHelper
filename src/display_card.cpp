@@ -10,6 +10,7 @@
 #include "settings.h"        // dispSettings, netSettings, dpSettings
 #include "fonts.h"           // loadFontInto, FontID
 #include "icons.h"           // drawIcon16, icon_lightning
+#include "display_gauges.h"  // tempOverWarn
 #include "bambu_mqtt.h"      // getActiveConnCount, isPrinterConfigured
 #include "hms_lookup.h"      // printerWasCanceled, ERROR_BADGE_TEXT
 #include "tasmota.h"         // plug watts / kWh
@@ -295,6 +296,12 @@ static void addCell(CardFrame& f, const char* lbl, const char* shortLbl, float v
   c.vclr = vclr;
 }
 
+// A temperature's colour: its gauge's value colour, or the warning colour once
+// it reaches the "Warning threshold" share of that gauge's scale.
+static uint16_t tempClr(float v, uint16_t scaleMax, uint16_t base) {
+  return tempOverWarn(v, (float)scaleMax) ? dispSettings.warnColor : base;
+}
+
 // P1P/P1S/A1/A1 mini have no chamber sensor; they still send a placeholder
 // chamber_temper (5 on a live P1S), so the cell is gated by model, not value.
 static bool hasChamberSensor(const char* serial) {
@@ -319,17 +326,23 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
   // Temperatures: only what this printer reports. Nozzles first, then bed and
   // chamber - the square's AMS row keeps just the first three.
   if (s.dualNozzle) {
-    addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG, dispSettings.nozzle.value, s.activeNozzle == 1);
-    addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG, dispSettings.nozzle.value, s.activeNozzle == 0);
+    addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG,
+            tempClr(s.nozzleTempN[1], dispSettings.nozzleScaleMax, dispSettings.nozzle.value), s.activeNozzle == 1);
+    addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG,
+            tempClr(s.nozzleTempN[0], dispSettings.nozzleScaleMax, dispSettings.nozzle.value), s.activeNozzle == 0);
   } else {
-    addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG, dispSettings.nozzle.value);
+    addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG,
+            tempClr(s.nozzleTemp, dispSettings.nozzleScaleMax, dispSettings.nozzle.value));
   }
-  addCell(f, "BED", "BED", s.bedTemp, CU_DEG, dispSettings.bed.value);
-  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f) addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG, dispSettings.chamberTemp.value);
+  addCell(f, "BED", "BED", s.bedTemp, CU_DEG, tempClr(s.bedTemp, dispSettings.bedScaleMax, dispSettings.bed.value));
+  if (hasChamberSensor(serial) && s.chamberTemp > 0.5f)
+    addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG,
+            tempClr(s.chamberTemp, dispSettings.chamberScaleMax, dispSettings.chamberTemp.value));
   int8_t u = displayAmsUnit(s.ams);
   if (u >= 0) {
     const AmsUnit& au = s.ams.units[u];
-    if (au.temp > 0.5f) addCell(f, "AMS", "AMS", au.temp, CU_DEG, dispSettings.textColor);
+    if (au.temp > 0.5f)
+      addCell(f, "AMS", "AMS", au.temp, CU_DEG, tempClr(au.temp, dispSettings.chamberScaleMax, dispSettings.textColor));
     if (au.humidityRaw > 0)    addCell(f, "HUMIDITY", "HUM", au.humidityRaw, CU_PCT, dispSettings.textColor);
     else if (au.humidity > 0)  addCell(f, "HUMIDITY", "HUM", au.humidity, CU_OF5, dispSettings.textColor);
   }

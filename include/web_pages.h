@@ -367,7 +367,7 @@ R"rawliteral(
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-gauges-only="fold">
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
@@ -455,7 +455,7 @@ R"rawliteral(
       <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
       <label for="abar">Animated progress bar (shimmer effect)</label>
     </label>
-    <div class="field">
+    <div class="field" data-gauges-only>
       <label for="timem">Time display</label>
       <select id="timem" onchange="toggleSetting('timem',this.value)">
         <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
@@ -464,15 +464,15 @@ R"rawliteral(
       </select>
       <span class="text-dim small">applies immediately</span>
     </div>
-    <label class="check-row">
+    <label class="check-row" data-gauges-only>
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
       <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
     </label>
-    <label class="check-row">
+    <label class="check-row" data-gauges-only>
       <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
       <label for="hidelp">Hide layer/power line in status bar</label>
     </label>
-    <div class="help-text" style="padding-left:28px">Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
+    <div class="help-text" style="padding-left:28px" data-gauges-only>Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
 %AMST_ROW%
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
@@ -1068,7 +1068,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
 
   <div class="card">
     <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
-    <div class="field"><label for="gsmooth">Arc smoothing</label>
+    <div class="field" data-gauges-only><label for="gsmooth">Arc smoothing</label>
       <select id="gsmooth">
         <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
         <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
@@ -1083,7 +1083,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <div class="field"><label for="warn_clr">Warning color</label>
       <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
     </div>
-    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale.</p>
+    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale. The Cards style colors its temperatures the same way.</p>
     <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
   </div>
 
