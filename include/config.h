@@ -287,9 +287,7 @@
 
 // Plate thumbnail in the Card left column, fetched from Bambu Cloud. Needs
 // PSRAM for the 512x512 decode and the downloaded PNG.
-// The S3-Zero pair is left out on flash: the fetch + PNG decoder cost ~18 KB and
-// esp32s3_zero_320 overflowed its 1.75 MB slot by 6 KB with it (2026-10-04).
-#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM) && !defined(BOARD_IS_S3_ZERO)
+#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_THUMB  1
 #else
 #define HAS_CARD_THUMB  0

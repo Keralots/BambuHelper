@@ -1,4 +1,5 @@
 #include "thumb_fetch.h"
+#include <new>
 
 #if HAS_CARD_THUMB
 
@@ -217,7 +218,8 @@ static bool render(int16_t size, uint16_t bg) {
   const float zoom = (float)size / side;
 
   if (!g_thumb) {
-    g_thumb = new lgfx::LGFX_Sprite(&tft);
+    g_thumb = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!g_thumb) { big.deleteSprite(); return false; }
     g_thumb->setPsram(true);
     g_thumb->setColorDepth(16);
   }

@@ -105,7 +105,8 @@ static lgfx::LGFX_Sprite* allocFull(int16_t w, int16_t h) {
 #if defined(BOARD_HAS_PSRAM)
   if (g_full && g_full->width() == w && g_full->height() == h) return g_full;
   if (!g_full) {
-    g_full = new lgfx::LGFX_Sprite(&tft);
+    g_full = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!g_full) return nullptr;
     g_full->setPsram(true);
     g_full->setColorDepth(16);
   }
@@ -1159,7 +1160,8 @@ bool tickCardShimmer() {
   lastMs = now;
 
   if (!strip) {
-    strip = new lgfx::LGFX_Sprite(&tft);
+    strip = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!strip) return false;
     strip->setColorDepth(16);
     strip->setPsram(false);
   }

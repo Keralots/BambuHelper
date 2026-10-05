@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include <new>
 #include "web_template.h"
 #include "settings.h"
 #include "bambu_state.h"
@@ -2456,11 +2457,19 @@ static void handleOtaAuto() {
   otaAutoProgress   = 0;
   otaAutoStatus     = "starting";
 
-  String* urlHeap = new String(url);
+  String* urlHeap = new (std::nothrow) String(url);
   // Pin to core 1: the WiFi task lives on core 0 and a concurrent TLS
   // download here would compete for the same core, starving IDLE0 and
   // tripping the task watchdog mid-flash on slower boards (CYD).
-  xTaskCreatePinnedToCore(otaAutoTaskFn, "otaAuto", 8192, (void*)urlHeap, 5, nullptr, 1);
+  if (!urlHeap || xTaskCreatePinnedToCore(otaAutoTaskFn, "otaAuto", 8192, (void*)urlHeap,
+                                          5, nullptr, 1) != pdPASS) {
+    delete urlHeap;
+    otaAutoStatus = "failed: out of memory";
+    otaAutoInProgress = false;
+    otaMqttReinitPending = true;  // no reboot coming - restore MQTT
+    server.send(500, "application/json", "{\"error\":\"Out of memory\"}");
+    return;
+  }
 
   server.send(200, "application/json", "{\"status\":\"started\"}");
 }
