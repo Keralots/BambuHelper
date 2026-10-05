@@ -119,6 +119,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Button plug power control** - double-click the device button (or touchscreen) to switch the shown printer's smart plug on or off, with a hold-to-confirm safety screen - power a switched-off printer back on without opening a browser
 - **Chamber light control** - manual on/off buttons in the web UI plus per-printer automation: light off after a successful or failed print (with delay), on when a print starts; dual-bar printers (H2C/H2D) switch both bars
 - **Printer error reporting (HMS)** - a red `ERR` badge when the printer reports an HMS code or print error, a tap-to-open detail screen with the official Bambu wording, and optional edge-glow / buzzer / LED / wake-the-screen alerts
+- **Cards print screen (beta)** - an alternative to the gauges: big progress percentage, time left, finish time, one row of temperatures, plus an AMS column, the plate preview or the filaments of this print - see [Cards print screen (beta)](#cards-print-screen-beta)
 - **Animations** - loading spinner, progress pulse, completion celebration
 - **Web config portal** - dark-themed settings page for WiFi, network, printer, display, power, buzzer, and LED settings
 - **Network configuration** - DHCP or static IP, with optional IP display at startup
@@ -143,6 +144,33 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **OTA updates** - update firmware from the device's web interface (manual upload or one-click from GitHub Releases)
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
+
+## Cards print screen (beta)
+
+A calmer alternative to the gauge dashboard, readable from across the room: a big progress percentage, the time left and the finish time, a progress bar, and a single row of temperatures. The Ready and Print Complete screens follow the same style.
+
+<table>
+<tr>
+<td align="center"><img src="img/cards/cards-ws_lcd_200-landscape-night.png" alt="Cards, 320x240 landscape"><br><sub>320x240 landscape</sub></td>
+<td align="center"><img src="img/cards/cards-ws_lcd_200-portrait-warm-paper.png" alt="Cards, 240x320 portrait, Warm paper"><br><sub>240x320 portrait, Warm paper</sub></td>
+<td align="center"><img src="img/cards/cards-esp32s3-240x240.png" alt="Cards, 240x240"><br><sub>240x240</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="img/cards/cards-jc3248w535-landscape.png" alt="Cards, 480x320 landscape"><br><sub>480x320 landscape</sub></td>
+<td align="center"><img src="img/cards/cards-jc3248w535-portrait.png" alt="Cards, 320x480 portrait"><br><sub>320x480 portrait</sub></td>
+</tr>
+</table>
+
+Screenshots are taken from the device at native resolution.
+
+- **Left column** - the AMS slots with the feeding slot highlighted, a **plate preview** of the running job (from Bambu Cloud - needs the [account sign-in on the device](#connecting-to-bambu-cloud); works for LAN and Cloud printers bound to that account), or nothing
+- **Bottom row** - the temperatures your printer actually has (both nozzles on H2 printers, chamber only where there is a sensor, AMS temperature and humidity), or the **filaments of this print** with how much is left on each spool
+- **Header** - printer name, plug power, door state and the status badge; long job names scroll; the finish time gets a "+1" when the print ends tomorrow
+- **Colors** come from the existing Colors section (Background, Track, Progress Bar, Finish time, the accents, Door, and each gauge's value color for its temperature); temperatures switch to the warning color under the same **Warning threshold** as the gauges. The **Warm paper** preset suits it well
+
+Turn it on in the web interface under **Display**: **Print screen style** -> `Cards (beta)`, then pick **Card: left column** and **Card: bottom row**. While Cards is selected, the portal marks the settings it does not use as *Gauges only*. Split view (two printers at once) keeps the classic gauges.
+
+Cards needs a board with PSRAM and a square 240x240 or a 240x320 / 320x480 screen. Boards without PSRAM (CYD, TZT, CYD 2.4", ESP32-C3), the round displays and the 480x480 SenseCAP keep the gauges.
 
 ## Multi-Printer Monitoring
 
