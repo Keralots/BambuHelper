@@ -390,6 +390,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(out, dispSettings.cardBottom, 0, "Temperatures");
     opt(out, dispSettings.cardBottom, 1, "Filaments of this print");
     out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"cready\">Card: Ready screen</label>";
+    out += "<select id=\"cready\" onchange=\"toggleSetting('cready',this.value)\">";
+    opt(out, dispSettings.cardReady, 0, "Status");
+    opt(out, dispSettings.cardReady, 1, "AMS filament left");
+    opt(out, dispSettings.cardReady, 2, "Alternate status / AMS");
+    out += "</select>";
+    out += "<span class=\"text-dim small\">A tap on Ready also opens the AMS page.</span></div>";
 #else
     out = "";
 #endif

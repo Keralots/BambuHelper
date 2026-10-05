@@ -165,6 +165,7 @@ Screenshots are taken from the device at native resolution.
 
 - **Left column** - the AMS slots with the feeding slot highlighted, a **plate preview** of the running job (from Bambu Cloud - needs the [account sign-in on the device](#connecting-to-bambu-cloud); works for LAN and Cloud printers bound to that account), or nothing
 - **Bottom row** - the temperatures your printer actually has (both nozzles on H2 printers, chamber only where there is a sensor, AMS temperature and humidity), or the **filaments of this print** with how much is left on each spool
+- **AMS page** - how much filament is left in every tray, Bambu Studio style (a remain bar over a tile in the filament color, low spools in orange, `--` where the printer does not know). Pick it for the Ready screen under **Card: Ready screen** (`Status`, `AMS filament left`, or `Alternate status / AMS`), or tap the button / screen on Ready or Print Complete to open it for 30 seconds
 - **Header** - printer name, plug power, door state and the status badge; long job names scroll; the finish time gets a "+1" when the print ends tomorrow
 - **Colors** come from the existing Colors section (Background, Track, Progress Bar, Finish time, the accents, Door, and each gauge's value color for its temperature); temperatures switch to the warning color under the same **Warning threshold** as the gauges. The **Warm paper** preset suits it well
 

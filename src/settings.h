@@ -93,6 +93,7 @@ struct DisplaySettings {
   uint8_t  cardStyle;       // HAS_CARD_SKIN, landscape only: 0 = gauges, 1 = Card
   uint8_t  cardLeft;        // Card left column: 0 = AMS slots, 1 = none, 2 = plate preview (cloud)
   uint8_t  cardBottom;      // Card bottom band: 0 = temperatures, 1 = print filaments
+  uint8_t  cardReady;       // Card Ready screen: 0 = status, 1 = AMS page, 2 = alternate
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip

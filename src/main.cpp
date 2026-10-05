@@ -12,6 +12,7 @@
 #include "buzzer.h"
 #include "led.h"
 #include "display_edge_glow.h"
+#include "display_card.h"       // cardAmsPeekToggle
 #include "hms_lookup.h"
 #include "tasmota.h"
 #include "battery.h"
@@ -432,6 +433,10 @@ static void doTapActions() {
     }
     return;
   }
+
+  // AMS page (Cards): a stop on Ready / Print complete; the next tap moves on.
+  if ((cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
+      cardAmsPeekToggle(displayedPrinter().state)) return;
 
   if (getActiveConnCount() >= 2) {
     cycleDisplayedPrinterFromButton();

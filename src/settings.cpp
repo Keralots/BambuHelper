@@ -191,6 +191,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.cardStyle = 0;
   ds.cardLeft = 0;
   ds.cardBottom = 0;
+  ds.cardReady = 0;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT_DEFAULT;
@@ -585,6 +586,8 @@ void loadSettings() {
   if (dispSettings.cardLeft > 2) dispSettings.cardLeft = 0;
   dispSettings.cardBottom = prefs.getUChar("dsp_cbot", def.cardBottom);
   if (dispSettings.cardBottom > 1) dispSettings.cardBottom = 0;
+  dispSettings.cardReady = prefs.getUChar("dsp_crdy", def.cardReady);
+  if (dispSettings.cardReady > 2) dispSettings.cardReady = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT_DEFAULT);
@@ -958,6 +961,7 @@ void saveSettings() {
   prefs.putUChar("dsp_card", dispSettings.cardStyle);
   prefs.putUChar("dsp_cleft", dispSettings.cardLeft);
   prefs.putUChar("dsp_cbot", dispSettings.cardBottom);
+  prefs.putUChar("dsp_crdy", dispSettings.cardReady);
   prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
   prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);

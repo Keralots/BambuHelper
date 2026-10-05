@@ -22,11 +22,14 @@
 //  scene is drawn from this alone.
 //  Zeroed with memset before filling, so a whole-struct memcmp is safe.
 // ---------------------------------------------------------------------------
-enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2 };
+enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2, CK_AMS = 3 };
 
 struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; };
 struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
 struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; };
+// AMS page: one tile per tray, boxes = an AMS unit (4 tiles), an AMS HT or the external spool (1 tile).
+struct CardAmsTile { uint16_t color; char type[10]; char slot[4]; uint8_t present, active; int8_t remain; };
+struct CardAmsBox  { char label[10]; char env[16]; uint8_t n, region; CardAmsTile t[4]; };
 
 enum : uint8_t { CU_DEG = 0, CU_PCT = 1, CU_OF5 = 2 };
 
@@ -80,6 +83,9 @@ struct CardFrame {
   char     ampm[4];
   uint8_t  swCount;
   CardTray sw[AMS_MAX_TRAYS + AMS_TRAY_UNITS];   // trays + unit markers
+  // AMS page: the boxes of the page on screen, laid out in up to two regions
+  uint8_t  amsPage, amsPages, regionCount, boxCount;
+  CardAmsBox boxes[8];
 };
 
 static CardFrame g_cur, g_last;
@@ -1060,10 +1066,268 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
   drawBottom(cv, f, g, g.idleBotRule);
 }
 
+// ---------------------------------------------------------------------------
+//  AMS page: filament left per tray, Bambu Studio style (a remain bar over a
+//  tile in the filament colour). Shown on the Ready screen per "Card: Ready
+//  screen", or for a while after a tap (cardAmsPeekToggle).
+// ---------------------------------------------------------------------------
+static const uint32_t AMS_PAGE_MS = 8000;    // per page, and the Ready phase when alternating
+static const uint32_t AMS_PEEK_MS = 30000;   // a tap-opened page closes itself after this
+static bool g_peek = false;
+static unsigned long g_peekStart = 0;
+
+static void fillTile(CardAmsTile& t, const AmsTray& src, bool active, const char* slot) {
+  memset(&t, 0, sizeof(t));
+  t.present = src.present ? 1 : 0;
+  t.color   = src.colorRgb565;
+  t.active  = active ? 1 : 0;
+  t.remain  = src.present ? src.remain : -1;
+  char buf[16];
+  strlcpy(buf, src.present ? src.type : "", sizeof(buf));
+  if (char* sp = strchr(buf, ' ')) *sp = '\0';   // "PLA Matte" -> "PLA": a tile is ~30 px wide
+  strlcpy(t.type, buf, sizeof(t.type));
+  strlcpy(t.slot, slot, sizeof(t.slot));
+}
+
+static void unitEnv(char* out, size_t n, const AmsUnit& u) {
+  char h[8] = "";
+  if (u.humidityRaw > 0)    snprintf(h, sizeof(h), "%u%%", u.humidityRaw);
+  else if (u.humidity > 0)  snprintf(h, sizeof(h), "%u/5", u.humidity);
+  const int t = (int)lroundf(u.temp);
+  if (u.temp > 0.5f && h[0]) snprintf(out, n, "%s · %d°", h, t);
+  else if (u.temp > 0.5f)    snprintf(out, n, "%d°", t);
+  else                       strlcpy(out, h, n);
+}
+
+// Every box in display order: AMS units, then AMS HT units, then the external spool.
+static uint8_t buildAmsBoxes(const AmsState& a, CardAmsBox* out, uint8_t cap) {
+  uint8_t n = 0;
+  if (a.present) {
+    for (uint8_t u = 0; u < a.unitCount && u < AMS_TRAY_UNITS && n < cap; u++) {
+      const AmsUnit& au = a.units[u];
+      if (!au.present || au.id >= 128) continue;
+      CardAmsBox& b = out[n++];
+      memset(&b, 0, sizeof(b));
+      formatAmsNumberLabel(b.label, sizeof(b.label), u);
+      unitEnv(b.env, sizeof(b.env), au);
+      b.n = au.trayCount ? au.trayCount : AMS_TRAYS_PER_UNIT;
+      if (b.n > AMS_TRAYS_PER_UNIT) b.n = AMS_TRAYS_PER_UNIT;
+      const char letter = (char)('A' + (au.id < 26 ? au.id : u));
+      for (uint8_t t = 0; t < b.n; t++) {
+        const uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
+        const char slot[4] = { letter, (char)('1' + t), 0, 0 };
+        fillTile(b.t[t], a.trays[idx], a.activeTray == idx, slot);
+      }
+    }
+    for (uint8_t u = 0; u < a.unitCount && u < AMS_MAX_UNITS && n < cap; u++) {
+      const AmsUnit& au = a.units[u];
+      if (!au.present || au.id < 128) continue;
+      CardAmsBox& b = out[n++];
+      memset(&b, 0, sizeof(b));
+      strlcpy(b.label, "HT", sizeof(b.label));
+      unitEnv(b.env, sizeof(b.env), au);
+      b.n = 1;
+      if (u < AMS_TRAY_UNITS) {
+        const uint8_t idx = u * AMS_TRAYS_PER_UNIT;
+        fillTile(b.t[0], a.trays[idx], a.activeTray == idx, "HT");
+      } else if (a.ovUnitId == au.id && a.ovTray.present) {
+        fillTile(b.t[0], a.ovTray, a.activeTray == AMS_TRAY_OVERFLOW, "HT");   // 5th+ unit: feeding tray only
+      } else {
+        AmsTray none = {};
+        fillTile(b.t[0], none, false, "HT");
+        strlcpy(b.t[0].type, "?", sizeof(b.t[0].type));   // 5th+ unit: tray data not kept
+      }
+    }
+  }
+  if (a.vtPresent && n < cap) {
+    CardAmsBox& b = out[n++];
+    memset(&b, 0, sizeof(b));
+    strlcpy(b.label, "EXT", sizeof(b.label));
+    b.n = 1;
+    AmsTray vt = {};
+    vt.present = true;
+    vt.colorRgb565 = a.vtColorRgb565;
+    strlcpy(vt.type, a.vtType, sizeof(vt.type));
+    vt.remain = -1;                                  // nothing reported for the spool holder
+    fillTile(b.t[0], vt, a.activeTray == 254, "EXT");
+  }
+  return n;
+}
+
+// Regions hold one AMS unit or two single-tray boxes side by side; a page shows two.
+static uint8_t assignRegions(CardAmsBox* b, uint8_t n) {
+  int16_t r = -1;
+  uint8_t halves = 0;                                // single-tray boxes in region r
+  for (uint8_t i = 0; i < n; i++) {
+    if (b[i].n > 1)                  { r++; halves = 0; }
+    else if (r >= 0 && halves == 1)  { halves = 2; }
+    else                             { r++; halves = 1; }
+    b[i].region = (uint8_t)r;
+  }
+  return (uint8_t)(r + 1);
+}
+
+// Page grid: units side by side in landscape, and the fewest rows that keep a
+// tile at most twice as tall as wide (Studio-like, not tall thin slats).
+struct AmsGrid { int16_t cols, rows, colW, rw, rh, top, gapX, gapY; bool big; };
+
+static AmsGrid amsGrid(const CardGeo& g) {
+  auto S = [&](int16_t v) { return (int16_t)((v * g.k + 50) / 100); };
+  AmsGrid a;
+  a.cols = g.W > g.H ? 2 : 1;
+  a.gapX = S(14);
+  a.gapY = S(12);
+  const int16_t w = g.W - 2 * g.pad;
+  a.rw = a.cols == 2 ? (w - a.gapX) / 2 : w;
+  a.colW = (a.rw - 3 * S(5)) / 4;
+  a.big = a.colW >= S(44);                     // room for the body face on unit labels
+  const int16_t hh = a.big ? S(20) : S(14), slotH = S(12);
+  a.top = g.hdrRule + S(8);
+  const int16_t contentH = g.H - g.pad - S(10) - a.top;   // S(10): page dots
+  const int16_t maxRows = a.cols == 2 ? 2 : 3;
+  for (a.rows = 1; a.rows < maxRows; a.rows++) {
+    const int16_t rh = (contentH - (a.rows - 1) * a.gapY) / a.rows;
+    if (rh - hh - slotH - S(7) <= 2 * a.colW) break;
+  }
+  a.rh = (contentH - (a.rows - 1) * a.gapY) / a.rows;
+  return a;
+}
+
+// Snapshot the AMS page when this screen should show it now; false = show the status.
+static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
+  static CardAmsBox all[8];
+  const uint8_t n = buildAmsBoxes(p.state.ams, all, 8);
+  if (n == 0) { g_peek = false; return false; }
+  const AmsGrid gr = amsGrid(geo());
+  const uint8_t perPage = (uint8_t)(gr.cols * gr.rows);
+  const uint8_t regions = assignRegions(all, n);
+  const uint8_t pages = (uint8_t)((regions + perPage - 1) / perPage);
+  const unsigned long now = millis();
+  int16_t page = -1;
+  if (g_peek && now - g_peekStart >= AMS_PEEK_MS) g_peek = false;
+  if (g_peek) {
+    page = (int16_t)(((now - g_peekStart) / AMS_PAGE_MS) % pages);
+  } else if (autoModes && dispSettings.cardReady == 1) {
+    page = (int16_t)((now / AMS_PAGE_MS) % pages);
+  } else if (autoModes && dispSettings.cardReady == 2) {
+    page = (int16_t)((now / AMS_PAGE_MS) % (pages + 1)) - 1;   // phase 0 = status
+  }
+  if (page < 0) return false;
+
+  snapCommon(f, CK_AMS, p);
+  f.amsPage = (uint8_t)page;
+  f.amsPages = pages;
+  const uint8_t cap = sizeof(f.boxes) / sizeof(f.boxes[0]);
+  for (uint8_t i = 0; i < n && f.boxCount < cap; i++) {
+    if (all[i].region / perPage != page) continue;
+    CardAmsBox& b = f.boxes[f.boxCount++];
+    b = all[i];
+    b.region = all[i].region % perPage;
+    if (b.region + 1 > f.regionCount) f.regionCount = b.region + 1;
+  }
+  return true;
+}
+
+// Dark or light ink, whichever reads on the tile colour.
+static uint16_t tileInk(uint16_t c) {
+  const bool light = (((c >> 11) & 0x1F) * 2 + ((c >> 5) & 0x3F) + (c & 0x1F) * 2) > 120;
+  return light ? 0x18E4 : 0xF79E;
+}
+
+static void drawAmsTile(Cv& cv, const CardAmsTile& t, const CardFrame& f,
+                        int16_t x, int16_t y, int16_t w, int16_t h, bool big) {
+  const int16_t bh = cv.S(4), r = cv.S(4);
+  if (t.present && t.remain >= 0) {
+    cv.rrect(x, y, w, bh, bh / 2, f.track);
+    const int16_t fw = (int16_t)((int32_t)w * (t.remain > 100 ? 100 : t.remain) / 100);
+    const uint16_t bc = t.remain <= 10 ? CLR_ORANGE
+                      : (t.color == f.bg || t.color == f.track) ? f.txt : t.color;
+    if (fw > 0) cv.rrect(x, y, std::max<int16_t>(fw, bh), bh, bh / 2, bc);
+  } else if (t.present) {                            // remaining unknown: dashed track
+    for (int16_t dx = 0; dx + cv.S(2) <= w; dx += cv.S(4)) cv.rect(x + dx, y + bh / 4, cv.S(2), bh / 2, f.dim);
+  }
+  const int16_t ty = y + bh + cv.S(3), th = h - bh - cv.S(3);
+  if (t.active) {
+    cv.rrectOutline(x - 2, ty - 2, w + 4, th + 4, r + 2, f.accent);
+    cv.rrectOutline(x - 3, ty - 3, w + 6, th + 6, r + 3, f.accent);
+  }
+  if (!t.present) {
+    cv.rrectOutline(x, ty, w, th, r, f.dim);
+    if (t.type[0] == '?')                            // unknown, not empty
+      cv.text("--", x + w / 2, ty + th / 2, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_center);
+    return;
+  }
+  cv.rrect(x, ty, w, th, r, t.color);
+  if (t.color == f.bg) cv.rrectOutline(x, ty, w, th, r, f.dim);
+  const uint16_t ink = tileInk(t.color);
+  const char* type = t.type[0] ? t.type : "--";
+  FontID tf = FONT_CARD_LBL;
+  if (big) { cv.useFont(FONT_BODY); if (cv.width(type) <= w - cv.S(6)) tf = FONT_BODY; }
+  char buf[10];
+  cv.useFont(tf);
+  fitText(cv, buf, sizeof(buf), type, w - 2);
+  cv.text(buf, x + w / 2, ty + cv.S(4), tf, ink, lgfx::textdatum_t::top_center);
+  char pct[6];
+  if (t.remain >= 0) snprintf(pct, sizeof(pct), "%d", t.remain);
+  else strlcpy(pct, "--", sizeof(pct));
+  FontID pf = th >= cv.S(60) ? FONT_LARGE : FONT_BODY;
+  cv.useFont(pf);
+  if (cv.width(pct) > w - cv.S(6)) { pf = FONT_BODY; cv.useFont(pf); }
+  if (cv.width(pct) > w - cv.S(6) || th < cv.S(36)) pf = FONT_CARD_LBL;
+  cv.text(pct, x + w / 2, ty + th - cv.S(4), pf, ink, lgfx::textdatum_t::bottom_center);
+}
+
+static void drawAmsRegion(Cv& cv, const CardFrame& f, const AmsGrid& gr, uint8_t region,
+                          int16_t x, int16_t y) {
+  const int16_t gap = cv.S(5), colW = gr.colW;
+  const int16_t hh = gr.big ? cv.S(20) : cv.S(14), slotH = cv.S(12);
+  const FontID lf = gr.big ? FONT_BODY : FONT_CARD_LBL;
+  int16_t bx = x;
+  for (uint8_t i = 0; i < f.boxCount; i++) {
+    const CardAmsBox& b = f.boxes[i];
+    if (b.region != region) continue;
+    const int16_t bw = b.n > 1 ? gr.rw : 2 * colW + gap;
+    cv.text(b.label, bx, y, lf, f.txt, lgfx::textdatum_t::top_left);
+    if (b.env[0]) {
+      char env[16];
+      strlcpy(env, b.env, sizeof(env));
+      cv.useFont(lf);
+      const int16_t room = bw - cv.width(b.label) - cv.S(6);
+      if (cv.width(env) > room) if (char* sp = strchr(env, ' ')) *sp = '\0';   // humidity only
+      if (cv.width(env) <= room) cv.text(env, bx + bw, y, lf, f.dim, lgfx::textdatum_t::top_right);
+    }
+    for (uint8_t t = 0; t < b.n; t++) {
+      const int16_t tx = bx + t * (colW + gap);
+      drawAmsTile(cv, b.t[t], f, tx, y + hh, colW, gr.rh - hh - slotH, gr.big);
+      cv.text(b.t[t].slot, tx + colW / 2, y + gr.rh - slotH + cv.S(2), FONT_CARD_LBL, f.dim,
+              lgfx::textdatum_t::top_center);
+    }
+    bx += bw + gap;
+  }
+}
+
+static void sceneAms(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  drawHeader(cv, f, g);
+  const AmsGrid gr = amsGrid(g);
+  for (uint8_t r = 0; r < f.regionCount; r++) {
+    const int16_t col = r % gr.cols, row = r / gr.cols;
+    const int16_t x = g.pad + col * (gr.rw + gr.gapX), y = gr.top + row * (gr.rh + gr.gapY);
+    drawAmsRegion(cv, f, gr, r, x, y);
+    if (col > 0) cv.vline(x - gr.gapX / 2, y, gr.rh, f.track);
+    if (row > 0 && col == 0) cv.hline(g.pad, y - gr.gapY / 2, g.W - 2 * g.pad, f.track);
+  }
+  if (f.amsPages > 1) {
+    const int16_t dp = cv.S(10), span = (f.amsPages - 1) * dp;
+    for (uint8_t k = 0; k < f.amsPages; k++)
+      cv.dot(g.W / 2 - span / 2 + k * dp, g.H - g.pad - cv.S(3), cv.S(3), k == f.amsPage ? f.txt : f.track);
+  }
+}
+
 static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
   switch (f.kind) {
     case CK_PRINTING: scenePrinting(cv, f, g); break;
     case CK_FINISHED: sceneFinished(cv, f, g); break;
+    case CK_AMS:      sceneAms(cv, f, g);      break;
     default:          sceneIdle(cv, f, g);     break;
   }
 }
@@ -1209,6 +1473,16 @@ bool cardSkinActive() {
   return dispSettings.cardStyle == 1;
 }
 
+bool cardAmsPeekToggle(const BambuState& s) {
+  if (!cardSkinActive() || dispSettings.cardReady == 1) return false;
+  if (g_peek) { g_peek = false; return false; }      // tapping out continues the cycle
+  static CardAmsBox probe[8];
+  if (buildAmsBoxes(s.ams, probe, 8) == 0) return false;
+  g_peek = true;
+  g_peekStart = millis();
+  return true;
+}
+
 static bool clockSynced() { return time(nullptr) > (time_t)NTP_SYNCED_EPOCH; }
 
 bool drawCardPrinting(PrinterSlot& p, bool force) {
@@ -1256,6 +1530,7 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
 }
 
 bool drawCardFinished(PrinterSlot& p, bool force) {
+  if (snapAmsPage(g_cur, p, false)) return present(force);   // tap-opened only
   const BambuState& s = p.state;
   CardFrame& f = g_cur;
   snapCommon(f, CK_FINISHED, p);
@@ -1276,6 +1551,7 @@ bool drawCardFinished(PrinterSlot& p, bool force) {
 }
 
 bool drawCardIdle(PrinterSlot& p, bool force) {
+  if (snapAmsPage(g_cur, p, true)) return present(force);
   const BambuState& s = p.state;
   CardFrame& f = g_cur;
   snapCommon(f, CK_IDLE, p);
