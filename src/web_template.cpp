@@ -337,7 +337,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(dispSettings.gestDouble, GD_AMS,  "Switch status / AMS page", true);
 #endif
     opt(dispSettings.gestDouble, GD_NEXT, "Next printer");
-    out += "</select><span class=\"text-dim small\">Any double-tap action makes a single tap wait about half a second for a possible second one.</span></div>";
+    out += "</select><span class=\"text-dim small\">With a double tap set, a single tap waits ~0.5 s for a second one.</span></div>";
     out += "<div class=\"field\"><label for=\"ghold\">Hold</label>";
     out += "<select id=\"ghold\" onchange=\"toggleSetting('ghold',this.value)\">";
     opt(dispSettings.gestHold, GH_LED,  "Status LED brightness");
@@ -351,7 +351,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     out += "</div>";
 #if HAS_CARD_SKIN
-    out += "<div class=\"help-text\" id=\"gestAmsNote\">Switch status / AMS page shows the other view on Ready and Print complete for 30 s, then the screen returns to its <em>Card: Ready screen</em> choice.</div>";
+    out += "<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>";
 #endif
     return true;
   }
@@ -457,7 +457,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<option value=\"1\""; out += sel(1); out += ">Speedo (large 240&deg; arc)</option>";
     out += "<option value=\"2\""; out += sel(2); out += ">Rings (concentric progress/nozzle/bed)</option>";
     out += "</select>";
-    out += "<span class=\"text-dim small\">applies immediately</span></div>";
+    out += "</div>";
 #else
     out = "";
 #endif

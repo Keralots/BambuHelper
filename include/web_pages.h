@@ -462,11 +462,10 @@ R"rawliteral(
         <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
         <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
       </select>
-      <span class="text-dim small">applies immediately</span>
     </div>
     <label class="check-row" data-gauges-only>
       <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
-      <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
+      <label for="fanmp">Match printer fan % (10% steps)</label>
     </label>
     <label class="check-row" data-gauges-only>
       <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
@@ -481,7 +480,7 @@ R"rawliteral(
   </div>
 
   <div class="card" id="gestCard">
-    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do - on the external button, the touchscreen and built-in buttons alike. Always fixed: a hold on the Printer Off screen powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
 %GESTURE_ROWS%
   </div>
   <div class="card" id="gestOff" style="display:none">
@@ -519,7 +518,7 @@ R"rawliteral(
       <input type="checkbox" id="keepon" value="1" %KEEPON% onchange="toggleSetting('keepon',this.checked);toggleAfterPrint()">
       <label for="keepon">Disable screensaver (display always on)</label>
     </label>
-    <div class="help-text" style="padding-left:28px">The clock screensaver never appears and the display never sleeps - the printer screen stays up. Pick this on a board with no button or touchscreen, where there is no way to wake the display back up.</div>
+    <div class="help-text" style="padding-left:28px">No clock, no sleep - the printer screen stays up. For boards with no button or touchscreen to wake the display.</div>
     <div id="afterPrintWrap" style="display:%AP_WRAP_DISP%">
     <div class="field">
       <label for="afterprint">When the print finishes</label>
@@ -667,7 +666,7 @@ R"rawliteral(
 
   <details class="card card-collapsible">
     <summary>
-      <div><h3>Colors</h3><p>Pick a preset or paint individual gauges, and rename any gauge label. Bulk pickers update the form only - click Apply to save. The Cards print style uses Background, Track, Progress Bar, Finish time, the accents below, Door, and each gauge&#39;s value color for its temperature.</p></div>
+      <div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door and each gauge&#39;s value color.</p></div>
     </summary>
     <div class="card-body">
       <div class="swatch-row">
@@ -758,7 +757,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert. Codes Bambu publishes no description for are left out - the printer's own screen and Bambu Studio do not show them either.</p></div></div>
+    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers report right now, including permanent codes that never raise an alert. Codes without a Bambu description are left out, as on the printer and in Bambu Studio.</p></div></div>
     <div class="card-body"><div id="hmsLive"><span class="text-dim">Loading...</span></div></div>
   </div>
 
@@ -769,14 +768,14 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
         <input type="checkbox" id="hmsen" value="1" %HMS_EN% onchange="toggleSetting('hmsen',this.checked);toggleHmsFields()">
         <label for="hmsen">Report printer errors</label>
       </label>
-      <div class="help-text" style="padding-left:28px">Off hides the badge, the error screen and every alert below. Codes keep being read, so turning this back on takes effect immediately.</div>
+      <div class="help-text" style="padding-left:28px">Off hides the badge, the error screen and every alert below.</div>
 
       <div id="hmsFields" style="display:%HMS_DISP%">
         <label class="check-row" style="margin-top:var(--sp-3)">
           <input type="checkbox" id="hmssev" value="1" %HMS_SEV% onchange="toggleSetting('hmssev',this.checked)">
           <label for="hmssev">Include low-priority codes</label>
         </label>
-        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common ones - advisories the printer expects you to notice but not to act on immediately. Codes already active when the device connects never raise an alert either way - they are the printer's normal state, not news.</div>
+        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common advisories. Codes already active when the device connects never raise an alert.</div>
 
         <div class="field" style="margin-top:var(--sp-4)">
           <label for="hmsauto">Show the error screen automatically</label>
@@ -817,7 +816,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
             <input type="checkbox" id="hmsonl" value="1" %HMS_ONL% onchange="toggleSetting('hmsonl',this.checked);hmsLookupChanged()">
             <label for="hmsonl">Look up error text on this page</label>
           </label>
-          <div class="help-text" style="padding-left:28px">This board stores the text for print errors, but not for the thousands of HMS codes. With this on, <strong>this page</strong> - not the device - fetches that missing text once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link on every row, and print-error rows keep their text either way.</div>
+          <div class="help-text" style="padding-left:28px">This board has no room for HMS error text. With this on, <strong>your browser</strong> (never the device) fetches it from keralots.github.io once per visit. Off still shows the code, severity, module and wiki link.</div>
         </div>
       </div>
     </div>
@@ -1327,9 +1326,9 @@ R"rawliteral(
       </div>
       <div class="help-text">Adds the watts and energy of these outlets to the totals, for setups where the printer shares a strip with an external AMS supply or other gear. Power On/Off and auto power-off still act on the outlet selected above only.</div>
     </div>
-    <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
-    <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs using the legacy local protocol on TCP port 9999, including KP115 and HS110. No TP-Link credentials or cloud connection are used. Newer KLAP/Matter models are not supported. Kasa reports live watts, relay state, and cumulative Total, but not Today's energy.</div>
-    <div class="help-text" id="tsm_shellystrip_hint" style="display:none">Shelly Power Strip Gen4 - same RPC API as Gen2/Gen3, but exposes multiple outlets at one IP. Pick which outlet above tracks/controls this printer slot. Not password-protected (digest auth is not supported). Reports live watts and a cumulative Total, but not Today's / Yesterday's energy.</div>
+    <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3, without a password (digest auth is not supported). Reports live watts and a running total, not Today's / Yesterday's energy.</div>
+    <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs on the legacy local protocol (TCP 9999), e.g. KP115 and HS110 - no TP-Link account or cloud. Newer KLAP/Matter models are not supported. Reports live watts and a running total, not Today's energy.</div>
+    <div class="help-text" id="tsm_shellystrip_hint" style="display:none">Shelly Power Strip Gen4: several outlets at one IP - pick this printer's outlet above. Without a password (digest auth is not supported). Reports live watts and a running total, not Today's / Yesterday's energy.</div>
     <div class="row" style="margin-top:var(--sp-3)">
       <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
@@ -1369,7 +1368,7 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Button power control</h3><p>A double tap can open a confirm screen that switches the shown printer's plug on or off. Set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Display &rarr; Gestures</a>.</p></div></div>
+    <div class="card-head"><div><h3>Button power control</h3><p>To switch the plug from the device, set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Display &rarr; Gestures</a>.</p></div></div>
   </div>
 
   <div class="card">

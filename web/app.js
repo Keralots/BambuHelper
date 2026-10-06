@@ -1249,6 +1249,50 @@ function applyDisplay(){
     .catch(function(e){showToast('Apply failed');console.warn('applyDisplay:',e);});
 }
 
+/* ============ Help tips ============ */
+/* Long explanations fold behind a "?" next to their label. Left as they are:
+   anything with an id (shown/hidden by code), inline-styled warnings, short
+   hints, and paragraphs. Long card descriptions fold the same way. */
+var TIP_MIN_HINT = 80, TIP_MIN_DESC = 120;
+function tipButton(target){
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'tip-btn';
+  b.textContent = '?';
+  b.setAttribute('aria-label', 'More info');
+  b.setAttribute('aria-expanded', 'false');
+  b.onclick = function(e){
+    e.preventDefault(); e.stopPropagation();          // never toggles the label's checkbox
+    var open = target.classList.toggle('tip-open');
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  return b;
+}
+function tipHost(el){
+  var prev = el.previousElementSibling;
+  if (prev && prev.classList.contains('check-row')) return prev.querySelector('label:last-of-type');
+  var field = el.closest('.field');
+  if (field) return field.querySelector('label');
+  return null;
+}
+function initHelpTips(){
+  document.querySelectorAll('div.help-text, div.hint').forEach(function(el){
+    if (el.id || el.getAttribute('style') && /color|display/.test(el.getAttribute('style'))) return;
+    if (el.classList.contains('hint') && el.textContent.trim().length < TIP_MIN_HINT) return;
+    var host = tipHost(el);
+    if (!host || host.querySelector('.tip-btn')) return;
+    host.appendChild(tipButton(el));
+    el.classList.add('tip');
+  });
+  document.querySelectorAll('.card-head p').forEach(function(p){
+    if (p.textContent.trim().length < TIP_MIN_DESC) return;   // glDesc: text swapped, never hidden
+    var h = p.parentNode.querySelector('h3');
+    if (!h) return;
+    h.appendChild(tipButton(p));
+    p.classList.add('tip');
+  });
+}
+
 /* ============ Whitelisted toggle ============ */
 /* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
    their string value through unchanged. */
@@ -1894,6 +1938,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   toggleBtnPin();
   toggleLed();
   toggleAfterPrint();
+  initHelpTips();
   applyCardsHints();
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it
