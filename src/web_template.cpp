@@ -418,7 +418,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(out, dispSettings.cardStyle, 0, "Gauges");
     opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
     out += "</select>";
-    out += "<span class=\"text-dim small\">Settings marked <em>Gauges only</em> do not apply to Cards; split view keeps the gauges.</span></div>";
+    out += "<span class=\"text-dim small\">Settings that only apply to Gauges are hidden while Cards is picked; split view keeps the gauges.</span></div>";
     out += "<div id=\"cardOpts\">";
     out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
     out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";

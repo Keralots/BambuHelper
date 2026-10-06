@@ -1296,8 +1296,8 @@ function initHelpTips(){
 /* ============ Whitelisted toggle ============ */
 /* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
    their string value through unchanged. */
-/* Cards print style: settings it ignores get a "Gauges only" badge and are
-   dimmed; the Gauge Layout card folds as well (data-gauges-only="fold").
+/* Cards print style: settings it ignores are hidden. The Gauge Layout card
+   (data-gauges-only="fold") folds instead, since split view still uses it.
    Boards without Cards have no #card select, so nothing changes there. */
 function applyCardsHints(){
   var sel = document.getElementById('card');
@@ -1306,25 +1306,22 @@ function applyCardsHints(){
   if (opts) opts.style.display = on ? '' : 'none';
   applyGestureVis();
   document.querySelectorAll('[data-gauges-only]').forEach(function(el){
-    if (!el.querySelector('.go-badge') && !el.classList.contains('help-text')) {
+    if (el.dataset.gaugesOnly !== 'fold') { el.classList.toggle('go-hide', on); return; }
+    if (!el.querySelector('.go-badge')) {
       var b = document.createElement('span');
       b.className = 'go-badge';
       // Split view still draws gauges from the layout's first four slots.
-      b.textContent = el.dataset.gaugesOnly === 'fold' ? 'Gauges / split view' : 'Gauges only';
-      var host = el.querySelector('h3') || el.querySelector('label:not(.check-row)') ||
-                 el.querySelector('label') || el;
-      host.appendChild(b);
-      if (el.dataset.gaugesOnly === 'fold') {
-        var t = document.createElement('button');
-        t.type = 'button';
-        t.className = 'btn btn-ghost btn-sm go-toggle';
-        t.textContent = 'Show';
-        t.onclick = function(){
-          var open = el.classList.toggle('go-open');
-          t.textContent = open ? 'Hide' : 'Show';
-        };
-        el.querySelector('.card-head').appendChild(t);
-      }
+      b.textContent = 'Gauges / split view';
+      el.querySelector('h3').appendChild(b);
+      var t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'btn btn-ghost btn-sm go-toggle';
+      t.textContent = 'Show';
+      t.onclick = function(){
+        var open = el.classList.toggle('go-open');
+        t.textContent = open ? 'Hide' : 'Show';
+      };
+      el.querySelector('.card-head').appendChild(t);
     }
     el.classList.toggle('go-off', on);
   });
