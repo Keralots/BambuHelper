@@ -164,6 +164,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .help-text { margin: 4px 0 14px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
 .tip:not(.tip-open) { display: none; }
 .tip-btn { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; margin-left: 6px; padding: 0; border: 1px solid var(--line-soft); border-radius: 50%; background: transparent; color: var(--text-dim); font-size: 11px; font-weight: 600; line-height: 1; vertical-align: middle; cursor: pointer; }
+.btn-dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 45%, transparent); }
+/* Unsaved bar sticks to the viewport bottom while its section/card is on screen. */
+.action-bar:has(.btn-dirty) { position: sticky; bottom: 0; z-index: 5; background: var(--bg-elev); padding: var(--sp-3) !important; border-radius: var(--radius); box-shadow: var(--shadow); }
+.dirty-note { align-self: center; margin-right: auto; font-size: 12.5px; font-weight: 600; color: var(--warn); }
 .tip-btn:hover, .tip-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
 /* Block of settings that only apply while an enable checkbox above is ticked. */
 .deps-off { opacity: 0.45; pointer-events: none; }

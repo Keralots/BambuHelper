@@ -1293,6 +1293,53 @@ function initHelpTips(){
   });
 }
 
+/* ============ Unsaved changes ============ */
+/* A field without its own instant save belongs to the next save/apply button
+   in its section. Editing it flags that button; clicking any button that runs
+   the same save clears every button sharing it (applyDisplay has three). */
+function dirtyOwner(field){
+  var sec = field.closest('.section');
+  if (!sec) return null;
+  var btns = sec.querySelectorAll('button.btn-primary:not(.btn-sm)');
+  for (var i = 0; i < btns.length; i++) {
+    if (!/^(save|apply)/.test(btns[i].getAttribute('onclick') || '')) continue;
+    if (field.compareDocumentPosition(btns[i]) & Node.DOCUMENT_POSITION_FOLLOWING) return btns[i];
+  }
+  return null;
+}
+function markDirty(e){
+  var f = e.target;
+  if (!f.matches || !f.matches('input, select, textarea') || f.hasAttribute('data-nodirty')) return;
+  if (/toggleSetting/.test(f.getAttribute('onchange') || '')) return;   // saved on change already
+  var b = dirtyOwner(f);
+  if (!b || b.classList.contains('btn-dirty')) return;
+  b.classList.add('btn-dirty');
+  var n = document.createElement('span');
+  n.className = 'dirty-note';
+  n.textContent = 'Unsaved changes';
+  b.parentNode.insertBefore(n, b);
+}
+function initDirtyTracking(){
+  document.addEventListener('input', markDirty);
+  document.addEventListener('change', markDirty);
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('button.btn-dirty');
+    if (!b) return;
+    var fn = b.getAttribute('onclick');
+    document.querySelectorAll('button.btn-dirty').forEach(function(o){
+      if (o.getAttribute('onclick') !== fn) return;
+      o.classList.remove('btn-dirty');
+      var n = o.previousElementSibling;
+      if (n && n.classList.contains('dirty-note')) n.remove();
+    });
+  });
+  window.addEventListener('beforeunload', function(e){
+    if (!document.querySelector('button.btn-dirty')) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
+
 /* ============ Whitelisted toggle ============ */
 /* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
    their string value through unchanged. */
@@ -1936,6 +1983,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   toggleLed();
   toggleAfterPrint();
   initHelpTips();
+  initDirtyTracking();
   applyCardsHints();
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it

@@ -275,16 +275,16 @@ R"rawliteral(
 
         <div class="field">
           <label for="cl_email">Bambu account email</label>
-          <input type="email" id="cl_email" placeholder="you@example.com" autocomplete="username">
+          <input type="email" id="cl_email" data-nodirty placeholder="you@example.com" autocomplete="username">
         </div>
 
         <div id="cl_passWrap">
           <div class="field" style="margin-top:var(--sp-3)">
             <label for="cl_pass">Password</label>
-            <input type="password" id="cl_pass" autocomplete="current-password">
+            <input type="password" id="cl_pass" data-nodirty autocomplete="current-password">
           </div>
           <label class="hstack" style="gap:var(--sp-2);margin-top:var(--sp-2);font-size:12.5px;color:var(--text-mid)">
-            <input type="checkbox" id="cl_savePass">
+            <input type="checkbox" id="cl_savePass" data-nodirty>
             <span>Remember the password so the device can renew the token by itself. Only works on accounts without two-factor authentication - with 2FA on the password is discarded and you sign in again when the token expires.</span>
           </label>
         </div>
@@ -297,7 +297,7 @@ R"rawliteral(
         <div id="cl_codeWrap" style="display:none;margin-top:var(--sp-3);padding:var(--sp-3);background:var(--bg-sub);border:1px solid var(--line-soft);border-radius:var(--radius-s)">
           <label for="cl_code" id="cl_codeLabel">Verification code</label>
           <div class="hstack" style="gap:var(--sp-3);margin-top:var(--sp-2);flex-wrap:wrap">
-            <input type="text" id="cl_code" class="mono" inputmode="numeric" maxlength="8" style="max-width:140px" placeholder="000000">
+            <input type="text" id="cl_code" data-nodirty class="mono" inputmode="numeric" maxlength="8" style="max-width:140px" placeholder="000000">
             <button type="button" class="btn btn-primary btn-sm" onclick="cloudSubmitCode()">Verify</button>
           </div>
         </div>
