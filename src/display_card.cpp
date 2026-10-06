@@ -1069,7 +1069,8 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
 // ---------------------------------------------------------------------------
 //  AMS page: filament left per tray, Bambu Studio style (a remain bar over a
 //  tile in the filament colour). Shown on the Ready screen per "Card: Ready
-//  screen", or for a while after a tap (cardAmsPeekToggle).
+//  screen". A gesture (cardAmsPeekToggle) flips to the other view for a while:
+//  AMS over the status, or the status over an AMS-only Ready screen.
 // ---------------------------------------------------------------------------
 static const uint32_t AMS_PAGE_MS = 8000;    // per page, and the Ready phase when alternating
 static const uint32_t AMS_PEEK_MS = 30000;   // a tap-opened page closes itself after this
@@ -1206,6 +1207,7 @@ static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
   int16_t page = -1;
   if (g_peek && now - g_peekStart >= AMS_PEEK_MS) g_peek = false;
   if (g_peek) {
+    if (autoModes && dispSettings.cardReady == 1) return false;   // AMS home: the peek is the status
     page = (int16_t)(((now - g_peekStart) / AMS_PAGE_MS) % pages);
   } else if (autoModes && dispSettings.cardReady == 1) {
     page = (int16_t)((now / AMS_PAGE_MS) % pages);
@@ -1474,7 +1476,7 @@ bool cardSkinActive() {
 }
 
 bool cardAmsPeekToggle(const BambuState& s) {
-  if (!cardSkinActive() || dispSettings.cardReady == 1) return false;
+  if (!cardSkinActive()) return false;
   if (g_peek) { g_peek = false; return false; }      // tapping out continues the cycle
   static CardAmsBox probe[8];
   if (buildAmsBoxes(s.ams, probe, 8) == 0) return false;

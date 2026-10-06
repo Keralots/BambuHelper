@@ -15,8 +15,8 @@ bool cardSkinActive();
 bool drawCardPrinting(PrinterSlot& p, bool force);
 bool drawCardFinished(PrinterSlot& p, bool force);
 bool drawCardIdle(PrinterSlot& p, bool force);
-// Tap stop on Ready / Print complete: opens the AMS page (true), or closes an
-// open one and returns false so the tap carries on through the cycle.
+// Tap stop on Ready / Print complete: flips to the other view (AMS or status)
+// for a while (true), or flips back and returns false so the tap carries on.
 bool cardAmsPeekToggle(const BambuState& s);
 // Progress-bar shimmer for the card on screen; true when it drew this call.
 bool tickCardShimmer();

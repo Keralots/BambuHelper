@@ -743,6 +743,28 @@ function toggleBtnPin(){
   var v = document.getElementById('btntype').value;
   document.getElementById('btnPinRow').style.display = (v === '0' || v === '3') ? 'none' : 'block';
   toggleBuzPin();
+  applyGestureVis();
+}
+/* Gestures card (Display) follows Button type; AMS choices follow the print style.
+   An AMS choice already stored stays visible so the select never shows a blank. */
+function applyGestureVis(){
+  var card = document.getElementById('gestCard');
+  if (!card) return;
+  var on = document.getElementById('btntype').value !== '0';
+  card.style.display = on ? '' : 'none';
+  document.getElementById('gestOff').style.display = on ? 'none' : '';
+  var cs = document.getElementById('card');
+  var cards = !!cs && cs.value === '1';
+  ['gtap','gdbl','ghold'].forEach(function(id){
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i];
+      if (o.dataset.ams) o.hidden = !cards && !o.selected;
+    }
+  });
+  var note = document.getElementById('gestAmsNote');
+  if (note) note.style.display = cards ? '' : 'none';
 }
 function toggleBuzPin(){
   var buzOn = document.getElementById('buzzen').value !== '0';
@@ -1236,6 +1258,9 @@ function applyDisplay(){
 function applyCardsHints(){
   var sel = document.getElementById('card');
   var on = !!sel && sel.value === '1';
+  var opts = document.getElementById('cardOpts');
+  if (opts) opts.style.display = on ? '' : 'none';
+  applyGestureVis();
   document.querySelectorAll('[data-gauges-only]').forEach(function(el){
     if (!el.querySelector('.go-badge') && !el.classList.contains('help-text')) {
       var b = document.createElement('span');

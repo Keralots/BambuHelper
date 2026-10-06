@@ -312,11 +312,12 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "HIDELP") == 0) { out = dispSettings.hideStatusReadout ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
-  if (strcmp(name, "BTN_PWR") == 0) { out = dispSettings.buttonPowerControl ? "checked" : ""; return true; }
   if (strcmp(name, "GESTURE_ROWS") == 0) {
-    // AMS page entries only where the Cards style exists.
-    auto opt = [&](uint8_t cur, uint8_t v, const char* label) {
+    // AMS page entries only where the Cards style exists; data-ams lets the
+    // page hide them while the Gauges style is picked.
+    auto opt = [&](uint8_t cur, uint8_t v, const char* label, bool ams = false) {
       out += "<option value=\""; out += v; out += "\""; if (cur == v) out += " selected";
+      if (ams) out += " data-ams=\"1\"";
       out += ">"; out += label; out += "</option>";
     };
     out  = "<div class=\"field\"><label for=\"gtap\">Tap</label>";
@@ -324,16 +325,16 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(dispSettings.gestTap, GT_SMART, "Smart cycle (errors, camera, drying, AMS, next printer)");
     opt(dispSettings.gestTap, GT_NEXT,  "Next printer only");
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestTap, GT_AMS,   "AMS page (Cards)");
+    opt(dispSettings.gestTap, GT_AMS,   "Switch status / AMS page", true);
 #endif
     opt(dispSettings.gestTap, GT_WAKE,  "Wake the screen only");
     out += "</select></div>";
     out += "<div class=\"field\"><label for=\"gdbl\">Double tap</label>";
-    out += "<select id=\"gdbl\" onchange=\"toggleSetting('gdbl',this.value);var c=document.getElementById('btnpwr');if(c)c.checked=this.value==='1'\">";
+    out += "<select id=\"gdbl\" onchange=\"toggleSetting('gdbl',this.value)\">";
     opt(dispSettings.gestDouble, GD_OFF,  "Nothing");
     opt(dispSettings.gestDouble, GD_PLUG, "Plug power on/off (confirm screen)");
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestDouble, GD_AMS,  "AMS page (Cards)");
+    opt(dispSettings.gestDouble, GD_AMS,  "Switch status / AMS page", true);
 #endif
     opt(dispSettings.gestDouble, GD_NEXT, "Next printer");
     out += "</select><span class=\"text-dim small\">Any double-tap action makes a single tap wait about half a second for a possible second one.</span></div>";
@@ -341,7 +342,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<select id=\"ghold\" onchange=\"toggleSetting('ghold',this.value)\">";
     opt(dispSettings.gestHold, GH_LED,  "Status LED brightness");
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestHold, GH_AMS,  "AMS page (Cards)");
+    opt(dispSettings.gestHold, GH_AMS,  "Switch status / AMS page", true);
 #endif
     opt(dispSettings.gestHold, GH_NONE, "Nothing");
     out += "</select>";
@@ -349,6 +350,9 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
 #endif
     out += "</div>";
+#if HAS_CARD_SKIN
+    out += "<div class=\"help-text\" id=\"gestAmsNote\">Switch status / AMS page shows the other view on Ready and Print complete for 30 s, then the screen returns to its <em>Card: Ready screen</em> choice.</div>";
+#endif
     return true;
   }
   if (strcmp(name, "AMST_ROW") == 0) {
@@ -415,6 +419,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
     out += "</select>";
     out += "<span class=\"text-dim small\">Settings marked <em>Gauges only</em> do not apply to Cards; split view keeps the gauges.</span></div>";
+    out += "<div id=\"cardOpts\">";
     out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
     out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
     opt(out, dispSettings.cardLeft, 0, "AMS slots");
@@ -434,7 +439,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
     opt(out, dispSettings.cardReady, 1, "AMS filament left");
     opt(out, dispSettings.cardReady, 2, "Alternate status / AMS");
     out += "</select>";
-    out += "<span class=\"text-dim small\">A tap on Ready also opens the AMS page.</span></div>";
+    out += "<span class=\"text-dim small\">A tap or the status / AMS gesture shows the other view for 30 s.</span></div>";
+    out += "</div>";
 #else
     out = "";
 #endif

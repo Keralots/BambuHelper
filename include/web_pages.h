@@ -480,6 +480,14 @@ R"rawliteral(
 %CARD_SKIN_ROW%
   </div>
 
+  <div class="card" id="gestCard">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do - on the external button, the touchscreen and built-in buttons alike. Always fixed: a hold on the Printer Off screen powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+%GESTURE_ROWS%
+  </div>
+  <div class="card" id="gestOff" style="display:none">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>Need a button or the touchscreen. Pick a <strong>Button type</strong> under <a href="#" onclick="loadSection('hardware');return false">Hardware</a> first.</p></div></div>
+  </div>
+
   <div class="card" style="%BL_DISP%">
     <div class="card-head"><div><h3>Brightness</h3></div></div>
     <div class="field">
@@ -869,11 +877,6 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
       <label for="btnpin">Button GPIO pin</label>
       <input type="number" id="btnpin" class="mono" min="1" max="48" value="%BTN_PIN%" style="max-width:120px">
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do - on the external button, the touchscreen and built-in buttons alike. Always fixed: a hold on the Printer Off screen powers the printer on, and the plug confirm screen takes every press.</p></div></div>
-%GESTURE_ROWS%
   </div>
 
   <div class="card">
@@ -1366,12 +1369,7 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Button power control</h3></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="btnpwr" value="1" %BTN_PWR% onchange="toggleSetting('btnpwr',this.checked);var g=document.getElementById('gdbl');if(g){if(this.checked)g.value='1';else if(g.value==='1')g.value='0';}">
-      <label for="btnpwr">Double-click device button to turn the plug on/off</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Double- or triple-click the device button (or touchscreen) to open a full-screen confirmation for the printer on screen, then hold to toggle its plug (red warning if it is printing). Only active when a plug is configured for the shown printer; while armed it adds a short delay to single-tap printer switching.</div>
+    <div class="card-head"><div><h3>Button power control</h3><p>A double tap can open a confirm screen that switches the shown printer's plug on or off. Set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Display &rarr; Gestures</a>.</p></div></div>
   </div>
 
   <div class="card">
