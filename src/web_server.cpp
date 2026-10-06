@@ -27,6 +27,7 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include "esp_ota_ops.h"
+#include "esp_system.h"
 #ifdef ENABLE_OTA_AUTO
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
@@ -620,6 +621,23 @@ static void handleReset() {
   resetSettings();  // clears NVS and calls ESP.restart()
 }
 
+// Why the chip last booted - tells a brownout from a panic from an OTA reboot.
+static const char* resetReasonText(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "external";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    default:                return "unknown";
+  }
+}
+
 static void handleDebug() {
   JsonDocument doc;
   unsigned long now = millis();
@@ -713,6 +731,7 @@ static void handleDebug() {
 
   doc["heap"] = ESP.getFreeHeap();
   doc["uptime"] = millis() / 1000;
+  doc["reset_reason"] = resetReasonText(esp_reset_reason());
   doc["rssi"] = WiFi.RSSI();
   doc["debug_log"] = mqttDebugLog;
   {
