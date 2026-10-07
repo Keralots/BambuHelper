@@ -127,15 +127,17 @@ class MqttRxClient : public Client {
   operator bool() override { return (bool)_t; }
 
  private:
-  // Pull in whatever is already readable; never waits for more.
+  // Pull in whatever is already readable; never waits for more. At most one
+  // PUBLISH per call - the rest waits for the next loop pass.
   void pump() {
     if (!_pkt || _pumping) return;
     _pumping = true;
+    _delivered = false;
     pumpBody();
     _pumping = false;
   }
   void pumpBody() {
-    while (_passPos >= _passLen) {               // let PubSubClient drain a control packet first
+    while (_passPos >= _passLen && !_delivered) {   // let PubSubClient drain a control packet first
       const int a = _t.available();
       if (a <= 0) return;
       if (!_inBody) {
@@ -177,6 +179,8 @@ class MqttRxClient : public Client {
     if (_skip) {
       MQTT_LOG("RX: dropped a %u B packet (buffer %u B)", (unsigned)_rem, (unsigned)_cap);
     } else if ((_hdr[0] >> 4) == 3) {            // PUBLISH
+      // No PUBACK is sent: we subscribe at QoS 0, so the broker never sends QoS 1+.
+      _delivered = true;
       const uint8_t qos = (_hdr[0] >> 1) & 3;
       const uint16_t tl = _rem >= 2 ? (uint16_t)((_pkt[0] << 8) | _pkt[1]) : 0;
       const uint32_t start = 2u + tl + (qos ? 2u : 0u);
@@ -205,7 +209,7 @@ class MqttRxClient : public Client {
   size_t   _cap = 0;
   uint8_t  _hdr[5];
   uint8_t  _hdrLen = 0;
-  bool     _inBody = false, _skip = false, _pumping = false;
+  bool     _inBody = false, _skip = false, _pumping = false, _delivered = false;
   uint32_t _rem = 0, _mult = 1, _got = 0;
   uint8_t  _pass[64];
   size_t   _passPos = 0, _passLen = 0;
@@ -334,8 +338,10 @@ static bool ensureClients(MqttConn& c) {
   if (dualPrinterUnsafe) bufSize = 16384;
 #endif
   // Incoming packets land in the receive layer; PubSubClient's own buffer only
-  // builds outgoing packets (CONNECT carries the cloud token, ~1.2 KB).
-  if (!c.io->begin(bufSize, mqttCallback) || !c.mqtt->setBufferSize(2048)) {
+  // builds outgoing packets. The largest is CONNECT: ~1.3 KB with the cloud token
+  // (< 1200 B), under 100 B on LAN; commands stay under 256 B.
+  const size_t txSize = isCloudMode(cfg.mode) ? 1536 : 512;
+  if (!c.io->begin(bufSize, mqttCallback) || !c.mqtt->setBufferSize(txSize)) {
     MQTT_LOG("[%d] MQTT buffers (%u) FAILED — not enough heap!", c.slotIndex, (unsigned)bufSize);
     delete c.mqtt; c.mqtt = nullptr;
     delete c.io;   c.io   = nullptr;
