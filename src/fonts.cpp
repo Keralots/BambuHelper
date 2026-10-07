@@ -1,4 +1,5 @@
 #include "fonts.h"
+#include <new>
 #include "config.h"   // HAS_CARD_SKIN
 
 // VLW font tables are huge PROGMEM blobs. Including them in a header would
@@ -127,44 +128,67 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
     currentFont = id;
 }
 
-bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
+static const uint8_t* fontData(FontID id) {
     switch (id) {
-        case FONT_SMALL:  return gfx.loadFont(inter_10);
-        case FONT_BODY:   return gfx.loadFont(inter_14);
-        case FONT_LARGE:  return gfx.loadFont(inter_19);
+        case FONT_SMALL:  return inter_10;
+        case FONT_BODY:   return inter_14;
+        case FONT_LARGE:  return inter_19;
         case FONT_XLARGE:
 #if defined(DISPLAY_320x480)
-            return gfx.loadFont(inter_22);
+            return inter_22;
 #else
-            return gfx.loadFont(inter_19);
+            return inter_19;
 #endif
 #if defined(DISPLAY_ROUND_480)
-        case FONT_SMALL_2X: return gfx.loadFont(inter_20);
-        case FONT_BODY_2X:  return gfx.loadFont(inter_27);
-        case FONT_LARGE_2X: return gfx.loadFont(inter_37);
+        case FONT_SMALL_2X: return inter_20;
+        case FONT_BODY_2X:  return inter_27;
+        case FONT_LARGE_2X: return inter_37;
 #else
 #if defined(HAVE_INTER_20)
-        case FONT_SMALL_2X: return gfx.loadFont(inter_20);
+        case FONT_SMALL_2X: return inter_20;
 #else
-        case FONT_SMALL_2X: return gfx.loadFont(inter_10);
+        case FONT_SMALL_2X: return inter_10;
 #endif
-        case FONT_BODY_2X:  return gfx.loadFont(inter_14);
-        case FONT_LARGE_2X: return gfx.loadFont(inter_19);
+        case FONT_BODY_2X:  return inter_14;
+        case FONT_LARGE_2X: return inter_19;
 #endif
 #if defined(HAVE_CARD_L)
-        case FONT_CARD_NUM_L: return gfx.loadFont(inter_card_num_l);
-        case FONT_CARD_LBL_L: return gfx.loadFont(inter_card_lbl_l);
+        case FONT_CARD_NUM_L: return inter_card_num_l;
+        case FONT_CARD_LBL_L: return inter_card_lbl_l;
 #else
-        case FONT_CARD_NUM_L: return gfx.loadFont(inter_19);
-        case FONT_CARD_LBL_L: return gfx.loadFont(inter_10);
+        case FONT_CARD_NUM_L: return inter_19;
+        case FONT_CARD_LBL_L: return inter_10;
 #endif
 #if HAS_CARD_SKIN
-        case FONT_CARD_NUM: return gfx.loadFont(inter_card_num);
-        case FONT_CARD_LBL: return gfx.loadFont(inter_card_lbl);
+        case FONT_CARD_NUM: return inter_card_num;
+        case FONT_CARD_LBL: return inter_card_lbl;
 #else
-        case FONT_CARD_NUM: return gfx.loadFont(inter_19);
-        case FONT_CARD_LBL: return gfx.loadFont(inter_10);
+        case FONT_CARD_NUM: return inter_19;
+        case FONT_CARD_LBL: return inter_10;
 #endif
-        default:          return false;
+        default:          return nullptr;
     }
+}
+
+bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
+    const uint8_t* data = fontData(id);
+    return data && gfx.loadFont(data);
+}
+
+const lgfx::IFont* cachedFont(FontID id) {
+    static lgfx::PointerWrapper* src[16];
+    static lgfx::VLWfont*        font[16];
+    if (id >= 16) return nullptr;
+    if (font[id]) return font[id];
+    const uint8_t* data = fontData(id);
+    if (!data) return nullptr;
+    auto* w = new (std::nothrow) lgfx::PointerWrapper();
+    auto* f = new (std::nothrow) lgfx::VLWfont();
+    if (w && f) {
+        w->set(data);
+        if (f->loadFont(w)) { src[id] = w; font[id] = f; return f; }
+    }
+    delete f;
+    delete w;
+    return nullptr;
 }

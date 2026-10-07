@@ -274,10 +274,11 @@
 // "Card" print-screen style (big percent, temperature row, AMS column), rendered
 // through an off-screen sprite. The 240x320 profile (both orientations) and the
 // 240x240 profile; links two extra VLW blobs (inter_card_num / inter_card_lbl).
-// PSRAM only: the internal-RAM band fallback renders garbage on the CYD
-// (ILI9341, no PSRAM) - cause not found, path removed; it is in git history (116345f).
+// 240x320 boards without PSRAM (CYD family) render it in 20 px internal-RAM bands.
 #if (defined(DISPLAY_240x320) || defined(DISPLAY_320x480)) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1
+#elif defined(DISPLAY_240x320)
+#define HAS_CARD_SKIN  1   // band path (CARD_BAND_RENDER)
 #elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
       !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
@@ -291,6 +292,13 @@
 #define HAS_CARD_THUMB  1
 #else
 #define HAS_CARD_THUMB  0
+#endif
+
+// Card without a PSRAM full frame: scene drawn band by band into a small sprite.
+#if HAS_CARD_SKIN && !defined(BOARD_HAS_PSRAM)
+#define CARD_BAND_RENDER  1
+#else
+#define CARD_BAND_RENDER  0
 #endif
 
 // HMS / print_error reporting. Four independent capabilities:

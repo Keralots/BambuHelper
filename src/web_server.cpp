@@ -761,11 +761,14 @@ static void handleDebug() {
 }
 
 // Last Card frame as a 24-bit BMP - the panel itself cannot be read back.
-static void handleCardBmp() {
-  const uint16_t* buf; int16_t w, h;
+static void sendCardBmp() {
+  const uint16_t* buf; int16_t w, h, bandH = 0;
   if (!cardFrameView(&buf, &w, &h)) {
-    server.send(404, "text/plain", "No Card frame (Card style off, or board without PSRAM)");
-    return;
+    // Band-render board: re-render the last frame band by band, bottom-up.
+    if (!cardBandView(0, &buf, &w, &bandH, &h)) {
+      server.send(404, "text/plain", "No Card frame (Card style off)");
+      return;
+    }
   }
   const uint32_t rowBytes = ((uint32_t)w * 3 + 3) & ~3u;
   const uint32_t dataSize = rowBytes * h, fileSize = 54 + dataSize;
@@ -783,7 +786,16 @@ static void handleCardBmp() {
     // A slow or vanished client must not hold the loop (display, MQTT) hostage.
     if (!server.client().connected() || millis() - t0 > 5000) { server.client().stop(); return; }
     memset(row, 0, rowBytes);
-    const uint16_t* src = buf + (uint32_t)y * w;
+    int16_t ly = y;
+    if (bandH) {
+      const int16_t y0 = y - y % bandH;
+      int16_t bw, bh, fh;
+      if (y % bandH == bandH - 1 || y == h - 1) {
+        if (!cardBandView(y0, &buf, &bw, &bh, &fh)) { server.client().stop(); return; }
+      }
+      ly = y - y0;
+    }
+    const uint16_t* src = buf + (uint32_t)ly * w;
     for (int16_t x = 0; x < w; x++) {
       uint16_t v = (uint16_t)((src[x] >> 8) | (src[x] << 8));   // sprite stores swapped RGB565
       uint8_t r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
@@ -793,6 +805,11 @@ static void handleCardBmp() {
     }
     server.sendContent((const char*)row, rowBytes);
   }
+}
+
+static void handleCardBmp() {
+  sendCardBmp();
+  cardBandRelease();   // band boards: the band sprite holds DMA-capable RAM
 }
 
 static void handleDebugToggle() {

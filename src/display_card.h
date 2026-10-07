@@ -25,7 +25,13 @@ bool tickCardMarquee();
 // Last full Card frame (PSRAM boards only): byte-swapped RGB565, w x h.
 // False when no full-frame sprite exists. Used by the /card.bmp endpoint.
 bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h);
+// Band-render boards: re-renders the band starting at y0 of the last frame.
+bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int16_t* fullH);
+// Frees the band cardBandView() left allocated.
+void cardBandRelease();
 #else
+inline bool cardBandView(int16_t, const uint16_t**, int16_t*, int16_t*, int16_t*) { return false; }
+inline void cardBandRelease() {}
 inline bool cardSkinActive() { return false; }
 inline bool drawCardPrinting(PrinterSlot&, bool) { return false; }
 inline bool drawCardFinished(PrinterSlot&, bool) { return false; }

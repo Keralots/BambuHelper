@@ -127,6 +127,28 @@ static lgfx::LGFX_Sprite* allocFull(int16_t w, int16_t h) {
   return nullptr;
 }
 
+#if CARD_BAND_RENDER
+// Band sprite for boards without PSRAM. Created per frame and freed right after:
+// it needs DMA-capable RAM, which is also what WiFi/lwIP run on.
+#define CARD_BAND_H 20     // 320x20x2 = 12.8 KB
+static lgfx::LGFX_Sprite* g_band = nullptr;
+
+static lgfx::LGFX_Sprite* allocBand(int16_t w) {
+  if (g_band && g_band->getBuffer() && g_band->width() == w) return g_band;
+  if (!g_band) {
+    g_band = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!g_band) return nullptr;
+    g_band->setColorDepth(16);
+    g_band->setPsram(false);
+  }
+  g_band->deleteSprite();
+  if (g_band->createSprite(w, CARD_BAND_H)) return g_band;
+  delete g_band;
+  g_band = nullptr;
+  return nullptr;
+}
+#endif
+
 // Draw context: the scene draws in screen coordinates; (ox, oy) shift them into
 // the current target (shimmer strip, scratch sprite). Font state is tracked here, never
 // through setFont(), whose cache follows the panel only.
@@ -156,13 +178,19 @@ struct Cv {
   void useFont(FontID id) {
     if (!noTier) id = tier(id);
     if (id == font) return;
-    if (!loadFontInto(*g, id)) { g->unloadFont(); g->setTextFont(id == FONT_CARD_LBL ? 1 : 2); }
+    if (const lgfx::IFont* cf = cachedFont(id)) g->setFont(cf);
+    else { g->unloadFont(); g->setTextFont(id == FONT_CARD_LBL ? 1 : 2); }
     font = id;
   }
   int16_t width(const char* s) { return (int16_t)g->textWidth(s); }
   void text(const char* s, int16_t x, int16_t y, FontID f, uint16_t c,
             lgfx::textdatum_t d) {
+    // Band render: skip text that cannot reach this band, before any font load.
+    static uint8_t fontH[16];               // face height per FontID, learned on first load
+    const FontID t = noTier ? f : tier(f);
+    if (t < 16 && fontH[t] && (y + fontH[t] < oy || y - fontH[t] >= oy + g->height())) return;
     useFont(f);
+    if (t < 16 && !fontH[t]) fontH[t] = (uint8_t)std::min<int32_t>(g->fontHeight(), 255);
     g->setTextDatum(d);
     g->setTextColor(c);                     // transparent: blends with sprite pixels
     g->drawString(s, x - ox, y - oy);
@@ -1346,11 +1374,33 @@ static bool present(bool force) {
     full->fillSprite(g_cur.bg);
     drawScene(cv, g_cur, g);
     full->pushSprite(&tft, 0, 0);
+#if CARD_BAND_RENDER
+  } else if (lgfx::LGFX_Sprite* band = allocBand(g.W)) {
+    tft.startWrite();
+    for (int16_t y = 0; y < g.H; y += CARD_BAND_H) {
+      Cv cv{band, 0, y, FONT_NONE};
+      cv.k = g.k;
+      tft.waitDMA();                       // the last push may still be reading this buffer
+      band->fillSprite(g_cur.bg);
+      drawScene(cv, g_cur, g);
+      band->pushSprite(&tft, 0, y);
+    }
+    tft.waitDMA();
+    tft.endWrite();
+    band->unloadFont();
+    band->deleteSprite();
+#endif
   } else {
+#if CARD_BAND_RENDER
+    // No band right now (RAM tight): keep the Card frame on screen and retry
+    // next tick - falling back to the classic screen would flap between the two.
+    return g_lastValid;
+#else
     // No PSRAM frame (e.g. re-creating it for a new rotation failed): hand the
     // screen back to the classic renderer rather than leave a stale frame up.
     g_lastValid = false;
     return false;
+#endif
   }
   memcpy(&g_last, &g_cur, sizeof(CardFrame));
   g_lastValid = true;
@@ -1451,6 +1501,7 @@ bool tickCardShimmer() {
   const int16_t by = barY(g_last, g);
   Cv cv{strip, hx, by, FONT_NONE};
   cv.k = g.k;
+  tft.waitDMA();                           // internal-RAM strip: previous push may be in flight
   strip->fillSprite(g_last.bg);
   pos += SHIMMER_STEP;
   const bool done = pos >= fw + SHIMMER_HALF;
@@ -1463,6 +1514,34 @@ bool tickCardShimmer() {
 // ---------------------------------------------------------------------------
 //  Public entry points
 // ---------------------------------------------------------------------------
+void cardBandRelease() {
+#if CARD_BAND_RENDER
+  if (g_band) g_band->deleteSprite();
+#endif
+}
+
+bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int16_t* fullH) {
+#if CARD_BAND_RENDER
+  if (!g_lastValid) return false;
+  const CardGeo& g = geo();
+  lgfx::LGFX_Sprite* band = allocBand(g.W);
+  if (!band) return false;
+  Cv cv{band, 0, y0, FONT_NONE};
+  cv.k = g.k;
+  band->fillSprite(g_last.bg);
+  drawScene(cv, g_last, g);
+  band->unloadFont();
+  *buf = static_cast<const uint16_t*>(band->getBuffer());
+  *w = g.W;
+  *h = CARD_BAND_H;
+  *fullH = g.H;
+  return true;
+#else
+  (void)y0; (void)buf; (void)w; (void)h; (void)fullH;
+  return false;
+#endif
+}
+
 bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h) {
   if (!g_full || !g_lastValid || !g_full->getBuffer()) return false;
   *buf = static_cast<const uint16_t*>(g_full->getBuffer());
