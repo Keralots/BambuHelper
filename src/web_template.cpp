@@ -857,12 +857,21 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/html", "");
 
+  // A stalled client turns every 2 KB flush into a ~1 s failed write, holding
+  // the main loop (MQTT, display) for minutes. A healthy 2 KB write takes a few
+  // ms; one failed retry costs a 1 s select timeout. Give up on the first stall.
+  bool aborted = false;
   auto flush = [&]() {
-    if (bufLen > 0) {
+    if (bufLen > 0 && !aborted) {
       buf[bufLen] = '\0';
+      const unsigned long t0 = millis();
       server.sendContent(buf);
-      bufLen = 0;
+      if (!server.client().connected() || millis() - t0 > 800) {
+        aborted = true;
+        server.client().stop();
+      }
     }
+    bufLen = 0;
   };
 
   auto emit = [&](const char* data, size_t len) {
@@ -883,7 +892,7 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   const char* pos = segs[seg].data;
   const char* literalStart = pos;
 
-  while (pos < end) {
+  while (pos < end && !aborted) {
     if (*pos != '%') { pos++; continue; }
     if (pos + 1 >= end || !(pos[1] >= 'A' && pos[1] <= 'Z')) { pos++; continue; }
 
@@ -919,7 +928,7 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   if (end > literalStart) emit(literalStart, end - literalStart);
   }
   flush();
-  server.sendContent("");
+  if (!aborted) server.sendContent("");
   free(buf);
 }
 
