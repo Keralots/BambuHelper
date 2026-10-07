@@ -228,13 +228,12 @@ class CappedSink : public Stream {
   String body;
   bool over = false;
   size_t write(uint8_t c) override {
-    if (body.length() >= cap_) { over = true; return 0; }
-    body += (char)c;
+    if (body.length() >= cap_ || !body.concat((char)c)) { over = true; return 0; }
     return 1;
   }
   size_t write(const uint8_t* b, size_t n) override {
-    if (body.length() + n > cap_) { over = true; return 0; }
-    body.concat((const char*)b, n);
+    // concat() fails on OOM: report it, or a truncated body would parse as JSON.
+    if (body.length() + n > cap_ || !body.concat((const char*)b, n)) { over = true; return 0; }
     return n;
   }
   int available() override { return 0; }

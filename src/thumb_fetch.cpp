@@ -4,6 +4,7 @@
 #if HAS_CARD_THUMB
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -13,6 +14,7 @@
 #include "settings.h"        // dispSettings, loadCloudToken
 #include "display_ui.h"      // tft (sprite parent)
 #include "display_card.h"    // cardSkinActive
+#include "web_server.h"      // isOtaAutoInProgress
 
 static const size_t   PNG_CAP        = 256 * 1024;   // downloaded PNG, PSRAM
 static const uint32_t MIN_HEAP       = 90000;        // internal free before a fetch
@@ -28,8 +30,8 @@ struct ThumbJob {
   char        token[1200];
   char        taskId[24];
   int         plate;
+  uint8_t     slot;
   CloudRegion region;
-  uint32_t    gen;
   uint8_t*    png;
   size_t      len;
   bool        ok;
@@ -47,15 +49,17 @@ static bool fetchInto(ThumbJob* j) {
   if (!j->png) return false;
   if (!cloudDownload(url, j->png, PNG_CAP, &j->len)) return false;
   static const uint8_t sig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
-  return j->len > 33 && memcmp(j->png, sig, 8) == 0;
+  if (j->len <= 33 || memcmp(j->png, sig, 8) != 0) return false;
+  // Kept per printer until its job changes: give back the unused part of the cap.
+  if (uint8_t* fit = (uint8_t*)heap_caps_realloc(j->png, j->len, MALLOC_CAP_SPIRAM)) j->png = fit;
+  return true;
 }
 
 static void worker(void* arg) {
   ThumbJob* j = (ThumbJob*)arg;
   j->ok = fetchInto(j);                     // every client lives and dies in here
   memset(j->token, 0, sizeof(j->token));
-  Serial.printf("THUMB: fetch %s (%u bytes), stack left %u\n", j->ok ? "ok" : "failed",
-                (unsigned)j->len, (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+  Serial.printf("THUMB: fetch %s (%u bytes)\n", j->ok ? "ok" : "failed", (unsigned)j->len);
   portENTER_CRITICAL(&g_mux);
   g_done = j;
   portEXIT_CRITICAL(&g_mux);
@@ -63,39 +67,30 @@ static void worker(void* arg) {
 }
 
 // ---------------------------------------------------------------------------
-//  Loop-side state: the job key, the downloaded PNG and the rendered thumb.
+//  Loop-side state, one entry per printer slot: the job it belongs to, the
+//  downloaded PNG and the rendered thumb. Rotating between printers keeps
+//  every entry; only a different job (or Cards / plate preview off) drops one.
 // ---------------------------------------------------------------------------
-static uint32_t g_gen = 1;               // bumped whenever the wanted job changes
-static uint8_t  g_keySlot = 0xFF;
-static char     g_keyTask[24];
-static uint16_t g_keyPlate = 0;
-static uint8_t  g_fails = 0;
-static unsigned long g_failAt = 0, g_backoff = 0;
+struct ThumbSlot {
+  char     task[24];                     // job key ("" = unused)
+  uint16_t plate;
+  uint8_t  fails;
+  unsigned long failAt, backoff;
+  uint8_t* png;
+  size_t   pngLen;
+  lgfx::LGFX_Sprite* thumb;
+  int16_t  size;
+  uint16_t bg;
+  bool     renderFailed;
+};
 
-static uint8_t* g_png = nullptr;
-static size_t   g_pngLen = 0;
-static lgfx::LGFX_Sprite* g_thumb = nullptr;
-static int16_t  g_thumbSize = 0;
-static uint16_t g_thumbBg = 0;
-static uint32_t g_thumbGen = 0;
-static bool     g_renderFailed = false;
+static ThumbSlot g_slots[MAX_PRINTERS];
+static uint32_t  g_thumbGen = 0;         // bumped on every render, any slot
 
-static void dropResult() {
-  if (g_png) { heap_caps_free(g_png); g_png = nullptr; }
-  g_pngLen = 0;
-  if (g_thumb) { g_thumb->deleteSprite(); delete g_thumb; g_thumb = nullptr; }
-  g_thumbSize = 0;
-  g_renderFailed = false;
-}
-
-static void resetKey() {
-  g_gen++;
-  dropResult();
-  g_keySlot = 0xFF;
-  g_keyTask[0] = '\0';
-  g_keyPlate = 0;
-  g_fails = 0;
-  g_backoff = 0;
+static void resetSlot(ThumbSlot& t) {
+  if (t.png) heap_caps_free(t.png);
+  if (t.thumb) { t.thumb->deleteSprite(); delete t.thumb; }
+  memset(&t, 0, sizeof(t));
 }
 
 static bool taskIdUsable(const char* t) {
@@ -112,17 +107,19 @@ static void collect() {
   portEXIT_CRITICAL(&g_mux);
   if (!j) return;
   g_running = false;
-  if (j->gen == g_gen && j->ok) {
-    dropResult();
-    g_png = j->png;
-    g_pngLen = j->len;
-    g_fails = 0;
+  ThumbSlot& t = g_slots[j->slot];
+  const bool current = strcmp(t.task, j->taskId) == 0 && t.plate == j->plate;
+  if (current && j->ok) {
+    t.png = j->png;                         // slot had none: fetches start only then
+    t.pngLen = j->len;
+    t.fails = 0;
+    t.backoff = 0;
   } else {
     if (j->png) heap_caps_free(j->png);
-    if (j->gen == g_gen) {                  // a real failure for the current job
-      g_fails++;
-      g_failAt = millis();
-      g_backoff = g_backoff ? std::min<unsigned long>(g_backoff * 2, 600000UL) : 30000UL;
+    if (current) {                          // a real failure for this job
+      t.fails++;
+      t.failAt = millis();
+      t.backoff = t.backoff ? std::min<unsigned long>(t.backoff * 2, 600000UL) : 30000UL;
     }
   }
   heap_caps_free(j);
@@ -131,27 +128,35 @@ static void collect() {
 void thumbService() {
   collect();
 
+  // Keep each slot's entry in step with its printer's job.
+  const bool on = cardSkinActive() && dispSettings.cardLeft == 2;
+  for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
+    ThumbSlot& t = g_slots[i];
+    const BambuState& s = printers[i].state;
+    if (!on || !taskIdUsable(s.taskId)) {
+      if (t.task[0]) resetSlot(t);
+      continue;
+    }
+    if (strcmp(t.task, s.taskId) != 0 || t.plate != s.plateIdx) {
+      resetSlot(t);
+      strlcpy(t.task, s.taskId, sizeof(t.task));
+      t.plate = s.plateIdx;
+    }
+  }
+  if (!on || g_running) return;
+
+  // Fetch only for the printer on screen.
   PrinterSlot& p = displayedPrinter();
-  const BambuState& s = p.state;
-  const bool want = cardSkinActive() && dispSettings.cardLeft == 2 && taskIdUsable(s.taskId);
-  if (!want) {
-    if (g_keySlot != 0xFF) resetKey();
-    return;
-  }
-  if (g_keySlot != rotState.displayIndex || strcmp(g_keyTask, s.taskId) != 0 ||
-      g_keyPlate != s.plateIdx) {
-    resetKey();
-    g_keySlot = rotState.displayIndex;
-    strlcpy(g_keyTask, s.taskId, sizeof(g_keyTask));
-    g_keyPlate = s.plateIdx;
-  }
-  if (g_png || g_running || g_fails >= MAX_FAILS) return;
-  if (g_backoff && millis() - g_failAt < g_backoff) return;
-  if (s.plateIdx == 0) return;              // pushall not in yet
+  const uint8_t slot = (uint8_t)(&p - printers);
+  ThumbSlot& t = g_slots[slot];
+  if (!t.task[0] || t.png || t.fails >= MAX_FAILS) return;
+  if (t.backoff && millis() - t.failAt < t.backoff) return;
+  if (t.plate == 0) return;                 // pushall not in yet
+  if (WiFi.status() != WL_CONNECTED || isOtaAutoInProgress()) return;
   if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < MIN_HEAP ||
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) < MIN_BLOCK) {
-    g_failAt = millis();
-    g_backoff = 5000;
+    t.failAt = millis();
+    t.backoff = 5000;
     return;
   }
 
@@ -159,21 +164,21 @@ void thumbService() {
   if (!j) return;
   if (!loadCloudToken(j->token, sizeof(j->token)) || !j->token[0]) {
     heap_caps_free(j);
-    g_failAt = millis();                    // not signed in (yet): look again in a minute
-    g_backoff = 60000;
+    t.failAt = millis();                    // not signed in (yet): look again in a minute
+    t.backoff = 60000;
     return;
   }
-  strlcpy(j->taskId, s.taskId, sizeof(j->taskId));
-  j->plate = s.plateIdx;
+  strlcpy(j->taskId, t.task, sizeof(j->taskId));
+  j->plate = t.plate;
+  j->slot = slot;
   j->region = p.config.region;
-  j->gen = g_gen;
   g_running = true;
   if (xTaskCreatePinnedToCore(worker, "thumb", WORKER_STACK, j, 1, nullptr, 1) != pdPASS) {
     g_running = false;
     memset(j->token, 0, sizeof(j->token));
     heap_caps_free(j);
-    g_failAt = millis();
-    g_backoff = 30000;
+    t.failAt = millis();
+    t.backoff = 30000;
   }
 }
 
@@ -185,8 +190,8 @@ static uint32_t be32(const uint8_t* p) {
   return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
 }
 
-static bool render(int16_t size, uint16_t bg) {
-  const uint32_t w = be32(g_png + 16), h = be32(g_png + 20);     // IHDR
+static bool render(ThumbSlot& t, int16_t size, uint16_t bg) {
+  const uint32_t w = be32(t.png + 16), h = be32(t.png + 20);     // IHDR
   if (w == 0 || h == 0 || w > 1024 || h > 1024) return false;
 
   lgfx::LGFX_Sprite big(&tft);
@@ -194,7 +199,7 @@ static bool render(int16_t size, uint16_t bg) {
   big.setColorDepth(16);
   if (!big.createSprite((int32_t)w, (int32_t)h)) return false;
   big.fillSprite(bg);
-  const bool ok = big.drawPng(g_png, g_pngLen, 0, 0);
+  const bool ok = big.drawPng(t.png, t.pngLen, 0, 0);
   big.releasePngMemory();
   if (!ok) { big.deleteSprite(); return false; }
 
@@ -217,39 +222,40 @@ static bool render(int16_t size, uint16_t bg) {
   const float side = (float)std::max(x1 - x0 + 1, y1 - y0 + 1) * 1.08f + 2.0f;
   const float zoom = (float)size / side;
 
-  if (!g_thumb) {
-    g_thumb = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
-    if (!g_thumb) { big.deleteSprite(); return false; }
-    g_thumb->setPsram(true);
-    g_thumb->setColorDepth(16);
+  if (!t.thumb) {
+    t.thumb = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
+    if (!t.thumb) { big.deleteSprite(); return false; }
+    t.thumb->setPsram(true);
+    t.thumb->setColorDepth(16);
   }
-  if (g_thumb->width() != size) {
-    g_thumb->deleteSprite();
-    if (!g_thumb->createSprite(size, size)) { big.deleteSprite(); return false; }
+  if (t.thumb->width() != size) {
+    t.thumb->deleteSprite();
+    if (!t.thumb->createSprite(size, size)) { big.deleteSprite(); return false; }
   }
-  g_thumb->fillSprite(bg);
+  t.thumb->fillSprite(bg);
   big.setPivot((x0 + x1) / 2.0f, (y0 + y1) / 2.0f);
-  big.pushRotateZoomWithAA(g_thumb, size / 2.0f, size / 2.0f, 0.0f, zoom, zoom);
+  big.pushRotateZoomWithAA(t.thumb, size / 2.0f, size / 2.0f, 0.0f, zoom, zoom);
   big.deleteSprite();
 
-  g_thumbSize = size;
-  g_thumbBg = bg;
+  t.size = size;
+  t.bg = bg;
   g_thumbGen++;
   return true;
 }
 
 bool thumbGet(int16_t size, uint16_t bg, const uint16_t** px, uint32_t* gen) {
-  if (!g_png || g_renderFailed) return false;
-  if (!g_thumb || g_thumbSize != size || g_thumbBg != bg) {
+  ThumbSlot& t = g_slots[(uint8_t)(&displayedPrinter() - printers)];
+  if (!t.png || t.renderFailed) return false;
+  if (!t.thumb || t.size != size || t.bg != bg) {
     const unsigned long t0 = millis();
-    if (!render(size, bg)) {
-      g_renderFailed = true;                // bad PNG for this job: keep the fallback
+    if (!render(t, size, bg)) {
+      t.renderFailed = true;                // bad PNG for this job: keep the fallback
       Serial.println("THUMB: render failed");
       return false;
     }
     Serial.printf("THUMB: rendered %dx%d in %lu ms\n", size, size, millis() - t0);
   }
-  *px = (const uint16_t*)g_thumb->getBuffer();
+  *px = (const uint16_t*)t.thumb->getBuffer();
   *gen = g_thumbGen;
   return true;
 }
