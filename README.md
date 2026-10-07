@@ -163,7 +163,7 @@ A calmer alternative to the gauge dashboard, readable from across the room: a bi
 
 Screenshots are taken from the device at native resolution.
 
-- **Left column** - the AMS slots with the feeding slot highlighted, a **plate preview** of the running job (from Bambu Cloud - needs the [account sign-in on the device](#connecting-to-bambu-cloud); works for LAN and Cloud printers bound to that account), or nothing
+- **Left column** - the AMS slots with the feeding slot highlighted, a **plate preview** of the running job (from Bambu Cloud - needs the [account sign-in on the device](#connecting-to-bambu-cloud); works for LAN and Cloud printers bound to that account, for jobs sent through the cloud, on boards with PSRAM), or nothing
 - **Bottom row** - the temperatures your printer actually has (both nozzles on H2 printers, chamber only where there is a sensor, AMS temperature and humidity), or the **filaments of this print** with how much is left on each spool
 - **AMS page** - how much filament is left in every tray, Bambu Studio style (a remain bar over a tile in the filament color, low spools in orange, `--` where the printer does not know). Pick it for the Ready screen under **Card: Ready screen** (`Status`, `AMS filament left`, or `Alternate status / AMS`), or tap the button / screen on Ready or Print Complete to switch to the other view for 30 seconds (the AMS page, or the status when the Ready screen already shows the AMS page)
 - **Header** - printer name, plug power, door state and the status badge; long job names scroll; the finish time gets a "+1" when the print ends tomorrow
@@ -171,7 +171,7 @@ Screenshots are taken from the device at native resolution.
 
 Turn it on in the web interface under **Display**: **Print screen style** -> `Cards (beta)`, then pick **Card: left column** and **Card: bottom row**. While Cards is selected, the portal marks the settings it does not use as *Gauges only*. Split view (two printers at once) keeps the classic gauges.
 
-Cards needs a board with PSRAM and a square 240x240 or a 240x320 / 320x480 screen. Boards without PSRAM (CYD, TZT, CYD 2.4", ESP32-C3), the round displays and the 480x480 SenseCAP keep the gauges.
+Cards runs on every 240x320 and 320x480 board and on the square 240x240 boards with PSRAM. The 240x320 boards without PSRAM (CYD, TZT, CYD 2.4") draw it in strips, so a full screen change takes about a tenth of a second, and they cannot show the plate preview, which needs PSRAM. Tested on the CYD; the TZT and the CYD 2.4" use the same code but have not been tried yet. The ESP32-C3 boards, the round displays and the 480x480 SenseCAP keep the gauges.
 
 ## Multi-Printer Monitoring
 
