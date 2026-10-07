@@ -277,8 +277,8 @@
 // 240x320 boards without PSRAM (CYD family) render it in 20 px internal-RAM bands.
 #if (defined(DISPLAY_240x320) || defined(DISPLAY_320x480)) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1
-#elif defined(DISPLAY_240x320)
-#define HAS_CARD_SKIN  1   // band path (CARD_BAND_RENDER)
+#elif defined(DISPLAY_240x320) && !defined(BOARD_IS_C3)
+#define HAS_CARD_SKIN  1   // band path (CARD_BAND_RENDER); not on a C3 (DIY), too little RAM
 #elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
       !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
