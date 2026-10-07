@@ -265,7 +265,7 @@ function saveGaugeLayout(){
   if (av && av.checked) p.append('amsv', '1');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Gauge layout saved!');else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clearDirty('saveGaugeLayout');showToast('Gauge layout saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 
@@ -290,7 +290,7 @@ function saveLightConfig(){
   p.append('ldelay', document.getElementById('ldelay').value);
   fetch('/light/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Light settings saved!');else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clearDirty('saveLightConfig');showToast('Light settings saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 function setLight(mode){
@@ -436,6 +436,7 @@ function savePrinter(){
   fetch('/save/printer',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(readJsonResponse)
     .then(function(d){
+      if (d.status === 'ok') clearDirty('savePrinter');
       if (d.status === 'ok' && d.warning) showToast('Saved with warning: ' + d.warning);
       else if (d.status === 'ok') showToast('Printer settings saved');
       else if (d.message) showToast('Save failed: ' + d.message);
@@ -887,7 +888,7 @@ function saveRotation(){
   if (bs) p.append('batshow', bs.checked ? '1' : '0');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Settings saved');})
+    .then(function(d){if(d.status==='ok'){clearDirty('saveRotation');showToast('Settings saved');}})
     .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
 }
 
@@ -1056,7 +1057,7 @@ function savePower(){
   if (slotSel) p.append('tsm_slot', slotSel.value);
   fetch('/save/power',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Power settings saved');})
+    .then(function(d){if(d.status==='ok'){clearDirty('savePower');showToast('Power settings saved');}})
     .catch(function(e){showToast('Save failed');console.warn('savePower:',e);});
 }
 
@@ -1245,7 +1246,7 @@ function applyDisplay(){
     p.append(lk + '_lbl', document.getElementById(lk + '_lbl').value);
   }
   fetch('/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-    .then(function(r){ if (r.ok) showToast('Applied!'); else showToast('Error'); })
+    .then(function(r){ if (r.ok) { clearDirty('applyDisplay'); showToast('Applied!'); } else showToast('Error'); })
     .catch(function(e){showToast('Apply failed');console.warn('applyDisplay:',e);});
 }
 
@@ -1295,8 +1296,8 @@ function initHelpTips(){
 
 /* ============ Unsaved changes ============ */
 /* A field without its own instant save belongs to the next save/apply button
-   in its section. Editing it flags that button; clicking any button that runs
-   the same save clears every button sharing it (applyDisplay has three). */
+   in its section. Editing it flags that button; a save that succeeded clears
+   every button running it (applyDisplay has three), a failed one leaves them. */
 function dirtyOwner(field){
   var sec = field.closest('.section');
   if (!sec) return null;
@@ -1319,20 +1320,17 @@ function markDirty(e){
   n.textContent = 'Unsaved changes';
   b.parentNode.insertBefore(n, b);
 }
+function clearDirty(fn){
+  document.querySelectorAll('button.btn-dirty').forEach(function(o){
+    if ((o.getAttribute('onclick') || '').indexOf(fn + '(') !== 0) return;
+    o.classList.remove('btn-dirty');
+    var n = o.previousElementSibling;
+    if (n && n.classList.contains('dirty-note')) n.remove();
+  });
+}
 function initDirtyTracking(){
   document.addEventListener('input', markDirty);
   document.addEventListener('change', markDirty);
-  document.addEventListener('click', function(e){
-    var b = e.target.closest && e.target.closest('button.btn-dirty');
-    if (!b) return;
-    var fn = b.getAttribute('onclick');
-    document.querySelectorAll('button.btn-dirty').forEach(function(o){
-      if (o.getAttribute('onclick') !== fn) return;
-      o.classList.remove('btn-dirty');
-      var n = o.previousElementSibling;
-      if (n && n.classList.contains('dirty-note')) n.remove();
-    });
-  });
   window.addEventListener('beforeunload', function(e){
     if (!document.querySelector('button.btn-dirty')) return;
     e.preventDefault();
