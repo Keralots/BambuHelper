@@ -857,16 +857,20 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/html", "");
 
-  // A stalled client turns every 2 KB flush into a ~1 s failed write, holding
-  // the main loop (MQTT, display) for minutes. A healthy 2 KB write takes a few
-  // ms; one failed retry costs a 1 s select timeout. Give up on the first stall.
+  // A stalled client turns every 2 KB flush into a ~1 s trickle, holding the
+  // main loop (MQTT, display) for minutes. One slow flush is a lost segment on
+  // weak WiFi and the page must survive it; a stall is a dropped connection,
+  // three slow flushes in a row, or a page still not out after 30 s.
   bool aborted = false;
+  uint8_t slowRun = 0;
+  const unsigned long tStart = millis();
   auto flush = [&]() {
     if (bufLen > 0 && !aborted) {
-      buf[bufLen] = '\0';
       const unsigned long t0 = millis();
-      server.sendContent(buf);
-      if (!server.client().connected() || millis() - t0 > 800) {
+      server.sendContent(buf, bufLen);
+      const unsigned long now = millis();
+      slowRun = (now - t0 > 800) ? slowRun + 1 : 0;
+      if (!server.client().connected() || slowRun >= 3 || now - tStart > 30000) {
         aborted = true;
         server.client().stop();
       }
@@ -887,7 +891,7 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   };
 
   // On ESP32, PROGMEM is directly memory-mapped and readable as const char*.
-  for (uint8_t seg = 0; seg < segCount; seg++) {
+  for (uint8_t seg = 0; seg < segCount && !aborted; seg++) {
   const char* end = segs[seg].data + segs[seg].len;
   const char* pos = segs[seg].data;
   const char* literalStart = pos;
