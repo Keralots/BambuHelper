@@ -175,20 +175,30 @@ bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
     return data && gfx.loadFont(data);
 }
 
+static lgfx::PointerWrapper* cacheSrc[16];
+static lgfx::VLWfont*        cacheFont[16];
+
 const lgfx::IFont* cachedFont(FontID id) {
-    static lgfx::PointerWrapper* src[16];
-    static lgfx::VLWfont*        font[16];
     if (id >= 16) return nullptr;
-    if (font[id]) return font[id];
+    if (cacheFont[id]) return cacheFont[id];
     const uint8_t* data = fontData(id);
     if (!data) return nullptr;
     auto* w = new (std::nothrow) lgfx::PointerWrapper();
     auto* f = new (std::nothrow) lgfx::VLWfont();
     if (w && f) {
         w->set(data);
-        if (f->loadFont(w)) { src[id] = w; font[id] = f; return f; }
+        if (f->loadFont(w)) { cacheSrc[id] = w; cacheFont[id] = f; return f; }
     }
     delete f;
     delete w;
     return nullptr;
+}
+
+void releaseCachedFonts() {
+    for (uint8_t i = 0; i < 16; i++) {
+        delete cacheFont[i];   // ~VLWfont frees the glyph tables
+        delete cacheSrc[i];
+        cacheFont[i] = nullptr;
+        cacheSrc[i] = nullptr;
+    }
 }

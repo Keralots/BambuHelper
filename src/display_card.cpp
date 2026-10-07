@@ -5,6 +5,7 @@
 #include <time.h>
 #include <algorithm>
 #include <new>
+#include <esp_heap_caps.h>
 #include "layout_card.h"
 #include "display_ui.h"      // tft, markFrameDirty, stateBadgeText/Color, formatFinishClock
 #include "settings.h"        // dispSettings, netSettings, dpSettings
@@ -88,7 +89,20 @@ struct CardFrame {
   CardAmsBox boxes[8];
 };
 
-static CardFrame g_cur, g_last;
+// Frame state, allocated on the first Card draw and freed by cardRelease(): a
+// board that never shows Cards keeps the ~4.6 KB (internal RAM without PSRAM).
+struct CardMem { CardFrame cur, last; CardAmsBox all[8]; };
+static CardMem* g_mem = nullptr;
+
+static bool cardMemReady() {
+  if (g_mem) return true;
+#if defined(BOARD_HAS_PSRAM)
+  g_mem = (CardMem*)heap_caps_calloc(1, sizeof(CardMem), MALLOC_CAP_SPIRAM);
+#endif
+  if (!g_mem) g_mem = (CardMem*)calloc(1, sizeof(CardMem));
+  return g_mem != nullptr;
+}
+
 static bool      g_lastValid = false;
 static const uint16_t* g_thumbPx = nullptr;   // pixels behind f.thumbShow (swapped RGB565)
 static int16_t g_marqueeOff = 0;              // job-name scroll offset (px), see tickCardMarquee
@@ -1224,7 +1238,7 @@ static AmsGrid amsGrid(const CardGeo& g) {
 
 // Snapshot the AMS page when this screen should show it now; false = show the status.
 static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
-  static CardAmsBox all[8];
+  CardAmsBox* all = g_mem->all;
   const uint8_t n = buildAmsBoxes(p.state.ams, all, 8);
   if (n == 0) { g_peek = false; return false; }
   const AmsGrid gr = amsGrid(geo());
@@ -1365,14 +1379,17 @@ static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
 // ---------------------------------------------------------------------------
 //  Render + push
 // ---------------------------------------------------------------------------
+static bool g_repaintOwed = false;   // a forced frame could not be drawn (band path)
+
 static bool present(bool force) {
-  if (!force && g_lastValid && memcmp(&g_cur, &g_last, sizeof(CardFrame)) == 0) return true;
+  force = force || g_repaintOwed;
+  if (!force && g_lastValid && memcmp(&g_mem->cur, &g_mem->last, sizeof(CardFrame)) == 0) return true;
   const CardGeo& g = geo();
   if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
     Cv cv{full, 0, 0, FONT_NONE};
     cv.k = g.k;
-    full->fillSprite(g_cur.bg);
-    drawScene(cv, g_cur, g);
+    full->fillSprite(g_mem->cur.bg);
+    drawScene(cv, g_mem->cur, g);
     full->pushSprite(&tft, 0, 0);
 #if CARD_BAND_RENDER
   } else if (lgfx::LGFX_Sprite* band = allocBand(g.W)) {
@@ -1381,8 +1398,8 @@ static bool present(bool force) {
       Cv cv{band, 0, y, FONT_NONE};
       cv.k = g.k;
       tft.waitDMA();                       // the last push may still be reading this buffer
-      band->fillSprite(g_cur.bg);
-      drawScene(cv, g_cur, g);
+      band->fillSprite(g_mem->cur.bg);
+      drawScene(cv, g_mem->cur, g);
       band->pushSprite(&tft, 0, y);
     }
     tft.waitDMA();
@@ -1394,6 +1411,9 @@ static bool present(bool force) {
 #if CARD_BAND_RENDER
     // No band right now (RAM tight): keep the Card frame on screen and retry
     // next tick - falling back to the classic screen would flap between the two.
+    // A forced frame usually follows a cleared panel, so the retry must redraw
+    // even when the frame content has not changed.
+    if (force) g_repaintOwed = true;
     return g_lastValid;
 #else
     // No PSRAM frame (e.g. re-creating it for a new rotation failed): hand the
@@ -1402,8 +1422,9 @@ static bool present(bool force) {
     return false;
 #endif
   }
-  memcpy(&g_last, &g_cur, sizeof(CardFrame));
+  memcpy(&g_mem->last, &g_mem->cur, sizeof(CardFrame));
   g_lastValid = true;
+  g_repaintOwed = false;
   markFrameDirty();
   return true;
 }
@@ -1421,16 +1442,19 @@ static const int16_t  SHIMMER_STEP     = 3;     // px per step
 //  redrawing only its 20 px strip (~9 KB PSRAM sprite) about 33 px/s. The strip
 //  stays clear of the header rule above it, or every step would erase it.
 // ---------------------------------------------------------------------------
+static lgfx::LGFX_Sprite* g_marqueeStrip = nullptr;
+static lgfx::LGFX_Sprite* g_shimmerStrip = nullptr;
+
 bool tickCardMarquee() {
-  static lgfx::LGFX_Sprite* strip = nullptr;
+  lgfx::LGFX_Sprite*& strip = g_marqueeStrip;
   static unsigned long lastMs = 0, holdUntil = 0;
   static int8_t dir = 1;
   static char shown[64];
-  if (!g_lastValid || g_last.kind != CK_PRINTING || !g_full) return false;
+  if (!g_lastValid || g_mem->last.kind != CK_PRINTING || !g_full) return false;
 
   const CardGeo& g = geo();
   int16_t hx, hw;
-  heroX(g_last, g, hx, hw);
+  heroX(g_mem->last, g, hx, hw);
   if (!strip) {
     strip = new (std::nothrow) lgfx::LGFX_Sprite(&tft);
     if (!strip) return false;
@@ -1443,10 +1467,10 @@ bool tickCardMarquee() {
     if (!strip->createSprite(hw, sh)) return false;
     loadFontInto(*strip, FONT_BODY);         // once: per-tick loads would churn the heap
   }
-  const int16_t span = (int16_t)strip->textWidth(g_last.job) - hw;
+  const int16_t span = (int16_t)strip->textWidth(g_mem->last.job) - hw;
   const unsigned long now = millis();
-  if (strcmp(shown, g_last.job) != 0) {      // new job: start over from the left
-    strlcpy(shown, g_last.job, sizeof(shown));
+  if (strcmp(shown, g_mem->last.job) != 0) {      // new job: start over from the left
+    strlcpy(shown, g_mem->last.job, sizeof(shown));
     g_marqueeOff = 0;
     dir = 1;
     holdUntil = now + 2000;
@@ -1460,10 +1484,10 @@ bool tickCardMarquee() {
     dir = -dir;
     holdUntil = now + 1500;
   }
-  strip->fillSprite(g_last.bg);
+  strip->fillSprite(g_mem->last.bg);
   strip->setTextDatum(lgfx::textdatum_t::middle_left);
-  strip->setTextColor(g_last.txt);
-  strip->drawString(g_last.job, -g_marqueeOff, sh / 2);
+  strip->setTextColor(g_mem->last.txt);
+  strip->drawString(g_mem->last.job, -g_marqueeOff, sh / 2);
   strip->pushSprite(&tft, hx, g.nameCy - sh / 2);
   return true;
 }
@@ -1471,13 +1495,13 @@ bool tickCardMarquee() {
 bool tickCardShimmer() {
   static int16_t pos = -1;                 // offset into the filled part, -1 = paused
   static unsigned long lastMs = 0, pauseStart = 0;
-  static lgfx::LGFX_Sprite* strip = nullptr;
-  if (!dispSettings.animatedBar || !g_lastValid || g_last.kind != CK_PRINTING || !g_last.printing) return false;
+  lgfx::LGFX_Sprite*& strip = g_shimmerStrip;
+  if (!dispSettings.animatedBar || !g_lastValid || g_mem->last.kind != CK_PRINTING || !g_mem->last.printing) return false;
 
   const CardGeo& g = geo();
   int16_t hx, hw;
-  heroX(g_last, g, hx, hw);
-  const int16_t fw = (int16_t)((int32_t)hw * (g_last.pct > 100 ? 100 : g_last.pct) / 100);
+  heroX(g_mem->last, g, hx, hw);
+  const int16_t fw = (int16_t)((int32_t)hw * (g_mem->last.pct > 100 ? 100 : g_mem->last.pct) / 100);
   if (fw < 2 * SHIMMER_HALF + 8) return false;
 
   const unsigned long now = millis();
@@ -1498,14 +1522,14 @@ bool tickCardShimmer() {
     strip->deleteSprite();
     if (!strip->createSprite(hw, g.barH)) return false;   // ~3 KB
   }
-  const int16_t by = barY(g_last, g);
+  const int16_t by = barY(g_mem->last, g);
   Cv cv{strip, hx, by, FONT_NONE};
   cv.k = g.k;
   tft.waitDMA();                           // internal-RAM strip: previous push may be in flight
-  strip->fillSprite(g_last.bg);
+  strip->fillSprite(g_mem->last.bg);
   pos += SHIMMER_STEP;
   const bool done = pos >= fw + SHIMMER_HALF;
-  drawBar(cv, g_last, g, done ? -1 : hx + pos - SHIMMER_HALF);
+  drawBar(cv, g_mem->last, g, done ? -1 : hx + pos - SHIMMER_HALF);
   strip->pushSprite(&tft, hx, by);
   if (done) { pos = -1; pauseStart = now; }
   return true;
@@ -1520,6 +1544,28 @@ void cardBandRelease() {
 #endif
 }
 
+void cardRelease() {
+  bool held = g_mem || g_full || g_marqueeStrip || g_shimmerStrip;
+#if CARD_BAND_RENDER
+  held = held || g_band;
+#endif
+  if (!held) return;
+  g_lastValid = false;
+  g_repaintOwed = false;
+  g_peek = false;
+  g_thumbPx = nullptr;
+  auto drop = [](lgfx::LGFX_Sprite*& sp) { delete sp; sp = nullptr; };   // dtor frees the buffer
+  drop(g_full);
+  drop(g_marqueeStrip);
+  drop(g_shimmerStrip);
+#if CARD_BAND_RENDER
+  drop(g_band);
+#endif
+  free(g_mem);                              // heap_caps_calloc'd memory is free()-able
+  g_mem = nullptr;
+  releaseCachedFonts();                     // after the sprites that pointed at them
+}
+
 bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int16_t* fullH) {
 #if CARD_BAND_RENDER
   if (!g_lastValid) return false;
@@ -1528,8 +1574,8 @@ bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int1
   if (!band) return false;
   Cv cv{band, 0, y0, FONT_NONE};
   cv.k = g.k;
-  band->fillSprite(g_last.bg);
-  drawScene(cv, g_last, g);
+  band->fillSprite(g_mem->last.bg);
+  drawScene(cv, g_mem->last, g);
   band->unloadFont();
   *buf = static_cast<const uint16_t*>(band->getBuffer());
   *w = g.W;
@@ -1557,8 +1603,8 @@ bool cardSkinActive() {
 bool cardAmsPeekToggle(const BambuState& s) {
   if (!cardSkinActive()) return false;
   if (g_peek) { g_peek = false; return false; }      // tapping out continues the cycle
-  static CardAmsBox probe[8];
-  if (buildAmsBoxes(s.ams, probe, 8) == 0) return false;
+  // g_mem->all is scratch: snapAmsPage rebuilds it on every draw.
+  if (!cardMemReady() || buildAmsBoxes(s.ams, g_mem->all, 8) == 0) return false;
   g_peek = true;
   g_peekStart = millis();
   return true;
@@ -1567,8 +1613,9 @@ bool cardAmsPeekToggle(const BambuState& s) {
 static bool clockSynced() { return time(nullptr) > (time_t)NTP_SYNCED_EPOCH; }
 
 bool drawCardPrinting(PrinterSlot& p, bool force) {
+  if (!cardMemReady()) return false;
   const BambuState& s = p.state;
-  CardFrame& f = g_cur;
+  CardFrame& f = g_mem->cur;
   snapCommon(f, CK_PRINTING, p);
   f.pct = s.progress > 100 ? 100 : s.progress;
   f.printing = (s.printing && s.gcodeStateId == GCODE_RUNNING) ? 1 : 0;
@@ -1611,9 +1658,10 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
 }
 
 bool drawCardFinished(PrinterSlot& p, bool force) {
-  if (snapAmsPage(g_cur, p, false)) return present(force);   // tap-opened only
+  if (!cardMemReady()) return false;
+  if (snapAmsPage(g_mem->cur, p, false)) return present(force);   // tap-opened only
   const BambuState& s = p.state;
-  CardFrame& f = g_cur;
+  CardFrame& f = g_mem->cur;
   snapCommon(f, CK_FINISHED, p);
   if (!geo().amsColW) f.amsShow = 0;      // portrait / square finish: no AMS strip
   if (printerWasCanceled(s)) {
@@ -1632,9 +1680,10 @@ bool drawCardFinished(PrinterSlot& p, bool force) {
 }
 
 bool drawCardIdle(PrinterSlot& p, bool force) {
-  if (snapAmsPage(g_cur, p, true)) return present(force);
+  if (!cardMemReady()) return false;
+  if (snapAmsPage(g_mem->cur, p, true)) return present(force);
   const BambuState& s = p.state;
-  CardFrame& f = g_cur;
+  CardFrame& f = g_mem->cur;
   snapCommon(f, CK_IDLE, p);
   f.amsShow = 0;                          // idle lists every unit as swatches instead
   f.amsInBand = 0;

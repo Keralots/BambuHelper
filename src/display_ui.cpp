@@ -651,6 +651,7 @@ static bool tryCard(bool (*draw)(PrinterSlot&, bool), PrinterSlot& p) {
     gaugesAnimating = false;
     return true;
   }
+  if (!cardSkinActive()) cardRelease();   // style switched back: give the RAM back
   if (cardShownLast) {
     cardShownLast = false;
     triggerDisplayTransition();   // classic screen repaints whole this tick

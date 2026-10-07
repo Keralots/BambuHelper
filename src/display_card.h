@@ -29,7 +29,11 @@ bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h);
 bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int16_t* fullH);
 // Frees the band cardBandView() left allocated.
 void cardBandRelease();
+// Frees everything Cards holds (frame state, sprites, cached faces). Called
+// while Cards is off; cheap when nothing is held.
+void cardRelease();
 #else
+inline void cardRelease() {}
 inline bool cardBandView(int16_t, const uint16_t**, int16_t*, int16_t*, int16_t*) { return false; }
 inline void cardBandRelease() {}
 inline bool cardSkinActive() { return false; }

@@ -48,5 +48,7 @@ bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id);
 // Parsed once and kept (~9 B per glyph): select with gfx.setFont(cachedFont(id)).
 // For renderers that switch faces many times per frame. Null when unavailable.
 const lgfx::IFont* cachedFont(FontID id);
+// Frees every cachedFont() face. No gfx may still have one selected.
+void releaseCachedFonts();
 
 #endif // FONTS_H
