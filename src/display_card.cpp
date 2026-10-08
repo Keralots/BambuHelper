@@ -660,15 +660,18 @@ static void drawAmsColumn(Cv& cv, const CardFrame& f, const CardGeo& g) {
 
 static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
   const int16_t x0 = g.pad, w = g.W - 2 * g.pad;
-  cv.text(f.amsLabel, x0, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
-  if (f.amsHum[0]) cv.text(f.amsHum, x0 + w, g.stripLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
   const int16_t cols = g.stripCols ? g.stripCols : 4;
   const int16_t slotW = w / cols;
   const int16_t rowH = g.stripCols ? g.stripRowH : 0;
+  // A grid filled to one row only (AMS HT, EXT) moves down half a row: no hole above the rule.
+  const int16_t slots = std::min<int16_t>(f.trayCount + (f.extShow ? 1 : 0), 4);
+  const int16_t dy = (4 / cols - std::max<int16_t>((slots + cols - 1) / cols, 1)) * rowH / 2;
+  cv.text(f.amsLabel, x0, g.stripLblY + dy, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  if (f.amsHum[0]) cv.text(f.amsHum, x0 + w, g.stripLblY + dy, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_right);
   uint8_t n = 0;
   for (uint8_t r = 0; r < f.trayCount + (f.extShow ? 1 : 0) && n < 4; r++, n++) {
     const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
-    drawSlot(cv, t, f, x0 + (n % cols) * slotW, g.stripY + (n / cols) * rowH, slotW - 8, g.stripH);
+    drawSlot(cv, t, f, x0 + (n % cols) * slotW, g.stripY + dy + (n / cols) * rowH, slotW - 8, g.stripH);
   }
 }
 
@@ -868,6 +871,52 @@ static int16_t barY(const CardFrame& f, const CardGeo& g) { return besideThumb(f
 static int16_t bottomRule(const CardFrame& f, const CardGeo& g) {
   if (besideThumb(f, g)) return g.tbRule;
   return (f.amsShow && !g.amsColW) ? g.botRuleAms : g.botRuleNoAms;
+}
+
+// The tables leave room above the header and below the bottom band; a frame
+// uses the whole panel: header lifted to 1 px from the top, the band's last row
+// ending 1 px above the bottom, everything between spread evenly.
+static CardGeo liftHeader(const CardGeo& g0) {
+  CardGeo g = g0;
+  const int16_t d = g.k > 100 ? 10 : 7;      // pill top at hdrCy - pillH / 2 = 1
+  g.hdrCy -= d;
+  g.hdrRule -= d;
+  return g;
+}
+
+static CardGeo frameGeo(const CardFrame& f) {
+  const CardGeo& g0 = geo();
+  CardGeo g = liftHeader(g0);
+  int16_t r0;
+  switch (f.kind) {
+    case CK_PRINTING: r0 = bottomRule(f, g0); break;
+    case CK_FINISHED: r0 = g0.finBotRule;     break;
+    case CK_IDLE:     r0 = g0.idleBotRule;    break;
+    default:          return g;              // AMS page: grid fills down from the header
+  }
+  // Band height from the rule down to its last pixel (baseline - 1, slots +3).
+  int16_t rows = 1;
+  if (f.amsInBand) rows = 2;
+  else if (f.bandFilaments) rows = g0.cellCols ? 2 : 1;
+  else if (f.cellCount) {
+    const int16_t cols = g0.cellCols ? g0.cellCols : f.cellCount;
+    rows = (f.cellCount + cols - 1) / cols;
+  }
+  const int16_t span = (rows - 1) * g0.cellRowH + g0.cellBaseOff + (f.amsInBand ? 3 : 0);
+  const int16_t r1 = g0.H - 1 - span, dBot = r1 - r0;
+  const int16_t a0 = g0.hdrRule, a1 = g.hdrRule;
+  auto map = [&](int16_t& y) {
+    if (y == 0 || r0 <= a0) return;          // 0 = field unused by this table
+    y = (int16_t)(a1 + ((int32_t)(y - a0) * (r1 - a1) + (r0 - a0) / 2) / (r0 - a0));
+  };
+  map(g.nameCy); map(g.remLblY); map(g.bigBase); map(g.barY); map(g.lineCy);
+  map(g.amsHdrY); map(g.amsRowY); map(g.stripLblY); map(g.stripY);
+  map(g.finHeadCy); map(g.finLblY); map(g.finNameCy); map(g.finRowY); map(g.finRowCy); map(g.finDoorCy);
+  map(g.idleHeadCy); map(g.idleSubCy); map(g.idleClockBase); map(g.idleAmsY);
+  map(g.thumbY); map(g.tbBarY); map(g.tbLineCy); map(g.tbRemLblY); map(g.tbRemBase);
+  g.botRuleAms += dBot; g.botRuleNoAms += dBot; g.finBotRule += dBot; g.idleBotRule += dBot;
+  if (g.tbRule) g.tbRule += dBot;
+  return g;
 }
 
 static void drawThumb(Cv& cv, int16_t x, int16_t y, int16_t size) {
@@ -1293,7 +1342,7 @@ static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
   CardAmsBox* all = g_mem->all;
   const uint8_t n = buildAmsBoxes(p.state.ams, all, 8);
   if (n == 0) { g_peek = false; return false; }
-  const AmsGrid gr = amsGrid(geo());
+  const AmsGrid gr = amsGrid(liftHeader(geo()));
   const uint8_t perPage = (uint8_t)(gr.cols * gr.rows);
   const uint8_t regions = assignRegions(all, n);
   const uint8_t pages = (uint8_t)((regions + perPage - 1) / perPage);
@@ -1437,7 +1486,7 @@ static bool g_colonLit = true;       // idle clock colon as last pushed (tickCar
 static bool present(bool force) {
   force = force || g_repaintOwed;
   if (!force && g_lastValid && memcmp(&g_mem->cur, &g_mem->last, sizeof(CardFrame)) == 0) return true;
-  const CardGeo& g = geo();
+  const CardGeo g = frameGeo(g_mem->cur);
   if (lgfx::LGFX_Sprite* full = allocFull(g.W, g.H)) {
     Cv cv{full, 0, 0, FONT_NONE};
     cv.k = g.k;
@@ -1493,7 +1542,7 @@ bool tickCardColon() {
   const bool lit = (millis() % 1000) < 500;
   if (lit == g_colonLit) return false;
 
-  const CardGeo& g = geo();
+  const CardGeo g = frameGeo(g_mem->last);
   const ColonBox b = g_colon;
   lgfx::LGFX_Sprite strip(&tft);
 #if defined(BOARD_HAS_PSRAM)
@@ -1539,7 +1588,7 @@ bool tickCardMarquee() {
   static char shown[64];
   if (!g_lastValid || g_mem->last.kind != CK_PRINTING || !g_full) return false;
 
-  const CardGeo& g = geo();
+  const CardGeo g = frameGeo(g_mem->last);
   int16_t hx, hw;
   heroX(g_mem->last, g, hx, hw);
   if (!strip) {
@@ -1585,7 +1634,7 @@ bool tickCardShimmer() {
   lgfx::LGFX_Sprite*& strip = g_shimmerStrip;
   if (!dispSettings.animatedBar || !g_lastValid || g_mem->last.kind != CK_PRINTING || !g_mem->last.printing) return false;
 
-  const CardGeo& g = geo();
+  const CardGeo g = frameGeo(g_mem->last);
   int16_t hx, hw;
   heroX(g_mem->last, g, hx, hw);
   const int16_t fw = (int16_t)((int32_t)hw * (g_mem->last.pct > 100 ? 100 : g_mem->last.pct) / 100);
@@ -1656,7 +1705,7 @@ void cardRelease() {
 bool cardBandView(int16_t y0, const uint16_t** buf, int16_t* w, int16_t* h, int16_t* fullH) {
 #if CARD_BAND_RENDER
   if (!g_lastValid) return false;
-  const CardGeo& g = geo();
+  const CardGeo g = frameGeo(g_mem->last);
   lgfx::LGFX_Sprite* band = allocBand(g.W);
   if (!band) return false;
   Cv cv{band, 0, y0, FONT_NONE};

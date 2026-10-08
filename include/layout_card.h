@@ -38,9 +38,9 @@ struct CardGeo {
   int16_t valCap;            // cap height of the value face (degree ring placement)
 };
 
-// 320x240 landscape. Outer pad 10 > GLOW_THICKNESS_PX (8).
+// 320x240 landscape. Outer pad 1: the edge glow may overlap content (owner OK).
 static const CardGeo CARD_GEO_LAND = {
-  320, 240, 10,
+  320, 240, 1,
   15, 30, 15, 7,
   44, 70, 120, 130, 6, 152,
   68, 38, 51, 22,
@@ -59,7 +59,7 @@ static const CardGeo CARD_GEO_LAND = {
 // 240x320 portrait: hero at the full 216 px width (same as the landscape hero
 // beside the AMS column), AMS as a 2x2 slot grid, temperatures on a 3x2 grid.
 static const CardGeo CARD_GEO_PORT = {
-  240, 320, 10,
+  240, 320, 1,
   15, 30, 15, 7,
   42, 62, 106, 114, 6, 134,
   0, 0, 0, 0,
@@ -78,7 +78,7 @@ static const CardGeo CARD_GEO_PORT = {
 // 240x240 square: S1 layout. No AMS column/strip; temperatures 3x2 with
 // tighter rows; idle clock small beside "Ready" (idleClockRight == 2).
 static const CardGeo CARD_GEO_SQ = {
-  240, 240, 10,
+  240, 240, 1,
   15, 30, 15, 7,
   42, 56, 100, 112, 6, 132,
   0, 0, 0, 0,
@@ -97,7 +97,7 @@ static const CardGeo CARD_GEO_SQ = {
 // 1.5x sets for the 320x480 profile (jc3248w535 and friends): fonts come from
 // the large tier (Cv maps them), fixed sizes go through Cv::S().
 static const CardGeo CARD_GEO_LAND_L = {      // 480x320
-  480, 320, 15,
+  480, 320, 1,
   22, 44, 22, 10,
   64, 96, 154, 170, 9, 196,
   102, 56, 76, 30,
@@ -114,7 +114,7 @@ static const CardGeo CARD_GEO_LAND_L = {      // 480x320
 };
 
 static const CardGeo CARD_GEO_PORT_L = {      // 320x480
-  320, 480, 15,
+  320, 480, 1,
   22, 44, 22, 10,
   63, 93, 150, 164, 9, 192,
   0, 0, 0, 0,
