@@ -268,17 +268,34 @@ static void formatClock(time_t t, char* buf, size_t n, char* ampm, size_t an) {
   }
 }
 
-// Unit the column / AMS cells describe: the one feeding, else the first present.
-static int8_t displayAmsUnit(const AmsState& a) {
+// Raw id of the unit last seen feeding, per printer slot. A dual-nozzle printer
+// reports no tray while the other nozzle prints; keep that unit, not AMS 1.
+static uint8_t g_feedUnitId[MAX_ACTIVE_PRINTERS];
+static bool    g_feedUnitInit = false;
+
+static int8_t unitById(const AmsState& a, uint8_t id) {
+  for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
+    if (a.units[i].present && a.units[i].id == id) return (int8_t)i;
+  return -1;
+}
+
+// Unit the column / AMS cells describe: the one feeding, else the one that fed
+// last, else the first present.
+static int8_t displayAmsUnit(const AmsState& a, uint8_t slot) {
+  if (!g_feedUnitInit) { memset(g_feedUnitId, 0xFF, sizeof(g_feedUnitId)); g_feedUnitInit = true; }
   if (!a.present || a.unitCount == 0) return -1;
+  int8_t u = -1;
   if (a.activeTray < AMS_MAX_TRAYS) {
-    uint8_t u = a.activeTray / AMS_TRAYS_PER_UNIT;
-    if (u < a.unitCount && a.units[u].present) return (int8_t)u;
+    uint8_t t = a.activeTray / AMS_TRAYS_PER_UNIT;
+    if (t < a.unitCount && a.units[t].present) u = (int8_t)t;
+  } else if (a.activeTray == AMS_TRAY_OVERFLOW) {
+    u = unitById(a, a.ovUnitId);
   }
-  if (a.activeTray == AMS_TRAY_OVERFLOW) {
-    for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
-      if (a.units[i].present && a.units[i].id == a.ovUnitId) return (int8_t)i;
+  if (slot < MAX_ACTIVE_PRINTERS) {
+    if (u >= 0) g_feedUnitId[slot] = a.units[u].id;
+    else if (a.activeTray == 255 && g_feedUnitId[slot] != 0xFF) u = unitById(a, g_feedUnitId[slot]);
   }
+  if (u >= 0) return u;
   for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
     if (a.units[i].present) return (int8_t)i;
   return -1;
@@ -359,7 +376,7 @@ static bool hasChamberSensor(const char* serial) {
            strncmp(serial, "039", 3) == 0 || strncmp(serial, "030", 3) == 0);
 }
 
-static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
+static void snapBottom(CardFrame& f, const BambuState& s, const char* serial, uint8_t slot) {
   // Filaments of this print, when asked for and the printer sent a map.
   if (dispSettings.cardBottom == 1 && s.printMapCount > 0) {
     f.bandFilaments = 1;
@@ -387,7 +404,7 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
   if (hasChamberSensor(serial) && s.chamberTemp > 0.5f)
     addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG,
             tempClr(s.chamberTemp, dispSettings.chamberScaleMax, dispSettings.chamberTemp.value));
-  int8_t u = displayAmsUnit(s.ams);
+  int8_t u = displayAmsUnit(s.ams, slot);
   if (u >= 0) {
     const AmsUnit& au = s.ams.units[u];
     if (au.temp > 0.5f)
@@ -397,21 +414,25 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial) {
   }
 }
 
-static void snapAmsColumn(CardFrame& f, const BambuState& s) {
+static void snapAmsColumn(CardFrame& f, const BambuState& s, uint8_t slot) {
   if (dispSettings.cardLeft == 1) return;
   const AmsState& a = s.ams;
-  int8_t u = displayAmsUnit(a);
-  if (u < 0 || u >= AMS_TRAY_UNITS) {
-    // No tray-owning unit to list; an external spool alone still earns the column.
-    if (!a.vtPresent) return;
-  }
+  int8_t u = displayAmsUnit(a, slot);
+  const bool own = u >= 0 && u < AMS_TRAY_UNITS;
+  // 5th+ unit: only the tray it fed from is kept (the whole unit on an AMS HT).
+  const bool ov = u >= AMS_TRAY_UNITS && a.ovTray.present && a.units[u].id == a.ovUnitId;
+  // No unit to list; an external spool alone still earns the column.
+  if (!own && !ov && !a.vtPresent) return;
   f.amsShow = 1;
-  if (u >= 0 && u < AMS_TRAY_UNITS) {
+  if (own || ov) {
     const AmsUnit& au = a.units[u];
     if (au.id >= 128) snprintf(f.amsLabel, sizeof(f.amsLabel), "AMS HT");
     else formatAmsNumberLabel(f.amsLabel, sizeof(f.amsLabel), (uint8_t)u);
     if (au.humidityRaw > 0)   snprintf(f.amsHum, sizeof(f.amsHum), "%u%%", au.humidityRaw);
     else if (au.humidity > 0) snprintf(f.amsHum, sizeof(f.amsHum), "%u/5", au.humidity);
+  }
+  if (own) {
+    const AmsUnit& au = a.units[u];
     uint8_t n = au.trayCount ? au.trayCount : AMS_TRAYS_PER_UNIT;
     if (n > 4) n = 4;
     f.trayCount = n;
@@ -419,6 +440,9 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s) {
       uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
       fillTray(f.trays[t], a.trays[idx], a.activeTray == idx);
     }
+  } else if (ov) {
+    f.trayCount = 1;
+    fillTray(f.trays[0], a.ovTray, a.activeTray == AMS_TRAY_OVERFLOW);
   } else {
     strlcpy(f.amsLabel, "SPOOL", sizeof(f.amsLabel));
   }
@@ -500,12 +524,12 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   strlcpy(f.pill, pillWord(s), sizeof(f.pill));
   f.pillColor = stateBadgeColor(s);
   copyRenderable(f.job, sizeof(f.job), jobDisplayName(s));
-  snapAmsColumn(f, s);
+  snapAmsColumn(f, s, f.slot);
   if (geo().noAms && f.amsShow) {
     f.amsShow = 0;
     f.amsInBand = (f.trayCount || f.extShow) ? 1 : 0;
   }
-  snapBottom(f, s, p.config.serial);
+  snapBottom(f, s, p.config.serial, f.slot);
   // Plate preview replaces the AMS column once a thumbnail exists. Needs the
   // full-frame sprite: the band path has nowhere to copy it from.
   if (dispSettings.cardLeft == 2 && kind != CK_IDLE && g_full) {
