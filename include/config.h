@@ -81,6 +81,7 @@
 #define BAMBU_BACKOFF_PHASE2_MS     60000   // 60s after phase 1 exhausted
 #define BAMBU_BACKOFF_PHASE2        10      // next N attempts at phase 2 interval
 #define BAMBU_BACKOFF_PHASE3_MS     120000  // 120s after phase 2 exhausted
+#define BAMBU_OFFLINE_PROBE_MS      20000   // LAN: TCP probe interval while the printer is off
 #define BAMBU_STALE_TIMEOUT         60000   // 60s no data = stale
 #define BAMBU_PRINT_STALE_TIMEOUT   120000  // cloud: 120s no core print data = stale (LAN uses BAMBU_STALE_TIMEOUT)
 #define BAMBU_PUSHALL_INTERVAL      30000   // request full status every 30s (LAN)

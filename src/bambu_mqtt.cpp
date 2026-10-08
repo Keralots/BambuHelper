@@ -34,6 +34,7 @@ struct MqttConn {
   bool gotDataSinceConnect;  // true after first message on current connection
   bool active;           // connection slot in use
   uint16_t consecutiveFails;  // for exponential backoff
+  bool printerUnreachable;    // LAN TCP probe failed: printer off, probe on a flat interval
   unsigned long disconnectSince;  // grace period before showing "connecting" screen
   bool wasConnected;              // track connected->disconnected transitions for logging
   unsigned long stalePushallSentMs;  // when recovery pushall was sent on stale detection
@@ -1670,6 +1671,8 @@ static void reconnectConn(MqttConn& c) {
   } else if (c.consecutiveFails >= BAMBU_BACKOFF_PHASE1) {
     interval = BAMBU_BACKOFF_PHASE2_MS;
   }
+  // Powered-off printer: the TCP probe never reaches a broker, so no backoff
+  if (c.printerUnreachable) interval = BAMBU_OFFLINE_PROBE_MS;
 
   // First attempt is immediate; subsequent attempts respect the interval
   if (c.diag.attempts > 0 && now - c.lastReconnectAttempt < interval) return;
@@ -1708,14 +1711,15 @@ static void reconnectConn(MqttConn& c) {
     c.diag.tcpOk = tcp.connect(cfg.ip, BAMBU_PORT);
     MQTT_LOG("[%d] TCP test %s in %lums", c.slotIndex, c.diag.tcpOk ? "OK" : "FAILED", millis() - tcpT0);
     tcp.stop();
+    c.printerUnreachable = !c.diag.tcpOk;
     if (!c.diag.tcpOk) {
       MQTT_LOG("[%d] Printer not reachable on network!", c.slotIndex);
       c.diag.lastRc = -2;
-      c.consecutiveFails++;
       return;
     }
   } else {
     c.diag.tcpOk = true;
+    c.printerUnreachable = false;
   }
 
   // Client ID: cloud uses random suffix (like pybambu) to avoid session
@@ -2187,6 +2191,7 @@ static void initConnSlot(uint8_t i) {
   c.initialPushallSent = false;
   c.gotDataSinceConnect = false;
   c.consecutiveFails = 0;
+  c.printerUnreachable = false;
   c.disconnectSince = 0;
   c.wasConnected = false;
   c.stalePushallSentMs = 0;
