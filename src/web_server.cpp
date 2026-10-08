@@ -652,6 +652,7 @@ static void handleDebug() {
     p["name"] = printers[i].config.name;
     p["connected"] = st.connected;
     p["attempts"] = d.attempts;
+    p["probes"] = d.probes;
     p["messages"] = d.messagesRx;
     p["last_rc"] = d.lastRc;
     p["rc_text"] = mqttRcToString(d.lastRc);

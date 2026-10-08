@@ -1028,12 +1028,12 @@ static void drawConnectingMQTT() {
 
   // Diagnostics (only after first attempt)
   const MqttDiag& d = getMqttDiag(rotState.displayIndex);
-  if (d.attempts > 0) {
+  if (d.attempts + d.probes > 0) {
     setFont(tft, LY_F_SMALL);
     tft.setTextDatum(MC_DATUM);
 
     char buf[40];
-    snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts);
+    snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts + d.probes);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, cy + LY_SC(50));
 

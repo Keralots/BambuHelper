@@ -1675,14 +1675,13 @@ static void reconnectConn(MqttConn& c) {
   if (c.printerUnreachable) interval = BAMBU_OFFLINE_PROBE_MS;
 
   // First attempt is immediate; subsequent attempts respect the interval
-  if (c.diag.attempts > 0 && now - c.lastReconnectAttempt < interval) return;
+  if (c.diag.lastAttemptMs && now - c.lastReconnectAttempt < interval) return;
 
-  c.diag.attempts++;
   c.diag.lastAttemptMs = now;
   c.lastReconnectAttempt = now;
 
-  MQTT_LOG("[%d] === reconnect attempt #%u (fails=%u, interval=%lus) [%s] ===",
-           c.slotIndex, c.diag.attempts, c.consecutiveFails, interval / 1000,
+  MQTT_LOG("[%d] === reconnect (attempts=%u probes=%u fails=%u, interval=%lus) [%s] ===",
+           c.slotIndex, c.diag.attempts, c.diag.probes, c.consecutiveFails, interval / 1000,
            isCloudMode(cfg.mode) ? "CLOUD" : "LOCAL");
   MQTT_LOG("[%d] serial=%s heap=%u WiFi=%d", c.slotIndex, cfg.serial, ESP.getFreeHeap(), WiFi.status());
 
@@ -1695,6 +1694,7 @@ static void reconnectConn(MqttConn& c) {
 
   if (!ensureClients(c)) {
     MQTT_LOG("[%d] ensureClients() FAILED", c.slotIndex);
+    c.diag.attempts++;
     c.diag.lastRc = -2;
     c.consecutiveFails++;
     c.lastReconnectAttempt = millis();  // respect backoff on OOM
@@ -1714,6 +1714,7 @@ static void reconnectConn(MqttConn& c) {
     c.printerUnreachable = !c.diag.tcpOk;
     if (!c.diag.tcpOk) {
       MQTT_LOG("[%d] Printer not reachable on network!", c.slotIndex);
+      c.diag.probes++;
       c.diag.lastRc = -2;
       return;
     }
@@ -1721,6 +1722,7 @@ static void reconnectConn(MqttConn& c) {
     c.diag.tcpOk = true;
     c.printerUnreachable = false;
   }
+  c.diag.attempts++;
 
   // Client ID: cloud uses random suffix (like pybambu) to avoid session
   // collision when broker hasn't cleaned up the previous TLS session yet.

@@ -1615,7 +1615,7 @@ function refreshDiag(){
         h += '<div style="margin-bottom:8px;padding:6px;border-left:2px solid '+(p.connected?'var(--success)':'var(--danger)')+'">';
         h += '<strong style="color:var(--text)">'+esc(p.name)+'</strong> (slot '+p.slot+')<br>';
         h += '<div class="stat-row"><span>MQTT:</span><span class="stat-val">'+(p.connected?'<span style="color:var(--success)">Connected</span>':'<span style="color:var(--danger)">Disconnected</span>')+'</span></div>';
-        h += '<div class="stat-row"><span>Attempts:</span><span class="stat-val">'+p.attempts+'</span></div>';
+        h += '<div class="stat-row"><span>Attempts:</span><span class="stat-val">'+p.attempts+(p.probes?' (+'+p.probes+' offline probes)':'')+'</span></div>';
         h += '<div class="stat-row"><span>Messages RX:</span><span class="stat-val">'+p.messages+'</span></div>';
         h += '<div class="stat-row"><span>Pushall total:</span><span class="stat-val">'+(p.pushall_total||0)+'</span></div>';
         var rc=p.rec_print||0, rd=p.rec_conn_dead||0, rf=p.rec_finish||0, ri=p.rec_idle||0;
