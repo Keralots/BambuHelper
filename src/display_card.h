@@ -22,6 +22,8 @@ bool cardAmsPeekToggle(const BambuState& s);
 bool tickCardShimmer();
 // Scrolls a job name too long for the hero column; true when it drew this call.
 bool tickCardMarquee();
+// Blinks the Ready-screen clock colon; true when it drew this call.
+bool tickCardColon();
 // Last full Card frame (PSRAM boards only): byte-swapped RGB565, w x h.
 // False when no full-frame sprite exists. Used by the /card.bmp endpoint.
 bool cardFrameView(const uint16_t** buf, int16_t* w, int16_t* h);
@@ -43,6 +45,7 @@ inline bool drawCardIdle(PrinterSlot&, bool) { return false; }
 inline bool cardAmsPeekToggle(const BambuState&) { return false; }
 inline bool tickCardShimmer() { return false; }
 inline bool tickCardMarquee() { return false; }
+inline bool tickCardColon() { return false; }
 inline bool cardFrameView(const uint16_t**, int16_t*, int16_t*) { return false; }
 #endif
 

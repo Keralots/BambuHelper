@@ -82,6 +82,7 @@ struct CardFrame {
   uint8_t  doorWait;
   char     clock[8];
   char     ampm[4];
+  uint8_t  colonOff;   // set only while tickCardColon() redraws the blink-off phase
   uint8_t  swCount;
   CardTray sw[AMS_MAX_TRAYS + AMS_TRAY_UNITS];   // trays + unit markers
   // AMS page: the boxes of the page on screen, laid out in up to two regions
@@ -1041,7 +1042,34 @@ static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
   drawBottom(cv, f, g, g.finBotRule);
 }
 
+// Idle clock colon cell in scene coordinates (w 0 = none), for tickCardColon().
+struct ColonBox { int16_t x, y, w, h; };
+static ColonBox g_colon = {0, 0, 0, 0};
+
+// cv.text for the idle clock: records the colon cell and, in the blink-off
+// phase, leaves the colon out while the digits keep their places.
+static void clockText(Cv& cv, const CardFrame& f, const char* s, int16_t x, int16_t y,
+                      FontID face, lgfx::textdatum_t d) {
+  const char* colon = strchr(s, ':');
+  if (!colon) { cv.text(s, x, y, face, f.dim, d); return; }
+  cv.useFont(face);
+  const int16_t full = cv.width(s), fh = (int16_t)cv.g->fontHeight();
+  const uint8_t hz = d & 3;                  // 0 left, 1 centre, 2 right
+  const int16_t left = x - (hz == 2 ? full : hz == 1 ? full / 2 : 0);
+  char head[8];
+  strlcpy(head, s, std::min<size_t>(sizeof(head), (size_t)(colon - s) + 1));
+  const uint8_t vt = d & ~3;                 // 0 top, 4 middle, 8 bottom, 16 baseline
+  const int16_t top = vt >= 8 ? y - fh : vt == 4 ? y - fh / 2 : y;
+  g_colon = {(int16_t)(left + cv.width(head) - 2), (int16_t)(top - 2),
+             (int16_t)(cv.width(":") + 4), (int16_t)(fh + 4)};
+  if (!f.colonOff) { cv.text(s, x, y, face, f.dim, d); return; }
+  const lgfx::textdatum_t ld = (lgfx::textdatum_t)(d & ~3);
+  cv.text(head, left, y, face, f.dim, ld);
+  cv.text(colon + 1, left + full - cv.width(colon + 1), y, face, f.dim, ld);
+}
+
 static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
+  g_colon.w = 0;
   drawHeader(cv, f, g);
   const int16_t x0 = g.pad, xr = g.W - g.pad;
   cv.text(f.head, x0, g.idleHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
@@ -1053,7 +1081,7 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
     if (g.idleClockRight == 2) {                     // square: small clock beside the headline
       char clk[16];
       snprintf(clk, sizeof(clk), f.ampm[0] ? "%s %s" : "%s", f.clock, f.ampm);
-      cv.text(clk, xr, g.idleClockBase, FONT_LARGE, f.dim, lgfx::textdatum_t::middle_right);
+      clockText(cv, f, clk, xr, g.idleClockBase, FONT_LARGE, lgfx::textdatum_t::middle_right);
     } else if (g.idleClockRight) {
       int16_t x = xr;
       if (f.ampm[0]) {
@@ -1061,9 +1089,9 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
         cv.useFont(FONT_CARD_LBL);
         x -= cv.width(f.ampm) + 4;
       }
-      cv.text(f.clock, x, g.idleClockBase, FONT_CARD_NUM, f.dim, lgfx::textdatum_t::baseline_right);
+      clockText(cv, f, f.clock, x, g.idleClockBase, FONT_CARD_NUM, lgfx::textdatum_t::baseline_right);
     } else {
-      cv.text(f.clock, x0 - 2, g.idleClockBase, FONT_CARD_NUM, f.dim, lgfx::textdatum_t::baseline_left);
+      clockText(cv, f, f.clock, x0 - 2, g.idleClockBase, FONT_CARD_NUM, lgfx::textdatum_t::baseline_left);
       if (f.ampm[0]) {
         cv.useFont(FONT_CARD_NUM);
         cv.text(f.ampm, x0 + cv.width(f.clock) + 4, g.idleClockBase, FONT_CARD_LBL, f.dim,
@@ -1380,6 +1408,7 @@ static void drawScene(Cv& cv, const CardFrame& f, const CardGeo& g) {
 //  Render + push
 // ---------------------------------------------------------------------------
 static bool g_repaintOwed = false;   // a forced frame could not be drawn (band path)
+static bool g_colonLit = true;       // idle clock colon as last pushed (tickCardColon)
 
 static bool present(bool force) {
   force = force || g_repaintOwed;
@@ -1425,7 +1454,41 @@ static bool present(bool force) {
   memcpy(&g_mem->last, &g_mem->cur, sizeof(CardFrame));
   g_lastValid = true;
   g_repaintOwed = false;
+  g_colonLit = true;                         // every full frame draws the colon
   markFrameDirty();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+//  Idle clock colon blink (1 Hz, like the Clock screen): re-renders only the
+//  colon cell through the scene into a small transient sprite (~2-4 KB).
+// ---------------------------------------------------------------------------
+bool tickCardColon() {
+  if (!g_lastValid || g_mem->last.kind != CK_IDLE || !g_mem->last.clock[0] || g_colon.w <= 0)
+    return false;
+  const bool lit = (millis() % 1000) < 500;
+  if (lit == g_colonLit) return false;
+
+  const CardGeo& g = geo();
+  const ColonBox b = g_colon;
+  lgfx::LGFX_Sprite strip(&tft);
+#if defined(BOARD_HAS_PSRAM)
+  strip.setPsram(true);
+#endif
+  strip.setColorDepth(16);
+  if (!strip.createSprite(b.w, b.h)) return false;
+  CardFrame& f = g_mem->last;
+  Cv cv{&strip, b.x, b.y, FONT_NONE};
+  cv.k = g.k;
+  f.colonOff = !lit;
+  strip.fillSprite(f.bg);
+  drawScene(cv, f, g);
+  f.colonOff = 0;                            // keeps last comparable with the next snapshot
+  tft.waitDMA();
+  strip.pushSprite(&tft, b.x, b.y);
+  tft.waitDMA();                             // internal-RAM sprite: the push reads it async
+  strip.unloadFont();
+  g_colonLit = lit;
   return true;
 }
 

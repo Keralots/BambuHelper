@@ -5850,6 +5850,7 @@ void updateDisplay() {
       markFrameDirty();
     }
   }
+  if (cardShownLast && tickCardColon()) markFrameDirty();
   if ((currentScreen == SCREEN_IDLE || currentScreen == SCREEN_DRY_PEEK) &&
       isPrinterConfigured(rotState.displayIndex)) {
     BambuState& sh = displayedPrinter().state;
