@@ -781,7 +781,7 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door and each gauge&#39;s value color.</p></div></div>
+    <div class="card-head"><div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door, each gauge&#39;s value color and the Nozzle arc color for the active nozzle.</p></div></div>
       <div class="swatch-row">
         <button type="button" class="swatch" onclick="applyTheme('default')"><span class="blob" style="background:#00FF00"></span> Default</button>
         <button type="button" class="swatch" onclick="applyTheme('mono_green')"><span class="blob" style="background:#7AC74F"></span> Mono Green</button>
