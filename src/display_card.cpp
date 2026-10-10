@@ -25,7 +25,8 @@
 // ---------------------------------------------------------------------------
 enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2, CK_AMS = 3 };
 
-struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; };
+struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; int8_t remain;
+                   char mark; };   // idle swatch list: 'x' tray, '|' unit gap, '/' HT group
 struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
 struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; };
 // AMS page: one tile per tray, boxes = an AMS unit (4 tiles), an AMS HT or the external spool (1 tile).
@@ -310,6 +311,7 @@ static void fillTray(CardTray& t, const AmsTray& src, bool active) {
   t.color   = src.colorRgb565;
   copyType(t.type, sizeof(t.type), src.present ? src.type : "");
   t.active  = active ? 1 : 0;
+  t.remain  = src.present ? src.remain : -1;
 }
 
 // Resolve one print.mapping entry, (unitId << 8) | trayId, against live AMS data.
@@ -609,10 +611,19 @@ static void drawHeader(Cv& cv, const CardFrame& f, const CardGeo& g) {
   cv.hline(g.pad, g.hdrRule, g.W - 2 * g.pad, f.track);
 }
 
+// Dark or light ink, whichever reads on the tile colour.
+static uint16_t tileInk(uint16_t c) {
+  const bool light = (((c >> 11) & 0x1F) * 2 + ((c >> 5) & 0x3F) + (c & 0x1F) * 2) > 120;
+  return light ? 0x18E4 : 0xF79E;
+}
+
 static void drawChipDot(Cv& cv, int16_t cx, int16_t cy, const CardChip& c, const CardFrame& f) {
   if (c.active) cv.dot(cx, cy, cv.S(7), f.txt);
   cv.dot(cx, cy, cv.S(5), c.known ? c.color : f.track);
-  if (c.known && c.color == f.bg) cv.ring(cx, cy, cv.S(5), f.dim);  // swatch the colour of the background
+  // Ring a swatch that would vanish: the background colour, or near-black on a dark theme.
+  const uint16_t k = c.color;
+  const bool dark = (((k >> 11) & 0x1F) * 2 + ((k >> 5) & 0x3F) + (k & 0x1F) * 2) < 24;
+  if (c.known && (c.color == f.bg || (dark && tileInk(f.bg) != 0x18E4))) cv.ring(cx, cy, cv.S(5), f.dim);
 }
 
 // One AMS slot (chip + type), shared by the column and the strip.
@@ -1156,6 +1167,120 @@ static void clockText(Cv& cv, const CardFrame& f, const char* s, int16_t x, int1
   cv.text(colon + 1, left + full - cv.width(colon + 1), y, face, f.dim, ld);
 }
 
+// Trays of the idle swatch list in order, with their HT-group flag.
+static uint8_t idleTrays(const CardFrame& f, uint8_t* idx, bool* isHt) {
+  uint8_t n = 0;
+  bool inHt = false;
+  for (uint8_t i = 0; i < f.swCount; i++) {
+    if (f.sw[i].mark == '/') inHt = true;
+    if (f.sw[i].mark != 'x') continue;
+    idx[n] = i; isHt[n++] = inHt;
+  }
+  return n;
+}
+
+static void idleBar(Cv& cv, const CardFrame& f, const CardTray& t, int16_t x, int16_t y, int16_t w, int16_t h) {
+  cv.rrect(x, y, w, h, 1, f.track);
+  const int16_t fw = (int16_t)((int32_t)w * (t.remain > 100 ? 100 : t.remain) / 100);
+  if (fw >= 2) cv.rrect(x, y, fw, h, 1, t.remain <= 10 ? CLR_ORANGE : t.color == f.bg ? f.txt : t.color);
+}
+
+// Ready screen AMS as a list: per tray a dot, the type and a thin bar of what
+// is left under the text, in up to three columns; the % joins only when every
+// name still fits beside it. Bar and % only where the printer reports a
+// remain (spools without RFID data send none). False = no room.
+static bool drawIdleList(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int16_t y, int16_t yLimit) {
+  uint8_t idx[sizeof(f.sw) / sizeof(f.sw[0])];
+  bool isHt[sizeof(f.sw) / sizeof(f.sw[0])];
+  const uint8_t n = idleTrays(f, idx, isHt);
+  if (!n) return false;
+  const int16_t avail = yLimit - y, colGap = cv.S(14), textX = cv.S(19);
+  cv.useFont(FONT_CARD_LBL);
+  const int16_t pctW = cv.width("100%") + 6;
+  uint8_t cols = 0, rows = 0;
+  int16_t cw = 0;
+  for (uint8_t c = 1; c <= 3 && !cols; c++) {        // fewest columns whose rows fit
+    const uint8_t r = (n + c - 1) / c;
+    const int16_t w = (xr - x0 - (c - 1) * colGap) / c;
+    if (w < textX + cv.S(48)) break;
+    if (r * cv.S(21) <= avail) { cols = c; rows = r; cw = w; }
+  }
+  if (!cols) return false;
+  cv.useFont(FONT_BODY);
+  int16_t nameW = 0;
+  for (uint8_t k = 0; k < n; k++) {
+    const CardTray& t = f.sw[idx[k]];
+    nameW = std::max<int16_t>(nameW, cv.width(t.present && t.type[0] ? t.type : "--"));
+  }
+  const bool pct = textX + nameW + pctW <= cw;
+  const int16_t rowH = std::min<int16_t>(cv.S(26), avail / rows);
+  char buf[12];
+  for (uint8_t k = 0; k < n; k++) {
+    const CardTray& t = f.sw[idx[k]];
+    const int16_t cx = x0 + (k % cols) * (cw + colGap), top = y + (k / cols) * rowH;
+    const int16_t cy = top + cv.S(8);
+    const bool known = t.present && t.remain >= 0;
+    CardChip c = {};
+    c.color = t.color; c.known = t.present; c.active = t.active; c.remain = t.remain;
+    drawChipDot(cv, cx + cv.S(7), cy, c, f);
+    const int16_t tx = cx + textX;
+    cv.useFont(FONT_BODY);
+    fitText(cv, buf, sizeof(buf), t.present && t.type[0] ? t.type : "--", cx + cw - (pct && known ? pctW : 0) - tx);
+    cv.text(buf, tx, cy + 1, FONT_BODY, t.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
+    if (!known) continue;
+    if (pct) {
+      snprintf(buf, sizeof(buf), "%d%%", t.remain);
+      cv.text(buf, cx + cw, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
+    }
+    idleBar(cv, f, t, cx + textX, top + rowH - cv.S(5), cw - textX, cv.S(3));
+  }
+  return true;
+}
+
+// Fallback when the list does not fit: a column per tray in its colour, filled
+// to what is left (whole when unknown), the type under it, "HT" over that group.
+static bool drawIdleColumns(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int16_t lblY, int16_t yLimit) {
+  uint8_t idx[sizeof(f.sw) / sizeof(f.sw[0])];
+  bool isHt[sizeof(f.sw) / sizeof(f.sw[0])];
+  const uint8_t n = idleTrays(f, idx, isHt);
+  if (!n) return false;
+  const int16_t y = lblY + (isHt[n - 1] ? cv.S(13) : 0);   // a label line only for "HT"
+  uint8_t groups = 1;
+  for (uint8_t i = 0; i < f.swCount; i++) if (f.sw[i].mark == '|' || (f.sw[i].mark == '/' && i)) groups++;
+  const int16_t gap = cv.S(4), ugap = cv.S(10), lblH = cv.S(13);
+  const int16_t w = std::min<int16_t>((xr - x0 - (n - groups) * gap - (groups - 1) * ugap) / n, cv.S(40));
+  const int16_t h = yLimit - y - lblH;
+  if (w < cv.S(22) || h < cv.S(14)) return false;
+  char buf[12];
+  int16_t x = x0;
+  for (uint8_t k = 0; k < n; k++) {
+    const CardTray& t = f.sw[idx[k]];
+    if (k) {
+      const uint8_t prev = idx[k - 1];
+      bool newGroup = false;
+      for (uint8_t i = prev + 1; i < idx[k]; i++) newGroup |= (f.sw[i].mark == '|' || f.sw[i].mark == '/');
+      x += newGroup ? ugap : gap;
+      if (isHt[k] && !isHt[k - 1])
+        cv.text("HT", x, lblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    }
+    const int16_t r = cv.S(4);
+    if (t.present) {
+      cv.rrect(x, y, w, h, r, f.track);
+      const int16_t lvl = t.remain >= 0 ? (int16_t)((int32_t)h * (t.remain > 100 ? 100 : t.remain) / 100) : h;
+      if (lvl > 0) cv.rrect(x, y + h - std::max<int16_t>(lvl, r), w, std::max<int16_t>(lvl, r), r, t.color);
+      if (t.color == f.bg) cv.rrectOutline(x, y, w, h, r, f.dim);
+      if (t.active) cv.rrectOutline(x - 2, y - 2, w + 4, h + 4, r + 2, f.txt);
+    } else {
+      cv.rrectOutline(x, y, w, h, r, f.dim);
+    }
+    cv.useFont(FONT_CARD_LBL);
+    fitText(cv, buf, sizeof(buf), t.present && t.type[0] ? t.type : "--", w + gap - 1);
+    cv.text(buf, x + w / 2, y + h + cv.S(3), FONT_CARD_LBL, t.active ? f.txt : f.dim, lgfx::textdatum_t::top_center);
+    x += w;
+  }
+  return true;
+}
+
 static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
   g_colon.w = 0;
   drawHeader(cv, f, g);
@@ -1188,27 +1313,31 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
     }
   }
   if (f.swCount) {
-    cv.text("AMS", x0, g.idleAmsY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     const int16_t s = g.idleSw;
     const int16_t yLimit = g.idleBotRule - 4;
-    int16_t x = x0, y = g.idleAmsY + cv.S(14);
+    if (drawIdleList(cv, f, x0, xr, g.idleAmsY, yLimit) ||
+        drawIdleColumns(cv, f, x0, xr, g.idleAmsY, yLimit)) {
+      drawBottom(cv, f, g, g.idleBotRule);
+      return;
+    }
+    int16_t x = x0, y = g.idleAmsY;
     const int16_t gap = cv.S(4), htW = cv.S(22);
     for (uint8_t i = 0; i < f.swCount; i++) {
       const CardTray& t = f.sw[i];
       // Width of the block starting here (one unit, or the "HT" label + HT swatches).
-      if (t.type[0] == '|' || t.type[0] == '/' || i == 0) {
-        bool ht = (t.type[0] == '/');
+      if (t.mark == '|' || t.mark == '/' || i == 0) {
+        bool ht = (t.mark == '/');
         int16_t bw = ht ? htW : 0;
-        uint8_t j = (t.type[0] == 'x') ? i : i + 1;
-        for (; j < f.swCount && f.sw[j].type[0] == 'x'; j++) bw += s + gap;
-        if (t.type[0] == '|') x += 6;
+        uint8_t j = (t.mark == 'x') ? i : i + 1;
+        for (; j < f.swCount && f.sw[j].mark == 'x'; j++) bw += s + gap;
+        if (t.mark == '|') x += 6;
         if (x > x0 && ((ht && g.idleHtNewRow) || x + bw - 4 > xr)) { x = x0; y += s + 8; }
         if (ht) {
           if (x > x0) x += 6;
           cv.text("HT", x, y + s / 2 + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_left);
           x += htW;
         }
-        if (t.type[0] != 'x') continue;
+        if (t.mark != 'x') continue;
       }
       if (y + s > yLimit || x + s > xr) continue;
       if (t.present) {
@@ -1386,12 +1515,6 @@ static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
     if (b.region + 1 > f.regionCount) f.regionCount = b.region + 1;
   }
   return true;
-}
-
-// Dark or light ink, whichever reads on the tile colour.
-static uint16_t tileInk(uint16_t c) {
-  const bool light = (((c >> 11) & 0x1F) * 2 + ((c >> 5) & 0x3F) + (c & 0x1F) * 2) > 120;
-  return light ? 0x18E4 : 0xF79E;
 }
 
 static void drawAmsTile(Cv& cv, const CardAmsTile& t, const CardFrame& f,
@@ -1849,28 +1972,27 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   }
   if (clockSynced()) formatClock(time(nullptr), f.clock, sizeof(f.clock), f.ampm, sizeof(f.ampm));
 
-  // Units first, then AMS HT units. Markers in type[0]: '|' unit gap,
-  // '/' start of the HT group; real swatches carry 'x'.
+  // Units first, then AMS HT units, tagged in CardTray::mark.
   const AmsState& a = s.ams;
   const uint8_t cap = sizeof(f.sw) / sizeof(f.sw[0]);
-  auto mark = [&](const char* m) { if (f.swCount < cap) strlcpy(f.sw[f.swCount++].type, m, sizeof(f.sw[0].type)); };
+  auto mark = [&](char m) { if (f.swCount < cap) f.sw[f.swCount++].mark = m; };
   bool any = false;
   for (uint8_t u = 0; u < a.unitCount && u < AMS_TRAY_UNITS; u++) {
     if (!a.units[u].present || a.units[u].id >= 128) continue;
-    if (any) mark("|");
+    if (any) mark('|');
     any = true;
     uint8_t n = a.units[u].trayCount ? a.units[u].trayCount : AMS_TRAYS_PER_UNIT;
     if (n > AMS_TRAYS_PER_UNIT) n = AMS_TRAYS_PER_UNIT;
     for (uint8_t t = 0; t < n && f.swCount < cap; t++) {
       uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
       fillTray(f.sw[f.swCount], a.trays[idx], a.activeTray == idx);
-      f.sw[f.swCount++].type[0] = 'x';
+      f.sw[f.swCount++].mark = 'x';
     }
   }
   bool htGroup = false;
   for (uint8_t u = 0; u < a.unitCount && u < AMS_MAX_UNITS; u++) {
     if (!a.units[u].present || a.units[u].id < 128) continue;
-    if (!htGroup) { mark("/"); htGroup = true; }
+    if (!htGroup) { mark('/'); htGroup = true; }
     if (f.swCount >= cap) break;
     CardTray& c = f.sw[f.swCount++];
     if (u < AMS_TRAY_UNITS) {
@@ -1880,8 +2002,9 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
       fillTray(c, a.ovTray, a.activeTray == AMS_TRAY_OVERFLOW);   // 5th+ unit: only its feeding tray is kept
     } else {
       memset(&c, 0, sizeof(c));                                   // tray data not stored for 5th+ unit
+      c.remain = -1;
     }
-    c.type[0] = 'x';
+    c.mark = 'x';
   }
   return present(force);
 }
