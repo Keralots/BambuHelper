@@ -152,7 +152,7 @@ A calmer alternative to the gauge dashboard, readable from across the room: a bi
 <table>
 <tr>
 <td align="center"><img src="img/cards/cards-ws_lcd_200-landscape-night.png" alt="Cards, 320x240 landscape"><br><sub>320x240 landscape</sub></td>
-<td align="center"><img src="img/cards/cards-ws_lcd_200-portrait-warm-paper.png" alt="Cards, 240x320 portrait, Warm paper"><br><sub>240x320 portrait, Warm paper</sub></td>
+<td align="center"><img src="img/cards/cards-ws_lcd_200-portrait.png" alt="Cards, 240x320 portrait"><br><sub>240x320 portrait</sub></td>
 <td align="center"><img src="img/cards/cards-esp32s3-240x240.png" alt="Cards, 240x240"><br><sub>240x240</sub></td>
 </tr>
 <tr>
