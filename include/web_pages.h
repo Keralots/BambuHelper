@@ -1176,7 +1176,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Settings backup</h3><p>Export or import all settings as JSON. Useful before reflashing.</p></div></div>
+    <div class="card-head"><div><h3>Settings backup</h3><p>Export or import all settings as JSON. Useful before reflashing. WiFi credentials stay out of the file.</p></div></div>
     <div class="banner banner-warn"><span class="dot"></span><div><strong>Cloud token is not included.</strong><div class="small text-dim" style="margin-top:2px">You will need to paste a fresh token after importing.</div></div></div>
     <button type="button" class="btn btn-ghost" onclick="exportSettings()">Export backup</button>
     <div class="field" style="margin-top:var(--sp-3)">

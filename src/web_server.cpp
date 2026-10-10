@@ -1691,10 +1691,8 @@ static void handleSettingsExport() {
   doc["_type"] = "bambuhelper_settings";
   doc["_version"] = FW_VERSION;
 
-  // WiFi
-  JsonObject wifi = doc["wifi"].to<JsonObject>();
-  wifi["ssid"] = wifiSSID;
-  wifi["pass"] = wifiPass;
+  // No WiFi block: import needs the device online already, and the backup
+  // would carry the password in plain text.
 
   // Printers
   JsonArray pArr = doc["printers"].to<JsonArray>();
@@ -1736,6 +1734,8 @@ static void handleSettingsExport() {
   disp["hideClockDate"] = dispSettings.hideClockDate;
   disp["showClockInfo"] = dispSettings.showClockInfo;
   disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
+  disp["landscape8Slots"] = dispSettings.landscape8Slots;
+  disp["portrait9Slots"] = dispSettings.portrait9Slots;
   disp["buttonPowerControl"] = dispSettings.buttonPowerControl;
   disp["gestTap"] = dispSettings.gestTap;
   disp["gestDouble"] = dispSettings.gestDouble;
@@ -2017,12 +2017,7 @@ static void handleSettingsImportFinish() {
     return;
   }
 
-  // WiFi
-  JsonObject wifi = doc["wifi"];
-  if (wifi) {
-    if (wifi["ssid"].is<const char*>()) strlcpy(wifiSSID, wifi["ssid"], sizeof(wifiSSID));
-    if (wifi["pass"].is<const char*>()) strlcpy(wifiPass, wifi["pass"], sizeof(wifiPass));
-  }
+  // Older backups still carry a "wifi" block - ignored, the device keeps its network.
 
   // Printers
   // Resolve per-printer amsView with backward compat for legacy backups: per-slot
@@ -2118,6 +2113,8 @@ static void handleSettingsImportFinish() {
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();
     if (disp["amsTrayTypes"].is<bool>())  dispSettings.amsTrayTypes = disp["amsTrayTypes"].as<bool>();
+    if (disp["landscape8Slots"].is<bool>()) dispSettings.landscape8Slots = disp["landscape8Slots"].as<bool>();
+    if (disp["portrait9Slots"].is<bool>())  dispSettings.portrait9Slots = disp["portrait9Slots"].as<bool>();
     if (disp["buttonPowerControl"].is<bool>()) {
       // Backups from before the gesture card carry only this flag.
       if (disp["buttonPowerControl"].as<bool>()) dispSettings.gestDouble = GD_PLUG;
