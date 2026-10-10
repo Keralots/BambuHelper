@@ -264,7 +264,7 @@ static void handleSavePrinter() {
 #ifdef BOARD_HAS_PSRAM
   if (slot > 1 && !quadPrinterBeta) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode in Advanced settings to configure printer 3/4.\"}");
+      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode under WiFi & System > Danger zone to configure printer 3/4.\"}");
     return;
   }
 #endif

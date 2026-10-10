@@ -152,8 +152,11 @@ static const char PAGE_HTML_1[] PROGMEM = R"rawliteral(
   <button class="nav-item" type="button" data-section="printer" aria-current="true"><span>Printer</span></button>
 %HMS_NAV%
   <h4>Display</h4>
-  <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
-  <button class="nav-item" type="button" data-section="advanced"><span>Advanced</span></button>
+  <button class="nav-item" type="button" data-section="display"><span>Screen</span></button>
+  <button class="nav-item" type="button" data-section="printscreen"><span>Print screen</span></button>
+  <button class="nav-item" type="button" data-section="afterprint"><span>After print</span></button>
+  <button class="nav-item" type="button" data-section="clock"><span>Clock</span></button>
+  <button class="nav-item" type="button" data-section="colors"><span>Colors</span></button>
   <h4>Device</h4>
   <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
   <button class="nav-item" type="button" data-section="power"><span>Power</span></button>
@@ -372,7 +375,7 @@ R"rawliteral(
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown while printing. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. The last pair is the two gauges on the Ready and Print complete screens - handy for watching chamber temperature while a part cools. That pair is not used when <em>Keep print status screen after completion</em> is on, since the print grid stays up instead. Set any slot to <em>Empty</em> to hide it.</p>
+        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown while printing. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Print screen</strong>. The last pair is the two gauges on the Ready and Print complete screens - handy for watching chamber temperature while a part cools. That pair is not used when <em>Keep print status screen after completion</em> is on, since the print grid stays up instead. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
@@ -467,12 +470,12 @@ R"rawliteral(
 <!-- ===== Section 2: Display ===== -->
 <div class="section" id="sec-display" hidden>
   <div class="section-intro">
-    <h2>Display</h2>
-    <p>Tune brightness, the clock, what happens after a print finishes, and how gauges look.</p>
+    <h2>Screen</h2>
+    <p>Orientation, brightness, and what the button or touchscreen does.</p>
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Screen</h3></div></div>
+    <div class="card-head"><div><h3>Orientation</h3></div></div>
     <div class="field">
       <label for="rotation">Screen orientation</label>
       <select id="rotation">
@@ -482,40 +485,6 @@ R"rawliteral(
         <option value="3" %ROT3%>270&deg;</option>
       </select>
     </div>
-    <label class="check-row">
-      <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
-      <label for="abar">Animated progress bar (shimmer effect)</label>
-    </label>
-    <div class="field" data-gauges-only>
-      <label for="timem">Time display</label>
-      <select id="timem" onchange="toggleSetting('timem',this.value)">
-        <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
-        <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
-        <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
-      </select>
-    </div>
-    <label class="check-row" data-gauges-only>
-      <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
-      <label for="fanmp">Match printer fan % (10% steps)</label>
-    </label>
-    <label class="check-row" data-gauges-only>
-      <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
-      <label for="hidelp">Hide layer/power line in status bar</label>
-    </label>
-    <div class="help-text" style="padding-left:28px" data-gauges-only>Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
-%AMST_ROW%
-%INVCOL_ROW%
-%CYD_PANEL_ROW%
-%ROUND_SKIN_ROW%
-%CARD_SKIN_ROW%
-  </div>
-
-  <div class="card" id="gestCard">
-    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
-%GESTURE_ROWS%
-  </div>
-  <div class="card" id="gestOff" style="display:none">
-    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>Need a button or the touchscreen. Pick a <strong>Button type</strong> under <a href="#" onclick="loadSection('hardware');return false">Hardware</a> first.</p></div></div>
   </div>
 
   <div class="card" style="%BL_DISP%">
@@ -541,10 +510,104 @@ R"rawliteral(
         <div class="hint">Recommended: 20-50 for night use. Requires NTP time sync.</div>
       </div>
     </div>
+    <div class="field" style="margin-top:var(--sp-4)">
+      <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
+      <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
+             oninput="document.getElementById('ssbrightVal').textContent=this.value">
+      <div class="hint">Brightness when clock/screensaver is active. Set to 0 to turn off backlight.</div>
+    </div>
+  </div>
+
+  <div class="card" id="gestCard">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+%GESTURE_ROWS%
+  </div>
+  <div class="card" id="gestOff" style="display:none">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>Need a button or the touchscreen. Pick a <strong>Button type</strong> under <a href="#" onclick="loadSection('hardware');return false">Hardware</a> first.</p></div></div>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-printscreen" hidden>
+  <div class="section-intro">
+    <h2>Print screen</h2>
+    <p>How the screen looks while a printer works: the style, its options and gauge tuning.</p>
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Screensaver &amp; sleep</h3><p>When the display leaves the printer screen for the clock screensaver, or turns off. Applies after a print and whenever the device sits idle.</p></div></div>
+    <div class="card-head"><div><h3>Style</h3><p>Which gauges show is set per printer under <a href="#" onclick="loadSection('printer');return false">Printer &rarr; Gauge Layout</a>.</p></div></div>
+%ROUND_SKIN_ROW%
+%CARD_SKIN_ROW%
+    <label class="check-row">
+      <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
+      <label for="abar">Animated progress bar (shimmer effect)</label>
+    </label>
+    <div class="field" data-gauges-only>
+      <label for="timem">Time display</label>
+      <select id="timem" onchange="toggleSetting('timem',this.value)">
+        <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
+        <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
+        <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
+      </select>
+    </div>
+    <label class="check-row" data-gauges-only>
+      <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
+      <label for="fanmp">Match printer fan % (10% steps)</label>
+    </label>
+    <label class="check-row" data-gauges-only>
+      <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
+      <label for="hidelp">Hide layer/power line in status bar</label>
+    </label>
+    <div class="help-text" style="padding-left:28px" data-gauges-only>Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
+%AMST_ROW%
+  </div>
+
+%EXTENDED_MODES_CARD%
+
+  <div class="card">
+    <div class="card-head"><div><h3>Gauge scales</h3><p>Full-scale value each arc represents. Lower a scale so the arc sweeps fuller for your printer's normal range. Defaults suit any Bambu printer.</p></div></div>
+    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 300</span></div></div>
+    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 120</span></div></div>
+    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 60</span></div></div>
+    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W &middot; default 1000</span></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
+    <div class="field" data-gauges-only><label for="gsmooth">Arc smoothing</label>
+      <select id="gsmooth">
+        <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
+        <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
+        <option value="2" %GSMOOTH_NORM%>Normal (~1s)</option>
+        <option value="3" %GSMOOTH_FAST%>Fast (~0.4s)</option>
+      </select>
+      <span class="text-dim small">default Normal</span>
+    </div>
+    <div class="field"><label for="warn_thr">Warning threshold</label>
+      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="warn_thr" min="0" max="100" step="5" value="%WARN_THR%" style="max-width:120px"><span class="text-dim small">% of scale &middot; default 0 (off)</span></div>
+    </div>
+    <div class="field"><label for="warn_clr">Warning color</label>
+      <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
+    </div>
+    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale. The Cards style colors its temperatures the same way.</p>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-afterprint" hidden>
+  <div class="section-intro">
+    <h2>After print</h2>
+    <p>The finish screen, the edge glow, and when the display goes to the clock or sleeps.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Finish screen &amp; sleep</h3><p>When the display leaves the printer screen for the clock screensaver, or turns off. Applies after a print and whenever the device sits idle.</p></div></div>
     <label class="check-row">
       <input type="checkbox" id="keepon" value="1" %KEEPON% onchange="toggleSetting('keepon',this.checked);toggleAfterPrint()">
       <label for="keepon">Disable screensaver (display always on)</label>
@@ -589,8 +652,11 @@ R"rawliteral(
       <label for="kps">Keep print status screen after completion</label>
     </label>
     <div class="help-text" style="padding-left:28px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
-    <div style="%GLOW_DISP%">
-      <div class="field" style="margin-top:var(--sp-4)">
+  </div>
+
+  <div class="card" style="%GLOW_DISP%">
+    <div class="card-head"><div><h3>Edge glow</h3></div></div>
+      <div class="field">
         <label for="glowm">Edge glow light effect</label>
         <select id="glowm" onchange="toggleGlowFields();toggleSetting('glowm',this.value)">
           <option value="0" %GLOWM0%>Off</option>
@@ -622,25 +688,21 @@ R"rawliteral(
         </div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="glowTestNow()">Test effect on device (5 s)</button>
       </div>
-    </div>
-    <div class="field" style="margin-top:var(--sp-4);%BL_DISP%">
-      <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
-      <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
-             oninput="document.getElementById('ssbrightVal').textContent=this.value">
-      <div class="hint">Brightness when clock/screensaver is active. Set to 0 to turn off backlight.</div>
-    </div>
-    <label class="check-row" id="pong-row" style="%PONG_DISP%">
-      <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
-      <label for="pong">Breakout clock (animated game as screensaver)</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Without a physical button, clock is always shown instead of turning the display off.</div>
   </div>
 
-  <details class="card card-collapsible">
-    <summary>
-      <div><h3>Clock</h3><p>Timezone, format, and color of the clock screen.</p></div>
-    </summary>
-    <div class="card-body">
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-clock" hidden>
+  <div class="section-intro">
+    <h2>Clock</h2>
+    <p>The clock screen shown as the screensaver.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Clock</h3><p>Timezone, format, and color of the clock screen.</p></div></div>
       <div class="field">
         <label for="tz">Timezone (DST switches automatically)</label>
         <select id="tz"></select>
@@ -692,14 +754,34 @@ R"rawliteral(
         <input type="checkbox" id="clk_hidedate" value="1" %CLK_HIDEDATE% onchange="toggleSetting('clkhd',this.checked)">
         <label for="clk_hidedate">Hide date (time only)</label>
       </label>
-    </div>
-  </details>
+    <label class="check-row" id="pong-row" style="%PONG_DISP%">
+      <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
+      <label for="pong">Breakout clock (animated game as screensaver)</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Without a physical button, clock is always shown instead of turning the display off.</div>
+  </div>
 
-  <details class="card card-collapsible">
-    <summary>
-      <div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door and each gauge&#39;s value color.</p></div>
-    </summary>
-    <div class="card-body">
+  <div class="card">
+    <div class="card-head"><div><h3>Clock screen info</h3><p>Show each configured printer's name and LAN IP in a small footer on the idle/clock screen. Handy when you run several units side by side.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="clkinfo" value="1" %CLK_INFO% onchange="toggleSetting('clkinfo',this.checked)">
+      <label for="clkinfo">Show printer name &amp; IP on clock screen</label>
+    </label>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-colors" hidden>
+  <div class="section-intro">
+    <h2>Colors</h2>
+    <p>Screen colors and gauge labels.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door and each gauge&#39;s value color.</p></div></div>
       <div class="swatch-row">
         <button type="button" class="swatch" onclick="applyTheme('default')"><span class="blob" style="background:#00FF00"></span> Default</button>
         <button type="button" class="swatch" onclick="applyTheme('mono_green')"><span class="blob" style="background:#7AC74F"></span> Mono Green</button>
@@ -768,14 +850,12 @@ R"rawliteral(
         <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeColors()">Reset to defaults</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="clearGaugeLabels()">Clear labels</button>
       </div>
-    </div>
-  </details>
+  </div>
 
   <div class="action-bar" style="border:none;padding:0;margin:0">
     <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
   </div>
 </div>
-
 )rawliteral";
 
 #if HAS_HMS_WEB_UI
@@ -863,6 +943,12 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   <div class="section-intro">
     <h2>Hardware</h2>
     <p>Board-specific configuration. Available options depend on which display device you flashed.</p>
+  </div>
+
+  <div class="card" style="%PANEL_CARD_DISP%">
+    <div class="card-head"><div><h3>Display panel</h3><p>Fixes for panel variants. Only change these if the screen looks wrong.</p></div></div>
+%INVCOL_ROW%
+%CYD_PANEL_ROW%
   </div>
 
   <div class="card">
@@ -1049,55 +1135,6 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   <div class="action-bar" style="border:none;padding:0;margin:0">
     <button type="button" class="btn btn-primary" onclick="saveRotation()">Save Hardware Settings</button>
   </div>
-</div>
-
-<!-- ===== Section 5: Advanced ===== -->
-<div class="section" id="sec-advanced" hidden>
-  <div class="section-intro">
-    <h2>Advanced</h2>
-    <p>Gauge tuning and extended layouts. Most users do not need anything here.</p>
-  </div>
-
-%EXTENDED_MODES_CARD%
-
-  <div class="card">
-    <div class="card-head"><div><h3>Clock screen info</h3><p>Show each configured printer's name and LAN IP in a small footer on the idle/clock screen. Handy when you run several units side by side.</p></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="clkinfo" value="1" %CLK_INFO% onchange="toggleSetting('clkinfo',this.checked)">
-      <label for="clkinfo">Show printer name &amp; IP on clock screen</label>
-    </label>
-  </div>
-
-  <div class="card">
-    <div class="card-head"><div><h3>Gauge scales</h3><p>Full-scale value each arc represents. Lower a scale so the arc sweeps fuller for your printer's normal range. Defaults suit any Bambu printer.</p></div></div>
-    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 300</span></div></div>
-    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 120</span></div></div>
-    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 60</span></div></div>
-    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W &middot; default 1000</span></div></div>
-    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
-  </div>
-
-  <div class="card">
-    <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
-    <div class="field" data-gauges-only><label for="gsmooth">Arc smoothing</label>
-      <select id="gsmooth">
-        <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
-        <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
-        <option value="2" %GSMOOTH_NORM%>Normal (~1s)</option>
-        <option value="3" %GSMOOTH_FAST%>Fast (~0.4s)</option>
-      </select>
-      <span class="text-dim small">default Normal</span>
-    </div>
-    <div class="field"><label for="warn_thr">Warning threshold</label>
-      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="warn_thr" min="0" max="100" step="5" value="%WARN_THR%" style="max-width:120px"><span class="text-dim small">% of scale &middot; default 0 (off)</span></div>
-    </div>
-    <div class="field"><label for="warn_clr">Warning color</label>
-      <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
-    </div>
-    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale. The Cards style colors its temperatures the same way.</p>
-    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
-  </div>
-
 </div>
 
 <!-- ===== Section 6: WiFi & System ===== -->
@@ -1371,7 +1408,7 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Button power control</h3><p>To switch the plug from the device, set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Display &rarr; Gestures</a>.</p></div></div>
+    <div class="card-head"><div><h3>Button power control</h3><p>To switch the plug from the device, set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Screen &rarr; Gestures</a>.</p></div></div>
   </div>
 
   <div class="card">

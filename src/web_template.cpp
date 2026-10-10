@@ -373,6 +373,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "PANEL_CARD_DISP") == 0) {
+    // Hardware > Display panel holds only the 240x320 rows below.
+#if defined(DISPLAY_240x320)
+    out = "";
+#else
+    out = "display:none";
+#endif
+    return true;
+  }
   if (strcmp(name, "INVCOL_ROW") == 0) {
 #if defined(DISPLAY_240x320)
     out  = "<label class=\"check-row\">";
@@ -464,7 +473,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "EXTENDED_MODES_CARD") == 0) {
-    // Card lives in the Advanced section. Only renders on layouts that
+    // Card lives in the Print screen section. Only renders on layouts that
     // actually have extended grid modes, otherwise the whole card is empty.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
     out  = "<div class=\"card\">";
@@ -496,7 +505,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // portraitExtras. Boards without LAYOUT_HAS_LANDSCAPE / LY_PORT9_GAUGE_R
     // don't render anything here so the user isn't offered settings the
     // device can't use. Inline display:none reflects the toggle's state at
-    // render time; toggleGridMode() in the Advanced section keeps it in sync.
+    // render time; toggleGridMode() in the Print screen section keeps it in sync.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
     out  = "<div id=\"landExtrasGroup\"";
     if (!dispSettings.landscape8Slots) out += " style=\"display:none\"";

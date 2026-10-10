@@ -1,10 +1,13 @@
 /* ============ Loader / section dispatcher ============ */
 var SECTION_LABELS = {
   printer: 'Printer Settings',
-  display: 'Display',
+  display: 'Screen',
+  printscreen: 'Print screen',
+  afterprint: 'After print',
+  clock: 'Clock',
+  colors: 'Colors',
   errors: 'Printer Errors',
   hardware: 'Hardware',
-  advanced: 'Advanced',
   wifi: 'WiFi & System',
   power: 'Power Monitoring',
   diag: 'Diagnostics'
@@ -1297,7 +1300,7 @@ function initHelpTips(){
 /* ============ Unsaved changes ============ */
 /* A field without its own instant save belongs to the next save/apply button
    in its section. Editing it flags that button; a save that succeeded clears
-   every button running it (applyDisplay has three), a failed one leaves them. */
+   every button running it (applyDisplay has one per display section), a failed one leaves them. */
 function dirtyOwner(field){
   var sec = field.closest('.section');
   if (!sec) return null;
@@ -1986,7 +1989,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it
   // joins the list only when the page actually carries it.
-  var SECTIONS = ['printer','display','hardware','wifi','power','diag'];
+  var SECTIONS = ['printer','display','printscreen','afterprint','clock','colors','hardware','wifi','power','diag'];
   if (document.getElementById('sec-errors')) SECTIONS.push('errors');
   var initId = 'printer';
   if (location.hash){
