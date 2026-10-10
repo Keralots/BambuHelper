@@ -645,13 +645,14 @@ void triggerDisplayTransition() {
 static bool cardShownLast = false;
 static bool cardShownNow  = false;
 
+bool cardOnScreen() { return cardShownLast; }
+
 static bool tryCard(bool (*draw)(PrinterSlot&, bool), PrinterSlot& p) {
   if (cardSkinActive() && draw(p, forceRedraw || !cardShownLast)) {
     cardShownNow = true;
     gaugesAnimating = false;
     return true;
   }
-  if (!cardSkinActive()) cardRelease();   // style switched back: give the RAM back
   if (cardShownLast) {
     cardShownLast = false;
     triggerDisplayTransition();   // classic screen repaints whole this tick
@@ -5982,6 +5983,7 @@ void updateDisplay() {
     prev9Slots = dispSettings.portrait9Slots;
   }
 
+  if (!cardSkinActive()) cardRelease();   // style switched off: give the RAM back on any screen
   cardShownNow = false;
   switch (currentScreen) {
     case SCREEN_SPLASH:

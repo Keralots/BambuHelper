@@ -85,7 +85,7 @@ struct CardFrame {
   char     ampm[4];
   uint8_t  colonOff;   // set only while tickCardColon() redraws the blink-off phase
   uint8_t  swCount;
-  CardTray sw[AMS_MAX_TRAYS + AMS_TRAY_UNITS];   // trays + unit markers
+  CardTray sw[AMS_MAX_TRAYS + AMS_MAX_UNITS];    // 16 trays + 3 unit gaps + HT marker + 2 HT
   // AMS page: the boxes of the page on screen, laid out in up to two regions
   uint8_t  amsPage, amsPages, regionCount, boxCount;
   CardAmsBox boxes[8];
@@ -394,10 +394,14 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial, ui
   // Temperatures: only what this printer reports. Nozzles first, then bed and
   // chamber - the square's AMS row keeps just the first three.
   if (s.dualNozzle) {
+    // The active nozzle's accent yields to the warning colour.
+    const float nMax = (float)dispSettings.nozzleScaleMax;
     addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG,
-            tempClr(s.nozzleTempN[1], dispSettings.nozzleScaleMax, dispSettings.nozzle.value), s.activeNozzle == 1);
+            tempClr(s.nozzleTempN[1], dispSettings.nozzleScaleMax, dispSettings.nozzle.value),
+            s.activeNozzle == 1 && !tempOverWarn(s.nozzleTempN[1], nMax));
     addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG,
-            tempClr(s.nozzleTempN[0], dispSettings.nozzleScaleMax, dispSettings.nozzle.value), s.activeNozzle == 0);
+            tempClr(s.nozzleTempN[0], dispSettings.nozzleScaleMax, dispSettings.nozzle.value),
+            s.activeNozzle == 0 && !tempOverWarn(s.nozzleTempN[0], nMax));
   } else {
     addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG,
             tempClr(s.nozzleTemp, dispSettings.nozzleScaleMax, dispSettings.nozzle.value));
@@ -1362,6 +1366,8 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
 static const uint32_t AMS_PAGE_MS = 8000;    // per page, and the Ready phase when alternating
 static const uint32_t AMS_PEEK_MS = 30000;   // a tap-opened page closes itself after this
 static bool g_peek = false;
+static bool g_peekStatus = false;            // the open peek shows the status (AMS was on screen)
+static bool g_amsShown = false;              // the last Ready / finish draw was the AMS page
 static unsigned long g_peekStart = 0;
 
 static void fillTile(CardAmsTile& t, const AmsTray& src, bool active, const char* slot) {
@@ -1484,6 +1490,7 @@ static AmsGrid amsGrid(const CardGeo& g) {
 // Snapshot the AMS page when this screen should show it now; false = show the status.
 static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
   CardAmsBox* all = g_mem->all;
+  g_amsShown = false;
   const uint8_t n = buildAmsBoxes(p.state.ams, all, 8);
   if (n == 0) { g_peek = false; return false; }
   const AmsGrid gr = amsGrid(liftHeader(geo()));
@@ -1494,7 +1501,7 @@ static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
   int16_t page = -1;
   if (g_peek && now - g_peekStart >= AMS_PEEK_MS) g_peek = false;
   if (g_peek) {
-    if (autoModes && dispSettings.cardReady == 1) return false;   // AMS home: the peek is the status
+    if (g_peekStatus) return false;        // opened over the AMS page: the peek is the status
     page = (int16_t)(((now - g_peekStart) / AMS_PAGE_MS) % pages);
   } else if (autoModes && dispSettings.cardReady == 1) {
     page = (int16_t)((now / AMS_PAGE_MS) % pages);
@@ -1514,6 +1521,7 @@ static bool snapAmsPage(CardFrame& f, PrinterSlot& p, bool autoModes) {
     b.region = all[i].region % perPage;
     if (b.region + 1 > f.regionCount) f.regionCount = b.region + 1;
   }
+  g_amsShown = true;
   return true;
 }
 
@@ -1825,9 +1833,11 @@ void cardRelease() {
   held = held || g_band;
 #endif
   if (!held) return;
+  tft.waitDMA();                            // a strip push may still be reading a buffer
   g_lastValid = false;
   g_repaintOwed = false;
   g_peek = false;
+  g_amsShown = false;
   g_thumbPx = nullptr;
   auto drop = [](lgfx::LGFX_Sprite*& sp) { delete sp; sp = nullptr; };   // dtor frees the buffer
   drop(g_full);
@@ -1881,6 +1891,7 @@ bool cardAmsPeekToggle(const BambuState& s) {
   // g_mem->all is scratch: snapAmsPage rebuilds it on every draw.
   if (!cardMemReady() || buildAmsBoxes(s.ams, g_mem->all, 8) == 0) return false;
   g_peek = true;
+  g_peekStatus = g_amsShown;                         // flip whatever is on screen now
   g_peekStart = millis();
   return true;
 }
@@ -1927,7 +1938,9 @@ bool drawCardPrinting(PrinterSlot& p, bool force) {
   if (tasmotaIsActiveForSlot(rotState.displayIndex))
     snprintf(f.watts, sizeof(f.watts), "%.0f W", tasmotaGetWattsForSlot(rotState.displayIndex));
   // Active filament on the layer line only when nothing else on screen shows it.
-  f.showActiveFil = (!f.amsShow && !f.amsInBand && !f.bandFilaments) ? 1 : 0;
+  // The strip / band hold 4 slots, so an active EXT after 4 trays is not drawn there.
+  const bool extCut = f.ext.active && f.trayCount >= 4 && (f.amsInBand || (f.amsShow && !geo().amsColW));
+  f.showActiveFil = ((!f.amsShow && !f.amsInBand && !f.bandFilaments) || extCut) ? 1 : 0;
   if (f.showActiveFil) activeFilament(s, f.activeFil);
   return present(force);
 }
@@ -1962,15 +1975,17 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   snapCommon(f, CK_IDLE, p);
   f.amsShow = 0;                          // idle lists every unit as swatches instead
   f.amsInBand = 0;
+  if (clockSynced()) formatClock(time(nullptr), f.clock, sizeof(f.clock), f.ampm, sizeof(f.ampm));
   if (s.gcodeStateId == GCODE_FINISH) {
-    strlcpy(f.head, "Print complete", sizeof(f.head));
+    // Square: a 12-hour clock beside the headline leaves no room for "Print complete".
+    const bool tight = geo().idleClockRight == 2 && f.ampm[0];
+    strlcpy(f.head, tight ? "Complete" : "Print complete", sizeof(f.head));
     f.headColor = f.finish;               // job name stays as the sub line
   } else {
     strlcpy(f.head, s.connected ? "Ready" : "Offline", sizeof(f.head));
     f.headColor = f.txt;
     strlcpy(f.job, s.connected ? "No active print" : "Waiting for printer", sizeof(f.job));
   }
-  if (clockSynced()) formatClock(time(nullptr), f.clock, sizeof(f.clock), f.ampm, sizeof(f.ampm));
 
   // Units first, then AMS HT units, tagged in CardTray::mark.
   const AmsState& a = s.ams;

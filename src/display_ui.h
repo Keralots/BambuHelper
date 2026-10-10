@@ -144,6 +144,9 @@ void nightWake();             // button press during a blackout: light the panel
 // never engages on 480x480 / landscape boards.
 bool displaySupportsSplit();
 
+// The last drawn frame was a Cards screen (not drying, printer-off or a classic renderer).
+bool cardOnScreen();
+
 // True during a frame that must fully repaint (screen change or
 // triggerDisplayTransition). The split renderer reads this to force both bands.
 bool isDisplayForceRedraw();

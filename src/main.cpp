@@ -436,7 +436,7 @@ static void doTapActions() {
 
   // AMS page (Cards): a stop on Ready / Print complete; the next tap moves on.
   // Left out when a double tap or a hold already opens it.
-  if ((cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
+  if (cardOnScreen() && (cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
       dispSettings.gestDouble != GD_AMS && dispSettings.gestHold != GH_AMS &&
       cardAmsPeekToggle(displayedPrinter().state)) return;
 
@@ -498,7 +498,7 @@ static const uint32_t GESTURE_HOLD_MS = 600;
 
 static bool amsGestureAvailable() {
   ScreenState s = getScreenState();
-  return cardSkinActive() && (s == SCREEN_IDLE || s == SCREEN_FINISHED);
+  return cardOnScreen() && (s == SCREEN_IDLE || s == SCREEN_FINISHED);   // not drying / printer off
 }
 
 static bool nextPrinterGestureAvailable() {

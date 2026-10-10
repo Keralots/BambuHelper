@@ -266,9 +266,10 @@ function saveGaugeLayout(){
   for (var g = 0; g < 2; g++) { var s = document.getElementById('is' + g); if (s) p.append('is' + g, s.value); }
   var av = document.getElementById('amsv');
   if (av && av.checked) p.append('amsv', '1');
+  var clean = dirtySnap('saveGaugeLayout');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok'){clearDirty('saveGaugeLayout');showToast('Gauge layout saved!');}else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Gauge layout saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 
@@ -291,9 +292,10 @@ function saveLightConfig(){
   if (document.getElementById('loff_fail').checked) p.append('loff_fail', '1');
   if (document.getElementById('lon_start').checked) p.append('lon_start', '1');
   p.append('ldelay', document.getElementById('ldelay').value);
+  var clean = dirtySnap('saveLightConfig');
   fetch('/light/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok'){clearDirty('saveLightConfig');showToast('Light settings saved!');}else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Light settings saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 function setLight(mode){
@@ -436,10 +438,11 @@ function savePrinter(){
     p.append('serial', serial);
     p.append('code', code);
   }
+  var clean = dirtySnap('savePrinter');
   fetch('/save/printer',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(readJsonResponse)
     .then(function(d){
-      if (d.status === 'ok') clearDirty('savePrinter');
+      if (d.status === 'ok') clean();
       if (d.status === 'ok' && d.warning) showToast('Saved with warning: ' + d.warning);
       else if (d.status === 'ok') showToast('Printer settings saved');
       else if (d.message) showToast('Save failed: ' + d.message);
@@ -749,12 +752,12 @@ function toggleBtnPin(){
   toggleBuzPin();
   applyGestureVis();
 }
-/* Gestures card (Display) follows Button type; AMS choices follow the print style.
+/* Gestures card (Display) follows Button type or an onboard button; AMS choices follow the print style.
    An AMS choice already stored stays visible so the select never shows a blank. */
 function applyGestureVis(){
   var card = document.getElementById('gestCard');
   if (!card) return;
-  var on = document.getElementById('btntype').value !== '0';
+  var on = DEV.boardBtn === '1' || document.getElementById('btntype').value !== '0';
   card.style.display = on ? '' : 'none';
   document.getElementById('gestOff').style.display = on ? 'none' : '';
   var cs = document.getElementById('card');
@@ -858,6 +861,15 @@ function saveRotation(){
   p.append('rotinterval', document.getElementById('rotinterval').value);
   p.append('rotsplit', document.getElementById('rotsplit').checked ? '1' : '0');
   p.append('rotsplitf', document.getElementById('rotsplitf').checked ? '1' : '0');
+  var clean = dirtySnap('saveRotation');
+  fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Rotation saved');}})
+    .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
+}
+/* Same endpoint as rotation; the handler applies button, buzzer and LED only when they are sent. */
+function saveHardware(){
+  var p = new URLSearchParams();
   p.append('btntype', document.getElementById('btntype').value);
   p.append('btnpin', document.getElementById('btnpin').value);
   p.append('buzzen', document.getElementById('buzzen').value);
@@ -889,10 +901,11 @@ function saveRotation(){
   p.append('lederrsec', document.getElementById('lederrsec').value);
   var bs = document.getElementById('batshow');
   if (bs) p.append('batshow', bs.checked ? '1' : '0');
+  var clean = dirtySnap('saveHardware');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok'){clearDirty('saveRotation');showToast('Settings saved');}})
-    .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
+    .then(function(d){if(d.status==='ok'){clean();showToast('Hardware settings saved');}})
+    .catch(function(e){showToast('Save failed');console.warn('saveHardware:',e);});
 }
 
 /* Cap custom gauge label inputs: 8 chars with the normal (big) font, 12 when
@@ -1058,9 +1071,10 @@ function savePower(){
   p.append('tsm_cur', document.getElementById('tsm_cur').value);
   var slotSel = document.getElementById('tsm_slot');
   if (slotSel) p.append('tsm_slot', slotSel.value);
+  var clean = dirtySnap('savePower');
   fetch('/save/power',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok'){clearDirty('savePower');showToast('Power settings saved');}})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Power settings saved');}})
     .catch(function(e){showToast('Save failed');console.warn('savePower:',e);});
 }
 
@@ -1248,8 +1262,9 @@ function applyDisplay(){
     var lk = GAUGE_LABEL_KEYS[j];
     p.append(lk + '_lbl', document.getElementById(lk + '_lbl').value);
   }
+  var clean = dirtySnap('applyDisplay');
   fetch('/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-    .then(function(r){ if (r.ok) { clearDirty('applyDisplay'); showToast('Applied!'); } else showToast('Error'); })
+    .then(function(r){ if (r.ok) { clean(); showToast('Applied!'); } else showToast('Error'); })
     .catch(function(e){showToast('Apply failed');console.warn('applyDisplay:',e);});
 }
 
@@ -1316,20 +1331,31 @@ function markDirty(e){
   if (!f.matches || !f.matches('input, select, textarea') || f.hasAttribute('data-nodirty')) return;
   if (/toggleSetting/.test(f.getAttribute('onchange') || '')) return;   // saved on change already
   var b = dirtyOwner(f);
-  if (!b || b.classList.contains('btn-dirty')) return;
+  if (!b) return;
+  b.dataset.rev = (+b.dataset.rev || 0) + 1;   // an edit made while its save is in flight stays flagged
+  if (b.classList.contains('btn-dirty')) return;
   b.classList.add('btn-dirty');
   var n = document.createElement('span');
   n.className = 'dirty-note';
   n.textContent = 'Unsaved changes';
   b.parentNode.insertBefore(n, b);
 }
-function clearDirty(fn){
+/* Taken before the request; the returned clear runs on success and skips a
+   button edited again since the snapshot. */
+function dirtySnap(fn){
+  var seen = [];
   document.querySelectorAll('button.btn-dirty').forEach(function(o){
-    if ((o.getAttribute('onclick') || '').indexOf(fn + '(') !== 0) return;
-    o.classList.remove('btn-dirty');
-    var n = o.previousElementSibling;
-    if (n && n.classList.contains('dirty-note')) n.remove();
+    if ((o.getAttribute('onclick') || '').indexOf(fn + '(') === 0) seen.push([o, o.dataset.rev]);
   });
+  return function(){
+    seen.forEach(function(e){
+      var o = e[0];
+      if (o.dataset.rev !== e[1]) return;
+      o.classList.remove('btn-dirty');
+      var n = o.previousElementSibling;
+      if (n && n.classList.contains('dirty-note')) n.remove();
+    });
+  };
 }
 function initDirtyTracking(){
   document.addEventListener('input', markDirty);

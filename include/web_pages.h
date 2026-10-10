@@ -519,7 +519,7 @@ R"rawliteral(
   </div>
 
   <div class="card" id="gestCard">
-    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: with Double tap set to Plug power, a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
 %GESTURE_ROWS%
   </div>
   <div class="card" id="gestOff" style="display:none">
@@ -1133,7 +1133,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="action-bar" style="border:none;padding:0;margin:0">
-    <button type="button" class="btn btn-primary" onclick="saveRotation()">Save Hardware Settings</button>
+    <button type="button" class="btn btn-primary" onclick="saveHardware()">Save Hardware Settings</button>
   </div>
 </div>
 
@@ -1463,7 +1463,7 @@ R"rawliteral(
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
 
-<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',fixedAudio:'%FIXED_AUDIO%',hmsFull:'%HMSFULL%'};</script>
+<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',fixedAudio:'%FIXED_AUDIO%',hmsFull:'%HMSFULL%',boardBtn:'%BOARDBTN%'};</script>
 <script src="/app.js?v=%JSVER%"></script>
 </body>
 </html>

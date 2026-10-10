@@ -539,6 +539,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "BOARDBTN") == 0) {
+    // JS board flag: an onboard button works whatever "Button type" says.
+#if defined(BOARD_BTN_1)
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "ISROUND") == 0) {
     // JS board flag: the Gauge Layout card re-labels itself for round boards
     // (3 Rim-skin mini slots, no bottom row / AMS view / extras).

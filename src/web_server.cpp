@@ -1432,6 +1432,12 @@ static void handleSaveRotation() {
   }
   saveRotationSettings();
 
+  // Rotation-only save (Printer section): leave the peripherals alone.
+  if (!server.hasArg("btntype")) {
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+    return;
+  }
+
   // Button settings
   if (server.hasArg("btntype")) {
     uint8_t bt = server.arg("btntype").toInt();
@@ -1477,7 +1483,7 @@ static void handleSaveRotation() {
 
   // Battery indicator visibility (Waveshare boards). Always parse so the
   // form's unchecked state reaches NVS (browsers omit unchecked checkboxes;
-  // saveRotation() JS sends an explicit 0/1 to work around that).
+  // saveHardware() JS sends an explicit 0/1 to work around that).
   if (server.hasArg("batshow")) {
     dispSettings.showBatteryIndicator = (server.arg("batshow") == "1");
     saveBatteryIndicatorSetting();
@@ -1529,7 +1535,7 @@ static void handleSaveRotation() {
     ledSettings.finishBrightness = (uint8_t)v;
   }
   // Checkboxes: present + value "1" = enabled. Form posts "0" when unchecked
-  // (saveRotation JS sends both states explicitly).
+  // (saveHardware JS sends both states explicitly).
   if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
   if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
   if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
@@ -2017,7 +2023,8 @@ static void handleSettingsImportFinish() {
     return;
   }
 
-  // Older backups still carry a "wifi" block - ignored, the device keeps its network.
+  // Older backups still carry a "wifi" block - ignored, the device keeps its WiFi
+  // credentials. The "network" block (DHCP / static IP / hostname) still applies.
 
   // Printers
   // Resolve per-printer amsView with backward compat for legacy backups: per-slot
