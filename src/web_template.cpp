@@ -173,7 +173,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // Slot 0's tab and dot are hardcoded in PAGE_HTML; these emit the remainder.
   // %PRINTER_TABS%    - "Printer N" tab buttons for slots >= 1.
   // %TOPBAR_DOTS%     - matching topbar status pills for slots >= 1.
-  // %DUALP_ADVANCED%  - Advanced disclosure card with the experimental toggle.
+  // %DUALP_ADVANCED%  - Danger Zone (WiFi & System) experimental toggle.
   // On LOW_RAM (MAX_ACTIVE_PRINTERS == 2) the loops emit only slot 1, with the
   // experimental hide logic intact, so the page stays byte-identical to before.
   if (strcmp(name, "PRINTER_TABS") == 0) {
@@ -217,7 +217,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "DUALP_ADVANCED") == 0) {
-    // Renders bare inside the Advanced > Danger Zone card; no outer card
+    // Renders bare inside the WiFi & System > Danger Zone card; no outer card
     // wrapper. The danger-zone gate checkbox controls the surrounding
     // <div id="dangerOps"> visibility.
 #ifdef BOARD_LOW_RAM

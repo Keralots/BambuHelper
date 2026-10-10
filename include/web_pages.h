@@ -95,7 +95,7 @@ function saveWifi(){
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
 //    Errors:   hmsen, hmssev, hmsauto, hmsonl, hmsm0..hmsm3 (composed into the
 //              hmsmask arg)
-//    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
+//    Hardware: rotmode, rotinterval (card shown under Printer), btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              leddrv, ledpin, ledping, ledpinb, ledanode, ledbr, ledfxmd,
 //              ledfxsec, ledfxbr, ledauto, ledpause, lederr, lednight,
@@ -148,15 +148,16 @@ static const char PAGE_HTML_1[] PROGMEM = R"rawliteral(
 <div class="app">
 <!-- ============ Sidebar ============ -->
 <aside class="sidebar" id="sidebar">
-  <h4>Configuration</h4>
+  <h4>Printer</h4>
   <button class="nav-item" type="button" data-section="printer" aria-current="true"><span>Printer</span></button>
-  <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
 %HMS_NAV%
-  <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
+  <h4>Display</h4>
+  <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
   <button class="nav-item" type="button" data-section="advanced"><span>Advanced</span></button>
-  <h4>Network</h4>
-  <button class="nav-item" type="button" data-section="wifi"><span>WiFi &amp; System</span></button>
+  <h4>Device</h4>
+  <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
   <button class="nav-item" type="button" data-section="power"><span>Power</span></button>
+  <button class="nav-item" type="button" data-section="wifi"><span>WiFi &amp; System</span></button>
   <h4>Support</h4>
   <button class="nav-item" type="button" data-section="diag"><span>Diagnostics</span></button>
   <div class="sidebar-footer">
@@ -429,6 +430,36 @@ R"rawliteral(
       <button type="button" class="btn btn-ghost btn-sm" onclick="setLight('on')">Light On</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="setLight('off')">Light Off</button>
       <button type="button" class="btn btn-primary" onclick="saveLightConfig()">Save Light Settings</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Printer rotation</h3><p>How the device cycles between configured printer slots. Shared by all slots.</p></div></div>
+    <div class="field">
+      <label for="rotmode">Rotation mode</label>
+      <select id="rotmode">
+        <option value="0" %RMODE_OFF%>Off (show selected printer only)</option>
+        <option value="1" %RMODE_AUTO%>Auto-rotate (cycle all connected)</option>
+        <option value="2" %RMODE_SMART%>Smart (prioritize printing / drying)</option>
+      </select>
+      <div class="hint">Smart mode shows the printing or drying printer. Rotates only when both are active.</div>
+    </div>
+    <div class="field">
+      <label for="rotinterval">Rotation interval</label>
+      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
+      <label for="rotsplit">Split screen when two printers are printing</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
+      <label for="rotsplitf">Always show split screen (testing)</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" onclick="saveRotation()">Save Rotation</button>
     </div>
   </div>
 </div>
@@ -835,33 +866,6 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Printer rotation</h3><p>How the device cycles between configured printer slots.</p></div></div>
-    <div class="field">
-      <label for="rotmode">Rotation mode</label>
-      <select id="rotmode">
-        <option value="0" %RMODE_OFF%>Off (show selected printer only)</option>
-        <option value="1" %RMODE_AUTO%>Auto-rotate (cycle all connected)</option>
-        <option value="2" %RMODE_SMART%>Smart (prioritize printing / drying)</option>
-      </select>
-      <div class="hint">Smart mode shows the printing or drying printer. Rotates only when both are active.</div>
-    </div>
-    <div class="field">
-      <label for="rotinterval">Rotation interval</label>
-      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
-    </div>
-    <label class="check-row">
-      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
-      <label for="rotsplit">Split screen when two printers are printing</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
-    <label class="check-row">
-      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
-      <label for="rotsplitf">Always show split screen (testing)</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
-  </div>
-
-  <div class="card">
     <div class="card-head"><div><h3>External button</h3><p>Optional physical button. Switches between printers and wakes the display from sleep.</p></div></div>
     <div class="field">
       <label for="btntype">Button type</label>
@@ -1051,7 +1055,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
 <div class="section" id="sec-advanced" hidden>
   <div class="section-intro">
     <h2>Advanced</h2>
-    <p>Extended display layouts and operations that need extra care. Most users do not need anything here.</p>
+    <p>Gauge tuning and extended layouts. Most users do not need anything here.</p>
   </div>
 
 %EXTENDED_MODES_CARD%
@@ -1094,21 +1098,6 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
   </div>
 
-  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
-    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="dangerUnlock" onchange="toggleDangerUnlock(this.checked)">
-      <label for="dangerUnlock">Show advanced operations</label>
-    </label>
-    <div id="dangerOps" style="display:none;margin-top:var(--sp-3)">
-%DUALP_ADVANCED%
-      <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
-        <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
-        <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
-      </div>
-      <p class="hint" style="margin-top:var(--sp-2)">Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p>
-    </div>
-  </div>
 </div>
 
 <!-- ===== Section 6: WiFi & System ===== -->
@@ -1272,7 +1261,21 @@ R"rawliteral(
     </div>
   </div>
 
-  <p class="hint" style="margin-top:var(--sp-3)">Reboot and factory reset have moved to the <strong>Advanced</strong> section.</p>
+  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
+    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="dangerUnlock" onchange="toggleDangerUnlock(this.checked)">
+      <label for="dangerUnlock">Show advanced operations</label>
+    </label>
+    <div id="dangerOps" style="display:none;margin-top:var(--sp-3)">
+%DUALP_ADVANCED%
+      <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
+        <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
+        <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
+      </div>
+      <p class="hint" style="margin-top:var(--sp-2)">Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Section 7: Power Monitoring ===== -->
