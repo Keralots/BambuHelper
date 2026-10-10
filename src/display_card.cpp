@@ -1119,25 +1119,40 @@ static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
 struct ColonBox { int16_t x, y, w, h; };
 static ColonBox g_colon = {0, 0, 0, 0};
 
-// cv.text for the idle clock: records the colon cell and, in the blink-off
-// phase, leaves the colon out while the digits keep their places.
+// Inter's ':' sits low; px to raise it onto the digits' centre, measured from
+// the VLW glyph data (VLWfont keeps no glyph heights at runtime).
+static int16_t colonLift(FontID t) {
+  switch (t) {
+    case FONT_CARD_NUM:   return 6;
+    case FONT_CARD_NUM_L: return 8;
+    case FONT_XLARGE:     return 4;
+    case FONT_LARGE:      return 2;
+    default:              return 0;
+  }
+}
+
+// cv.text for the idle clock: centres the colon on the digits, records its
+// cell and, in the blink-off phase, leaves it out while the digits stay put.
 static void clockText(Cv& cv, const CardFrame& f, const char* s, int16_t x, int16_t y,
                       FontID face, lgfx::textdatum_t d) {
   const char* colon = strchr(s, ':');
   if (!colon) { cv.text(s, x, y, face, f.dim, d); return; }
   cv.useFont(face);
   const int16_t full = cv.width(s), fh = (int16_t)cv.g->fontHeight();
+  const int16_t lift = colonLift(cv.noTier ? face : cv.tier(face));
   const uint8_t hz = d & 3;                  // 0 left, 1 centre, 2 right
   const int16_t left = x - (hz == 2 ? full : hz == 1 ? full / 2 : 0);
   char head[8];
   strlcpy(head, s, std::min<size_t>(sizeof(head), (size_t)(colon - s) + 1));
   const uint8_t vt = d & ~3;                 // 0 top, 4 middle, 8 bottom, 16 baseline
   const int16_t top = vt >= 8 ? y - fh : vt == 4 ? y - fh / 2 : y;
-  g_colon = {(int16_t)(left + cv.width(head) - 2), (int16_t)(top - 2),
-             (int16_t)(cv.width(":") + 4), (int16_t)(fh + 4)};
-  if (!f.colonOff) { cv.text(s, x, y, face, f.dim, d); return; }
+  const int16_t cx = left + cv.width(head);
+  g_colon = {(int16_t)(cx - 2), (int16_t)(top - 2 - lift),
+             (int16_t)(cv.width(":") + 4), (int16_t)(fh + 4 + lift)};
+  // No kerning in VLW, so the three pieces land where the whole string would.
   const lgfx::textdatum_t ld = (lgfx::textdatum_t)(d & ~3);
   cv.text(head, left, y, face, f.dim, ld);
+  if (!f.colonOff) cv.text(":", cx, y - lift, face, f.dim, ld);
   cv.text(colon + 1, left + full - cv.width(colon + 1), y, face, f.dim, ld);
 }
 
