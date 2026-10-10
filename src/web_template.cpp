@@ -476,7 +476,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // Card lives in the Print screen section. Only renders on layouts that
     // actually have extended grid modes, otherwise the whole card is empty.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
-    out  = "<div class=\"card\">";
+    out  = "<div class=\"card\" data-gauges-only>";  // Cards never reads l8s/p9s
     out += "<div class=\"card-head\"><div><h3>Extended grid modes</h3>";
     out += "<p>Trade the on-screen AMS area for extra gauge slots. ";
     out += "Configure the new slots under <strong>Gauge Layout</strong>.</p>";
