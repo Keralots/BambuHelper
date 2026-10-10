@@ -1415,10 +1415,11 @@ static void drawAmsTile(Cv& cv, const CardAmsTile& t, const CardFrame& f,
   char pct[6];
   if (t.remain >= 0) snprintf(pct, sizeof(pct), "%d", t.remain);
   else strlcpy(pct, "--", sizeof(pct));
+  // Sized for the widest value ("100") so every tile of a grid shares one face.
   FontID pf = th >= cv.S(60) ? FONT_LARGE : FONT_BODY;
   cv.useFont(pf);
-  if (cv.width(pct) > w - cv.S(6)) { pf = FONT_BODY; cv.useFont(pf); }
-  if (cv.width(pct) > w - cv.S(6) || th < cv.S(36)) pf = FONT_CARD_LBL;
+  if (cv.width("100") > w - cv.S(6)) { pf = FONT_BODY; cv.useFont(pf); }
+  if (cv.width("100") > w - cv.S(6) || th < cv.S(36)) pf = FONT_CARD_LBL;
   cv.text(pct, x + w / 2, ty + th - cv.S(4), pf, ink, lgfx::textdatum_t::bottom_center);
 }
 
