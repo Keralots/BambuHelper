@@ -61,6 +61,9 @@ static inline uint8_t shellyExtraMask(const TasmotaSettings& s) {
 #define TASMOTA_OFF_WATTS_CLEAR          2.0f
 // Cloud off->on: show "starting" and hold for a forced pushall to bring fresh data.
 #define TASMOTA_RECONNECT_WINDOW_MS      45000UL
+// A printer still sending MQTT is on, whatever its plug says (wrong plug mapped,
+// standby under the watt threshold): message newer than the off reading, or this recent.
+#define TASMOTA_PRINTER_ALIVE_MS         10000UL
 
 struct TasmotaPlugRuntime {
   float    watts;
@@ -82,6 +85,7 @@ struct TasmotaPlugRuntime {
   bool     wattRefreshFired;// latch: cloud refresh already nudged for the current rise
   bool     readingSaysOff;  // #177: last successful reading says the printer is off (freshness applied in the accessor)
   uint32_t plugOnEdgeMs;    // #177: millis() of the last off->on transition (0 = none)
+  uint32_t plugOffEdgeMs;   // millis() of the reading that turned it off
 };
 
 static TasmotaPlugRuntime g_rt[TASMOTA_PLUG_COUNT];
@@ -161,8 +165,12 @@ static inline bool plugIsFresh(uint8_t p) {
 // (not the loose visibility map) so a single "Any" plug can't flag every slot.
 bool tasmotaPrinterOffForSlot(uint8_t slot) {
   uint8_t p = tasmotaPlugForPrinterSlot(slot);
-  if (p == 0xFF || !plugIsFresh(p)) return false;
-  return g_rt[p].readingSaysOff;
+  if (slot >= MAX_PRINTERS || p == 0xFF || !plugIsFresh(p) || !g_rt[p].readingSaysOff) return false;
+  const BambuState& s = printers[slot].state;
+  if (s.connected && s.lastUpdate != 0 &&
+      ((int32_t)(s.lastUpdate - g_rt[p].plugOffEdgeMs) > 0 ||
+       (millis() - s.lastUpdate) < TASMOTA_PRINTER_ALIVE_MS)) return false;
+  return true;
 }
 
 // #177: cloud off->on "starting" window - the plug just turned on and no fresh
@@ -225,6 +233,7 @@ static void applyReadings(uint8_t i, float watts, float todayKwh,
       requestCloudRefreshFromTask(slot);
     }
   }
+  if (!wasOff && newOff) g_rt[i].plugOffEdgeMs = millis();
   g_rt[i].readingSaysOff = newOff;
 }
 

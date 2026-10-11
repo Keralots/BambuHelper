@@ -21,7 +21,8 @@ uint8_t tasmotaControlPlugForSlot(uint8_t slot);
 
 // #177 printer-off detection (render-only). STRICT-mapped so a single "Any" plug
 // flags only the canonical slot, not every printer.
-//   tasmotaPrinterOffForSlot     - plug is online and reports the printer OFF.
+//   tasmotaPrinterOffForSlot     - plug is online and reports the printer OFF, and
+//     the printer is not still sending MQTT (live data beats the plug).
 //   tasmotaPlugStartingForSlot   - cloud off->on: plug just turned on and no fresh
 //     print data has arrived since (pass s.lastPrintDataMs); true during the
 //     "Printer starting..." window.
