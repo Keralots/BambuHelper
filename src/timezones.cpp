@@ -49,8 +49,10 @@ static const TimezoneRegion timezoneDatabase[] = {
   {"(UTC+08:00) Perth",                                          "AWST-8"},
   {"(UTC+09:00) Tokyo, Osaka",                                   "JST-9"},
   {"(UTC+09:00) Seoul",                                          "KST-9"},
-  {"(UTC+09:30) Adelaide, Darwin",                               "ACST-9:30ACDT,M10.1.0/02:00,M4.1.0/03:00"},
-  {"(UTC+10:00) Sydney, Melbourne, Brisbane",                    "AEST-10AEDT,M10.1.0/02:00,M4.1.0/03:00"},
+  {"(UTC+09:30) Adelaide",                                       "ACST-9:30ACDT,M10.1.0/02:00,M4.1.0/03:00"},
+  {"(UTC+09:30) Darwin",                                         "ACST-9:30"},
+  {"(UTC+10:00) Sydney, Melbourne, Canberra, Hobart",            "AEST-10AEDT,M10.1.0/02:00,M4.1.0/03:00"},
+  {"(UTC+10:00) Brisbane",                                       "AEST-10"},
   {"(UTC+12:00) Auckland, Wellington",                           "NZST-12NZDT,M9.5.0/02:00,M4.1.0/03:00"},
 };
 
