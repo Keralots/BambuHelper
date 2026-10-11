@@ -149,6 +149,17 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 
 A calmer alternative to the gauge dashboard, readable from across the room: a big progress percentage, the time left and the finish time, a progress bar, and a single row of temperatures. The Ready and Print Complete screens follow the same style.
 
+Cards is in the **v3.9.0 beta pre-releases** on the [Releases](https://github.com/Keralots/BambuHelper/releases) page. The web flasher and the in-portal update check stay on the latest stable release, so install a beta's `ota.bin` by hand to try it.
+
+The same print at the same moment, on the same 320x240 screen:
+
+<table>
+<tr>
+<td align="center"><img src="img/cards/print-gauges-ws_lcd_200-landscape.png" alt="Gauges print screen, 320x240 landscape"><br><sub>Gauges (default)</sub></td>
+<td align="center"><img src="img/cards/print-cards-ws_lcd_200-landscape.png" alt="Cards print screen, 320x240 landscape"><br><sub>Cards (beta)</sub></td>
+</tr>
+</table>
+
 <table>
 <tr>
 <td align="center"><img src="img/cards/cards-ws_lcd_200-landscape-night.png" alt="Cards, 320x240 landscape"><br><sub>320x240 landscape</sub></td>
