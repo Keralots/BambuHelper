@@ -142,9 +142,10 @@ var gaugeTypes = [
   {name:'Nozzle R Temp',      group:'Temperatures'},      /* 29 */
   {name:'Nozzle L Temp',      group:'Temperatures'},      /* 30 */
   {name:'Power',              group:'Other'},             /* 31 */
-  {name:'Camera (P1/A1 LAN)', group:'Other'}              /* 32 */
+  {name:'Camera (P1/A1 LAN)', group:'Other'},             /* 32 */
+  {name:'Plate preview (cloud)', group:'Print status'}    /* 33 */
 ];
-var GAUGE_REQUIRES = { 23: 'hasAuxFanRight', 24: 'hasExhaustFan', 29: 'hasDualNozzle', 30: 'hasDualNozzle', 31: 'hasTasmota', 32: 'hasLanCamera' };
+var GAUGE_REQUIRES = { 23: 'hasAuxFanRight', 24: 'hasExhaustFan', 29: 'hasDualNozzle', 30: 'hasDualNozzle', 31: 'hasTasmota', 32: 'hasLanCamera', 33: 'hasPlateThumb' };
 var gaugeCaps = {}, persistedGauges = {};
 function gaugeAllowed(idx){
   if (persistedGauges[idx]) return true;

@@ -125,15 +125,34 @@ static void collect() {
   heap_caps_free(j);
 }
 
+// The printer has a Plate tile in any of its gauge slots.
+static bool hasPlateTile(const PrinterConfig& c) {
+  for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++)      if (c.gaugeSlots[g] == GAUGE_PLATE) return true;
+  for (uint8_t g = 0; g < LANDSCAPE_EXTRA_COUNT; g++) if (c.landscapeExtras[g] == GAUGE_PLATE) return true;
+  for (uint8_t g = 0; g < PORTRAIT_EXTRA_COUNT; g++)  if (c.portraitExtras[g] == GAUGE_PLATE) return true;
+  for (uint8_t g = 0; g < IDLE_SLOT_COUNT; g++)       if (c.idleSlots[g] == GAUGE_PLATE) return true;
+  return false;
+}
+
+// Slot i has a job whose PNG is still owed and may be fetched now.
+static bool fetchDue(uint8_t i) {
+  const ThumbSlot& t = g_slots[i];
+  if (!t.task[0] || t.png || t.fails >= MAX_FAILS) return false;
+  if (t.backoff && millis() - t.failAt < t.backoff) return false;
+  return t.plate != 0;                      // 0 = pushall not in yet
+}
+
 void thumbService() {
   collect();
 
   // Keep each slot's entry in step with its printer's job.
-  const bool on = cardSkinActive() && dispSettings.cardLeft == 2;
+  const bool cardThumb = cardSkinActive() && dispSettings.cardLeft == 2;
+  bool want[MAX_PRINTERS];
   for (uint8_t i = 0; i < MAX_PRINTERS; i++) {
     ThumbSlot& t = g_slots[i];
     const BambuState& s = printers[i].state;
-    if (!on || !taskIdUsable(s.taskId)) {
+    want[i] = cardThumb || hasPlateTile(printers[i].config);
+    if (!want[i] || !taskIdUsable(s.taskId)) {
       if (t.task[0]) resetSlot(t);
       continue;
     }
@@ -143,15 +162,19 @@ void thumbService() {
       t.plate = s.plateIdx;
     }
   }
-  if (!on || g_running) return;
+  if (g_running) return;
 
-  // Fetch only for the printer on screen.
-  PrinterSlot& p = displayedPrinter();
-  const uint8_t slot = (uint8_t)(&p - printers);
+  // The printer on screen first; any other one that wants a thumb after it
+  // (split view, or one rotated away before its fetch ran).
+  uint8_t slot = (uint8_t)(&displayedPrinter() - printers);
+  if (!want[slot] || !fetchDue(slot)) {
+    slot = 0xFF;
+    for (uint8_t i = 0; i < MAX_PRINTERS; i++)
+      if (want[i] && fetchDue(i)) { slot = i; break; }
+    if (slot == 0xFF) return;
+  }
+  PrinterSlot& p = printers[slot];
   ThumbSlot& t = g_slots[slot];
-  if (!t.task[0] || t.png || t.fails >= MAX_FAILS) return;
-  if (t.backoff && millis() - t.failAt < t.backoff) return;
-  if (t.plate == 0) return;                 // pushall not in yet
   if (WiFi.status() != WL_CONNECTED || isOtaAutoInProgress()) return;
   if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < MIN_HEAP ||
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) < MIN_BLOCK) {
@@ -244,7 +267,12 @@ static bool render(ThumbSlot& t, int16_t size, uint16_t bg) {
 }
 
 bool thumbGet(int16_t size, uint16_t bg, const uint16_t** px, uint32_t* gen) {
-  ThumbSlot& t = g_slots[(uint8_t)(&displayedPrinter() - printers)];
+  return thumbGetSlot((uint8_t)(&displayedPrinter() - printers), size, bg, px, gen);
+}
+
+bool thumbGetSlot(uint8_t slot, int16_t size, uint16_t bg, const uint16_t** px, uint32_t* gen) {
+  if (slot >= MAX_PRINTERS || size <= 0) return false;
+  ThumbSlot& t = g_slots[slot];
   if (!t.png || t.renderFailed) return false;
   if (!t.thumb || t.size != size || t.bg != bg) {
     const unsigned long t0 = millis();

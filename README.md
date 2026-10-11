@@ -133,6 +133,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **European characters** - print file names, printer names, gauge labels, and the currency symbol render accented text (German, Polish, Czech, Hungarian, Turkish, Romanian, French, Spanish, Nordic, and more) plus the euro sign
 - **Configurable gauge behavior** - adjustable arc full-scale ranges (nozzle, bed, chamber/AMS, power), arc smoothing speed, and an optional warning color when a gauge runs hot
 - **Power gauge** - optional arc gauge showing live smart-plug wattage (W/kW) in a gauge slot
+- **Plate preview tile** - the plate thumbnail of the running job in any gauge slot (`Plate preview (cloud)` in the Gauge Layout), the same image the Cards left column shows: needs the [account sign-in on the device](#connecting-to-bambu-cloud), a job sent through the cloud and a board with PSRAM. On the Ready / Print complete pair it shows the last job
 - **Configurable status bar** - alternate layer count / watts, always show watts, or always show the layer count; or hide the readout entirely to give the filament name more room
 - **Per-nozzle temperature gauges** - fixed left/right nozzle arcs for dual-nozzle printers (H2 series)
 - **Split dual-printer dashboard** - show two printers at once (stacked in portrait, side-by-side in landscape) with progress bar, status, ETA, and drying view per band

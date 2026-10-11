@@ -1263,6 +1263,7 @@ static void handlePrinterConfig() {
 #else
   doc["hasLanCamera"] = false;
 #endif
+  doc["hasPlateThumb"]  = (bool)HAS_CARD_THUMB;                // Plate preview tile (PSRAM boards)
   JsonArray slots = doc["gaugeSlots"].to<JsonArray>();
   for (uint8_t g = 0; g < GAUGE_SLOT_COUNT; g++) slots.add(cfg.gaugeSlots[g]);
   JsonArray lext = doc["landscapeExtras"].to<JsonArray>();

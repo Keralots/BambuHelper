@@ -16,6 +16,7 @@
 #include "fonts.h"
 #include "battery.h"
 #include "camera_client.h"
+#include "thumb_fetch.h"
 #include "hms_lookup.h"
 #include <WiFi.h>
 #include <time.h>
@@ -2977,6 +2978,51 @@ void drawCameraGauge(int16_t, int16_t, int16_t, bool) {}
 #endif
 
 // ---------------------------------------------------------------------------
+//  Plate preview tile: the cloud job's plate thumbnail (the Cards one) filling
+//  the gauge box. Self-gated like the clock widget: it is asked every frame and
+//  repaints only when the pixels, or whether there are any, change.
+// ---------------------------------------------------------------------------
+struct PlateTileCache { int16_t cx, cy; uint8_t slot; bool have; uint32_t gen; };
+static PlateTileCache s_plateTiles[GAUGE_SLOT_MAX];
+
+static void drawPlateGauge(int16_t cx, int16_t cy, int16_t radius, uint8_t slot, bool fr) {
+  const int16_t box = radius * 2;
+  const int16_t x0 = cx - radius, y0 = cy - radius;
+  const uint16_t* px = nullptr;
+  uint32_t gen = 0;
+  const bool have = thumbGetSlot(slot, box, dispSettings.bgColor, &px, &gen);
+
+  PlateTileCache* c = &s_plateTiles[0];     // keyed by position; (0,0) = unused
+  for (auto& e : s_plateTiles) {
+    if (e.cx == cx && e.cy == cy) { c = &e; break; }
+    if (e.cx == 0 && e.cy == 0) { c = &e; break; }
+  }
+  const bool same = c->cx == cx && c->cy == cy && c->slot == slot && c->have == have &&
+                    (!have || c->gen == gen);
+  if (!fr && same) return;
+  *c = {cx, cy, slot, have, gen};
+
+  if (have) {
+    tft.pushImage(x0, y0, box, box, (const lgfx::swap565_t*)px);
+  } else {
+    tft.fillRect(x0, y0, box, box, dispSettings.bgColor);
+    tft.drawRect(x0, y0, box, box, dispSettings.trackColor);
+    setFont(tft, FONT_SMALL);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, dispSettings.bgColor);
+    tft.drawString("--", cx, cy);
+  }
+  markFrameDirty();
+  if (!fr) return;                          // the label only goes with a full tile draw
+
+  const bool sm = dispSettings.smallLabels;
+  setFont(tft, sm ? FONT_SMALL : FONT_BODY);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(CLR_TEXT, dispSettings.bgColor);
+  tft.drawString("Plate", cx, cy + radius + (sm ? 3 : -1));
+}
+
+// ---------------------------------------------------------------------------
 //  Shared configurable-slot tile dispatcher. Used by the split screen (both
 //  bands, smooth=false - the global smooth floats can only track one printer)
 //  and by the round Rim skin's mini gauges (smooth=true - they always render
@@ -3004,6 +3050,7 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
     case GAUGE_CLOCK:         return true;   // text cache gates the actual redraw
     case GAUGE_POWER:         return true;   // watts live outside BambuState
     case GAUGE_CAMERA:        return false;  // tile draws on its own cadence, not per-value
+    case GAUGE_PLATE:         return true;   // thumb lives outside BambuState; the tile gates itself
     case GAUGE_LAYER:         return s.layerNum != p.layerNum || s.totalLayers != p.totalLayers;
     default: break;
   }
@@ -3203,6 +3250,9 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       break;
     case GAUGE_CAMERA:
       drawCameraGauge(cx, cy, r, fr);  // inert placeholder when not streaming
+      break;
+    case GAUGE_PLATE:
+      drawPlateGauge(cx, cy, r, slotIndex, fr);
       break;
     case GAUGE_EMPTY:
       if (fr) tft.fillCircle(cx, cy, r + 2, CLR_BG);
@@ -4423,6 +4473,7 @@ static void drawPrinting() {
           case GAUGE_HEATBREAK:     needDraw = animating || s.heatbreakFanPct != prevState.heatbreakFanPct; break;
           case GAUGE_CLOCK:       needDraw = true; break;  // text cache handles actual redraw
           case GAUGE_POWER:       needDraw = true; break;  // watts live in tasmota runtime; text cache + incremental arc gate the redraw
+          case GAUGE_PLATE:       needDraw = true; break;  // the tile gates itself on the thumb
 #if BOARD_HAS_CAMERA
           case GAUGE_CAMERA:      needDraw = cameraTileNeedsRedraw(); break;
 #endif
@@ -4558,6 +4609,9 @@ static void drawPrinting() {
           break;
         case GAUGE_CAMERA:
           drawCameraGauge(cx, cy, gR, fr);
+          break;
+        case GAUGE_PLATE:
+          drawPlateGauge(cx, cy, gR, rotState.displayIndex, fr);
           break;
         case GAUGE_EMPTY:
           if (fr) tft.fillCircle(cx, cy, gR + 2, dispSettings.bgColor);
