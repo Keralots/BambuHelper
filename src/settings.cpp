@@ -188,6 +188,10 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.cydPanelClassic = false;
   ds.cyd32eVariant = false;
   ds.roundSkin = 0;
+  ds.cardStyle = 0;
+  ds.cardLeft = 0;
+  ds.cardBottom = 0;
+  ds.cardReady = 0;
   ds.landscape8Slots = false;
   ds.portrait9Slots = false;
   ds.clockTimeColor = CLR_TEXT_DEFAULT;
@@ -198,6 +202,9 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
   ds.buttonPowerControl = false;  // #136: default OFF (opt-in per device)
+  ds.gestTap = GT_SMART;
+  ds.gestDouble = GD_OFF;
+  ds.gestHold = GH_LED;
   ds.showBatteryIndicator = false;  // default OFF on all boards; enable per device
   ds.glowMode = 0;             // edge glow off
   ds.glowColor = CLR_GREEN;
@@ -576,6 +583,14 @@ void loadSettings() {
   dispSettings.cyd32eVariant = prefs.getBool("dsp_cyd32e", def.cyd32eVariant);
   dispSettings.roundSkin = prefs.getUChar("dsp_rskin", def.roundSkin);
   if (dispSettings.roundSkin > 2) dispSettings.roundSkin = 0;
+  dispSettings.cardStyle = prefs.getUChar("dsp_card", def.cardStyle);
+  if (dispSettings.cardStyle > 1) dispSettings.cardStyle = 0;
+  dispSettings.cardLeft = prefs.getUChar("dsp_cleft", def.cardLeft);
+  if (dispSettings.cardLeft > 2) dispSettings.cardLeft = 0;
+  dispSettings.cardBottom = prefs.getUChar("dsp_cbot", def.cardBottom);
+  if (dispSettings.cardBottom > 1) dispSettings.cardBottom = 0;
+  dispSettings.cardReady = prefs.getUChar("dsp_crdy", def.cardReady);
+  if (dispSettings.cardReady > 2) dispSettings.cardReady = 0;
   dispSettings.landscape8Slots = prefs.getBool("dsp_l8s", def.landscape8Slots);
   dispSettings.portrait9Slots = prefs.getBool("dsp_p9s", def.portrait9Slots);
   dispSettings.clockTimeColor = prefs.getUShort("dsp_clkt", CLR_TEXT_DEFAULT);
@@ -592,6 +607,16 @@ void loadSettings() {
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
   dispSettings.buttonPowerControl = prefs.getBool("dsp_btpw", def.buttonPowerControl);
+  dispSettings.gestTap  = prefs.getUChar("dsp_gtap", def.gestTap);
+  if (dispSettings.gestTap > GT_WAKE) dispSettings.gestTap = GT_SMART;
+  // Before the gesture card, double-click = plug power was the dsp_btpw checkbox.
+  dispSettings.gestDouble = prefs.isKey("dsp_gdbl")
+      ? prefs.getUChar("dsp_gdbl", def.gestDouble)
+      : (dispSettings.buttonPowerControl ? GD_PLUG : GD_OFF);
+  if (dispSettings.gestDouble > GD_NEXT) dispSettings.gestDouble = GD_OFF;
+  dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  dispSettings.gestHold = prefs.getUChar("dsp_ghold", def.gestHold);
+  if (dispSettings.gestHold > GH_NONE) dispSettings.gestHold = GH_LED;
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
   {
@@ -946,6 +971,10 @@ void saveSettings() {
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
   prefs.putBool("dsp_cyd32e", dispSettings.cyd32eVariant);
   prefs.putUChar("dsp_rskin", dispSettings.roundSkin);
+  prefs.putUChar("dsp_card", dispSettings.cardStyle);
+  prefs.putUChar("dsp_cleft", dispSettings.cardLeft);
+  prefs.putUChar("dsp_cbot", dispSettings.cardBottom);
+  prefs.putUChar("dsp_crdy", dispSettings.cardReady);
   prefs.putBool("dsp_l8s", dispSettings.landscape8Slots);
   prefs.putBool("dsp_p9s", dispSettings.portrait9Slots);
   prefs.putUShort("dsp_clkt", dispSettings.clockTimeColor);
@@ -956,6 +985,9 @@ void saveSettings() {
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
   prefs.putBool("dsp_btpw", dispSettings.buttonPowerControl);
+  prefs.putUChar("dsp_gtap", dispSettings.gestTap);
+  prefs.putUChar("dsp_gdbl", dispSettings.gestDouble);
+  prefs.putUChar("dsp_ghold", dispSettings.gestHold);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
   prefs.putBool("dsp_hidlp", dispSettings.hideStatusReadout);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);

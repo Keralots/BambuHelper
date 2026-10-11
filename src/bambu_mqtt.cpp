@@ -11,15 +11,19 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <algorithm>
 #include <esp_task_wdt.h>
 
 // Built-in CA certificate bundle for cloud TLS verification
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
 
+class MqttRxClient;
+
 // ── Per-connection context ──────────────────────────────────────────────────
 struct MqttConn {
   uint8_t slotIndex;
   WiFiClientSecure* tls;
+  MqttRxClient* io;          // PubSubClient's view of tls (non-blocking receive)
   PubSubClient* mqtt;
   MqttDiag diag;
   unsigned long lastReconnectAttempt;
@@ -30,6 +34,7 @@ struct MqttConn {
   bool gotDataSinceConnect;  // true after first message on current connection
   bool active;           // connection slot in use
   uint16_t consecutiveFails;  // for exponential backoff
+  bool printerUnreachable;    // LAN TCP probe failed: printer off, probe on a flat interval
   unsigned long disconnectSince;  // grace period before showing "connecting" screen
   bool wasConnected;              // track connected->disconnected transitions for logging
   unsigned long stalePushallSentMs;  // when recovery pushall was sent on stale detection
@@ -73,6 +78,144 @@ static bool usesStatDoorSensor(bool dualNozzle, const char* serial) {
 
 // Conditional debug print
 #define MQTT_LOG(fmt, ...) do { if (mqttDebugLog) Serial.printf("MQTT: " fmt "\n", ##__VA_ARGS__); } while(0)
+
+// Non-blocking MQTT receive. PubSubClient reads a whole packet in one blocking
+// call, and an H2 pushes ~38 KB of full status every ~2 s that trickles in over
+// 0.3-1 s - the main loop (display, LED, web) froze for that long each time.
+// This layer assembles packets from whatever bytes are already there, hands a
+// finished PUBLISH straight to the callback, and passes only the small control
+// packets (CONNACK, SUBACK, PINGRESP) through to PubSubClient.
+class MqttRxClient : public Client {
+ public:
+  typedef void (*Handler)(char* topic, byte* payload, unsigned int length);
+  explicit MqttRxClient(WiFiClientSecure& t) : _t(t) {}
+  ~MqttRxClient() { free(_pkt); }
+
+  // Incoming packet buffer (PubSubClient keeps only a small one for sending).
+  bool begin(size_t cap, Handler h) {
+    _h = h;
+    if (_pkt && _cap == cap) return true;
+    free(_pkt);
+    _pkt = (uint8_t*)malloc(cap);
+    _cap = _pkt ? cap : 0;
+    return _pkt != nullptr;
+  }
+
+  int connect(IPAddress ip, uint16_t port) override { reset(); return _t.connect(ip, port); }
+  int connect(const char* host, uint16_t port) override { reset(); return _t.connect(host, port); }
+  size_t write(uint8_t b) override { return _t.write(b); }
+  size_t write(const uint8_t* b, size_t n) override { return _t.write(b, n); }
+  int available() override { pump(); return (int)(_passLen - _passPos); }
+  int read() override {
+    if (_passPos >= _passLen) pump();
+    return _passPos < _passLen ? _pass[_passPos++] : -1;
+  }
+  int read(uint8_t* b, size_t n) override {
+    size_t got = 0;
+    while (got < n) { const int c = read(); if (c < 0) break; b[got++] = (uint8_t)c; }
+    return got ? (int)got : -1;
+  }
+  int peek() override {
+    if (_passPos >= _passLen) pump();
+    return _passPos < _passLen ? _pass[_passPos] : -1;
+  }
+  void flush() override { _t.flush(); }
+  void stop() override { reset(); _t.stop(); }
+  // Drops any partial packet. PubSubClient::connect() reuses a still-open TLS
+  // socket without calling connect() here, so callers reset before it.
+  void reset() { _hdrLen = 0; _inBody = _skip = false; _passPos = _passLen = 0; }
+  uint8_t connected() override { return _t.connected(); }
+  operator bool() override { return (bool)_t; }
+
+ private:
+  // Pull in whatever is already readable; never waits for more. At most one
+  // PUBLISH per call - the rest waits for the next loop pass.
+  void pump() {
+    if (!_pkt || _pumping) return;
+    _pumping = true;
+    _delivered = false;
+    pumpBody();
+    _pumping = false;
+  }
+  void pumpBody() {
+    while (_passPos >= _passLen && !_delivered) {   // let PubSubClient drain a control packet first
+      const int a = _t.available();
+      if (a <= 0) return;
+      if (!_inBody) {
+        const int c = _t.read();
+        if (c < 0) return;
+        _hdr[_hdrLen++] = (uint8_t)c;
+        if (_hdrLen == 1) { _rem = 0; _mult = 1; continue; }
+        _rem += (uint32_t)(c & 0x7F) * _mult;
+        _mult *= 128;
+        if (c & 0x80) {
+          if (_hdrLen >= 5) { stop(); return; }   // malformed length: framing is lost
+          continue;
+        }
+        _inBody = true;
+        _got = 0;
+        const bool publish = (_hdr[0] >> 4) == 3;
+        if (publish && ((_hdr[0] >> 1) & 3) == 3) { stop(); return; }   // QoS 3 is invalid
+        _skip = _rem > (publish ? _cap : sizeof(_pass) - _hdrLen);
+        if (_rem == 0) finish();
+        continue;
+      }
+      size_t n = std::min<size_t>((size_t)a, _rem - _got);
+      if (_skip) {
+        uint8_t junk[256];
+        n = std::min(n, sizeof(junk));
+        const int r = _t.read(junk, n);
+        if (r <= 0) return;
+        _got += (uint32_t)r;
+      } else {
+        const int r = _t.read(_pkt + _got, n);
+        if (r <= 0) return;
+        _got += (uint32_t)r;
+      }
+      if (_got >= _rem) finish();
+    }
+  }
+
+  void finish() {
+    if (_skip) {
+      MQTT_LOG("RX: dropped a %u B packet (buffer %u B)", (unsigned)_rem, (unsigned)_cap);
+    } else if ((_hdr[0] >> 4) == 3) {            // PUBLISH
+      // No PUBACK is sent: we subscribe at QoS 0, so the broker never sends QoS 1+.
+      _delivered = true;
+      const uint8_t qos = (_hdr[0] >> 1) & 3;
+      const uint16_t tl = _rem >= 2 ? (uint16_t)((_pkt[0] << 8) | _pkt[1]) : 0;
+      const uint32_t start = 2u + tl + (qos ? 2u : 0u);
+      if (_h && tl > 0 && start <= _rem) {
+        char topic[128];
+        const size_t n = std::min<size_t>(tl, sizeof(topic) - 1);
+        memcpy(topic, _pkt + 2, n);
+        topic[n] = '\0';
+        _h(topic, _pkt + start, (unsigned int)(_rem - start));
+      }
+    } else {                                     // control packet: replay to PubSubClient
+      memcpy(_pass, _hdr, _hdrLen);
+      memcpy(_pass + _hdrLen, _pkt, _rem);
+      _passPos = 0;
+      _passLen = _hdrLen + _rem;
+    }
+    _hdrLen = 0;
+    _inBody = false;
+    _skip = false;
+  }
+
+
+  WiFiClientSecure& _t;
+  Handler  _h = nullptr;
+  uint8_t* _pkt = nullptr;
+  size_t   _cap = 0;
+  uint8_t  _hdr[5];
+  uint8_t  _hdrLen = 0;
+  bool     _inBody = false, _skip = false, _pumping = false, _delivered = false;
+  uint32_t _rem = 0, _mult = 1, _got = 0;
+  uint8_t  _pass[64];
+  size_t   _passPos = 0, _passLen = 0;
+};
+
 
 // ---------------------------------------------------------------------------
 const char* mqttRcToString(int rc) {
@@ -121,6 +264,7 @@ const char* pushallReasonToString(uint8_t reason) {
 // ---------------------------------------------------------------------------
 static void releaseClients(MqttConn& c) {
   if (c.mqtt) { delete c.mqtt; c.mqtt = nullptr; }
+  if (c.io)   { delete c.io;   c.io   = nullptr; }
   if (c.tls)  { delete c.tls;  c.tls  = nullptr; }
 }
 
@@ -155,10 +299,21 @@ static bool ensureClients(MqttConn& c) {
     c.tls->setTimeout(5);
   }
 
+  if (!c.io) {
+    c.io = new (std::nothrow) MqttRxClient(*c.tls);
+    if (!c.io) {
+      MQTT_LOG("[%d] Failed to allocate the MQTT receive layer!", c.slotIndex);
+      delete c.tls;
+      c.tls = nullptr;
+      return false;
+    }
+  }
   if (!c.mqtt) {
-    c.mqtt = new (std::nothrow) PubSubClient(*c.tls);
+    c.mqtt = new (std::nothrow) PubSubClient(*c.io);
     if (!c.mqtt) {
       MQTT_LOG("[%d] Failed to allocate PubSubClient!", c.slotIndex);
+      delete c.io;
+      c.io = nullptr;
       delete c.tls;
       c.tls = nullptr;
       return false;
@@ -183,9 +338,14 @@ static bool ensureClients(MqttConn& c) {
 #ifdef BOARD_LOW_RAM
   if (dualPrinterUnsafe) bufSize = 16384;
 #endif
-  if (!c.mqtt->setBufferSize(bufSize)) {
-    MQTT_LOG("[%d] setBufferSize(%u) FAILED — not enough heap!", c.slotIndex, (unsigned)bufSize);
+  // Incoming packets land in the receive layer; PubSubClient's own buffer only
+  // builds outgoing packets. The largest is CONNECT: ~1.3 KB with the cloud token
+  // (< 1200 B), under 100 B on LAN; commands stay under 256 B.
+  const size_t txSize = isCloudMode(cfg.mode) ? 1536 : 512;
+  if (!c.io->begin(bufSize, mqttCallback) || !c.mqtt->setBufferSize(txSize)) {
+    MQTT_LOG("[%d] MQTT buffers (%u) FAILED — not enough heap!", c.slotIndex, (unsigned)bufSize);
     delete c.mqtt; c.mqtt = nullptr;
+    delete c.io;   c.io   = nullptr;
     delete c.tls;  c.tls  = nullptr;
     return false;
   }
@@ -473,6 +633,9 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   pf["ctc"]["info"]["temp"] = true;           // legacy/alternate chamber temp path
   pf["device"]["ctc"]["info"]["temp"] = true; // H2C/H2D chamber temp path
   pf["subtask_name"] = true;
+  pf["mapping"] = true;
+  pf["task_id"] = true;     // cloud job id - plate thumbnail lookup
+  pf["plate_idx"] = true;     // slicer filament -> AMS tray map of the current job
   pf["print_type"] = true;  // "system" = device-initiated calibration (issue #149)
   pf["gcode_file"] = true;  // built-in calibration gcode names (issue #149)
   pf["layer_num"] = true;
@@ -997,6 +1160,14 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
   if (print["subtask_name"].is<const char*>()) {
     corePrintData = true;
     const char* name = print["subtask_name"];
+    // New job: drop the previous job's filament map before this message's
+    // mapping (if any) is applied below.
+    if (strncmp(s.subtaskName, name, sizeof(s.subtaskName) - 1) != 0) {
+      s.printMapCount = 0;
+      s.printMapTotal = 0;
+      s.taskId[0] = 0;          // re-sent with the new job; never pair it with the old one
+      s.plateIdx = 0;
+    }
     strlcpy(s.subtaskName, name, sizeof(s.subtaskName));
     utf8TrimPartial(s.subtaskName);  // drop a UTF-8 char sliced by the buffer
     // Studio calibration wizard jobs are named "*_calib_mode"
@@ -1004,6 +1175,44 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     size_t snLen = strlen(s.subtaskName);
     s.caliSubtask = snLen >= 11 &&
                     strcmp(s.subtaskName + snLen - 11, "_calib_mode") == 0;
+  }
+
+  {
+    char tid[sizeof(s.taskId)] = "";
+    if (print["task_id"].is<const char*>()) {
+      strlcpy(tid, print["task_id"].as<const char*>(), sizeof(tid));
+    } else if (print["task_id"].is<long long>()) {
+      snprintf(tid, sizeof(tid), "%lld", print["task_id"].as<long long>());
+    }
+    if (tid[0] && strcmp(tid, s.taskId) != 0) {
+      // Different job under the same name: its map and plate come fresh too.
+      if (s.taskId[0]) { s.printMapCount = 0; s.printMapTotal = 0; s.plateIdx = 0; }
+      strlcpy(s.taskId, tid, sizeof(s.taskId));
+    }
+  }
+
+  if (print["plate_idx"].is<int>()) {
+    s.plateIdx = (uint16_t)constrain(print["plate_idx"].as<int>(), 0, 999);
+  } else if (s.plateIdx == 0 && print["gcode_file"].is<const char*>()) {
+    // "/data/Metadata/plate_3.gcode": the plate also rides on gcode_file, which
+    // comes with the job start even when plate_idx does not.
+    const char* pl = strstr(print["gcode_file"].as<const char*>(), "plate_");
+    if (pl) s.plateIdx = (uint16_t)constrain(atoi(pl + 6), 0, 999);
+  }
+
+  // A present array replaces the whole map (an empty one clears it); absent
+  // means "unchanged" like every other delta field.
+  if (print["mapping"].is<JsonArrayConst>()) {
+    uint8_t n = 0, total = 0;
+    for (JsonVariantConst v : print["mapping"].as<JsonArrayConst>()) {
+      if (!v.is<long>()) continue;
+      long raw = v.as<long>();
+      if (raw < 0 || raw >= 0xFFFF) continue;   // 65535 = slicer slot unused
+      if (total < 255) total++;
+      if (n < PRINT_MAP_MAX) s.printMap[n++] = (uint16_t)raw;
+    }
+    s.printMapCount = n;
+    s.printMapTotal = total;
   }
 
   // Calibration-print markers (issue #149). Each flag updates only when its
@@ -1462,16 +1671,17 @@ static void reconnectConn(MqttConn& c) {
   } else if (c.consecutiveFails >= BAMBU_BACKOFF_PHASE1) {
     interval = BAMBU_BACKOFF_PHASE2_MS;
   }
+  // Powered-off printer: the TCP probe never reaches a broker, so no backoff
+  if (c.printerUnreachable) interval = BAMBU_OFFLINE_PROBE_MS;
 
   // First attempt is immediate; subsequent attempts respect the interval
-  if (c.diag.attempts > 0 && now - c.lastReconnectAttempt < interval) return;
+  if (c.diag.lastAttemptMs && now - c.lastReconnectAttempt < interval) return;
 
-  c.diag.attempts++;
   c.diag.lastAttemptMs = now;
   c.lastReconnectAttempt = now;
 
-  MQTT_LOG("[%d] === reconnect attempt #%u (fails=%u, interval=%lus) [%s] ===",
-           c.slotIndex, c.diag.attempts, c.consecutiveFails, interval / 1000,
+  MQTT_LOG("[%d] === reconnect (attempts=%u probes=%u fails=%u, interval=%lus) [%s] ===",
+           c.slotIndex, c.diag.attempts, c.diag.probes, c.consecutiveFails, interval / 1000,
            isCloudMode(cfg.mode) ? "CLOUD" : "LOCAL");
   MQTT_LOG("[%d] serial=%s heap=%u WiFi=%d", c.slotIndex, cfg.serial, ESP.getFreeHeap(), WiFi.status());
 
@@ -1484,6 +1694,7 @@ static void reconnectConn(MqttConn& c) {
 
   if (!ensureClients(c)) {
     MQTT_LOG("[%d] ensureClients() FAILED", c.slotIndex);
+    c.diag.attempts++;
     c.diag.lastRc = -2;
     c.consecutiveFails++;
     c.lastReconnectAttempt = millis();  // respect backoff on OOM
@@ -1500,15 +1711,18 @@ static void reconnectConn(MqttConn& c) {
     c.diag.tcpOk = tcp.connect(cfg.ip, BAMBU_PORT);
     MQTT_LOG("[%d] TCP test %s in %lums", c.slotIndex, c.diag.tcpOk ? "OK" : "FAILED", millis() - tcpT0);
     tcp.stop();
+    c.printerUnreachable = !c.diag.tcpOk;
     if (!c.diag.tcpOk) {
       MQTT_LOG("[%d] Printer not reachable on network!", c.slotIndex);
+      c.diag.probes++;
       c.diag.lastRc = -2;
-      c.consecutiveFails++;
       return;
     }
   } else {
     c.diag.tcpOk = true;
+    c.printerUnreachable = false;
   }
+  c.diag.attempts++;
 
   // Client ID: cloud uses random suffix (like pybambu) to avoid session
   // collision when broker hasn't cleaned up the previous TLS session yet.
@@ -1534,10 +1748,12 @@ static void reconnectConn(MqttConn& c) {
       return;
     }
     MQTT_LOG("[%d] connect(id=%s, user=%s) [CLOUD]...", c.slotIndex, clientId, cfg.cloudUserId);
+    if (c.io) c.io->reset();
     connected = c.mqtt->connect(clientId, cfg.cloudUserId, tokenBuf);
     memset(tokenBuf, 0, sizeof(tokenBuf));
   } else {
     MQTT_LOG("[%d] connect(id=%s, user=%s) [LOCAL]...", c.slotIndex, clientId, BAMBU_USERNAME);
+    if (c.io) c.io->reset();
     connected = c.mqtt->connect(clientId, BAMBU_USERNAME, cfg.accessCode);
   }
 
@@ -1977,6 +2193,7 @@ static void initConnSlot(uint8_t i) {
   c.initialPushallSent = false;
   c.gotDataSinceConnect = false;
   c.consecutiveFails = 0;
+  c.printerUnreachable = false;
   c.disconnectSince = 0;
   c.wasConnected = false;
   c.stalePushallSentMs = 0;

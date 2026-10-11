@@ -7,7 +7,8 @@
 // Connection diagnostics exposed for display/web
 struct MqttDiag {
   int      lastRc;          // PubSubClient state code from last attempt
-  uint32_t attempts;        // total reconnect attempts since boot
+  uint32_t attempts;        // broker connect attempts since boot
+  uint32_t probes;          // LAN: TCP probes that found the printer unreachable
   uint32_t messagesRx;      // total MQTT messages received
   uint32_t freeHeap;        // heap at last attempt
   uint32_t pushallTotal;    // all pushall requests sent since boot

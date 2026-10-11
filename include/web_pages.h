@@ -86,7 +86,7 @@ function saveWifi(){
 //              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, keepon, afterprint,
 //              fmins, afterfin, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
-//              cydcls, cyd32e, rskin, rotation, tz, use24h, datefmt, clk_time, clk_date,
+//              cydcls, cyd32e, rskin, card, cleft, cbot, cready, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
 //              clr_bg, clr_track, clr_pbar, clr_eta, clr_fin, clr_stok,
@@ -95,7 +95,7 @@ function saveWifi(){
 //              prg/noz/bed/pfn/afn/afr/cfn/exh/cht/hbk/pwr/lyr/clk/ams/nzr/nzl/dor + _lbl
 //    Errors:   hmsen, hmssev, hmsauto, hmsonl, hmsm0..hmsm3 (composed into the
 //              hmsmask arg)
-//    Hardware: rotmode, rotinterval, btntype, btnpin, buzzen (DOUBLE Z!),
+//    Hardware: rotmode, rotinterval (card shown under Printer), btntype, btnpin, buzzen (DOUBLE Z!),
 //              buzpin, buzqs, buzqe, buzclick, buzbeden, buzbedtemp, leden,
 //              leddrv, ledpin, ledping, ledpinb, ledanode, ledbr, ledfxmd,
 //              ledfxsec, ledfxbr, ledauto, ledpause, lederr, lednight,
@@ -148,15 +148,19 @@ static const char PAGE_HTML_1[] PROGMEM = R"rawliteral(
 <div class="app">
 <!-- ============ Sidebar ============ -->
 <aside class="sidebar" id="sidebar">
-  <h4>Configuration</h4>
+  <h4>Printer</h4>
   <button class="nav-item" type="button" data-section="printer" aria-current="true"><span>Printer</span></button>
-  <button class="nav-item" type="button" data-section="display"><span>Display</span></button>
 %HMS_NAV%
+  <h4>Display</h4>
+  <button class="nav-item" type="button" data-section="display"><span>Screen</span></button>
+  <button class="nav-item" type="button" data-section="printscreen"><span>Print screen</span></button>
+  <button class="nav-item" type="button" data-section="afterprint"><span>After print</span></button>
+  <button class="nav-item" type="button" data-section="clock"><span>Clock</span></button>
+  <button class="nav-item" type="button" data-section="colors"><span>Colors</span></button>
+  <h4>Device</h4>
   <button class="nav-item" type="button" data-section="hardware"><span>Hardware</span></button>
-  <button class="nav-item" type="button" data-section="advanced"><span>Advanced</span></button>
-  <h4>Network</h4>
-  <button class="nav-item" type="button" data-section="wifi"><span>WiFi &amp; System</span></button>
   <button class="nav-item" type="button" data-section="power"><span>Power</span></button>
+  <button class="nav-item" type="button" data-section="wifi"><span>WiFi &amp; System</span></button>
   <h4>Support</h4>
   <button class="nav-item" type="button" data-section="diag"><span>Diagnostics</span></button>
   <div class="sidebar-footer">
@@ -275,16 +279,16 @@ R"rawliteral(
 
         <div class="field">
           <label for="cl_email">Bambu account email</label>
-          <input type="email" id="cl_email" placeholder="you@example.com" autocomplete="username">
+          <input type="email" id="cl_email" data-nodirty placeholder="you@example.com" autocomplete="username">
         </div>
 
         <div id="cl_passWrap">
           <div class="field" style="margin-top:var(--sp-3)">
             <label for="cl_pass">Password</label>
-            <input type="password" id="cl_pass" autocomplete="current-password">
+            <input type="password" id="cl_pass" data-nodirty autocomplete="current-password">
           </div>
           <label class="hstack" style="gap:var(--sp-2);margin-top:var(--sp-2);font-size:12.5px;color:var(--text-mid)">
-            <input type="checkbox" id="cl_savePass">
+            <input type="checkbox" id="cl_savePass" data-nodirty>
             <span>Remember the password so the device can renew the token by itself. Only works on accounts without two-factor authentication - with 2FA on the password is discarded and you sign in again when the token expires.</span>
           </label>
         </div>
@@ -297,7 +301,7 @@ R"rawliteral(
         <div id="cl_codeWrap" style="display:none;margin-top:var(--sp-3);padding:var(--sp-3);background:var(--bg-sub);border:1px solid var(--line-soft);border-radius:var(--radius-s)">
           <label for="cl_code" id="cl_codeLabel">Verification code</label>
           <div class="hstack" style="gap:var(--sp-3);margin-top:var(--sp-2);flex-wrap:wrap">
-            <input type="text" id="cl_code" class="mono" inputmode="numeric" maxlength="8" style="max-width:140px" placeholder="000000">
+            <input type="text" id="cl_code" data-nodirty class="mono" inputmode="numeric" maxlength="8" style="max-width:140px" placeholder="000000">
             <button type="button" class="btn btn-primary btn-sm" onclick="cloudSubmitCode()">Verify</button>
           </div>
         </div>
@@ -367,11 +371,11 @@ R"rawliteral(
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-gauges-only="fold">
     <div class="card-head">
       <div>
         <h3>Gauge Layout</h3>
-        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown while printing. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Advanced</strong>. The last pair is the two gauges on the Ready and Print complete screens - handy for watching chamber temperature while a part cools. That pair is not used when <em>Keep print status screen after completion</em> is on, since the print grid stays up instead. Set any slot to <em>Empty</em> to hide it.</p>
+        <p id="glDesc">Per-printer display slots. The standard 2x3 grid is always shown while printing. On 240x320 and 320x480 boards the extra rows below only render when the matching grid mode (<em>Landscape 8 slots</em> / <em>Portrait 9 slots</em>) is enabled under <strong>Print screen</strong>. The last pair is the two gauges on the Ready and Print complete screens - handy for watching chamber temperature while a part cools. That pair is not used when <em>Keep print status screen after completion</em> is on, since the print grid stays up instead. Set any slot to <em>Empty</em> to hide it.</p>
       </div>
       <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="resetGaugeLayout()">Reset to default</button>
     </div>
@@ -431,17 +435,47 @@ R"rawliteral(
       <button type="button" class="btn btn-primary" onclick="saveLightConfig()">Save Light Settings</button>
     </div>
   </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Printer rotation</h3><p>How the device cycles between configured printer slots. Shared by all slots.</p></div></div>
+    <div class="field">
+      <label for="rotmode">Rotation mode</label>
+      <select id="rotmode">
+        <option value="0" %RMODE_OFF%>Off (show selected printer only)</option>
+        <option value="1" %RMODE_AUTO%>Auto-rotate (cycle all connected)</option>
+        <option value="2" %RMODE_SMART%>Smart (prioritize printing / drying)</option>
+      </select>
+      <div class="hint">Smart mode shows the printing or drying printer. Rotates only when both are active.</div>
+    </div>
+    <div class="field">
+      <label for="rotinterval">Rotation interval</label>
+      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
+      <label for="rotsplit">Split screen when two printers are printing</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
+    <label class="check-row">
+      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
+      <label for="rotsplitf">Always show split screen (testing)</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" onclick="saveRotation()">Save Rotation</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Section 2: Display ===== -->
 <div class="section" id="sec-display" hidden>
   <div class="section-intro">
-    <h2>Display</h2>
-    <p>Tune brightness, the clock, what happens after a print finishes, and how gauges look.</p>
+    <h2>Screen</h2>
+    <p>Orientation, brightness, and what the button or touchscreen does.</p>
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Screen</h3></div></div>
+    <div class="card-head"><div><h3>Orientation</h3></div></div>
     <div class="field">
       <label for="rotation">Screen orientation</label>
       <select id="rotation">
@@ -451,32 +485,6 @@ R"rawliteral(
         <option value="3" %ROT3%>270&deg;</option>
       </select>
     </div>
-    <label class="check-row">
-      <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
-      <label for="abar">Animated progress bar (shimmer effect)</label>
-    </label>
-    <div class="field">
-      <label for="timem">Time display</label>
-      <select id="timem" onchange="toggleSetting('timem',this.value)">
-        <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
-        <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
-        <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
-      </select>
-      <span class="text-dim small">applies immediately</span>
-    </div>
-    <label class="check-row">
-      <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
-      <label for="fanmp">Match printer fan % (10% steps - applies on next printer update)</label>
-    </label>
-    <label class="check-row">
-      <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
-      <label for="hidelp">Hide layer/power line in status bar</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
-%AMST_ROW%
-%INVCOL_ROW%
-%CYD_PANEL_ROW%
-%ROUND_SKIN_ROW%
   </div>
 
   <div class="card" style="%BL_DISP%">
@@ -502,15 +510,109 @@ R"rawliteral(
         <div class="hint">Recommended: 20-50 for night use. Requires NTP time sync.</div>
       </div>
     </div>
+    <div class="field" style="margin-top:var(--sp-4)">
+      <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
+      <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
+             oninput="document.getElementById('ssbrightVal').textContent=this.value">
+      <div class="hint">Brightness when clock/screensaver is active. Set to 0 to turn off backlight.</div>
+    </div>
+  </div>
+
+  <div class="card" id="gestCard">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>What a tap, a double tap and a hold do on the button or touchscreen. Always fixed: with Double tap set to Plug power, a hold on Printer Off powers the printer on, and the plug confirm screen takes every press.</p></div></div>
+%GESTURE_ROWS%
+  </div>
+  <div class="card" id="gestOff" style="display:none">
+    <div class="card-head"><div><h3>Button &amp; touch gestures</h3><p>Need a button or the touchscreen. Pick a <strong>Button type</strong> under <a href="#" onclick="loadSection('hardware');return false">Hardware</a> first.</p></div></div>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-printscreen" hidden>
+  <div class="section-intro">
+    <h2>Print screen</h2>
+    <p>How the screen looks while a printer works: the style, its options and gauge tuning.</p>
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Screensaver &amp; sleep</h3><p>When the display leaves the printer screen for the clock screensaver, or turns off. Applies after a print and whenever the device sits idle.</p></div></div>
+    <div class="card-head"><div><h3>Style</h3><p>Which gauges show is set per printer under <a href="#" onclick="loadSection('printer');return false">Printer &rarr; Gauge Layout</a>.</p></div></div>
+%ROUND_SKIN_ROW%
+%CARD_SKIN_ROW%
+    <label class="check-row">
+      <input type="checkbox" id="abar" value="1" %ABAR% onchange="toggleSetting('abar',this.checked)">
+      <label for="abar">Animated progress bar (shimmer effect)</label>
+    </label>
+    <div class="field" data-gauges-only>
+      <label for="timem">Time display</label>
+      <select id="timem" onchange="toggleSetting('timem',this.value)">
+        <option value="0" %TIMEM0%>Finish time / ETA (default) - "ETA: 17:45"</option>
+        <option value="1" %TIMEM1%>Remaining time - "Remaining: 2h 05m"</option>
+        <option value="2" %TIMEM2%>Both - "17:45 &middot; 2h05m"</option>
+      </select>
+    </div>
+    <label class="check-row" data-gauges-only>
+      <input type="checkbox" id="fanmp" value="1" %FMP% onchange="toggleSetting('fanmp',this.checked)">
+      <label for="fanmp">Match printer fan % (10% steps)</label>
+    </label>
+    <label class="check-row" data-gauges-only>
+      <input type="checkbox" id="hidelp" value="1" %HIDELP% onchange="toggleSetting('hidelp',this.checked);applyHideReadoutToPowerDM()">
+      <label for="hidelp">Hide layer/power line in status bar</label>
+    </label>
+    <div class="help-text" style="padding-left:28px" data-gauges-only>Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
+%AMST_ROW%
+  </div>
+
+%EXTENDED_MODES_CARD%
+
+  <div class="card">
+    <div class="card-head"><div><h3>Gauge scales</h3><p>Full-scale value each arc represents. Lower a scale so the arc sweeps fuller for your printer's normal range. Defaults suit any Bambu printer.</p></div></div>
+    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 300</span></div></div>
+    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 120</span></div></div>
+    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 60</span></div></div>
+    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W &middot; default 1000</span></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
+    <div class="field" data-gauges-only><label for="gsmooth">Arc smoothing</label>
+      <select id="gsmooth">
+        <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
+        <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
+        <option value="2" %GSMOOTH_NORM%>Normal (~1s)</option>
+        <option value="3" %GSMOOTH_FAST%>Fast (~0.4s)</option>
+      </select>
+      <span class="text-dim small">default Normal</span>
+    </div>
+    <div class="field"><label for="warn_thr">Warning threshold</label>
+      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="warn_thr" min="0" max="100" step="5" value="%WARN_THR%" style="max-width:120px"><span class="text-dim small">% of scale &middot; default 0 (off)</span></div>
+    </div>
+    <div class="field"><label for="warn_clr">Warning color</label>
+      <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
+    </div>
+    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale. The Cards style colors its temperatures the same way.</p>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-afterprint" hidden>
+  <div class="section-intro">
+    <h2>After print</h2>
+    <p>The finish screen, the edge glow, and when the display goes to the clock or sleeps.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Finish screen &amp; sleep</h3><p>When the display leaves the printer screen for the clock screensaver, or turns off. Applies after a print and whenever the device sits idle.</p></div></div>
     <label class="check-row">
       <input type="checkbox" id="keepon" value="1" %KEEPON% onchange="toggleSetting('keepon',this.checked);toggleAfterPrint()">
       <label for="keepon">Disable screensaver (display always on)</label>
     </label>
-    <div class="help-text" style="padding-left:28px">The clock screensaver never appears and the display never sleeps - the printer screen stays up. Pick this on a board with no button or touchscreen, where there is no way to wake the display back up.</div>
+    <div class="help-text" style="padding-left:28px">No clock, no sleep - the printer screen stays up. For boards with no button or touchscreen to wake the display.</div>
     <div id="afterPrintWrap" style="display:%AP_WRAP_DISP%">
     <div class="field">
       <label for="afterprint">When the print finishes</label>
@@ -550,8 +652,11 @@ R"rawliteral(
       <label for="kps">Keep print status screen after completion</label>
     </label>
     <div class="help-text" style="padding-left:28px">Show last print stats instead of the finish screen. Drying screen still takes priority.</div>
-    <div style="%GLOW_DISP%">
-      <div class="field" style="margin-top:var(--sp-4)">
+  </div>
+
+  <div class="card" style="%GLOW_DISP%">
+    <div class="card-head"><div><h3>Edge glow</h3></div></div>
+      <div class="field">
         <label for="glowm">Edge glow light effect</label>
         <select id="glowm" onchange="toggleGlowFields();toggleSetting('glowm',this.value)">
           <option value="0" %GLOWM0%>Off</option>
@@ -583,25 +688,21 @@ R"rawliteral(
         </div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="glowTestNow()">Test effect on device (5 s)</button>
       </div>
-    </div>
-    <div class="field" style="margin-top:var(--sp-4);%BL_DISP%">
-      <label class="hstack" style="justify-content:space-between" for="ssbright"><span>Screensaver brightness</span><span class="mono text-dim" id="ssbrightVal">%SSBRIGHT%</span></label>
-      <input type="range" id="ssbright" min="0" max="255" step="5" value="%SSBRIGHT%"
-             oninput="document.getElementById('ssbrightVal').textContent=this.value">
-      <div class="hint">Brightness when clock/screensaver is active. Set to 0 to turn off backlight.</div>
-    </div>
-    <label class="check-row" id="pong-row" style="%PONG_DISP%">
-      <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
-      <label for="pong">Breakout clock (animated game as screensaver)</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Without a physical button, clock is always shown instead of turning the display off.</div>
   </div>
 
-  <details class="card card-collapsible">
-    <summary>
-      <div><h3>Clock</h3><p>Timezone, format, and color of the clock screen.</p></div>
-    </summary>
-    <div class="card-body">
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-clock" hidden>
+  <div class="section-intro">
+    <h2>Clock</h2>
+    <p>The clock screen shown as the screensaver.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Clock</h3><p>Timezone, format, and color of the clock screen.</p></div></div>
       <div class="field">
         <label for="tz">Timezone (DST switches automatically)</label>
         <select id="tz"></select>
@@ -653,14 +754,34 @@ R"rawliteral(
         <input type="checkbox" id="clk_hidedate" value="1" %CLK_HIDEDATE% onchange="toggleSetting('clkhd',this.checked)">
         <label for="clk_hidedate">Hide date (time only)</label>
       </label>
-    </div>
-  </details>
+    <label class="check-row" id="pong-row" style="%PONG_DISP%">
+      <input type="checkbox" id="pong" value="1" %PONG% onchange="toggleSetting('pong',this.checked)">
+      <label for="pong">Breakout clock (animated game as screensaver)</label>
+    </label>
+    <div class="help-text" style="padding-left:28px">Without a physical button, clock is always shown instead of turning the display off.</div>
+  </div>
 
-  <details class="card card-collapsible">
-    <summary>
-      <div><h3>Gauge Appearance</h3><p>Pick a preset or paint individual gauges, and rename any gauge label. Bulk pickers update the form only - click Apply to save.</p></div>
-    </summary>
-    <div class="card-body">
+  <div class="card">
+    <div class="card-head"><div><h3>Clock screen info</h3><p>Show each configured printer's name and LAN IP in a small footer on the idle/clock screen. Handy when you run several units side by side.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="clkinfo" value="1" %CLK_INFO% onchange="toggleSetting('clkinfo',this.checked)">
+      <label for="clkinfo">Show printer name &amp; IP on clock screen</label>
+    </label>
+  </div>
+
+  <div class="action-bar" style="border:none;padding:0;margin:0">
+    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
+  </div>
+</div>
+
+<div class="section" id="sec-colors" hidden>
+  <div class="section-intro">
+    <h2>Colors</h2>
+    <p>Screen colors and gauge labels.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h3>Colors</h3><p>Pick a preset or paint single gauges and rename their labels. Bulk pickers only fill the form - click Apply to save. Cards uses Background, Track, Progress Bar, Finish time, the accents below, Door, each gauge&#39;s value color and the Nozzle arc color for the active nozzle.</p></div></div>
       <div class="swatch-row">
         <button type="button" class="swatch" onclick="applyTheme('default')"><span class="blob" style="background:#00FF00"></span> Default</button>
         <button type="button" class="swatch" onclick="applyTheme('mono_green')"><span class="blob" style="background:#7AC74F"></span> Mono Green</button>
@@ -668,6 +789,7 @@ R"rawliteral(
         <button type="button" class="swatch" onclick="applyTheme('warm')"><span class="blob" style="background:#E0623A"></span> Warm</button>
         <button type="button" class="swatch" onclick="applyTheme('ocean')"><span class="blob" style="background:#2DB8C4"></span> Ocean</button>
         <button type="button" class="swatch" onclick="applyTheme('paper')"><span class="blob" style="background:#E8E8E8"></span> Paper</button>
+        <button type="button" class="swatch" onclick="applyTheme('warmpaper')"><span class="blob" style="background:#E4E1DA"></span> Warm paper</button>
       </div>
 
       <div class="bulk-color-row">
@@ -728,14 +850,12 @@ R"rawliteral(
         <button type="button" class="btn btn-ghost btn-sm" onclick="resetGaugeColors()">Reset to defaults</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="clearGaugeLabels()">Clear labels</button>
       </div>
-    </div>
-  </details>
+  </div>
 
   <div class="action-bar" style="border:none;padding:0;margin:0">
     <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
   </div>
 </div>
-
 )rawliteral";
 
 #if HAS_HMS_WEB_UI
@@ -748,7 +868,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers are currently reporting, including codes that stand permanently and never raise an alert. Codes Bambu publishes no description for are left out - the printer's own screen and Bambu Studio do not show them either.</p></div></div>
+    <div class="card-head"><div><h3>Reported now</h3><p>Everything the printers report right now, including permanent codes that never raise an alert. Codes without a Bambu description are left out, as on the printer and in Bambu Studio.</p></div></div>
     <div class="card-body"><div id="hmsLive"><span class="text-dim">Loading...</span></div></div>
   </div>
 
@@ -759,14 +879,14 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
         <input type="checkbox" id="hmsen" value="1" %HMS_EN% onchange="toggleSetting('hmsen',this.checked);toggleHmsFields()">
         <label for="hmsen">Report printer errors</label>
       </label>
-      <div class="help-text" style="padding-left:28px">Off hides the badge, the error screen and every alert below. Codes keep being read, so turning this back on takes effect immediately.</div>
+      <div class="help-text" style="padding-left:28px">Off hides the badge, the error screen and every alert below.</div>
 
       <div id="hmsFields" style="display:%HMS_DISP%">
         <label class="check-row" style="margin-top:var(--sp-3)">
           <input type="checkbox" id="hmssev" value="1" %HMS_SEV% onchange="toggleSetting('hmssev',this.checked)">
           <label for="hmssev">Include low-priority codes</label>
         </label>
-        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common ones - advisories the printer expects you to notice but not to act on immediately. Codes already active when the device connects never raise an alert either way - they are the printer's normal state, not news.</div>
+        <div class="help-text" style="padding-left:28px">Off shows only fatal and serious codes. On adds the common advisories. Codes already active when the device connects never raise an alert.</div>
 
         <div class="field" style="margin-top:var(--sp-4)">
           <label for="hmsauto">Show the error screen automatically</label>
@@ -807,7 +927,7 @@ static const char PAGE_HTML_ERRORS[] PROGMEM = R"rawliteral(
             <input type="checkbox" id="hmsonl" value="1" %HMS_ONL% onchange="toggleSetting('hmsonl',this.checked);hmsLookupChanged()">
             <label for="hmsonl">Look up error text on this page</label>
           </label>
-          <div class="help-text" style="padding-left:28px">This board stores the text for print errors, but not for the thousands of HMS codes. With this on, <strong>this page</strong> - not the device - fetches that missing text once per visit from keralots.github.io. The device never contacts it. Off keeps the code, severity, module and wiki link on every row, and print-error rows keep their text either way.</div>
+          <div class="help-text" style="padding-left:28px">This board has no room for HMS error text. With this on, <strong>your browser</strong> (never the device) fetches it from keralots.github.io once per visit. Off still shows the code, severity, module and wiki link.</div>
         </div>
       </div>
     </div>
@@ -825,31 +945,10 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <p>Board-specific configuration. Available options depend on which display device you flashed.</p>
   </div>
 
-  <div class="card">
-    <div class="card-head"><div><h3>Printer rotation</h3><p>How the device cycles between configured printer slots.</p></div></div>
-    <div class="field">
-      <label for="rotmode">Rotation mode</label>
-      <select id="rotmode">
-        <option value="0" %RMODE_OFF%>Off (show selected printer only)</option>
-        <option value="1" %RMODE_AUTO%>Auto-rotate (cycle all connected)</option>
-        <option value="2" %RMODE_SMART%>Smart (prioritize printing / drying)</option>
-      </select>
-      <div class="hint">Smart mode shows the printing or drying printer. Rotates only when both are active.</div>
-    </div>
-    <div class="field">
-      <label for="rotinterval">Rotation interval</label>
-      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="rotinterval" min="10" max="600" value="%ROT_INTERVAL%" style="max-width:120px"><span class="text-dim small">seconds</span></div>
-    </div>
-    <label class="check-row">
-      <input type="checkbox" id="rotsplit" value="1" %ROT_SPLIT_CHK% onchange="toggleSetting('rotsplit',this.checked)">
-      <label for="rotsplit">Split screen when two printers are printing</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Shows both active printers at once (top/bottom), overriding rotation while two are printing or drying.</div>
-    <label class="check-row">
-      <input type="checkbox" id="rotsplitf" value="1" %ROT_SPLITF_CHK% onchange="toggleSetting('rotsplitf',this.checked)">
-      <label for="rotsplitf">Always show split screen (testing)</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Forces the split view of the first two configured printers regardless of activity, so you can test the layout without two live prints.</div>
+  <div class="card" style="%PANEL_CARD_DISP%">
+    <div class="card-head"><div><h3>Display panel</h3><p>Fixes for panel variants. Only change these if the screen looks wrong.</p></div></div>
+%INVCOL_ROW%
+%CYD_PANEL_ROW%
   </div>
 
   <div class="card">
@@ -1034,71 +1133,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="action-bar" style="border:none;padding:0;margin:0">
-    <button type="button" class="btn btn-primary" onclick="saveRotation()">Save Hardware Settings</button>
-  </div>
-</div>
-
-<!-- ===== Section 5: Advanced ===== -->
-<div class="section" id="sec-advanced" hidden>
-  <div class="section-intro">
-    <h2>Advanced</h2>
-    <p>Extended display layouts and operations that need extra care. Most users do not need anything here.</p>
-  </div>
-
-%EXTENDED_MODES_CARD%
-
-  <div class="card">
-    <div class="card-head"><div><h3>Clock screen info</h3><p>Show each configured printer's name and LAN IP in a small footer on the idle/clock screen. Handy when you run several units side by side.</p></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="clkinfo" value="1" %CLK_INFO% onchange="toggleSetting('clkinfo',this.checked)">
-      <label for="clkinfo">Show printer name &amp; IP on clock screen</label>
-    </label>
-  </div>
-
-  <div class="card">
-    <div class="card-head"><div><h3>Gauge scales</h3><p>Full-scale value each arc represents. Lower a scale so the arc sweeps fuller for your printer's normal range. Defaults suit any Bambu printer.</p></div></div>
-    <div class="field"><label for="noz_max">Nozzle full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="noz_max" min="100" max="400" value="%NOZ_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 300</span></div></div>
-    <div class="field"><label for="bed_max">Bed full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="bed_max" min="40" max="150" value="%BED_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 120</span></div></div>
-    <div class="field"><label for="cht_max">Chamber / AMS temp full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="cht_max" min="30" max="120" value="%CHT_MAX%" style="max-width:120px"><span class="text-dim small">&deg;C &middot; default 60</span></div></div>
-    <div class="field"><label for="pwr_max">Power gauge full-scale</label><div class="hstack" style="gap:var(--sp-2)"><input type="number" id="pwr_max" min="100" max="5000" step="50" value="%PWR_MAX%" style="max-width:120px"><span class="text-dim small">W &middot; default 1000</span></div></div>
-    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
-  </div>
-
-  <div class="card">
-    <div class="card-head"><div><h3>Gauge behavior</h3><p>How temperature arcs animate, and an optional warning color when a gauge runs hot.</p></div></div>
-    <div class="field"><label for="gsmooth">Arc smoothing</label>
-      <select id="gsmooth">
-        <option value="0" %GSMOOTH_OFF%>Off (snap instantly)</option>
-        <option value="1" %GSMOOTH_SLOW%>Slow (~2s)</option>
-        <option value="2" %GSMOOTH_NORM%>Normal (~1s)</option>
-        <option value="3" %GSMOOTH_FAST%>Fast (~0.4s)</option>
-      </select>
-      <span class="text-dim small">default Normal</span>
-    </div>
-    <div class="field"><label for="warn_thr">Warning threshold</label>
-      <div class="hstack" style="gap:var(--sp-2)"><input type="number" id="warn_thr" min="0" max="100" step="5" value="%WARN_THR%" style="max-width:120px"><span class="text-dim small">% of scale &middot; default 0 (off)</span></div>
-    </div>
-    <div class="field"><label for="warn_clr">Warning color</label>
-      <div class="hstack"><input type="color" id="warn_clr" value="%WARN_CLR%"><span class="mono small text-dim">%WARN_CLR%</span><span class="text-dim small">&middot; default red</span></div>
-    </div>
-    <p class="hint">Nozzle, bed and chamber arcs (plus their value text) switch to the warning color once the reading reaches this share of the gauge's full scale.</p>
-    <button type="button" class="btn btn-primary" onclick="applyDisplay()">Apply Display Settings</button>
-  </div>
-
-  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
-    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="dangerUnlock" onchange="toggleDangerUnlock(this.checked)">
-      <label for="dangerUnlock">Show advanced operations</label>
-    </label>
-    <div id="dangerOps" style="display:none;margin-top:var(--sp-3)">
-%DUALP_ADVANCED%
-      <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
-        <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
-        <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
-      </div>
-      <p class="hint" style="margin-top:var(--sp-2)">Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p>
-    </div>
+    <button type="button" class="btn btn-primary" onclick="saveHardware()">Save Hardware Settings</button>
   </div>
 </div>
 
@@ -1167,7 +1202,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Settings backup</h3><p>Export or import all settings as JSON. Useful before reflashing.</p></div></div>
+    <div class="card-head"><div><h3>Settings backup</h3><p>Export or import all settings as JSON. Useful before reflashing. WiFi credentials stay out of the file.</p></div></div>
     <div class="banner banner-warn"><span class="dot"></span><div><strong>Cloud token is not included.</strong><div class="small text-dim" style="margin-top:2px">You will need to paste a fresh token after importing.</div></div></div>
     <button type="button" class="btn btn-ghost" onclick="exportSettings()">Export backup</button>
     <div class="field" style="margin-top:var(--sp-3)">
@@ -1263,7 +1298,21 @@ R"rawliteral(
     </div>
   </div>
 
-  <p class="hint" style="margin-top:var(--sp-3)">Reboot and factory reset have moved to the <strong>Advanced</strong> section.</p>
+  <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
+    <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
+    <label class="check-row">
+      <input type="checkbox" id="dangerUnlock" onchange="toggleDangerUnlock(this.checked)">
+      <label for="dangerUnlock">Show advanced operations</label>
+    </label>
+    <div id="dangerOps" style="display:none;margin-top:var(--sp-3)">
+%DUALP_ADVANCED%
+      <div class="hstack" style="gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-3)">
+        <button type="button" class="btn btn-ghost" onclick="rebootDevice()">Reboot</button>
+        <button type="button" class="btn btn-danger" onclick="factoryReset()">Factory Reset...</button>
+      </div>
+      <p class="hint" style="margin-top:var(--sp-2)">Reboot does not change settings. Factory reset wipes WiFi, printers, gauge layout, everything.</p>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Section 7: Power Monitoring ===== -->
@@ -1317,9 +1366,9 @@ R"rawliteral(
       </div>
       <div class="help-text">Adds the watts and energy of these outlets to the totals, for setups where the printer shares a strip with an external AMS supply or other gear. Power On/Off and auto power-off still act on the outlet selected above only.</div>
     </div>
-    <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3 (same RPC API), and the plug must not be password-protected (digest auth is not supported). Shelly reports live watts and a cumulative Total, but does <strong>not</strong> report Today's / Yesterday's energy, so those stay blank.</div>
-    <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs using the legacy local protocol on TCP port 9999, including KP115 and HS110. No TP-Link credentials or cloud connection are used. Newer KLAP/Matter models are not supported. Kasa reports live watts, relay state, and cumulative Total, but not Today's energy.</div>
-    <div class="help-text" id="tsm_shellystrip_hint" style="display:none">Shelly Power Strip Gen4 - same RPC API as Gen2/Gen3, but exposes multiple outlets at one IP. Pick which outlet above tracks/controls this printer slot. Not password-protected (digest auth is not supported). Reports live watts and a cumulative Total, but not Today's / Yesterday's energy.</div>
+    <div class="help-text" id="tsm_shelly_hint" style="display:none">Shelly Gen2/Gen3, without a password (digest auth is not supported). Reports live watts and a running total, not Today's / Yesterday's energy.</div>
+    <div class="help-text" id="tsm_kasa_hint" style="display:none">TP-Link Kasa plugs on the legacy local protocol (TCP 9999), e.g. KP115 and HS110 - no TP-Link account or cloud. Newer KLAP/Matter models are not supported. Reports live watts and a running total, not Today's energy.</div>
+    <div class="help-text" id="tsm_shellystrip_hint" style="display:none">Shelly Power Strip Gen4: several outlets at one IP - pick this printer's outlet above. Without a password (digest auth is not supported). Reports live watts and a running total, not Today's / Yesterday's energy.</div>
     <div class="row" style="margin-top:var(--sp-3)">
       <div class="field"><label for="tsm_ip">Plug IP address</label><input type="text" id="tsm_ip" class="mono" placeholder="192.168.1.x" maxlength="15"></div>
       <div class="field"><label for="tsm_pi">Poll interval</label><select id="tsm_pi">%TSM_PI_OPTIONS%</select></div>
@@ -1359,12 +1408,7 @@ R"rawliteral(
   </div>
 
   <div class="card">
-    <div class="card-head"><div><h3>Button power control</h3></div></div>
-    <label class="check-row">
-      <input type="checkbox" id="btnpwr" value="1" %BTN_PWR% onchange="toggleSetting('btnpwr',this.checked)">
-      <label for="btnpwr">Double-click device button to turn the plug on/off</label>
-    </label>
-    <div class="help-text" style="padding-left:28px">Double- or triple-click the device button (or touchscreen) to open a full-screen confirmation for the printer on screen, then hold to toggle its plug (red warning if it is printing). Only active when a plug is configured for the shown printer; while armed it adds a short delay to single-tap printer switching.</div>
+    <div class="card-head"><div><h3>Button power control</h3><p>To switch the plug from the device, set <strong>Double tap</strong> to <em>Plug power</em> under <a href="#" onclick="loadSection('display');return false">Screen &rarr; Gestures</a>.</p></div></div>
   </div>
 
   <div class="card">
@@ -1419,7 +1463,7 @@ R"rawliteral(
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
 
-<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',fixedAudio:'%FIXED_AUDIO%',hmsFull:'%HMSFULL%'};</script>
+<script>var DEV={board:'%BOARD%',fw:'%FW_VER%',flashMb:'%FLASHMB%',otaSlot:'%OTASLOT%',round:'%ISROUND%',fixedAudio:'%FIXED_AUDIO%',hmsFull:'%HMSFULL%',boardBtn:'%BOARDBTN%'};</script>
 <script src="/app.js?v=%JSVER%"></script>
 </body>
 </html>

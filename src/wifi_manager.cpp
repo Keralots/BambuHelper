@@ -1,4 +1,5 @@
 #include "wifi_manager.h"
+#include <new>
 #include "settings.h"
 #include "display_ui.h"
 #include "config.h"
@@ -76,9 +77,9 @@ static void startAP() {
 
   // Captive portal: redirect all DNS to our IP
   if (!dnsServer) {
-    dnsServer = new DNSServer();
+    dnsServer = new (std::nothrow) DNSServer();
   }
-  dnsServer->start(53, "*", WiFi.softAPIP());
+  if (dnsServer) dnsServer->start(53, "*", WiFi.softAPIP());
 
   apMode = true;
   disconnectTime = 0;

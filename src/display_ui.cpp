@@ -1,6 +1,7 @@
 #include "display_ui.h"
 #include "display_gauges.h"
 #include "display_split.h"
+#include "display_card.h"
 #include "display_anim.h"
 #include "display_edge_glow.h"
 #include "clock_mode.h"
@@ -62,7 +63,7 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
 //
 // On boards without the HMS feature both collapse to constant false and the
 // ladder is what is left.
-static const char* stateBadgeText(const BambuState& s) {
+const char* stateBadgeText(const BambuState& s) {
   if (errorBadgeActive(s))   return ERROR_BADGE_TEXT;
   if (printerWasCanceled(s)) return CANCELED_STATE_TEXT;
   return s.gcodeState;
@@ -78,7 +79,7 @@ static bool stateBadgeOverrideColor(const BambuState& s, uint16_t& out) {
   return false;
 }
 
-static uint16_t stateBadgeColor(const BambuState& s) {
+uint16_t stateBadgeColor(const BambuState& s) {
   uint16_t override_;
   if (stateBadgeOverrideColor(s, override_)) return override_;
   // FINISH and IDLE are healthy states, so they take the same accent RUNNING
@@ -638,6 +639,27 @@ void triggerDisplayTransition() {
   resetActiveClockCache();
 }
 
+// Card print-screen style (HAS_CARD_SKIN). cardShownLast: the previous display
+// tick rendered Card, so the top LED bar / shimmer stay off and a renderer
+// coming back to its classic layout repaints from scratch.
+static bool cardShownLast = false;
+static bool cardShownNow  = false;
+
+bool cardOnScreen() { return cardShownLast; }
+
+static bool tryCard(bool (*draw)(PrinterSlot&, bool), PrinterSlot& p) {
+  if (cardSkinActive() && draw(p, forceRedraw || !cardShownLast)) {
+    cardShownNow = true;
+    gaugesAnimating = false;
+    return true;
+  }
+  if (cardShownLast) {
+    cardShownLast = false;
+    triggerDisplayTransition();   // classic screen repaints whole this tick
+  }
+  return false;
+}
+
 void setScreenState(ScreenState state) {
   currentScreen = state;
 }
@@ -1007,12 +1029,12 @@ static void drawConnectingMQTT() {
 
   // Diagnostics (only after first attempt)
   const MqttDiag& d = getMqttDiag(rotState.displayIndex);
-  if (d.attempts > 0) {
+  if (d.attempts + d.probes > 0) {
     setFont(tft, LY_F_SMALL);
     tft.setTextDatum(MC_DATUM);
 
     char buf[40];
-    snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts);
+    snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts + d.probes);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, cy + LY_SC(50));
 
@@ -1671,7 +1693,7 @@ static bool drawIdlePairSlots(const PrinterConfig& cfg, const BambuState& s,
 // (the user turned the timestamp off, or the print finished before NTP had a
 // valid clock). Shared by the finished-screen headline and the idle status
 // badge so both agree on the 12h/24h wording.
-static bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
+bool formatFinishClock(char* buf, size_t n, const BambuState& s) {
   buf[0] = '\0';
   if (!dpSettings.finishShowTime || s.finishEpoch == 0) return false;
   // localtime_r needs a real time_t; finishEpoch is stored as uint32_t so its
@@ -1783,6 +1805,8 @@ static void drawIdle() {
     resetBatteryRedrawCache();
     forceRedraw = true;
   }
+
+  if (tryCard(drawCardIdle, p)) return;
 
   // Effective screen dimensions. In landscape, always reserve the right
   // column for the AMS sidebar even when no AMS is present yet — otherwise
@@ -4103,6 +4127,8 @@ static void drawPrinting() {
     }
   }
 
+  if (tryCard(drawCardPrinting, p)) return;
+
   bool animating = tickGaugeSmooth(s, forceRedraw);
   gaugesAnimating = animating;
   bool progChanged = forceRedraw || (s.progress != prevState.progress);
@@ -4956,6 +4982,8 @@ static void drawFinished() {
   static bool  prevFinTasmotaOnline = false;
   static float prevFinWatts = -2.0f;
   static float prevFinKwh = -2.0f;
+
+  if (tryCard(drawCardFinished, p)) return;
 
   // Effective screen dimensions — finished uses full screen (no AMS sidebar)
 #if defined(LAYOUT_HAS_AMS_STRIP)
@@ -5813,10 +5841,17 @@ void updateDisplay() {
   // Round displays have no top LED bar (the rim ring replaces it), no shimmer.
   if (currentScreen == SCREEN_PRINTING && !glowIsActive()) {
     // The glow band owns the top edge while it runs - shimmer would fight it.
-    BambuState& sh = displayedPrinter().state;
-    tickProgressShimmer(tft, 0, sh.progress, sh.printing);
-    markFrameDirty();
+    // Card has no LED bar; it shimmers its own progress bar instead.
+    if (cardShownLast) {
+      if (tickCardShimmer()) markFrameDirty();
+      if (tickCardMarquee()) markFrameDirty();
+    } else {
+      BambuState& sh = displayedPrinter().state;
+      tickProgressShimmer(tft, 0, sh.progress, sh.printing);
+      markFrameDirty();
+    }
   }
+  if (cardShownLast && tickCardColon()) markFrameDirty();
   if ((currentScreen == SCREEN_IDLE || currentScreen == SCREEN_DRY_PEEK) &&
       isPrinterConfigured(rotState.displayIndex)) {
     BambuState& sh = displayedPrinter().state;
@@ -5948,6 +5983,8 @@ void updateDisplay() {
     prev9Slots = dispSettings.portrait9Slots;
   }
 
+  if (!cardSkinActive()) cardRelease();   // style switched off: give the RAM back on any screen
+  cardShownNow = false;
   switch (currentScreen) {
     case SCREEN_SPLASH:
       // Splash shown in initDisplay(), auto-advance handled by main.cpp
@@ -6034,6 +6071,8 @@ void updateDisplay() {
       break;
   }
 
+  cardShownLast = cardShownNow;
+
 #if !DISPLAY_IS_ROUND
   // The base screen may have just repainted over the band (forceRedraw, gauge
   // updates) - put it back in the same frame so the glow keeps the edge.
@@ -6045,4 +6084,44 @@ void updateDisplay() {
   // Save state for next smart-redraw comparison
   memcpy(&prevState, &displayedPrinter().state, sizeof(BambuState));
   forceRedraw = false;
+}
+
+// Screenshot: re-render the current screen into a PSRAM sprite by retargeting
+// tft_ptr (the JC frame-sprite trick), then repaint the real target from scratch.
+static lgfx::LGFX_Sprite* g_shot = nullptr;
+static lgfx::LovyanGFX* g_shotPrev = nullptr;
+
+bool screenCaptureBegin(const uint16_t** buf, int16_t* w, int16_t* h) {
+  if (g_shot || currentScreen == SCREEN_POWER_CONFIRM) return false;  // modal waits on a real frame
+  const int16_t sw = tft.width(), sh = tft.height();
+  // LovyanGFX falls back to internal RAM when PSRAM is short - never allow that.
+  if (!psramFound() ||
+      heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) < (size_t)sw * sh * 2 + 4) return false;
+  g_shot = new (std::nothrow) lgfx::LGFX_Sprite(tft_ptr);
+  if (!g_shot) return false;
+  g_shot->setPsram(true);
+  g_shot->setColorDepth(16);
+  if (!g_shot->createSprite(sw, sh)) { delete g_shot; g_shot = nullptr; return false; }
+  tft.waitDMA();
+  g_shot->setTextDatum(tft.getTextDatum());
+  g_shotPrev = tft_ptr;
+  tft_ptr = g_shot;
+  setFont(tft, FONT_NONE);         // font cache is target-agnostic: reload into the sprite
+  triggerDisplayTransition();
+  lastDisplayUpdate = 0;
+  updateDisplay();
+  *buf = static_cast<const uint16_t*>(g_shot->getBuffer());
+  *w = sw;
+  *h = sh;
+  return true;
+}
+
+void screenCaptureEnd() {
+  if (!g_shot) return;
+  setFont(tft, FONT_NONE);         // unloads the sprite's VLW
+  tft_ptr = g_shotPrev;
+  delete g_shot;
+  g_shot = nullptr;
+  triggerDisplayTransition();      // caches now describe the sprite, not the panel
+  lastDisplayUpdate = 0;
 }

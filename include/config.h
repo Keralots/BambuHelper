@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v3.8.3"
+#define FW_VERSION          "v3.9.0-beta.2"
 
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
@@ -81,6 +81,7 @@
 #define BAMBU_BACKOFF_PHASE2_MS     60000   // 60s after phase 1 exhausted
 #define BAMBU_BACKOFF_PHASE2        10      // next N attempts at phase 2 interval
 #define BAMBU_BACKOFF_PHASE3_MS     120000  // 120s after phase 2 exhausted
+#define BAMBU_OFFLINE_PROBE_MS      20000   // LAN: TCP probe interval while the printer is off
 #define BAMBU_STALE_TIMEOUT         60000   // 60s no data = stale
 #define BAMBU_PRINT_STALE_TIMEOUT   120000  // cloud: 120s no core print data = stale (LAN uses BAMBU_STALE_TIMEOUT)
 #define BAMBU_PUSHALL_INTERVAL      30000   // request full status every 30s (LAN)
@@ -269,6 +270,36 @@
 
 #if BOARD_HAS_ONBOARD_RGB_PIXEL && !HAS_LED_PIXEL
 #error "A board with an onboard WS2812 cannot drop the pixel driver"
+#endif
+
+// "Card" print-screen style (big percent, temperature row, AMS column), rendered
+// through an off-screen sprite. The 240x320 profile (both orientations) and the
+// 240x240 profile; links two extra VLW blobs (inter_card_num / inter_card_lbl).
+// 240x320 boards without PSRAM (CYD family) render it in 20 px internal-RAM bands.
+#if (defined(DISPLAY_240x320) || defined(DISPLAY_320x480)) && defined(BOARD_HAS_PSRAM)
+#define HAS_CARD_SKIN  1
+#elif defined(DISPLAY_240x320) && !defined(BOARD_IS_C3)
+#define HAS_CARD_SKIN  1   // band path (CARD_BAND_RENDER); not on a C3 (DIY), too little RAM
+#elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
+      !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
+#define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
+#else
+#define HAS_CARD_SKIN  0
+#endif
+
+// Plate thumbnail in the Card left column, fetched from Bambu Cloud. Needs
+// PSRAM for the 512x512 decode and the downloaded PNG.
+#if HAS_CARD_SKIN && defined(BOARD_HAS_PSRAM)
+#define HAS_CARD_THUMB  1
+#else
+#define HAS_CARD_THUMB  0
+#endif
+
+// Card without a PSRAM full frame: scene drawn band by band into a small sprite.
+#if HAS_CARD_SKIN && !defined(BOARD_HAS_PSRAM)
+#define CARD_BAND_RENDER  1
+#else
+#define CARD_BAND_RENDER  0
 #endif
 
 // HMS / print_error reporting. Four independent capabilities:

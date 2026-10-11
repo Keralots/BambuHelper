@@ -65,6 +65,11 @@ struct GaugeColors {
 };
 
 // All display customization settings
+// Button & touch gestures (Hardware > Button & touch gestures).
+enum : uint8_t { GT_SMART = 0, GT_NEXT = 1, GT_AMS = 2, GT_WAKE = 3 };
+enum : uint8_t { GD_OFF = 0, GD_PLUG = 1, GD_AMS = 2, GD_NEXT = 3 };
+enum : uint8_t { GH_LED = 0, GH_AMS = 1, GH_NONE = 2 };
+
 struct DisplaySettings {
   uint8_t  rotation;       // 0, 1, 2, 3 (x90 degrees)
   uint16_t bgColor;        // background color
@@ -90,6 +95,10 @@ struct DisplaySettings {
                             // 0 = Rim (rim progress ring + mini gauges),
                             // 1 = Speedo (one large 240-degree arc),
                             // 2 = Rings (concentric progress/nozzle/bed).
+  uint8_t  cardStyle;       // HAS_CARD_SKIN, landscape only: 0 = gauges, 1 = Card
+  uint8_t  cardLeft;        // Card left column: 0 = AMS slots, 1 = none, 2 = plate preview (cloud)
+  uint8_t  cardBottom;      // Card bottom band: 0 = temperatures, 1 = print filaments
+  uint8_t  cardReady;       // Card Ready screen: 0 = status, 1 = AMS page, 2 = alternate
   bool     landscape8Slots; // 240x320 landscape: replace AMS sidebar with a
                             // symmetric 2x4 gauge grid (8 slots, no sidebar).
   bool     portrait9Slots;  // 240x320 / 320x480 portrait: replace AMS strip
@@ -101,7 +110,10 @@ struct DisplaySettings {
   bool     hideClockDate;  // minimalist mode: time only, no date line
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
-  bool     buttonPowerControl; // #136: double/triple-click device button opens plug on/off confirm
+  bool     buttonPowerControl; // #136: derived, == (gestDouble == GD_PLUG); kept for the Power card + old backups
+  uint8_t  gestTap;            // single tap:  GT_SMART / GT_NEXT / GT_AMS / GT_WAKE
+  uint8_t  gestDouble;         // double tap:  GD_OFF / GD_PLUG / GD_AMS / GD_NEXT
+  uint8_t  gestHold;           // hold:        GH_LED / GH_AMS / GH_NONE
   bool     showBatteryIndicator; // Waveshare boards: show battery icon in status bar
   // Edge glow: animated border light announcing print complete / print failed
   uint8_t  glowMode;       // 0 = Off, 1 = Single color, 2 = Rainbow

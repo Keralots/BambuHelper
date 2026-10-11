@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include <new>
 #include "web_template.h"
 #include "settings.h"
 #include "bambu_state.h"
@@ -11,6 +12,7 @@
 #include "ssdp_discovery.h"
 #include "wifi_manager.h"
 #include "display_ui.h"
+#include "display_card.h"
 #include "display_edge_glow.h"
 #include "config.h"
 #include "button.h"
@@ -25,6 +27,7 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include "esp_ota_ops.h"
+#include "esp_system.h"
 #ifdef ENABLE_OTA_AUTO
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
@@ -261,7 +264,7 @@ static void handleSavePrinter() {
 #ifdef BOARD_HAS_PSRAM
   if (slot > 1 && !quadPrinterBeta) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode in Advanced settings to configure printer 3/4.\"}");
+      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode under WiFi & System > Danger zone to configure printer 3/4.\"}");
     return;
   }
 #endif
@@ -512,6 +515,7 @@ static void handleStatus() {
   doc["fan"] = st.coolingFanPct;
   doc["layer"] = st.layerNum;
   doc["layers"] = st.totalLayers;
+  doc["task_id"] = st.taskId;
   doc["display_off"] = (getScreenState() == SCREEN_OFF);
   doc["name"] = printers[slot].config.name;
   doc["lightState"] = st.lightState;  // -1 unknown / 0 off / 1 on (chamber light)
@@ -617,6 +621,23 @@ static void handleReset() {
   resetSettings();  // clears NVS and calls ESP.restart()
 }
 
+// Why the chip last booted - tells a brownout from a panic from an OTA reboot.
+static const char* resetReasonText(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "external";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    default:                return "unknown";
+  }
+}
+
 static void handleDebug() {
   JsonDocument doc;
   unsigned long now = millis();
@@ -631,6 +652,7 @@ static void handleDebug() {
     p["name"] = printers[i].config.name;
     p["connected"] = st.connected;
     p["attempts"] = d.attempts;
+    p["probes"] = d.probes;
     p["messages"] = d.messagesRx;
     p["last_rc"] = d.lastRc;
     p["rc_text"] = mqttRcToString(d.lastRc);
@@ -710,6 +732,7 @@ static void handleDebug() {
 
   doc["heap"] = ESP.getFreeHeap();
   doc["uptime"] = millis() / 1000;
+  doc["reset_reason"] = resetReasonText(esp_reset_reason());
   doc["rssi"] = WiFi.RSSI();
   doc["debug_log"] = mqttDebugLog;
   {
@@ -736,6 +759,71 @@ static void handleDebug() {
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// Byte-swapped RGB565 frame as a 24-bit BMP - the panel itself cannot be read back.
+// bandH > 0: buf is a Card band, re-rendered via cardBandView() as rows advance.
+static void sendRgb565Bmp(const uint16_t* buf, int16_t w, int16_t h, int16_t bandH) {
+  const uint32_t rowBytes = ((uint32_t)w * 3 + 3) & ~3u;
+  const uint32_t dataSize = rowBytes * h, fileSize = 54 + dataSize;
+  uint8_t hdr[54] = {'B', 'M'};
+  auto put32 = [&](int off, uint32_t v) { for (int i = 0; i < 4; i++) hdr[off + i] = (uint8_t)(v >> (8 * i)); };
+  put32(2, fileSize); put32(10, 54); put32(14, 40); put32(18, (uint32_t)w); put32(22, (uint32_t)h);
+  hdr[26] = 1; hdr[28] = 24; put32(34, dataSize);
+  server.setContentLength(fileSize);
+  server.send(200, "image/bmp", "");
+  server.sendContent((const char*)hdr, sizeof(hdr));
+  uint8_t row[480 * 3 + 4];
+  if (rowBytes > sizeof(row)) return;
+  const unsigned long t0 = millis();
+  for (int16_t y = h - 1; y >= 0; y--) {          // BMP rows run bottom-up
+    // A slow or vanished client must not hold the loop (display, MQTT) hostage.
+    if (!server.client().connected() || millis() - t0 > 5000) { server.client().stop(); return; }
+    memset(row, 0, rowBytes);
+    int16_t ly = y;
+    if (bandH) {
+      const int16_t y0 = y - y % bandH;
+      int16_t bw, bh, fh;
+      if (y % bandH == bandH - 1 || y == h - 1) {
+        if (!cardBandView(y0, &buf, &bw, &bh, &fh)) { server.client().stop(); return; }
+      }
+      ly = y - y0;
+    }
+    const uint16_t* src = buf + (uint32_t)ly * w;
+    for (int16_t x = 0; x < w; x++) {
+      uint16_t v = (uint16_t)((src[x] >> 8) | (src[x] << 8));   // sprite stores swapped RGB565
+      uint8_t r = (v >> 11) & 0x1F, g = (v >> 5) & 0x3F, b = v & 0x1F;
+      row[x * 3 + 0] = (uint8_t)((b << 3) | (b >> 2));
+      row[x * 3 + 1] = (uint8_t)((g << 2) | (g >> 4));
+      row[x * 3 + 2] = (uint8_t)((r << 3) | (r >> 2));
+    }
+    server.sendContent((const char*)row, rowBytes);
+  }
+}
+
+// Last Card frame.
+static void handleCardBmp() {
+  const uint16_t* buf; int16_t w, h, bandH = 0;
+  if (cardFrameView(&buf, &w, &h)) {
+    sendRgb565Bmp(buf, w, h, 0);
+  } else if (cardBandView(0, &buf, &w, &bandH, &h)) {
+    // Band-render board: re-render the last frame band by band, bottom-up.
+    sendRgb565Bmp(buf, w, h, bandH);
+  } else {
+    server.send(404, "text/plain", "No Card frame (Card style off)");
+  }
+  cardBandRelease();   // band boards: the band sprite holds DMA-capable RAM
+}
+
+// Whatever screen is up (gauges, clock, Card...), re-rendered into PSRAM.
+static void handleScreenBmp() {
+  const uint16_t* buf; int16_t w, h;
+  if (!screenCaptureBegin(&buf, &w, &h)) {
+    server.send(503, "text/plain", "Screenshot needs free PSRAM (not on a power-confirm screen)");
+    return;
+  }
+  sendRgb565Bmp(buf, w, h, 0);
+  screenCaptureEnd();
 }
 
 static void handleDebugToggle() {
@@ -768,11 +856,27 @@ static void handleToggleSetting() {
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;
   else if (key == "rskin")   dispSettings.roundSkin = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+#if HAS_CARD_SKIN
+  else if (key == "card")    dispSettings.cardStyle  = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+  else if (key == "cleft")   dispSettings.cardLeft   = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+  else if (key == "cbot")    dispSettings.cardBottom = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
+  else if (key == "cready")  dispSettings.cardReady  = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
+#endif
   else if (key == "l8s")     dispSettings.landscape8Slots = on;
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
-  else if (key == "btnpwr")  dispSettings.buttonPowerControl = on;
+  else if (key == "btnpwr") {
+    if (on) dispSettings.gestDouble = GD_PLUG;
+    else if (dispSettings.gestDouble == GD_PLUG) dispSettings.gestDouble = GD_OFF;
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  }
+  else if (key == "gtap")    dispSettings.gestTap  = (uint8_t)constrain(server.arg("val").toInt(), 0, GT_WAKE);
+  else if (key == "gdbl") {
+    dispSettings.gestDouble = (uint8_t)constrain(server.arg("val").toInt(), 0, GD_NEXT);
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
+  }
+  else if (key == "ghold")   dispSettings.gestHold = (uint8_t)constrain(server.arg("val").toInt(), 0, GH_NONE);
   else if (key == "glowm") {
     dispSettings.glowMode = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
     if (dispSettings.glowMode == 0) glowDismiss();  // switched off mid-animation
@@ -816,6 +920,7 @@ static void handleToggleSetting() {
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
+  if (key == "card" || key == "cleft" || key == "cbot" || key == "cready") triggerDisplayTransition();
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }
   if (key == "clkinfo") { resetClock(); triggerDisplayTransition(); }
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
@@ -1340,6 +1445,12 @@ static void handleSaveRotation() {
   }
   saveRotationSettings();
 
+  // Rotation-only save (Printer section): leave the peripherals alone.
+  if (!server.hasArg("btntype")) {
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+    return;
+  }
+
   // Button settings
   if (server.hasArg("btntype")) {
     uint8_t bt = server.arg("btntype").toInt();
@@ -1385,7 +1496,7 @@ static void handleSaveRotation() {
 
   // Battery indicator visibility (Waveshare boards). Always parse so the
   // form's unchecked state reaches NVS (browsers omit unchecked checkboxes;
-  // saveRotation() JS sends an explicit 0/1 to work around that).
+  // saveHardware() JS sends an explicit 0/1 to work around that).
   if (server.hasArg("batshow")) {
     dispSettings.showBatteryIndicator = (server.arg("batshow") == "1");
     saveBatteryIndicatorSetting();
@@ -1437,7 +1548,7 @@ static void handleSaveRotation() {
     ledSettings.finishBrightness = (uint8_t)v;
   }
   // Checkboxes: present + value "1" = enabled. Form posts "0" when unchecked
-  // (saveRotation JS sends both states explicitly).
+  // (saveHardware JS sends both states explicitly).
   if (server.hasArg("ledauto"))  ledSettings.autoOnWhilePrinting = (server.arg("ledauto")  == "1");
   if (server.hasArg("ledpause")) ledSettings.pauseBreathing      = (server.arg("ledpause") == "1");
   if (server.hasArg("lederr"))   ledSettings.errorStrobe         = (server.arg("lederr")   == "1");
@@ -1599,10 +1710,8 @@ static void handleSettingsExport() {
   doc["_type"] = "bambuhelper_settings";
   doc["_version"] = FW_VERSION;
 
-  // WiFi
-  JsonObject wifi = doc["wifi"].to<JsonObject>();
-  wifi["ssid"] = wifiSSID;
-  wifi["pass"] = wifiPass;
+  // No WiFi block: import needs the device online already, and the backup
+  // would carry the password in plain text.
 
   // Printers
   JsonArray pArr = doc["printers"].to<JsonArray>();
@@ -1644,7 +1753,12 @@ static void handleSettingsExport() {
   disp["hideClockDate"] = dispSettings.hideClockDate;
   disp["showClockInfo"] = dispSettings.showClockInfo;
   disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
+  disp["landscape8Slots"] = dispSettings.landscape8Slots;
+  disp["portrait9Slots"] = dispSettings.portrait9Slots;
   disp["buttonPowerControl"] = dispSettings.buttonPowerControl;
+  disp["gestTap"] = dispSettings.gestTap;
+  disp["gestDouble"] = dispSettings.gestDouble;
+  disp["gestHold"] = dispSettings.gestHold;
   disp["animatedBar"] = dispSettings.animatedBar;
   disp["pongClock"] = dispSettings.pongClock;
   disp["smallLabels"] = dispSettings.smallLabels;
@@ -1671,6 +1785,10 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.doorClosedColor, buf); disp["doorClosedColor"] = String(buf);
   rgb565ToHtml(dispSettings.doorOpenColor, buf);   disp["doorOpenColor"] = String(buf);
   disp["roundSkin"] = dispSettings.roundSkin;
+  disp["cardStyle"] = dispSettings.cardStyle;
+  disp["cardLeft"] = dispSettings.cardLeft;
+  disp["cardBottom"] = dispSettings.cardBottom;
+  disp["cardReady"] = dispSettings.cardReady;
   disp["glowMode"] = dispSettings.glowMode;
   rgb565ToHtml(dispSettings.glowColor, buf); disp["glowColor"] = String(buf);
   disp["glowStyle"] = dispSettings.glowStyle;
@@ -1918,12 +2036,8 @@ static void handleSettingsImportFinish() {
     return;
   }
 
-  // WiFi
-  JsonObject wifi = doc["wifi"];
-  if (wifi) {
-    if (wifi["ssid"].is<const char*>()) strlcpy(wifiSSID, wifi["ssid"], sizeof(wifiSSID));
-    if (wifi["pass"].is<const char*>()) strlcpy(wifiPass, wifi["pass"], sizeof(wifiPass));
-  }
+  // Older backups still carry a "wifi" block - ignored, the device keeps its WiFi
+  // credentials. The "network" block (DHCP / static IP / hostname) still applies.
 
   // Printers
   // Resolve per-printer amsView with backward compat for legacy backups: per-slot
@@ -2019,7 +2133,17 @@ static void handleSettingsImportFinish() {
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();
     if (disp["amsTrayTypes"].is<bool>())  dispSettings.amsTrayTypes = disp["amsTrayTypes"].as<bool>();
-    if (disp["buttonPowerControl"].is<bool>()) dispSettings.buttonPowerControl = disp["buttonPowerControl"].as<bool>();
+    if (disp["landscape8Slots"].is<bool>()) dispSettings.landscape8Slots = disp["landscape8Slots"].as<bool>();
+    if (disp["portrait9Slots"].is<bool>())  dispSettings.portrait9Slots = disp["portrait9Slots"].as<bool>();
+    if (disp["buttonPowerControl"].is<bool>()) {
+      // Backups from before the gesture card carry only this flag.
+      if (disp["buttonPowerControl"].as<bool>()) dispSettings.gestDouble = GD_PLUG;
+      else if (dispSettings.gestDouble == GD_PLUG) dispSettings.gestDouble = GD_OFF;
+    }
+    if (disp["gestTap"].is<int>())    { int v = disp["gestTap"].as<int>();    dispSettings.gestTap    = (v >= 0 && v <= GT_WAKE) ? (uint8_t)v : GT_SMART; }
+    if (disp["gestDouble"].is<int>()) { int v = disp["gestDouble"].as<int>(); dispSettings.gestDouble = (v >= 0 && v <= GD_NEXT) ? (uint8_t)v : GD_OFF; }
+    if (disp["gestHold"].is<int>())   { int v = disp["gestHold"].as<int>();   dispSettings.gestHold   = (v >= 0 && v <= GH_NONE) ? (uint8_t)v : GH_LED; }
+    dispSettings.buttonPowerControl = (dispSettings.gestDouble == GD_PLUG);
     if (disp["animatedBar"].is<bool>())       dispSettings.animatedBar = disp["animatedBar"].as<bool>();
     if (disp["pongClock"].is<bool>())           dispSettings.pongClock = disp["pongClock"].as<bool>();
     if (disp["smallLabels"].is<bool>())         dispSettings.smallLabels = disp["smallLabels"].as<bool>();
@@ -2051,6 +2175,10 @@ static void handleSettingsImportFinish() {
     if (disp["doorClosedColor"].is<const char*>()) dispSettings.doorClosedColor = htmlToRgb565(disp["doorClosedColor"]);
     if (disp["doorOpenColor"].is<const char*>())   dispSettings.doorOpenColor = htmlToRgb565(disp["doorOpenColor"]);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
+    if (disp["cardStyle"].is<int>())  { int v = disp["cardStyle"].as<int>();  dispSettings.cardStyle  = (v == 1) ? 1 : 0; }
+    if (disp["cardLeft"].is<int>())   { int v = disp["cardLeft"].as<int>();   dispSettings.cardLeft   = (v >= 0 && v <= 2) ? (uint8_t)v : 0; }
+    if (disp["cardBottom"].is<int>()) { int v = disp["cardBottom"].as<int>(); dispSettings.cardBottom = (v == 1) ? 1 : 0; }
+    if (disp["cardReady"].is<int>())  { int v = disp["cardReady"].as<int>();  dispSettings.cardReady  = (v >= 0 && v <= 2) ? (uint8_t)v : 0; }
     if (disp["glowMode"].is<int>())  { int gm = disp["glowMode"].as<int>();  dispSettings.glowMode = (gm >= 0 && gm <= 2) ? (uint8_t)gm : 0; }
     if (disp["glowColor"].is<const char*>()) dispSettings.glowColor = htmlToRgb565(disp["glowColor"]);
     if (disp["glowStyle"].is<int>()) { int gs = disp["glowStyle"].as<int>(); dispSettings.glowStyle = (gs >= 0 && gs <= 2) ? (uint8_t)gs : 0; }
@@ -2407,11 +2535,19 @@ static void handleOtaAuto() {
   otaAutoProgress   = 0;
   otaAutoStatus     = "starting";
 
-  String* urlHeap = new String(url);
+  String* urlHeap = new (std::nothrow) String(url);
   // Pin to core 1: the WiFi task lives on core 0 and a concurrent TLS
   // download here would compete for the same core, starving IDLE0 and
   // tripping the task watchdog mid-flash on slower boards (CYD).
-  xTaskCreatePinnedToCore(otaAutoTaskFn, "otaAuto", 8192, (void*)urlHeap, 5, nullptr, 1);
+  if (!urlHeap || xTaskCreatePinnedToCore(otaAutoTaskFn, "otaAuto", 8192, (void*)urlHeap,
+                                          5, nullptr, 1) != pdPASS) {
+    delete urlHeap;
+    otaAutoStatus = "failed: out of memory";
+    otaAutoInProgress = false;
+    otaMqttReinitPending = true;  // no reboot coming - restore MQTT
+    server.send(500, "application/json", "{\"error\":\"Out of memory\"}");
+    return;
+  }
 
   server.send(200, "application/json", "{\"status\":\"started\"}");
 }
@@ -2665,6 +2801,8 @@ void initWebServer() {
   server.on("/reset", HTTP_GET, handleReset);
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);
+  server.on("/card.bmp", HTTP_GET, handleCardBmp);
+  server.on("/screen.bmp", HTTP_GET, handleScreenBmp);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);

@@ -1,10 +1,13 @@
 /* ============ Loader / section dispatcher ============ */
 var SECTION_LABELS = {
   printer: 'Printer Settings',
-  display: 'Display',
+  display: 'Screen',
+  printscreen: 'Print screen',
+  afterprint: 'After print',
+  clock: 'Clock',
+  colors: 'Colors',
   errors: 'Printer Errors',
   hardware: 'Hardware',
-  advanced: 'Advanced',
   wifi: 'WiFi & System',
   power: 'Power Monitoring',
   diag: 'Diagnostics'
@@ -263,9 +266,10 @@ function saveGaugeLayout(){
   for (var g = 0; g < 2; g++) { var s = document.getElementById('is' + g); if (s) p.append('is' + g, s.value); }
   var av = document.getElementById('amsv');
   if (av && av.checked) p.append('amsv', '1');
+  var clean = dirtySnap('saveGaugeLayout');
   fetch('/save/gaugelayout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Gauge layout saved!');else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Gauge layout saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 
@@ -288,9 +292,10 @@ function saveLightConfig(){
   if (document.getElementById('loff_fail').checked) p.append('loff_fail', '1');
   if (document.getElementById('lon_start').checked) p.append('lon_start', '1');
   p.append('ldelay', document.getElementById('ldelay').value);
+  var clean = dirtySnap('saveLightConfig');
   fetch('/light/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Light settings saved!');else showToast('Error');})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Light settings saved!');}else showToast('Error');})
     .catch(function(){showToast('Save failed');});
 }
 function setLight(mode){
@@ -433,9 +438,11 @@ function savePrinter(){
     p.append('serial', serial);
     p.append('code', code);
   }
+  var clean = dirtySnap('savePrinter');
   fetch('/save/printer',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(readJsonResponse)
     .then(function(d){
+      if (d.status === 'ok') clean();
       if (d.status === 'ok' && d.warning) showToast('Saved with warning: ' + d.warning);
       else if (d.status === 'ok') showToast('Printer settings saved');
       else if (d.message) showToast('Save failed: ' + d.message);
@@ -743,6 +750,28 @@ function toggleBtnPin(){
   var v = document.getElementById('btntype').value;
   document.getElementById('btnPinRow').style.display = (v === '0' || v === '3') ? 'none' : 'block';
   toggleBuzPin();
+  applyGestureVis();
+}
+/* Gestures card (Display) follows Button type or an onboard button; AMS choices follow the print style.
+   An AMS choice already stored stays visible so the select never shows a blank. */
+function applyGestureVis(){
+  var card = document.getElementById('gestCard');
+  if (!card) return;
+  var on = DEV.boardBtn === '1' || document.getElementById('btntype').value !== '0';
+  card.style.display = on ? '' : 'none';
+  document.getElementById('gestOff').style.display = on ? 'none' : '';
+  var cs = document.getElementById('card');
+  var cards = !!cs && cs.value === '1';
+  ['gtap','gdbl','ghold'].forEach(function(id){
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i];
+      if (o.dataset.ams) o.hidden = !cards && !o.selected;
+    }
+  });
+  var note = document.getElementById('gestAmsNote');
+  if (note) note.style.display = cards ? '' : 'none';
 }
 function toggleBuzPin(){
   var buzOn = document.getElementById('buzzen').value !== '0';
@@ -832,6 +861,15 @@ function saveRotation(){
   p.append('rotinterval', document.getElementById('rotinterval').value);
   p.append('rotsplit', document.getElementById('rotsplit').checked ? '1' : '0');
   p.append('rotsplitf', document.getElementById('rotsplitf').checked ? '1' : '0');
+  var clean = dirtySnap('saveRotation');
+  fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Rotation saved');}})
+    .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
+}
+/* Same endpoint as rotation; the handler applies button, buzzer and LED only when they are sent. */
+function saveHardware(){
+  var p = new URLSearchParams();
   p.append('btntype', document.getElementById('btntype').value);
   p.append('btnpin', document.getElementById('btnpin').value);
   p.append('buzzen', document.getElementById('buzzen').value);
@@ -863,10 +901,11 @@ function saveRotation(){
   p.append('lederrsec', document.getElementById('lederrsec').value);
   var bs = document.getElementById('batshow');
   if (bs) p.append('batshow', bs.checked ? '1' : '0');
+  var clean = dirtySnap('saveHardware');
   fetch('/save/rotation',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Settings saved');})
-    .catch(function(e){showToast('Save failed');console.warn('saveRotation:',e);});
+    .then(function(d){if(d.status==='ok'){clean();showToast('Hardware settings saved');}})
+    .catch(function(e){showToast('Save failed');console.warn('saveHardware:',e);});
 }
 
 /* Cap custom gauge label inputs: 8 chars with the normal (big) font, 12 when
@@ -1032,9 +1071,10 @@ function savePower(){
   p.append('tsm_cur', document.getElementById('tsm_cur').value);
   var slotSel = document.getElementById('tsm_slot');
   if (slotSel) p.append('tsm_slot', slotSel.value);
+  var clean = dirtySnap('savePower');
   fetch('/save/power',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
     .then(function(r){return r.json();})
-    .then(function(d){if(d.status==='ok')showToast('Power settings saved');})
+    .then(function(d){if(d.status==='ok'){clean();showToast('Power settings saved');}})
     .catch(function(e){showToast('Save failed');console.warn('savePower:',e);});
 }
 
@@ -1056,7 +1096,8 @@ var themes = {
      edge always blends toward black and a pale value picks up a dark outline.
      Dark values make that blend the correct one. Every colour here survives the
      RGB565 round trip, so what the picker shows is what the panel paints. */
-  paper:{bg:'#FFFFFF',track:'#CDCACD',clkt:'#101010',clkd:'#5A595A',eta:'#007100',fin:'#007100',stok:'#007100',pname:'#0050A4',txt:'#101010',txtd:'#5A595A',dorc:'#007100',doro:'#D52000',prg:{a:'#00A100',l:'#00A100',v:'#101010'},noz:{a:'#D56100',l:'#D56100',v:'#101010'},bed:{a:'#0091A4',l:'#0091A4',v:'#101010'},pfn:{a:'#0091A4',l:'#0091A4',v:'#101010'},afn:{a:'#D56100',l:'#D56100',v:'#101010'},afr:{a:'#D56100',l:'#D56100',v:'#101010'},cfn:{a:'#00A100',l:'#00A100',v:'#101010'},exh:{a:'#00A100',l:'#00A100',v:'#101010'},cht:{a:'#0091A4',l:'#0091A4',v:'#101010'},hbk:{a:'#D56100',l:'#D56100',v:'#101010'},pwr:{a:'#B48100',l:'#B48100',v:'#101010'},lyr:{a:'#00A100',l:'#00A100',v:'#101010'}}
+  paper:{bg:'#FFFFFF',track:'#CDCACD',clkt:'#101010',clkd:'#5A595A',eta:'#007100',fin:'#007100',stok:'#007100',pname:'#0050A4',txt:'#101010',txtd:'#5A595A',dorc:'#007100',doro:'#D52000',prg:{a:'#00A100',l:'#00A100',v:'#101010'},noz:{a:'#D56100',l:'#D56100',v:'#101010'},bed:{a:'#0091A4',l:'#0091A4',v:'#101010'},pfn:{a:'#0091A4',l:'#0091A4',v:'#101010'},afn:{a:'#D56100',l:'#D56100',v:'#101010'},afr:{a:'#D56100',l:'#D56100',v:'#101010'},cfn:{a:'#00A100',l:'#00A100',v:'#101010'},exh:{a:'#00A100',l:'#00A100',v:'#101010'},cht:{a:'#0091A4',l:'#0091A4',v:'#101010'},hbk:{a:'#D56100',l:'#D56100',v:'#101010'},pwr:{a:'#B48100',l:'#B48100',v:'#101010'},lyr:{a:'#00A100',l:'#00A100',v:'#101010'}},
+  warmpaper:{bg:'#E4E1DA',track:'#C9C5BD',clkt:'#1D1E21',clkd:'#77767A',eta:'#1D1E21',fin:'#1D1E21',stok:'#1D1E21',pname:'#1D1E21',txt:'#1D1E21',txtd:'#77767A',dorc:'#3F6B2A',doro:'#B8321E',prg:{a:'#1D1E21',l:'#77767A',v:'#1D1E21'},noz:{a:'#B8571E',l:'#77767A',v:'#1D1E21'},bed:{a:'#2F6F7A',l:'#77767A',v:'#1D1E21'},pfn:{a:'#2F6F7A',l:'#77767A',v:'#1D1E21'},afn:{a:'#B8571E',l:'#77767A',v:'#1D1E21'},afr:{a:'#B8571E',l:'#77767A',v:'#1D1E21'},cfn:{a:'#3F6B2A',l:'#77767A',v:'#1D1E21'},exh:{a:'#3F6B2A',l:'#77767A',v:'#1D1E21'},cht:{a:'#2F6F7A',l:'#77767A',v:'#1D1E21'},hbk:{a:'#B8571E',l:'#77767A',v:'#1D1E21'},pwr:{a:'#8A6A12',l:'#77767A',v:'#1D1E21'},lyr:{a:'#3F6B2A',l:'#77767A',v:'#1D1E21'}}
 };
 function applyTheme(name){
   var t = themes[name]; if (!t) return;
@@ -1221,14 +1262,145 @@ function applyDisplay(){
     var lk = GAUGE_LABEL_KEYS[j];
     p.append(lk + '_lbl', document.getElementById(lk + '_lbl').value);
   }
+  var clean = dirtySnap('applyDisplay');
   fetch('/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-    .then(function(r){ if (r.ok) showToast('Applied!'); else showToast('Error'); })
+    .then(function(r){ if (r.ok) { clean(); showToast('Applied!'); } else showToast('Error'); })
     .catch(function(e){showToast('Apply failed');console.warn('applyDisplay:',e);});
+}
+
+/* ============ Help tips ============ */
+/* Long explanations fold behind a "?" next to their label. Left as they are:
+   anything with an id (shown/hidden by code), inline-styled warnings, short
+   hints, and paragraphs. Long card descriptions fold the same way. */
+var TIP_MIN_HINT = 80, TIP_MIN_DESC = 120;
+function tipButton(target){
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'tip-btn';
+  b.textContent = '?';
+  b.setAttribute('aria-label', 'More info');
+  b.setAttribute('aria-expanded', 'false');
+  b.onclick = function(e){
+    e.preventDefault(); e.stopPropagation();          // never toggles the label's checkbox
+    var open = target.classList.toggle('tip-open');
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  return b;
+}
+function tipHost(el){
+  var prev = el.previousElementSibling;
+  if (prev && prev.classList.contains('check-row')) return prev.querySelector('label:last-of-type');
+  var field = el.closest('.field');
+  if (field) return field.querySelector('label');
+  return null;
+}
+function initHelpTips(){
+  document.querySelectorAll('div.help-text, div.hint').forEach(function(el){
+    if (el.id || el.getAttribute('style') && /color|display/.test(el.getAttribute('style'))) return;
+    if (el.classList.contains('hint') && el.textContent.trim().length < TIP_MIN_HINT) return;
+    var host = tipHost(el);
+    if (!host || host.querySelector('.tip-btn')) return;
+    host.appendChild(tipButton(el));
+    el.classList.add('tip');
+  });
+  document.querySelectorAll('.card-head p').forEach(function(p){
+    if (p.textContent.trim().length < TIP_MIN_DESC) return;   // glDesc: text swapped, never hidden
+    var h = p.parentNode.querySelector('h3');
+    if (!h) return;
+    h.appendChild(tipButton(p));
+    p.classList.add('tip');
+  });
+}
+
+/* ============ Unsaved changes ============ */
+/* A field without its own instant save belongs to the next save/apply button
+   in its section. Editing it flags that button; a save that succeeded clears
+   every button running it (applyDisplay has one per display section), a failed one leaves them. */
+function dirtyOwner(field){
+  var sec = field.closest('.section');
+  if (!sec) return null;
+  var btns = sec.querySelectorAll('button.btn-primary:not(.btn-sm)');
+  for (var i = 0; i < btns.length; i++) {
+    if (!/^(save|apply)/.test(btns[i].getAttribute('onclick') || '')) continue;
+    if (field.compareDocumentPosition(btns[i]) & Node.DOCUMENT_POSITION_FOLLOWING) return btns[i];
+  }
+  return null;
+}
+function markDirty(e){
+  var f = e.target;
+  if (!f.matches || !f.matches('input, select, textarea') || f.hasAttribute('data-nodirty')) return;
+  if (/toggleSetting/.test(f.getAttribute('onchange') || '')) return;   // saved on change already
+  var b = dirtyOwner(f);
+  if (!b) return;
+  b.dataset.rev = (+b.dataset.rev || 0) + 1;   // an edit made while its save is in flight stays flagged
+  if (b.classList.contains('btn-dirty')) return;
+  b.classList.add('btn-dirty');
+  var n = document.createElement('span');
+  n.className = 'dirty-note';
+  n.textContent = 'Unsaved changes';
+  b.parentNode.insertBefore(n, b);
+}
+/* Taken before the request; the returned clear runs on success and skips a
+   button edited again since the snapshot. */
+function dirtySnap(fn){
+  var seen = [];
+  document.querySelectorAll('button.btn-dirty').forEach(function(o){
+    if ((o.getAttribute('onclick') || '').indexOf(fn + '(') === 0) seen.push([o, o.dataset.rev]);
+  });
+  return function(){
+    seen.forEach(function(e){
+      var o = e[0];
+      if (o.dataset.rev !== e[1]) return;
+      o.classList.remove('btn-dirty');
+      var n = o.previousElementSibling;
+      if (n && n.classList.contains('dirty-note')) n.remove();
+    });
+  };
+}
+function initDirtyTracking(){
+  document.addEventListener('input', markDirty);
+  document.addEventListener('change', markDirty);
+  window.addEventListener('beforeunload', function(e){
+    if (!document.querySelector('button.btn-dirty')) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
 }
 
 /* ============ Whitelisted toggle ============ */
 /* Checkboxes pass a boolean; value pickers (e.g. round skin select) pass
    their string value through unchanged. */
+/* Cards print style: settings it ignores are hidden. The Gauge Layout card
+   (data-gauges-only="fold") folds instead, since split view still uses it.
+   Boards without Cards have no #card select, so nothing changes there. */
+function applyCardsHints(){
+  var sel = document.getElementById('card');
+  var on = !!sel && sel.value === '1';
+  var opts = document.getElementById('cardOpts');
+  if (opts) opts.style.display = on ? '' : 'none';
+  applyGestureVis();
+  document.querySelectorAll('[data-gauges-only]').forEach(function(el){
+    if (el.dataset.gaugesOnly !== 'fold') { el.classList.toggle('go-hide', on); return; }
+    if (!el.querySelector('.go-badge')) {
+      var b = document.createElement('span');
+      b.className = 'go-badge';
+      // Split view still draws gauges from the layout's first four slots.
+      b.textContent = 'Gauges / split view';
+      el.querySelector('h3').appendChild(b);
+      var t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'btn btn-ghost btn-sm go-toggle';
+      t.textContent = 'Show';
+      t.onclick = function(){
+        var open = el.classList.toggle('go-open');
+        t.textContent = open ? 'Hide' : 'Show';
+      };
+      el.querySelector('.card-head').appendChild(t);
+    }
+    el.classList.toggle('go-off', on);
+  });
+}
+
 function toggleSetting(key, on){
   var val = (on === true) ? '1' : (on === false) ? '0' : String(on);
   fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key='+key+'&val='+encodeURIComponent(val)})
@@ -1472,7 +1644,7 @@ function refreshDiag(){
         h += '<div style="margin-bottom:8px;padding:6px;border-left:2px solid '+(p.connected?'var(--success)':'var(--danger)')+'">';
         h += '<strong style="color:var(--text)">'+esc(p.name)+'</strong> (slot '+p.slot+')<br>';
         h += '<div class="stat-row"><span>MQTT:</span><span class="stat-val">'+(p.connected?'<span style="color:var(--success)">Connected</span>':'<span style="color:var(--danger)">Disconnected</span>')+'</span></div>';
-        h += '<div class="stat-row"><span>Attempts:</span><span class="stat-val">'+p.attempts+'</span></div>';
+        h += '<div class="stat-row"><span>Attempts:</span><span class="stat-val">'+p.attempts+(p.probes?' (+'+p.probes+' offline probes)':'')+'</span></div>';
         h += '<div class="stat-row"><span>Messages RX:</span><span class="stat-val">'+p.messages+'</span></div>';
         h += '<div class="stat-row"><span>Pushall total:</span><span class="stat-val">'+(p.pushall_total||0)+'</span></div>';
         var rc=p.rec_print||0, rd=p.rec_conn_dead||0, rf=p.rec_finish||0, ri=p.rec_idle||0;
@@ -1837,10 +2009,13 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   toggleBtnPin();
   toggleLed();
   toggleAfterPrint();
+  initHelpTips();
+  initDirtyTracking();
+  applyCardsHints();
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it
   // joins the list only when the page actually carries it.
-  var SECTIONS = ['printer','display','hardware','wifi','power','diag'];
+  var SECTIONS = ['printer','display','printscreen','afterprint','clock','colors','hardware','wifi','power','diag'];
   if (document.getElementById('sec-errors')) SECTIONS.push('errors');
   var initId = 'printer';
   if (location.hash){

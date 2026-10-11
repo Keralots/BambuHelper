@@ -47,7 +47,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | ![Round GC9A01 display](img/roundDisplay.jpg) | **ESP32-S3 / ESP32-C3 Super Mini + 1.28" GC9A01 round** | DIY variant with a round `1.28"` **GC9A01** (`240x240`) 7-pin SPI module and a dedicated round dashboard with three selectable print skins (Rim / Speedo / Rings, chosen in the web UI). Use the `esp32s3_round` build on an ESP32-S3 Super Mini (**up to 2 printers**) or the `esp32c3_round` build on an ESP32-C3 Super Mini (**1 printer only**). Wiring uses the same SPI pins as the square ST7789 builds - see the wiring table below. The 7-pin module has no backlight pin, so brightness control and night dimming are not available. Display module (AliExpress, pick the **Type Y** variant): [aliexpress.com/item/1005007702290129.html](https://aliexpress.com/item/1005007702290129.html) Case (ESP32-S3 and ESP32-C3 variants): [MakerWorld model](https://makerworld.com/en/models/3037776) |
 | ![Waveshare ESP32-S3-Zero](img/es32s3zero.png) | **Waveshare ESP32-S3-Zero + 1.54" ST7789** | DIY version for the ESP32-S3FH4R2 module with `4MB` flash and `2MB` PSRAM. Use the `esp32s3_zero` firmware build. It uses the same external ST7789 wiring as the ESP32-S3 Super Mini build and supports **up to 2 printers** (up to 4 with the experimental opt-in). GPIO21 is occupied by the onboard WS2812 RGB LED. Product page: [waveshare.com/esp32-s3-zero.htm](https://www.waveshare.com/esp32-s3-zero.htm) |
 | ![ESP32-S3-Zero with 2" 240x320 panel](img/esp32s3_zero_320.jpg) | **Waveshare ESP32-S3-Zero + 2.0" ST7789V (240x320)** | DIY variant of the ESP32-S3-Zero build using a larger `240x320` **ST7789V** panel module instead of the 1.54" 240x240. Same pinout as the standard `esp32s3_zero` build - only the panel differs (driven through the existing 240x320 layout). Use the `esp32s3_zero_320` firmware build. Supports **up to 2 printers** (up to 4 with the experimental opt-in). Display module (AliExpress): [pl.aliexpress.com/item/1005007523612119.html](https://pl.aliexpress.com/item/1005007523612119.html) |
-| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** (ILI9341) | `240x320` **ILI9341** all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Display**. Case shown in the photo: [MakerWorld model](https://makerworld.com/models/2721746). |
+| ![CYD display](img/CYD.png) | **CYD / ESP32-2432S028** (ILI9341) | `240x320` **ILI9341** all-in-one board. Use the `cyd` firmware build. Due to RAM limits, this board supports **1 printer only**. When flashing from [ESP Web Flasher](https://espressif.github.io/esptool-js/), set **Baudrate: 115200** before clicking **Connect**. If the first attempt fails, click **Disconnect** and then **Connect** again without unplugging the USB cable. If colors look reversed (white background instead of dark), enable **Invert display colors (fix white background)** in the web UI under **Hardware**. Case shown in the photo: [MakerWorld model](https://makerworld.com/models/2721746). |
 
 ### Additional Boards (Hardware Not Owned by Maintainer)
 
@@ -119,6 +119,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Button plug power control** - double-click the device button (or touchscreen) to switch the shown printer's smart plug on or off, with a hold-to-confirm safety screen - power a switched-off printer back on without opening a browser
 - **Chamber light control** - manual on/off buttons in the web UI plus per-printer automation: light off after a successful or failed print (with delay), on when a print starts; dual-bar printers (H2C/H2D) switch both bars
 - **Printer error reporting (HMS)** - a red `ERR` badge when the printer reports an HMS code or print error, a tap-to-open detail screen with the official Bambu wording, and optional edge-glow / buzzer / LED / wake-the-screen alerts
+- **Cards print screen (beta)** - an alternative to the gauges: big progress percentage, time left, finish time, one row of temperatures, plus an AMS column, the plate preview or the filaments of this print - see [Cards print screen (beta)](#cards-print-screen-beta)
 - **Animations** - loading spinner, progress pulse, completion celebration
 - **Web config portal** - dark-themed settings page for WiFi, network, printer, display, power, buzzer, and LED settings
 - **Network configuration** - DHCP or static IP, with optional IP display at startup
@@ -144,11 +145,50 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
 
+## Cards print screen (beta)
+
+A calmer alternative to the gauge dashboard, readable from across the room: a big progress percentage, the time left and the finish time, a progress bar, and a single row of temperatures. The Ready and Print Complete screens follow the same style.
+
+Cards is in the **v3.9.0 beta pre-releases** on the [Releases](https://github.com/Keralots/BambuHelper/releases) page. The web flasher and the in-portal update check stay on the latest stable release, so install a beta's `ota.bin` by hand to try it.
+
+The same print at the same moment, on the same 320x240 screen:
+
+<table>
+<tr>
+<td align="center"><img src="img/cards/print-gauges-ws_lcd_200-landscape.png" alt="Gauges print screen, 320x240 landscape"><br><sub>Gauges (default)</sub></td>
+<td align="center"><img src="img/cards/print-cards-ws_lcd_200-landscape.png" alt="Cards print screen, 320x240 landscape"><br><sub>Cards (beta)</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td align="center"><img src="img/cards/cards-ws_lcd_200-landscape-night.png" alt="Cards, 320x240 landscape"><br><sub>320x240 landscape</sub></td>
+<td align="center"><img src="img/cards/cards-ws_lcd_200-portrait.png" alt="Cards, 240x320 portrait"><br><sub>240x320 portrait</sub></td>
+<td align="center"><img src="img/cards/cards-esp32s3-240x240.png" alt="Cards, 240x240"><br><sub>240x240</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="img/cards/cards-jc3248w535-landscape.png" alt="Cards, 480x320 landscape"><br><sub>480x320 landscape</sub></td>
+<td align="center"><img src="img/cards/cards-jc3248w535-portrait.png" alt="Cards, 320x480 portrait"><br><sub>320x480 portrait</sub></td>
+</tr>
+</table>
+
+Screenshots are taken from the device at native resolution.
+
+- **Left column** - the AMS slots with the feeding slot highlighted, a **plate preview** of the running job (from Bambu Cloud - needs the [account sign-in on the device](#connecting-to-bambu-cloud); works for LAN and Cloud printers bound to that account, for jobs sent through the cloud, on boards with PSRAM), or nothing
+- **Bottom row** - the temperatures your printer actually has (both nozzles on H2 printers, chamber only where there is a sensor, AMS temperature and humidity), or the **filaments of this print** with how much is left on each spool
+- **AMS page** - how much filament is left in every tray, Bambu Studio style (a remain bar over a tile in the filament color, low spools in orange, `--` where the printer does not know). Pick it for the Ready screen under **Card: Ready screen** (`Status`, `AMS filament left`, or `Alternate status / AMS`), or tap the button / screen on Ready or Print Complete to switch to the other view for 30 seconds (the AMS page, or the status when the Ready screen already shows the AMS page)
+- **Header** - printer name, plug power, door state and the status badge; long job names scroll; the finish time gets a "+1" when the print ends tomorrow
+- **Colors** come from the existing Colors section (Background, Track, Progress Bar, Finish time, the accents, Door, and each gauge's value color for its temperature); temperatures switch to the warning color under the same **Warning threshold** as the gauges. The **Warm paper** preset suits it well
+
+Turn it on in the web interface under **Print screen**: **Print screen style** -> `Cards (beta)`, then pick **Card: left column** and **Card: bottom row**. While Cards is selected, the portal marks the settings it does not use as *Gauges only*. Split view (two printers at once) keeps the classic gauges.
+
+Cards runs on every 240x320 and 320x480 board and on the square 240x240 boards with PSRAM. The 240x320 boards without PSRAM (CYD, TZT, CYD 2.4") draw it in strips, so a full screen change takes about a tenth of a second, and they cannot show the plate preview, which needs PSRAM. Tested on the CYD; the TZT and the CYD 2.4" use the same code but have not been tried yet. The ESP32-C3 boards, the round displays and the 480x480 SenseCAP keep the gauges.
+
 ## Multi-Printer Monitoring
 
 BambuHelper monitors 2 printers simultaneously on full-RAM ESP32-S3 boards, each over an independent MQTT connection. PSRAM-equipped boards can opt in to a third and fourth printer.
 
-> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, ws_lcd_154, ws_lcd_200, ws_lcd_280, jc3248w535, ws_lcd_350, ws_lcd_28c, wt32_sc01_plus, es3n28p, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **Advanced > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. The Waveshare Touch-LCD boards (1.54" / 2" / 2.8") gained PSRAM support in firmware after v3.7.4 - update to the latest release first. No-PSRAM S3 boards (esp32s3, esp32s3_round) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3** square and round) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
+> **3-4 printers need PSRAM and an opt-in.** Each MQTT connection takes ~85 KB (TLS session + 40 KB message buffer). PSRAM-equipped S3 boards (esp32s3_zero, esp32s3_zero_320, ws_lcd_154, ws_lcd_200, ws_lcd_280, jc3248w535, ws_lcd_350, ws_lcd_28c, wt32_sc01_plus, es3n28p, sensecap_indicator) place the message buffers in PSRAM, leaving internal RAM free for extra TLS handshakes. They still **default to 2 printers**; printers 3 and 4 only appear after you enable **4-printer mode** in **WiFi & System > Danger zone**. This mode is **experimental and not yet validated with 3-4 live printers**, so expect the occasional disconnect, and note the split dual-screen layout still shows only the first two printers. The Waveshare Touch-LCD boards (1.54" / 2" / 2.8") gained PSRAM support in firmware after v3.7.4 - update to the latest release first. No-PSRAM S3 boards (esp32s3, esp32s3_round) run two - a third connection would exhaust internal RAM during the TLS handshake. The low-RAM boards (**CYD**, **TZT L1435-2.4**, **ESP32-C3** square and round) ship with a single printer slot by default, but expose an **experimental opt-in 2-printer mode** in **Printer Settings** - try it if you really need two, but expect tighter memory and the occasional disconnect under load.
 
 ### Rotation Modes
 
@@ -173,7 +213,17 @@ An optional physical button can be connected to cycle between printers and wake 
 
 The button type and GPIO pin are configurable in the web interface (Multi-Printer section) - no recompilation needed.
 
-The same button (or the built-in touchscreen) can also switch the printer's smart plug on and off - see **Power Monitoring -> Button power control** below.
+The same button (or the built-in touchscreen) can also switch the printer's smart plug on and off - set **Double tap** to plug power (details under **Power Monitoring -> Button power control** below).
+
+What each gesture does is set under **Screen -> Button & touch gestures** (the card appears once a button type is picked under **Hardware**):
+
+| Gesture | Choices |
+|---|---|
+| **Tap** | Smart cycle (default: error details, camera, drying view, the Cards AMS page, then the next printer), next printer only, switch status / AMS page, or wake the screen only |
+| **Double tap** | Nothing (default), smart-plug power on/off, switch status / AMS page, or next printer |
+| **Hold** | Status LED brightness (default), switch status / AMS page, or nothing |
+
+A wake tap always wakes, and any double-tap action makes a single tap wait about half a second for a possible second one. The status / AMS choices appear only on boards with the Cards style, while Cards is the print screen style.
 
 ### MQTT Reconnect Backoff
 
@@ -192,7 +242,7 @@ When the printer comes back online, the backoff resets once the connection has h
 | | |
 |---|---|
 | <img src="img/PowerMonitoring.png" width="360" alt="Power Monitoring"> | BambuHelper can display live power consumption from a **[Tasmota](https://tasmota.github.io/docs/)-flashed smart plug**, a **Shelly Gen2/Gen3 plug**, a **Shelly Power Strip Gen4**, or a **TP-Link Kasa legacy-protocol plug** connected to your printer. All communication stays on the local network - no smart-plug cloud connection is required.<br><br>**What it shows:**<br>- Live wattage in the bottom status bar on the idle and printing screens<br>- Total kWh used during the print job, shown on the "Print Complete" screen<br><br>**Setup:** open the web interface, go to **Power Monitoring**, pick the plug type, enter the plug's reserved local IP address, set your preferred poll interval (10-30s), and choose how the status bar shows it - alternate watts with the layer counter, always show watts, or always show the layer count (when power has its own gauge). For the Shelly Power Strip Gen4, also pick which output (0-3) this slot tracks/controls, and optionally tick further outputs under **Also count these outlets** so the watts and energy of a shared setup (external AMS supply, lights) are summed into the totals - Power On/Off and auto-off still act on the selected output only.<br><br>**Requirements:** any Tasmota-flashed smart plug with energy monitoring (e.g. Sonoff S31, BlitzWolf BW-SHP6, Nous A1), a Shelly Gen2/Gen3 plug (Plus Plug S, Plug S Gen3, etc.), a Shelly Power Strip Gen4, or a TP-Link Kasa plug using the legacy local protocol on TCP port 9999 (tested with KP115; HS110 uses the same protocol). Newer Kasa KLAP/Matter models are not supported. The plug must be on the same reachable network as the ESP32. **Shelly/Kasa notes:** Shelly must not be password-protected (digest auth is unsupported). Their realtime APIs report cumulative Total but not Today's/Yesterday's energy, so those fields stay blank.<br><br>**Auto power-off:** each plug can power itself off N minutes (1-240) after the print finishes, with a 50&nbsp;°C nozzle gate so it never triggers while the hot end is hot. Configure under **Power Monitoring -> Auto-off**.<br><br>If you like to harden your Tasmota plug you can use the following rule. <br><i>Rule1 on Energy#Power>=30 do Backlog Powerlock 1 endon on Energy#Power<30 do Backlog Powerlock 0 endon</i><br><br>Threshold is 30W. Change it according to the idle consumption of your setup. Every action is blocked if there is consumption above this threshold (power button, MQTT, web interface, etc.).
-| <img src="img/ButtonPowerControl.png" width="360" alt="Button power control"> | **Button power control (on-device plug switch):** switch the plug on or off straight from the device - no browser needed. Enable **Button power control** under **Power Monitoring** (off by default), then **double- or triple-click** the device button or touchscreen while the printer is on screen. A full-screen confirmation opens: **hold ~1.5 s** until the ring fills to toggle the plug; a short tap (or 10 s without input) cancels. The screen turns **red** when that printer is currently printing, since confirming would cut power to a live print. It also works from the "Connecting to printer" screen, so a switched-off printer can be powered back on - the main use case. Only active when a plug is mapped to the shown printer; while armed, single-tap printer switching waits ~0.5 s for a possible second click. |
+| <img src="img/ButtonPowerControl.png" width="360" alt="Button power control"> | **Button power control (on-device plug switch):** switch the plug on or off straight from the device - no browser needed. Set **Double tap** to *Plug power on/off* under **Screen -> Button & touch gestures** (off by default), then **double- or triple-click** the device button or touchscreen while the printer is on screen. A full-screen confirmation opens: **hold ~1.5 s** until the ring fills to toggle the plug; a short tap (or 10 s without input) cancels. The screen turns **red** when that printer is currently printing, since confirming would cut power to a live print. It also works from the "Connecting to printer" screen, so a switched-off printer can be powered back on - the main use case. Only active when a plug is mapped to the shown printer; while armed, single-tap printer switching waits ~0.5 s for a possible second click. |
 
 ## Chamber Light Control
 
@@ -528,13 +578,16 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 | Sidebar section | What's inside |
 |---|---|
-| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code, or a Bambu account sign-in / pasted token), the account's printer list and a LAN scan to fill the serial in, live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control |
-| **Display** | Brightness and night mode, screen rotation, after-print behavior, clock screen, screensaver, and Gauge Appearance: theme presets, per-gauge colors, accent colors (finish time, print complete, status OK, printer name, text, muted text), custom labels (accented European characters supported) |
-| **Hardware** | Printer rotation and split-screen mode, external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
+| **Printer** | One tab per printer slot: LAN or Cloud connection (serial, access code, or a Bambu account sign-in / pasted token), the account's printer list and a LAN scan to fill the serial in, live status readout, per-printer gauge layout for the print screen plus the Ready / Print complete pair, AMS view, chamber light control; printer rotation and split-screen mode |
 | **Printer Errors** | Live list of every HMS code and print error the printers report, plus the badge / error-screen / alert settings - see Printer Errors |
-| **Advanced** | Gauge full-scale ranges and behavior (smoothing, warning color), clock-screen info footer, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
-| **WiFi & System** | WiFi credentials, DHCP / static IP, mDNS hostname, settings backup (JSON export / import), firmware update - one-click install from GitHub Releases or manual `.bin` upload |
+| **Screen** | Orientation, brightness, night mode and screensaver brightness, button & touch gestures |
+| **Print screen** | Gauges or Cards style and its options, time display, extended grid modes, gauge full-scale ranges and behavior (smoothing, warning color) |
+| **After print** | Finish screen duration, what follows it (clock or display off), door wait, edge glow |
+| **Clock** | Timezone, time / date format, colors and sizes, Breakout clock, printer name & IP footer |
+| **Colors** | Theme presets, per-gauge colors, accent colors (finish time, print complete, status OK, printer name, text, muted text), custom labels (accented European characters supported) |
+| **Hardware** | Display panel fixes (240x320 boards), external button / TTP223, buzzer with quiet hours, status LED, detected-hardware readout |
 | **Power** | Smart-plug power monitoring: Tasmota / Shelly / TP-Link Kasa plug slots, tariff and currency, auto power-off, button power control, live plug stats |
+| **WiFi & System** | WiFi credentials, DHCP / static IP, mDNS hostname, settings backup (JSON export / import), firmware update - one-click install from GitHub Releases or manual `.bin` upload, and the Danger zone: reboot, factory reset, experimental multi-printer opt-ins |
 | **Diagnostics** | Live connection state per printer and a verbose serial-logging toggle |
 
 ## Dashboard Screens
@@ -555,7 +608,7 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 ## Display Power Management
 
-The display is managed from the **Display** section of the web interface (see above for the full list of fields). In short:
+The display is managed from the **Screen** and **After print** sections of the web interface (see above for the full list of fields). In short:
 
 - After a print completes, the finish screen is shown for the configured number of minutes (default 3), then the **After the finish screen** setting decides what happens next: the digital clock / screensaver (default), or **display and status LED fully off**. The off choice needs a button or touchscreen configured so the device can be woken; without one the clock is shown regardless.
 - When the printer goes offline (powered off or disconnected), the display stays in whatever state it was in - it does not flicker back to the connecting screen.

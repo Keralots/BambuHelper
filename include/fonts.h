@@ -20,6 +20,13 @@ enum FontID : uint8_t {
     FONT_SMALL_2X = 8,   // Inter 20pt / 24 px
     FONT_BODY_2X  = 9,   // Inter 27pt / 32 px
     FONT_LARGE_2X = 10,  // Inter 37pt / 44 px
+    // Card print screen, linked only when HAS_CARD_SKIN. Elsewhere they fall
+    // back to FONT_LARGE / FONT_SMALL.
+    FONT_CARD_NUM = 11,  // Inter Bold 60 px, digits + " -.:" only
+    FONT_CARD_LBL = 12,  // Inter Bold 10 px, ASCII + degree + middot
+    // 1.5x Card tier, DISPLAY_320x480 boards with HAS_CARD_SKIN only.
+    FONT_CARD_NUM_L = 13,  // Inter Bold 72 px, digits + " -.:"
+    FONT_CARD_LBL_L = 14,  // Inter Bold 14 px, ASCII + degree + middot
 };
 
 // Sets the active font. Caches the last selection - calling setFont() repeatedly
@@ -37,5 +44,11 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id);
 // panel only and would skip the load on a second target. Returns false when
 // the id has no VLW blob (FONT_7SEG / FONT_NONE) or the load fails.
 bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id);
+
+// Parsed once and kept (~9 B per glyph): select with gfx.setFont(cachedFont(id)).
+// For renderers that switch faces many times per frame. Null when unavailable.
+const lgfx::IFont* cachedFont(FontID id);
+// Frees every cachedFont() face. No gfx may still have one selected.
+void releaseCachedFonts();
 
 #endif // FONTS_H

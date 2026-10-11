@@ -173,7 +173,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // Slot 0's tab and dot are hardcoded in PAGE_HTML; these emit the remainder.
   // %PRINTER_TABS%    - "Printer N" tab buttons for slots >= 1.
   // %TOPBAR_DOTS%     - matching topbar status pills for slots >= 1.
-  // %DUALP_ADVANCED%  - Advanced disclosure card with the experimental toggle.
+  // %DUALP_ADVANCED%  - Danger Zone (WiFi & System) experimental toggle.
   // On LOW_RAM (MAX_ACTIVE_PRINTERS == 2) the loops emit only slot 1, with the
   // experimental hide logic intact, so the page stays byte-identical to before.
   if (strcmp(name, "PRINTER_TABS") == 0) {
@@ -217,7 +217,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "DUALP_ADVANCED") == 0) {
-    // Renders bare inside the Advanced > Danger Zone card; no outer card
+    // Renders bare inside the WiFi & System > Danger Zone card; no outer card
     // wrapper. The danger-zone gate checkbox controls the surrounding
     // <div id="dangerOps"> visibility.
 #ifdef BOARD_LOW_RAM
@@ -312,7 +312,49 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "FMP") == 0)    { out = dispSettings.fanMatchPrinter ? "checked" : ""; return true; }
   if (strcmp(name, "HIDELP") == 0) { out = dispSettings.hideStatusReadout ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
-  if (strcmp(name, "BTN_PWR") == 0) { out = dispSettings.buttonPowerControl ? "checked" : ""; return true; }
+  if (strcmp(name, "GESTURE_ROWS") == 0) {
+    // AMS page entries only where the Cards style exists; data-ams lets the
+    // page hide them while the Gauges style is picked.
+    auto opt = [&](uint8_t cur, uint8_t v, const char* label, bool ams = false) {
+      out += "<option value=\""; out += v; out += "\""; if (cur == v) out += " selected";
+      if (ams) out += " data-ams=\"1\"";
+      out += ">"; out += label; out += "</option>";
+    };
+    out  = "<div class=\"field\"><label for=\"gtap\">Tap</label>";
+    out += "<select id=\"gtap\" onchange=\"toggleSetting('gtap',this.value)\">";
+    opt(dispSettings.gestTap, GT_SMART, "Smart cycle (errors, camera, drying, AMS, next printer)");
+    opt(dispSettings.gestTap, GT_NEXT,  "Next printer only");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestTap, GT_AMS,   "Switch status / AMS page", true);
+#endif
+    opt(dispSettings.gestTap, GT_WAKE,  "Wake the screen only");
+    out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"gdbl\">Double tap</label>";
+    out += "<select id=\"gdbl\" onchange=\"toggleSetting('gdbl',this.value)\">";
+    opt(dispSettings.gestDouble, GD_OFF,  "Nothing");
+    opt(dispSettings.gestDouble, GD_PLUG, "Plug power on/off (confirm screen)");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestDouble, GD_AMS,  "Switch status / AMS page", true);
+#endif
+    opt(dispSettings.gestDouble, GD_NEXT, "Next printer");
+    out += "</select><span class=\"text-dim small\">With a double tap set, a single tap waits ~0.5 s for a second one.</span></div>";
+    out += "<div class=\"field\"><label for=\"ghold\">Hold</label>";
+    out += "<select id=\"ghold\" onchange=\"toggleSetting('ghold',this.value)\">";
+    opt(dispSettings.gestHold, GH_LED,  "Status LED brightness");
+#if HAS_CARD_SKIN
+    opt(dispSettings.gestHold, GH_AMS,  "Switch status / AMS page", true);
+#endif
+    opt(dispSettings.gestHold, GH_NONE, "Nothing");
+    out += "</select>";
+#if TOUCH_WAKE_LONGPRESS
+    out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
+#endif
+    out += "</div>";
+#if HAS_CARD_SKIN
+    out += "<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMST_ROW") == 0) {
     // Per-tray filament-type labels only render in the enhanced portrait AMS
     // strip, and only 320x480 (Guition / ws_lcd_350) drives the 3-AMS case
@@ -328,6 +370,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "</label>";
 #else
     out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "PANEL_CARD_DISP") == 0) {
+    // Hardware > Display panel holds only the 240x320 rows below.
+#if defined(DISPLAY_240x320)
+    out = "";
+#else
+    out = "display:none";
 #endif
     return true;
   }
@@ -363,6 +414,47 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "CARD_SKIN_ROW") == 0) {
+#if HAS_CARD_SKIN
+    // Print-screen style + its two options. Same /save/toggle path
+    // as the round skin picker.
+    auto opt = [&](String& o, uint8_t cur, uint8_t v, const char* label) {
+      o += "<option value=\""; o += v; o += "\""; if (cur == v) o += " selected";
+      o += ">"; o += label; o += "</option>";
+    };
+    out  = "<div class=\"field\"><label for=\"card\">Print screen style</label>";
+    out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value);applyCardsHints()\">";
+    opt(out, dispSettings.cardStyle, 0, "Gauges");
+    opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
+    out += "</select>";
+    out += "<span class=\"text-dim small\">Settings that only apply to Gauges are hidden while Cards is picked; split view keeps the gauges.</span></div>";
+    out += "<div id=\"cardOpts\">";
+    out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
+    out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
+    opt(out, dispSettings.cardLeft, 0, "AMS slots");
+    opt(out, dispSettings.cardLeft, 1, "None");
+#if HAS_CARD_THUMB
+    opt(out, dispSettings.cardLeft, 2, "Plate preview (Bambu cloud sign-in, else AMS)");
+#endif
+    out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"cbot\">Card: bottom row</label>";
+    out += "<select id=\"cbot\" onchange=\"toggleSetting('cbot',this.value)\">";
+    opt(out, dispSettings.cardBottom, 0, "Temperatures");
+    opt(out, dispSettings.cardBottom, 1, "Filaments of this print");
+    out += "</select></div>";
+    out += "<div class=\"field\"><label for=\"cready\">Card: Ready screen</label>";
+    out += "<select id=\"cready\" onchange=\"toggleSetting('cready',this.value)\">";
+    opt(out, dispSettings.cardReady, 0, "Status");
+    opt(out, dispSettings.cardReady, 1, "AMS filament left");
+    opt(out, dispSettings.cardReady, 2, "Alternate status / AMS");
+    out += "</select>";
+    out += "<span class=\"text-dim small\">A tap or the status / AMS gesture shows the other view for 30 s.</span></div>";
+    out += "</div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "ROUND_SKIN_ROW") == 0) {
 #if DISPLAY_IS_ROUND
     // Round boards only: printing dashboard skin picker. Posts through the
@@ -374,17 +466,17 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<option value=\"1\""; out += sel(1); out += ">Speedo (large 240&deg; arc)</option>";
     out += "<option value=\"2\""; out += sel(2); out += ">Rings (concentric progress/nozzle/bed)</option>";
     out += "</select>";
-    out += "<span class=\"text-dim small\">applies immediately</span></div>";
+    out += "</div>";
 #else
     out = "";
 #endif
     return true;
   }
   if (strcmp(name, "EXTENDED_MODES_CARD") == 0) {
-    // Card lives in the Advanced section. Only renders on layouts that
+    // Card lives in the Print screen section. Only renders on layouts that
     // actually have extended grid modes, otherwise the whole card is empty.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
-    out  = "<div class=\"card\">";
+    out  = "<div class=\"card\" data-gauges-only>";  // Cards never reads l8s/p9s
     out += "<div class=\"card-head\"><div><h3>Extended grid modes</h3>";
     out += "<p>Trade the on-screen AMS area for extra gauge slots. ";
     out += "Configure the new slots under <strong>Gauge Layout</strong>.</p>";
@@ -413,7 +505,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // portraitExtras. Boards without LAYOUT_HAS_LANDSCAPE / LY_PORT9_GAUGE_R
     // don't render anything here so the user isn't offered settings the
     // device can't use. Inline display:none reflects the toggle's state at
-    // render time; toggleGridMode() in the Advanced section keeps it in sync.
+    // render time; toggleGridMode() in the Print screen section keeps it in sync.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
     out  = "<div id=\"landExtrasGroup\"";
     if (!dispSettings.landscape8Slots) out += " style=\"display:none\"";
@@ -444,6 +536,15 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out = "display:none";
 #else
     out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "BOARDBTN") == 0) {
+    // JS board flag: an onboard button works whatever "Button type" says.
+#if defined(BOARD_BTN_1)
+    out = "1";
+#else
+    out = "0";
 #endif
     return true;
   }
@@ -774,12 +875,25 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/html", "");
 
+  // A stalled client turns every 2 KB flush into a ~1 s trickle, holding the
+  // main loop (MQTT, display) for minutes. One slow flush is a lost segment on
+  // weak WiFi and the page must survive it; a stall is a dropped connection,
+  // three slow flushes in a row, or a page still not out after 30 s.
+  bool aborted = false;
+  uint8_t slowRun = 0;
+  const unsigned long tStart = millis();
   auto flush = [&]() {
-    if (bufLen > 0) {
-      buf[bufLen] = '\0';
-      server.sendContent(buf);
-      bufLen = 0;
+    if (bufLen > 0 && !aborted) {
+      const unsigned long t0 = millis();
+      server.sendContent(buf, bufLen);
+      const unsigned long now = millis();
+      slowRun = (now - t0 > 800) ? slowRun + 1 : 0;
+      if (!server.client().connected() || slowRun >= 3 || now - tStart > 30000) {
+        aborted = true;
+        server.client().stop();
+      }
     }
+    bufLen = 0;
   };
 
   auto emit = [&](const char* data, size_t len) {
@@ -795,12 +909,12 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   };
 
   // On ESP32, PROGMEM is directly memory-mapped and readable as const char*.
-  for (uint8_t seg = 0; seg < segCount; seg++) {
+  for (uint8_t seg = 0; seg < segCount && !aborted; seg++) {
   const char* end = segs[seg].data + segs[seg].len;
   const char* pos = segs[seg].data;
   const char* literalStart = pos;
 
-  while (pos < end) {
+  while (pos < end && !aborted) {
     if (*pos != '%') { pos++; continue; }
     if (pos + 1 >= end || !(pos[1] >= 'A' && pos[1] <= 'Z')) { pos++; continue; }
 
@@ -836,7 +950,7 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   if (end > literalStart) emit(literalStart, end - literalStart);
   }
   flush();
-  server.sendContent("");
+  if (!aborted) server.sendContent("");
   free(buf);
 }
 

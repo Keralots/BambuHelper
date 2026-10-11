@@ -5,6 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <algorithm>
 #include <mbedtls/base64.h>
 
 // CA certificate bundle (shared with MQTT — linked from platformio build)
@@ -219,6 +220,106 @@ bool cloudFetchUserId(const char* token, char* userId, size_t len, CloudRegion r
 //  a serial off a label - a wrong serial connects happily and then shows no
 //  data, which is the single most common cloud misconfiguration.
 // ---------------------------------------------------------------------------
+// String sink that refuses to grow past a cap - writeToStream() decodes chunked
+// replies too, which getSize() cannot bound (it reports -1 for those).
+class CappedSink : public Stream {
+ public:
+  explicit CappedSink(size_t cap) : cap_(cap) { body.reserve(4096); }
+  String body;
+  bool over = false;
+  size_t write(uint8_t c) override {
+    if (body.length() >= cap_ || !body.concat((char)c)) { over = true; return 0; }
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t n) override {
+    // concat() fails on OOM: report it, or a truncated body would parse as JSON.
+    if (body.length() + n > cap_ || !body.concat((const char*)b, n)) { over = true; return 0; }
+    return n;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+ private:
+  size_t cap_;
+};
+
+bool cloudFetchPlateThumbUrl(const char* token, CloudRegion region, const char* taskId,
+                             int plateIdx, char* url, size_t urlLen) {
+  url[0] = '\0';
+  String api = String(getBambuApiBase(region)) + "/v1/iot-service/api/user/task/" + taskId;
+  WiFiClientSecure tls;
+  tls.setTimeout(10);
+  tls.setHandshakeTimeout(10);
+  tls.setCACertBundle(rootca_crt_bundle_start);     // fail closed: no insecure retry with a Bearer
+  HTTPClient http;
+  if (!http.begin(tls, api)) return false;
+  http.setTimeout(10000);
+  setSlicerHeaders(http);
+  http.addHeader("Authorization", String("Bearer ") + token);
+  int code = http.GET();
+  int size = http.getSize();
+  if (code != 200 || size > 32768) {
+    Serial.printf("THUMB: task HTTP %d size %d\n", code, size);
+    http.end();
+    return false;
+  }
+  CappedSink sink(32768);
+  const int wrote = http.writeToStream(&sink);
+  http.end();
+  if (wrote < 0 || sink.over) {
+    Serial.printf("THUMB: task body rejected (%d, over=%d)\n", wrote, sink.over);
+    return false;
+  }
+  const String& body = sink.body;
+
+  JsonDocument filter;
+  filter["context"]["plates"][0]["index"] = true;
+  filter["context"]["plates"][0]["thumbnail"]["url"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) return false;
+  for (JsonObjectConst pl : doc["context"]["plates"].as<JsonArrayConst>()) {
+    if (pl["index"].as<int>() != plateIdx) continue;
+    const char* u = pl["thumbnail"]["url"] | "";
+    if (strncmp(u, "https://", 8) != 0 || strlen(u) >= urlLen) return false;
+    strlcpy(url, u, urlLen);
+    return true;
+  }
+  Serial.printf("THUMB: no plate %d in task %s\n", plateIdx, taskId);
+  return false;
+}
+
+bool cloudDownload(const char* url, uint8_t* buf, size_t cap, size_t* len) {
+  *len = 0;
+  WiFiClientSecure tls;
+  tls.setTimeout(10);
+  tls.setHandshakeTimeout(10);
+  tls.setCACertBundle(rootca_crt_bundle_start);
+  HTTPClient http;
+  if (!http.begin(tls, url)) return false;
+  http.setTimeout(10000);
+  int code = http.GET();
+  int size = http.getSize();
+  if (code != 200 || size <= 0 || (size_t)size > cap) {
+    Serial.printf("THUMB: download HTTP %d size %d\n", code, size);
+    http.end();
+    return false;
+  }
+  WiFiClient* s = http.getStreamPtr();
+  size_t got = 0;
+  unsigned long last = millis();
+  while (got < (size_t)size && http.connected() && millis() - last < 10000) {
+    int avail = s->available();
+    if (avail <= 0) { delay(5); continue; }
+    int n = s->read(buf + got, std::min<size_t>((size_t)avail, (size_t)size - got));
+    if (n > 0) { got += n; last = millis(); }
+  }
+  http.end();
+  if (got != (size_t)size) return false;
+  *len = got;
+  return true;
+}
+
 bool cloudFetchDeviceList(const char* token, CloudRegion region, String& response) {
   // Deliberately the site host, not api.bambulab.com: measured on hardware, the
   // direct path answers this device with a Cloudflare block page (403, ~5.4 KB

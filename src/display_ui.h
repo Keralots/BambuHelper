@@ -114,6 +114,11 @@ extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
 void initDisplay();
 void updateDisplay();
 
+// One-shot screenshot of the current screen (PSRAM boards). Begin renders it
+// into a PSRAM sprite (byte-swapped RGB565, w x h); End frees it and repaints.
+bool screenCaptureBegin(const uint16_t** buf, int16_t* w, int16_t* h);
+void screenCaptureEnd();
+
 // Flush the off-screen framebuffer sprite to the panel in one contiguous
 // raster write. No-op on boards that draw directly (all except
 // BOARD_IS_JC3248W535, which uses a full-screen PSRAM sprite to work around
@@ -143,6 +148,9 @@ void nightWake();             // button press during a blackout: light the panel
 // currently in a landscape rotation. Gates the split (dual-printer) screen so it
 // never engages on 480x480 / landscape boards.
 bool displaySupportsSplit();
+
+// The last drawn frame was a Cards screen (not drying, printer-off or a classic renderer).
+bool cardOnScreen();
 
 // True during a frame that must fully repaint (screen change or
 // triggerDisplayTransition). The split renderer reads this to force both bands.
@@ -203,5 +211,14 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
 // (#158). Picks the largest font that fits maxW, dropping the time before it
 // gives up the message. The caller has already cleared the band.
 void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s);
+
+// Status badge wording / colour with the error and cancel overrides applied.
+// Returns s.gcodeState itself when no override is active.
+const char* stateBadgeText(const BambuState& s);
+uint16_t stateBadgeColor(const BambuState& s);
+
+// Print completion time ("14:05" / "2:05 PM") into buf; false and "" when the
+// user turned the timestamp off or the finish was never dated.
+bool formatFinishClock(char* buf, size_t n, const BambuState& s);
 
 #endif // DISPLAY_UI_H
