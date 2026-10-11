@@ -114,6 +114,11 @@ extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
 void initDisplay();
 void updateDisplay();
 
+// One-shot screenshot of the current screen (PSRAM boards). Begin renders it
+// into a PSRAM sprite (byte-swapped RGB565, w x h); End frees it and repaints.
+bool screenCaptureBegin(const uint16_t** buf, int16_t* w, int16_t* h);
+void screenCaptureEnd();
+
 // Flush the off-screen framebuffer sprite to the panel in one contiguous
 // raster write. No-op on boards that draw directly (all except
 // BOARD_IS_JC3248W535, which uses a full-screen PSRAM sprite to work around

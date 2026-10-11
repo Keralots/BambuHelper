@@ -6085,3 +6085,43 @@ void updateDisplay() {
   memcpy(&prevState, &displayedPrinter().state, sizeof(BambuState));
   forceRedraw = false;
 }
+
+// Screenshot: re-render the current screen into a PSRAM sprite by retargeting
+// tft_ptr (the JC frame-sprite trick), then repaint the real target from scratch.
+static lgfx::LGFX_Sprite* g_shot = nullptr;
+static lgfx::LovyanGFX* g_shotPrev = nullptr;
+
+bool screenCaptureBegin(const uint16_t** buf, int16_t* w, int16_t* h) {
+  if (g_shot || currentScreen == SCREEN_POWER_CONFIRM) return false;  // modal waits on a real frame
+  const int16_t sw = tft.width(), sh = tft.height();
+  // LovyanGFX falls back to internal RAM when PSRAM is short - never allow that.
+  if (!psramFound() ||
+      heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) < (size_t)sw * sh * 2 + 4) return false;
+  g_shot = new (std::nothrow) lgfx::LGFX_Sprite(tft_ptr);
+  if (!g_shot) return false;
+  g_shot->setPsram(true);
+  g_shot->setColorDepth(16);
+  if (!g_shot->createSprite(sw, sh)) { delete g_shot; g_shot = nullptr; return false; }
+  tft.waitDMA();
+  g_shot->setTextDatum(tft.getTextDatum());
+  g_shotPrev = tft_ptr;
+  tft_ptr = g_shot;
+  setFont(tft, FONT_NONE);         // font cache is target-agnostic: reload into the sprite
+  triggerDisplayTransition();
+  lastDisplayUpdate = 0;
+  updateDisplay();
+  *buf = static_cast<const uint16_t*>(g_shot->getBuffer());
+  *w = sw;
+  *h = sh;
+  return true;
+}
+
+void screenCaptureEnd() {
+  if (!g_shot) return;
+  setFont(tft, FONT_NONE);         // unloads the sprite's VLW
+  tft_ptr = g_shotPrev;
+  delete g_shot;
+  g_shot = nullptr;
+  triggerDisplayTransition();      // caches now describe the sprite, not the panel
+  lastDisplayUpdate = 0;
+}

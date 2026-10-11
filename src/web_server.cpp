@@ -761,16 +761,9 @@ static void handleDebug() {
   server.send(200, "application/json", json);
 }
 
-// Last Card frame as a 24-bit BMP - the panel itself cannot be read back.
-static void sendCardBmp() {
-  const uint16_t* buf; int16_t w, h, bandH = 0;
-  if (!cardFrameView(&buf, &w, &h)) {
-    // Band-render board: re-render the last frame band by band, bottom-up.
-    if (!cardBandView(0, &buf, &w, &bandH, &h)) {
-      server.send(404, "text/plain", "No Card frame (Card style off)");
-      return;
-    }
-  }
+// Byte-swapped RGB565 frame as a 24-bit BMP - the panel itself cannot be read back.
+// bandH > 0: buf is a Card band, re-rendered via cardBandView() as rows advance.
+static void sendRgb565Bmp(const uint16_t* buf, int16_t w, int16_t h, int16_t bandH) {
   const uint32_t rowBytes = ((uint32_t)w * 3 + 3) & ~3u;
   const uint32_t dataSize = rowBytes * h, fileSize = 54 + dataSize;
   uint8_t hdr[54] = {'B', 'M'};
@@ -808,9 +801,29 @@ static void sendCardBmp() {
   }
 }
 
+// Last Card frame.
 static void handleCardBmp() {
-  sendCardBmp();
+  const uint16_t* buf; int16_t w, h, bandH = 0;
+  if (cardFrameView(&buf, &w, &h)) {
+    sendRgb565Bmp(buf, w, h, 0);
+  } else if (cardBandView(0, &buf, &w, &bandH, &h)) {
+    // Band-render board: re-render the last frame band by band, bottom-up.
+    sendRgb565Bmp(buf, w, h, bandH);
+  } else {
+    server.send(404, "text/plain", "No Card frame (Card style off)");
+  }
   cardBandRelease();   // band boards: the band sprite holds DMA-capable RAM
+}
+
+// Whatever screen is up (gauges, clock, Card...), re-rendered into PSRAM.
+static void handleScreenBmp() {
+  const uint16_t* buf; int16_t w, h;
+  if (!screenCaptureBegin(&buf, &w, &h)) {
+    server.send(503, "text/plain", "Screenshot needs free PSRAM (not on a power-confirm screen)");
+    return;
+  }
+  sendRgb565Bmp(buf, w, h, 0);
+  screenCaptureEnd();
 }
 
 static void handleDebugToggle() {
@@ -2789,6 +2802,7 @@ void initWebServer() {
   server.on("/reboot", HTTP_POST, handleReboot);
   server.on("/debug", HTTP_GET, handleDebug);
   server.on("/card.bmp", HTTP_GET, handleCardBmp);
+  server.on("/screen.bmp", HTTP_GET, handleScreenBmp);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
   server.on("/glow/test", HTTP_POST, handleGlowTest);
