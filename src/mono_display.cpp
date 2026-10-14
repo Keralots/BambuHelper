@@ -5,6 +5,7 @@
 #include "mono_display.h"
 #include "bambu_state.h"
 #include "config.h"
+#include "settings.h"
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -256,6 +257,38 @@ MonoScreen monoSelectScreen(const BambuState &st) {
   }
 }
 
+// --- FINISH hold -> Idle -----------------------------------------------------
+// The printer keeps reporting gcode_state=FINISH after the print ends (pressing
+// OK on the printer does NOT publish IDLE), so without a timeout the mono
+// screen stays on Done forever. Big screens solve this with
+// dpSettings.finishDisplayMins (default 3, 0 = keep forever): FINISHED is shown
+// for that window and then the screen falls back to Idle/Clock even though the
+// MQTT state is still FINISH. Mirror that here.
+static unsigned long s_finishSinceMs = 0;
+static bool s_wasFinish = false;
+
+static unsigned long monoFinishHoldMs() {
+  if (dpSettings.finishDisplayMins == 0) return 0;  // keep Done forever
+  return (unsigned long)dpSettings.finishDisplayMins * 60000UL;
+}
+
+static MonoScreen monoEffectiveScreen(MonoScreen raw) {
+  unsigned long now = millis();
+  if (raw == MONO_SCR_FINISH) {
+    if (!s_wasFinish) {
+      s_wasFinish = true;
+      s_finishSinceMs = now;
+    }
+    unsigned long hold = monoFinishHoldMs();
+    if (hold > 0 && (long)(now - s_finishSinceMs) >= (long)hold) {
+      return MONO_SCR_IDLE;  // expired: show Idle while printer still says FINISH
+    }
+    return MONO_SCR_FINISH;
+  }
+  s_wasFinish = false;
+  return raw;
+}
+
 // --- Format helpers -----------------------------------------------------------
 static int tempInt(float v) { return (int)(v + 0.5f); }
 
@@ -380,14 +413,15 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
 static void renderFinish(const BambuState &st) {
   oled.clearDisplay();
   monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
-  monoDrawProgressBar(BAR_Y, 100);
-  oled.setCursor(0, TEMP_Y);
-  oled.print("Done");
+  // Cooling temps instead of a bare "Done" duplicate: same row as printing.
+  drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
+  // Single status line: was "Done" (TEMP_Y) + "100%" (LAYER_Y) duplicated.
   oled.setCursor(0, LAYER_Y);
-  oled.print("100%");
+  oled.print("Done 100%");
+  monoDrawProgressBar(BAR_Y, 100);
   monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_FINISH);
   oled.setCursor(11, BOTTOM_Y);
-  oled.print("done");
+  oled.print("finished");
   oled.display();
 }
 
@@ -499,6 +533,7 @@ static void renderPrepare(const BambuState &st) {
 // --- Change detection (Step 5) -------------------------------------------------
 struct MonoSig {
   MonoScreen scr;
+  MonoScreen rawScr;  // pre-hold screen: FINISH->IDLE expiry must read as change
   int progress;
   int remaining;
   unsigned layer;
@@ -515,9 +550,10 @@ static MonoSig s_last;
 static bool s_haveLast = false;
 static unsigned long s_lastFrameMs = 0;
 
-static MonoSig makeSig(MonoScreen scr, const BambuState &st) {
+static MonoSig makeSig(MonoScreen scr, MonoScreen rawScr, const BambuState &st) {
   MonoSig s;
   s.scr = scr;
+  s.rawScr = rawScr;
   s.progress = (int)st.progress;
   s.remaining = (int)st.remainingMinutes;
   s.layer = st.layerNum;
@@ -547,10 +583,10 @@ static MonoSig makeSig(MonoScreen scr, const BambuState &st) {
 }
 
 static bool sigSame(const MonoSig &a, const MonoSig &b) {
-  return a.scr == b.scr && a.progress == b.progress && a.remaining == b.remaining &&
-         a.layer == b.layer && a.total == b.total && a.nzl == b.nzl &&
-         a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT && a.err == b.err &&
-         a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
+  return a.scr == b.scr && a.rawScr == b.rawScr && a.progress == b.progress &&
+         a.remaining == b.remaining && a.layer == b.layer && a.total == b.total &&
+         a.nzl == b.nzl && a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT &&
+         a.err == b.err && a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
          a.clockMin == b.clockMin && a.timeAlt == b.timeAlt;
 }
 
@@ -786,9 +822,10 @@ void monoShowMessage(const char *line1, const char *line2) {
 
 void monoShowStatus(const BambuState &st) {
   if (!s_booted || !s_enabled) return;
-  MonoScreen scr = monoSelectScreen(st);
+  MonoScreen raw = monoSelectScreen(st);
+  MonoScreen scr = monoEffectiveScreen(raw);
   renderNow(scr, st);
-  s_last = makeSig(scr, st);
+  s_last = makeSig(scr, raw, st);
   s_haveLast = true;
   s_lastFrameMs = millis();
 }
@@ -844,8 +881,9 @@ void monoDisplayTick() {
                               : &printers[0].state;
 #endif
   const BambuState &st = *src;
-  MonoScreen scr = monoSelectScreen(st);
-  MonoSig sig = makeSig(scr, st);
+  MonoScreen raw = monoSelectScreen(st);
+  MonoScreen scr = monoEffectiveScreen(raw);
+  MonoSig sig = makeSig(scr, raw, st);
   bool changed = !s_haveLast || !sigSame(sig, s_last);
   unsigned long now = millis();
   // Marquee/parpadeo => ~10 fps; estatico => 1 s.

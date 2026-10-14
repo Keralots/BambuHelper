@@ -56,7 +56,11 @@ struct BambuState;  // include/bambu_state.h
 #endif
 
 // Screens (step 4). Priority in monoSelectScreen():
-// !connected > FAILED/print_error != 0 > FINISH > PAUSE > PREPARE > RUNNING > IDLE
+// !connected > FAILED/print_error != 0 > FINISH > PAUSE > PREPARE > RUNNING > IDLE.
+// Note: the printer keeps reporting FINISH after the print ends (OK on the
+// printer does not publish IDLE), so the tick applies dpSettings.finishDisplayMins
+// (default 3, 0 = keep forever): FINISH is shown for that window, then falls
+// back to IDLE while the MQTT state is still FINISH.
 enum MonoScreen : uint8_t {
   MONO_SCR_OFFLINE = 0,
   MONO_SCR_PREPARE,
