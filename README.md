@@ -607,57 +607,57 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 ## Mono OLED print screens (SH1106 128x64, env `mono-c3`)
 
-ESP32-C3 SuperMini + SH1106 128x64 por I2C (`Adafruit_SH1106G`, sin otra
-libreria). Estilo del repo ESP-Spotify-OLED: titulo en `FreeMonoBold9pt7b`,
-resto en fuente por defecto, barra con `drawRect`/`fillRect`, iconos con
-primitivas (sin glifos de fuente) y nombres transliterados a ASCII.
+ESP32-C3 SuperMini + SH1106 128x64 over I2C (`Adafruit_SH1106G`, no other
+library). ESP-Spotify-OLED style: `FreeMonoBold9pt7b` title, default font
+for the rest, `drawRect`/`fillRect` bar, primitive-drawn icons (no font
+glyphs) and ASCII-transliterated names.
 
 ```
-Titulo (FreeMonoBold9pt, 1-2 lineas o marquee)
-y=31   N 215/220 B 60/60
-y=40   Capa 123/456
-y=50   [barra de progreso, alto 6]
-y=56   [icono] 45%        -1h23m
+Title (FreeMonoBold9pt, 1-2 lines or marquee)
+y=30   N 215/220  B 60/60
+y=39   Layer 123/456
+y=48   [progress bar, 6 tall]
+y=56   [icon] 45%        - 1h 10m
 ```
 
-| Pantalla | Cuando | Contenido |
+| Screen | When | Content |
 |---|---|---|
-| Offline | `!connected` | "Sin conexion" + IP de impresora configurada |
-| Preparando | `PREPARE` | "Calentando" + temps actuales/objetivo |
-| Imprimiendo | `RUNNING` | Titulo, `N`/`B` (solo actual si objetivo 0), capa, barra, icono play + `%` y restante a la derecha |
-| Pausa | `PAUSE` | Igual que imprimiendo, icono de pausa y `%` parpadeantes |
-| Terminada | `FINISH` | Nombre, barra llena, "Completada" |
-| Error | `FAILED` o `print_error != 0` | "ERR" + codigo en crudo + nombre |
-| Idle | `IDLE` | "Idle", `N`/`B` en grande, `HOT` si boquilla > umbral, hora si hay NTP |
+| Offline | `!connected` | "Offline" + configured printer IP |
+| Heating | `PREPARE` | "Heating" + current/target temps |
+| Printing | `RUNNING` | Title, `N`/`B` (current only when target is 0), layer, bar, play icon + `%` and remaining on the right |
+| Pause | `PAUSE` | Same as printing, pause icon with blinking `%` |
+| Done | `FINISH` | Name, full bar, "Done" |
+| Error | `FAILED` or `print_error != 0` | "ERR" + raw code + name |
+| Idle | `IDLE` | "Idle", big `N`/`B`, `HOT` above the threshold, clock when NTP is up |
 
-Prioridad: `!connected` > `FAILED`/`print_error` > resto. Titulos de hasta
-2x11 caracteres van en 2 lineas; mas largos usan marquee horizontal a ~10 fps
-(solo mientras hay scroll). Refresco: solo si cambia el estado o cada 1 s;
-I2C a 400 kHz. Apagado por inactividad: `monoDisplaySetEnabled(false)`
+Priority: `!connected` > `FAILED`/`print_error` > rest. Titles up to
+2x11 chars wrap on 2 lines; longer ones scroll as a ~10 fps marquee
+(only while scrolling). Refresh: only on state change or every 1 s;
+I2C at 400 kHz. Idle display-off: `monoDisplaySetEnabled(false)`
 (alias `oled_display(false)`).
 
-Mock por Serial (115200 baudios): `mock <n>` fija una pantalla, `mock cycle`
-rota las 9 cada 3 s, `mock off` vuelve a datos reales. Casos: 0 imp. 0 %
-corto, 1 imp. 50 % ~20 ch, 2 imp. largo (marquee), 3 pausa, 4 terminada,
-5 error, 6 idle frio, 7 idle caliente (`HOT`), 8 sin conexion. Con
-`-D MONO_MOCK_AUTO=1` arranca en `cycle`.
+Mock over Serial (115200 baud): `mock <n>` pins one screen, `mock cycle`
+rotates all 9 every 3 s, `mock off` returns to live data. Cases: 0 print
+0% short, 1 print 50% ~20ch, 2 long print (marquee), 3 pause, 4 done,
+5 error, 6 cold idle, 7 hot idle (`HOT`), 8 offline. With
+`-D MONO_MOCK_AUTO=1` it boots into `cycle`.
 
-Constantes ajustables (`src/mono_display.h`, sobrescribibles con `-D`):
+Tunable constants (`src/mono_display.h`, overridable with `-D`):
 
-| Constante | Defecto | Que hace |
+| Constant | Default | What it does |
 |---|---|---|
-| `MONO_MAX_CHAR_TITLE_PER_LINE` | 11 | Corte del wrap del titulo |
-| `MONO_HOT_THRESHOLD_C` | 50 | Umbral del aviso `HOT` |
-| `MONO_REFRESH_MS` | 1000 | Refresco estatico |
-| `MONO_MARQUEE_MS` | 100 | Paso del marquee (~10 fps) |
-| `MONO_SHOW_END_TIME` | 0 | 1 = hora de fin (NTP) en vez de restante |
-| `MONO_MOCK` | 1 | Comandos `mock ...` por Serial |
+| `MONO_MAX_CHAR_TITLE_PER_LINE` | 11 | Title wrap cut |
+| `MONO_HOT_THRESHOLD_C` | 50 | `HOT` warning threshold |
+| `MONO_REFRESH_MS` | 1000 | Static refresh |
+| `MONO_MARQUEE_MS` | 100 | Marquee step (~10 fps) |
+| `MONO_SHOW_END_TIME` | 0 | 1 = end time (NTP) instead of remaining |
+| `MONO_MOCK` | 1 | `mock ...` commands over Serial |
 
-Medido 2026-10-14 (`pio run -e mono-c3`): RAM 58180/327680 (17.8 %),
-secciones Flash 1746964/1835008, `firmware.bin` 1760848 B (hueco ~74 KB
-sobre el slot de 1835008 B). Base Fase 1: RAM 58036, Flash 1738636
-(+144 B RAM / +8394 B Flash). Heap libre en arranque por Serial
-(`MONO heap=...`, normalmente >180 KB en C3).
+Measured 2026-10-14 (`pio run -e mono-c3`): RAM 58180/327680 (17.8 %),
+sections Flash 1747024/1835008, `firmware.bin` 1760912 B (about 74 KB
+of headroom in the 1835008 B slot). Phase-1 baseline: RAM 58036,
+Flash 1738636 (+144 B RAM / +8388 B Flash). Boot heap over Serial
+(`MONO heap=...`, usually >180 KB on C3).
 
 ## Display Power Management
 

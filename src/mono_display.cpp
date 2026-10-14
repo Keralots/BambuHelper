@@ -1,5 +1,5 @@
-// BambuHelper-Mono: SH1106 128x64 por I2C con Adafruit GFX/SH110X.
-// Estilo copiado del repo de referencia ESP-Spotify-OLED (ver REFERENCE_NOTES.md).
+// BambuHelper-Mono: SH1106 128x64 over I2C with Adafruit GFX/SH110X.
+// Style copied from the ESP-Spotify-OLED reference repo (see REFERENCE_NOTES.md).
 #ifdef BOARD_IS_MONO
 
 #include "mono_display.h"
@@ -36,17 +36,17 @@
 #define MONO_MOCK_AUTO 0
 #endif
 
-// Layout verificado contra solapes (fuente default = 6x8 px/celda):
-// titulo 1 linea: baseline ~y=20 (ocupa ~8..20)
-// titulo 2 lineas: baselines y=12 / y=27 (ocupan ~0..12 y ~15..27)
-// TEMP_Y=31 (31..38), LAYER_Y=40 (40..47), BAR_Y=50 (50..55), BOTTOM_Y=56 (56..63).
-// Desvios de 1 px frente al boceto del plan (32/57) para no pisar ni recortar.
+// Layout checked for overlaps (default font = 6x8 px cells):
+// single-line title: baseline ~y=20 (spans ~8..20)
+// two-line title: baselines y=12 / y=27 (span ~0..12 and ~15..27)
+// TEMP_Y=30 (30..37), LAYER_Y=39 (39..46), BAR_Y=48 (48..53),
+// BOTTOM_Y=56 (56..63): 2 px of air between the bar and the bottom row.
 static const int TITLE_SINGLE_Y = 20;
 static const int TITLE_Y1 = 12;
 static const int TITLE_Y2 = 27;
-static const int TEMP_Y = 31;
-static const int LAYER_Y = 40;
-static const int BAR_Y = 50;
+static const int TEMP_Y = 30;
+static const int LAYER_Y = 39;
+static const int BAR_Y = 48;
 static const int BAR_H = 6;
 static const int BOTTOM_Y = 56;
 
@@ -55,8 +55,8 @@ static Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 static bool s_enabled = true;
 static bool s_booted = false;
 
-// --- Transliteracion (equivale a replaceSpecialCharacters del repo de ----
-// --- referencia: la GFX no trae acentos, se pasa a ASCII base) -------------
+// --- Transliteration (the equivalent of the reference repo's ----------------
+// --- replaceSpecialCharacters: the GFX fonts ship no accents, so map to ASCII)
 static void deaccent(char *dst, size_t n, const char *src) {
   size_t j = 0;
   for (size_t i = 0; src[i] && j + 1 < n;) {
@@ -67,8 +67,8 @@ static void deaccent(char *dst, size_t n, const char *src) {
     } else if (c == 0xC3 && src[i + 1]) {
       unsigned char d = (unsigned char)src[i + 1];
       char r = 0;
-      if (d >= 0x80 && d <= 0x85) r = 'A';
-      else if (d == 0x87) r = 'C';
+      if (d >= 0x80 && d <= 0x85) r = 'A';  // A accents
+      else if (d == 0x87) r = 'C';         // C cedilla
       else if (d >= 0x88 && d <= 0x8B) r = 'E';
       else if (d >= 0x8C && d <= 0x8F) r = 'I';
       else if (d == 0x91) r = 'N';
@@ -96,12 +96,12 @@ static bool endsWith(const char *s, const char *suffix) {
   return sl >= xl && strcmp(s + sl - xl, suffix) == 0;
 }
 
-// --- Paso 2: helpers --------------------------------------------------------
+// --- Step 2: helpers ----------------------------------------------------------
 String monoCleanJobName(const char *raw) {
   if (!raw) return String("");
   char tmp[128];
   strlcpy(tmp, raw, sizeof(tmp));
-  // Sufijos del slicer: orden importa (.gcode.3mf antes que .3mf).
+  // Slicer suffixes: order matters (.gcode.3mf before .3mf).
   if (endsWith(tmp, ".gcode.3mf")) tmp[strlen(tmp) - 10] = 0;
   else if (endsWith(tmp, ".3mf")) tmp[strlen(tmp) - 4] = 0;
   else if (endsWith(tmp, ".gcode")) tmp[strlen(tmp) - 6] = 0;
@@ -109,7 +109,7 @@ String monoCleanJobName(const char *raw) {
     if (*p == '_') *p = ' ';
   char out[128];
   deaccent(out, sizeof(out), tmp);
-  // Recorta espacios de los bordes.
+  // Trim edge whitespace.
   String s(out);
   s.trim();
   return s;
@@ -121,9 +121,9 @@ String monoFormatRemaining(int minutes) {
   char buf[16];
   if (minutes < 0) return String("--");
   if (minutes < 60) {
-    snprintf(buf, sizeof(buf), "%dm", minutes);
+    snprintf(buf, sizeof(buf), "- %dm", minutes);
   } else {
-    snprintf(buf, sizeof(buf), "%dh%02dm", minutes / 60, minutes % 60);
+    snprintf(buf, sizeof(buf), "- %dh %02dm", minutes / 60, minutes % 60);
   }
   return String(buf);
 }
@@ -131,7 +131,7 @@ String monoFormatRemaining(int minutes) {
 void monoDrawProgressBar(int y, int percent) {
   if (percent < 0) percent = 0;
   if (percent > 100) percent = 100;
-  // Misma barra que Spotify: drawRect + fillRect con map().
+  // Same bar as Spotify: drawRect + fillRect with map().
   oled.drawRect(0, y, 128, BAR_H, SH110X_WHITE);
   oled.fillRect(0, y, map(percent, 0, 100, 0, 126), BAR_H, SH110X_WHITE);
 }
@@ -140,26 +140,27 @@ void monoDrawStatusIcon(int x, int y, MonoScreen s) {
   switch (s) {
     case MONO_SCR_PRINTING:
     case MONO_SCR_PREPARE:
-      // Triangulo "play".
+      // "Play" triangle.
       oled.fillTriangle(x, y, x, y + 7, x + 6, y + 3, SH110X_WHITE);
       break;
     case MONO_SCR_PAUSE:
+      // Two vertical pause bars.
       oled.fillRect(x, y, 2, 8, SH110X_WHITE);
       oled.fillRect(x + 4, y, 2, 8, SH110X_WHITE);
       break;
     case MONO_SCR_FAILED:
-      // Triangulo de aviso + "!" con primitivas (sin glifos).
+      // Warning triangle + "!" from primitives (no glyphs).
       oled.drawTriangle(x + 3, y, x, y + 7, x + 7, y + 7, SH110X_WHITE);
       oled.drawFastVLine(x + 3, y + 2, 3, SH110X_WHITE);
       oled.drawPixel(x + 3, y + 6, SH110X_WHITE);
       break;
     case MONO_SCR_FINISH:
-      // Check con dos lineas (grosor simple, dentro del cajon 8x8).
+      // Check mark, two lines (single weight, inside the 8x8 box).
       oled.drawLine(x, y + 4, x + 3, y + 7, SH110X_WHITE);
       oled.drawLine(x + 3, y + 7, x + 8, y, SH110X_WHITE);
       break;
     case MONO_SCR_OFFLINE:
-      // X de "sin conexion".
+      // Disconnected "X".
       oled.drawLine(x, y, x + 7, y + 7, SH110X_WHITE);
       oled.drawLine(x + 7, y, x, y + 7, SH110X_WHITE);
       break;
@@ -169,18 +170,18 @@ void monoDrawStatusIcon(int x, int y, MonoScreen s) {
   }
 }
 
-// --- Titulo con wrap / marquee ----------------------------------------------
+// --- Title with wrap / marquee ------------------------------------------------
 static String s_mqText = "";
 static int s_mqX = 0;
 static unsigned long s_mqLastMs = 0;
-static uint8_t s_mqHold = 0;  // ticks de pausa en cada extremo
+static uint8_t s_mqHold = 0;  // hold ticks at each end
 static bool s_marqueeActive = false;
 
 static void marqueeReset(const String &t) {
   s_mqText = t;
   s_mqX = 0;
   s_mqLastMs = millis();
-  s_mqHold = 8;  // pausa inicial para leer el principio
+  s_mqHold = 8;  // opening hold so the start can be read
 }
 
 void monoDrawTitle(const String &clean) {
@@ -193,7 +194,7 @@ void monoDrawTitle(const String &clean) {
     oled.print(clean);
   } else if (len <= 2 * maxLine) {
     s_marqueeActive = false;
-    // Corte en el ultimo espacio dentro del limite, o corte duro.
+    // Break at the last space within the limit, else a hard cut.
     int cut = maxLine;
     int sp = clean.lastIndexOf(' ', maxLine);
     if (sp > maxLine - 5 && sp > 0) cut = sp;
@@ -206,7 +207,7 @@ void monoDrawTitle(const String &clean) {
     oled.setCursor(0, TITLE_Y2);
     oled.print(l2);
   } else {
-    // Marquee horizontal en una sola linea.
+    // Single-line horizontal marquee.
     s_marqueeActive = true;
     if (s_mqText != clean) marqueeReset(clean);
     int16_t x1, y1;
@@ -223,7 +224,7 @@ void monoDrawTitle(const String &clean) {
       } else {
         s_mqX -= 3;
         if (s_mqX + (int)w <= 128) {
-          // Fin visible: pausa y vuelta al principio.
+          // End visible: hold, then back to the start.
           s_mqX = 0;
           s_mqHold = 8;
         }
@@ -236,7 +237,7 @@ void monoDrawTitle(const String &clean) {
   oled.setTextSize(1);
 }
 
-// --- Paso 4: seleccion de pantalla -------------------------------------------
+// --- Step 4: screen selection --------------------------------------------------
 const char *monoScreenName(MonoScreen s) {
   switch (s) {
     case MONO_SCR_OFFLINE: return "OFFLINE";
@@ -268,10 +269,10 @@ MonoScreen monoSelectScreen(const BambuState &st) {
   }
 }
 
-// --- Utilidades de formato ----------------------------------------------------
+// --- Format helpers -----------------------------------------------------------
 static int tempInt(float v) { return (int)(v + 0.5f); }
 
-// "N 215/220" o "N 215" si el objetivo es 0.
+// "N 215/220", or "N 215" when the target is 0.
 static void fmtTemp(char *dst, size_t n, char label, float cur, float target) {
   if (target < 0.5f)
     snprintf(dst, n, "%c %d", label, tempInt(cur));
@@ -288,7 +289,7 @@ static void fmtClock(char *dst, size_t n) {
   snprintf(dst, n, "%02d:%02d", tmv.tm_hour, tmv.tm_min);
 }
 
-// Fila inferior: tiempo restante o (opcional) hora de fin estimada.
+// Bottom row: remaining time, or the (optional) estimated end time.
 static String bottomTime(const BambuState &st) {
 #if MONO_SHOW_END_TIME
   if (ntpOk() && (int)st.remainingMinutes >= 0 && st.remainingMinutes < 60 * 48) {
@@ -296,7 +297,7 @@ static String bottomTime(const BambuState &st) {
     struct tm tmv;
     localtime_r(&end, &tmv);
     char buf[16];
-    snprintf(buf, sizeof(buf), "fin %02d:%02d", tmv.tm_hour, tmv.tm_min);
+    snprintf(buf, sizeof(buf), "end %02d:%02d", tmv.tm_hour, tmv.tm_min);
     return String(buf);
   }
 #endif
@@ -304,7 +305,7 @@ static String bottomTime(const BambuState &st) {
   return monoFormatRemaining((int)st.remainingMinutes);
 }
 
-// --- Render de cada pantalla (todas terminan con display()) --------------------
+// --- One render per screen (all end with display()) ----------------------------
 static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.clearDisplay();
   monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
@@ -316,14 +317,14 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.print(line);
   oled.setCursor(0, LAYER_Y);
   if (st.totalLayers > 0) {
-    snprintf(line, sizeof(line), "Capa %u/%u", st.layerNum, st.totalLayers);
+    snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
     oled.print(line);
   } else if (st.layerNum > 0) {
-    snprintf(line, sizeof(line), "Capa %u", st.layerNum);
+    snprintf(line, sizeof(line), "Layer %u", st.layerNum);
     oled.print(line);
   }
   monoDrawProgressBar(BAR_Y, st.progress);
-  // Fila inferior: icono + % a la izquierda, tiempo a la derecha.
+  // Bottom row: icon + % on the left, time on the right.
   String pct = String((int)st.progress) + "%";
   String t = bottomTime(st);
   int16_t x1, y1;
@@ -347,44 +348,54 @@ static void renderFinish(const BambuState &st) {
   monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
   monoDrawProgressBar(BAR_Y, 100);
   oled.setCursor(0, TEMP_Y);
-  oled.print("Completada");
+  oled.print("Done");
   oled.setCursor(0, LAYER_Y);
   oled.print("100%");
   monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_FINISH);
   oled.setCursor(11, BOTTOM_Y);
-  oled.print("fin");
+  oled.print("done");
   oled.display();
 }
 
 static void renderIdle(const BambuState &st) {
   oled.clearDisplay();
+  // 1. Fixed top title.
   monoDrawTitle(String("Idle"));
-  // Temps en grande.
-  char line[24];
+
+  // 2. Big centered clock (Spotify-clock style); big temps when NTP is down.
   oled.setFont(&FreeMonoBold9pt7b);
-  snprintf(line, sizeof(line), "N%d B%d", tempInt(st.nozzleTemp), tempInt(st.bedTemp));
-  oled.setCursor(0, 44);
-  oled.print(line);
+  oled.setTextSize(1);
+  if (ntpOk()) {
+    char clk[8];
+    fmtClock(clk, sizeof(clk));
+    int16_t x1, y1;
+    uint16_t w, h;
+    oled.getTextBounds(String(clk), 0, 0, &x1, &y1, &w, &h);
+    oled.setCursor((128 - (int)w) / 2, 42);
+    oled.print(clk);
+  } else {
+    char line[24];
+    snprintf(line, sizeof(line), "N%d B%d", tempInt(st.nozzleTemp), tempInt(st.bedTemp));
+    oled.setCursor(0, 42);
+    oled.print(line);
+  }
   oled.setFont();
   oled.setTextSize(1);
-  // Avisos + hora en la fila inferior.
+
+  // 3. Bottom row (y = 56): HOT on the left ...
   oled.setCursor(0, BOTTOM_Y);
   if (st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
     oled.print("HOT ");
   }
-  if (ntpOk()) {
-    char clk[8];
-    fmtClock(clk, sizeof(clk));
-    if (st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C)
-      oled.print(clk);
-    else {
-      int16_t x1, y1;
-      uint16_t w, h;
-      String s(clk);
-      oled.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
-      oled.setCursor(128 - (int)w, BOTTOM_Y);
-      oled.print(s);
-    }
+
+  // 4. ... and a connection indicator in the bottom-right corner.
+  const int iconX = 116;
+  const int iconY = 57;
+  if (st.connected) {
+    oled.fillRect(iconX, iconY + 2, 8, 4, SH110X_WHITE);
+  } else {
+    oled.drawRect(iconX, iconY + 1, 8, 6, SH110X_WHITE);
+    oled.drawLine(iconX, iconY + 1, iconX + 7, iconY + 6, SH110X_WHITE);
   }
   oled.display();
 }
@@ -412,7 +423,7 @@ static void renderFailed(const BambuState &st) {
 
 static void renderOffline() {
   oled.clearDisplay();
-  monoDrawTitle(String("Sin conexion"));
+  monoDrawTitle(String("Offline"));
   oled.setCursor(0, TEMP_Y);
   oled.print("printer IP:");
   oled.setCursor(0, LAYER_Y);
@@ -427,7 +438,7 @@ static void renderOffline() {
 
 static void renderPrepare(const BambuState &st) {
   oled.clearDisplay();
-  monoDrawTitle(String("Calentando"));
+  monoDrawTitle(String("Heating"));
   char nb[20], bb[20], line[40];
   fmtTemp(nb, sizeof(nb), 'N', st.nozzleTemp, st.nozzleTarget);
   fmtTemp(bb, sizeof(bb), 'B', st.bedTemp, st.bedTarget);
@@ -443,7 +454,7 @@ static void renderPrepare(const BambuState &st) {
   oled.display();
 }
 
-// --- Deteccion de cambios (Paso 5) ---------------------------------------------
+// --- Change detection (Step 5) -------------------------------------------------
 struct MonoSig {
   MonoScreen scr;
   int progress;
@@ -454,7 +465,7 @@ struct MonoSig {
   unsigned long err;
   bool connected;
   char job[40];
-  int clockMin;  // para el reloj de idle / hora de fin
+  int clockMin;  // for the idle clock / end time
 };
 
 static MonoSig s_last;
@@ -527,10 +538,10 @@ static void mockBuild(int idx, BambuState &o) {
   o.progress = 0;
   o.remainingMinutes = 0;
   switch (idx) {
-    case 0:  // imprimiendo 0%, nombre corto
+    case 0:  // printing 0%, short name
       setPrinterGcodeStateCanonical(o, GCODE_RUNNING);
       o.printing = true;
-      strlcpy(o.subtaskName, "Cubo", sizeof(o.subtaskName));
+      strlcpy(o.subtaskName, "Cube", sizeof(o.subtaskName));
       o.progress = 0;
       o.remainingMinutes = 45;
       o.layerNum = 1;
@@ -540,10 +551,10 @@ static void mockBuild(int idx, BambuState &o) {
       o.bedTemp = 60;
       o.bedTarget = 60;
       break;
-    case 1:  // imprimiendo 50%, ~20 caracteres
+    case 1:  // printing 50%, ~20 chars
       setPrinterGcodeStateCanonical(o, GCODE_RUNNING);
       o.printing = true;
-      strlcpy(o.subtaskName, "Soporte_movil_20ch", sizeof(o.subtaskName));
+      strlcpy(o.subtaskName, "Phone_stand_20_chars", sizeof(o.subtaskName));
       o.progress = 50;
       o.remainingMinutes = 83;
       o.layerNum = 123;
@@ -553,10 +564,10 @@ static void mockBuild(int idx, BambuState &o) {
       o.bedTemp = 60;
       o.bedTarget = 60;
       break;
-    case 2:  // imprimiendo 100%-> marquee largo
+    case 2:  // printing, long name -> marquee
       setPrinterGcodeStateCanonical(o, GCODE_RUNNING);
       o.printing = true;
-      strlcpy(o.subtaskName, "Pieza_muy_larga_para_marquee_con_detalles_que_no_cabe.gcode.3mf",
+      strlcpy(o.subtaskName, "Very_long_part_for_marquee_testing_that_overflows.gcode.3mf",
               sizeof(o.subtaskName));
       o.progress = 87;
       o.remainingMinutes = 125;
@@ -567,10 +578,10 @@ static void mockBuild(int idx, BambuState &o) {
       o.bedTemp = 65;
       o.bedTarget = 65;
       break;
-    case 3:  // pausa
+    case 3:  // paused
       setPrinterGcodeStateCanonical(o, GCODE_PAUSE);
       o.printing = true;
-      strlcpy(o.subtaskName, "Soporte_movil_20ch", sizeof(o.subtaskName));
+      strlcpy(o.subtaskName, "Phone_stand_20_chars", sizeof(o.subtaskName));
       o.progress = 50;
       o.remainingMinutes = 83;
       o.layerNum = 123;
@@ -580,10 +591,10 @@ static void mockBuild(int idx, BambuState &o) {
       o.bedTemp = 60;
       o.bedTarget = 60;
       break;
-    case 4:  // terminada
+    case 4:  // finished
       setPrinterGcodeStateCanonical(o, GCODE_FINISH);
       o.printing = false;
-      strlcpy(o.subtaskName, "Cubo", sizeof(o.subtaskName));
+      strlcpy(o.subtaskName, "Cube", sizeof(o.subtaskName));
       o.progress = 100;
       o.nozzleTemp = 40;
       o.bedTemp = 35;
@@ -591,7 +602,7 @@ static void mockBuild(int idx, BambuState &o) {
     case 5:  // error
       setPrinterGcodeStateCanonical(o, GCODE_FAILED);
       o.printing = false;
-      strlcpy(o.subtaskName, "Pieza_fallida", sizeof(o.subtaskName));
+      strlcpy(o.subtaskName, "Failed_part", sizeof(o.subtaskName));
 #if HAS_HMS_UI
       o.printError = 0x03008007UL;
       o.printErrorSeen = true;
@@ -599,19 +610,19 @@ static void mockBuild(int idx, BambuState &o) {
       o.nozzleTemp = 180;
       o.bedTemp = 50;
       break;
-    case 6:  // idle frio
+    case 6:  // cold idle
       setPrinterGcodeStateCanonical(o, GCODE_IDLE);
       o.printing = false;
       o.nozzleTemp = 24;
       o.bedTemp = 24;
       break;
-    case 7:  // idle caliente -> HOT
+    case 7:  // hot idle -> HOT
       setPrinterGcodeStateCanonical(o, GCODE_IDLE);
       o.printing = false;
       o.nozzleTemp = 62;
       o.bedTemp = 45;
       break;
-    case 8:  // sin conexion
+    case 8:  // offline
     default:
       o.connected = false;
       setPrinterGcodeStateCanonical(o, GCODE_UNKNOWN);
@@ -620,16 +631,16 @@ static void mockBuild(int idx, BambuState &o) {
 }
 
 static void mockHelp() {
-  Serial.println(F("mock: 0 imp.0% corto | 1 imp.50% 20ch | 2 imp.marquee largo | "
-                   "3 pausa | 4 fin | 5 error | 6 idle frio | 7 idle HOT | 8 offline"));
-  Serial.println(F("uso: mock <n> | mock cycle | mock off"));
+  Serial.println(F("mock: 0 print 0% short | 1 print 50% 20ch | 2 print long marquee | "
+                   "3 pause | 4 done | 5 error | 6 cold idle | 7 hot idle | 8 offline"));
+  Serial.println(F("usage: mock <n> | mock cycle | mock off"));
 }
 
 static String s_serLine = "";
 
 void monoMockHandleSerial() {
-  // Lee solo lineas que empiecen por 'm' (peek) para no robar el resto de
-  // protocolos serie (p. ej. Improv en primer arranque).
+  // Only consume lines starting with 'm' (peek), so other serial protocols
+  // (e.g. Improv on first boot) keep their bytes.
   while (Serial.available()) {
     if (Serial.peek() != 'm' && s_serLine.length() == 0) return;
     char c = (char)Serial.read();
@@ -644,14 +655,14 @@ void monoMockHandleSerial() {
         } else if (arg == "off") {
           s_mockOn = false;
           s_mockCycle = false;
-          s_haveLast = false;  // fuerza repintado con datos reales
+          s_haveLast = false;  // force a repaint with live data
           Serial.println(F("mock off"));
         } else if (arg == "cycle") {
           s_mockOn = true;
           s_mockCycle = true;
           s_mockLastMs = millis();
           s_haveLast = false;
-          Serial.println(F("mock cycle: rotando 9 pantallas cada 3 s"));
+          Serial.println(F("mock cycle: rotating 9 screens every 3 s"));
         } else {
           int idx = arg.toInt();
           if (idx >= 0 && idx <= 8) {
@@ -668,7 +679,7 @@ void monoMockHandleSerial() {
       s_serLine = "";
     } else {
       s_serLine += c;
-      if (s_serLine.length() > 32) s_serLine = "";  // linea ajena: descarta
+      if (s_serLine.length() > 32) s_serLine = "";  // foreign line: drop it
     }
   }
 }
@@ -682,11 +693,11 @@ bool monoMockActive() { return false; }
 // --- API -----------------------------------------------------------------------
 void monoDisplayInit() {
   Wire.begin(OLED_SDA, OLED_SCL);
-  Wire.setClock(400000);  // 400 kHz: el marquee a ~10 fps lo necesita
+  Wire.setClock(400000);  // 400 kHz: the ~10 fps marquee needs it
   delay(250);
   oled.begin(OLED_I2C_ADDR, true);
   oled.setTextColor(SH110X_WHITE);
-  oled.setTextWrap(false);  // el wrap del titulo es manual; el resto no desborda
+  oled.setTextWrap(false);  // title wrap is manual; nothing else overflows
   s_booted = true;
   s_enabled = true;
   Serial.printf("MONO heap=%u\n", (unsigned)ESP.getFreeHeap());
@@ -756,7 +767,7 @@ void monoDisplaySetEnabled(bool on) {
   if (s_booted && !on) {
     oled.clearDisplay();
     oled.display();
-    s_haveLast = false;  // al reencender, repinta aunque nada cambie
+    s_haveLast = false;  // repaint on re-enable even if nothing changed
   } else {
     s_haveLast = false;
   }

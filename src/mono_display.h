@@ -1,35 +1,35 @@
-// BambuHelper-Mono: capa Display para SH1106 128x64 por I2C.
-// Estilo copiado de ESP-Spotify-OLED (ver REFERENCE_NOTES.md):
-// Adafruit_SH1106G, FreeMonoBold9pt7b para el titulo, fuente por defecto para
-// el resto, barra con drawRect+fillRect y nombres transliterados.
-// Solo existe con BOARD_IS_MONO (env mono-c3).
+// BambuHelper-Mono: display layer for the SH1106 128x64 over I2C.
+// Style copied from ESP-Spotify-OLED (see REFERENCE_NOTES.md):
+// Adafruit_SH1106G, FreeMonoBold9pt7b for the title, default font for the
+// rest, bar via drawRect+fillRect, transliterated names.
+// Only exists with BOARD_IS_MONO (mono-c3 env).
 //
-// Modelo de datos (Paso 1 del plan): NO hay struct PrinterState propio.
-// BambuState (include/bambu_state.h) ya trae cada campo pedido y el parser
-// MQTT (src/bambu_mqtt.cpp) solo actualiza los campos presentes en cada
-// push parcial, conservando el resto:
+// Data model (plan step 1): there is NO dedicated PrinterState struct.
+// BambuState (include/bambu_state.h) already carries every requested field
+// and the MQTT parser (src/bambu_mqtt.cpp) only updates the fields present
+// in each partial push, keeping the rest:
 //
 //   gcodeState/gcodeStateId <- gcode_state, jobName=subtask_name,
-//   percent=mc_percent, remainingMin=mc_remaining_time (minutos),
+//   percent=mc_percent, remainingMin=mc_remaining_time (minutes),
 //   layer/totalLayers=layer_num/total_layer_num,
 //   nozzle(+Target)=nozzle_temper(+_target), bed(+Target)=bed_temper(+_target),
-//   errorCode=print_error, connected=estado MQTT.
+//   errorCode=print_error, connected=MQTT connection state.
 //
-// Constantes ajustables (todas sobrescribibles con -D en platformio.ini):
-//   MONO_MAX_CHAR_TITLE_PER_LINE  corte wrap del titulo (def. 11, como Spotify)
-//   MONO_HOT_THRESHOLD_C          aviso HOT de boquilla en idle (def. 50 C)
-//   MONO_REFRESH_MS               refresco estatico (def. 1000 ms)
-//   MONO_MARQUEE_MS               paso del marquee (~10 fps, def. 100 ms)
-//   MONO_SHOW_END_TIME            1 = hora de fin (NTP) en vez de restante
-//   MONO_MOCK                     1 = comandos "mock ..." por Serial
-//   MONO_MOCK_AUTO                1 = arranca en modo mock cycle
+// Tunable constants (all overridable with -D in platformio.ini):
+//   MONO_MAX_CHAR_TITLE_PER_LINE  title wrap cut (def. 11, as in Spotify)
+//   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
+//   MONO_REFRESH_MS               static refresh (def. 1000 ms)
+//   MONO_MARQUEE_MS               marquee step (~10 fps, def. 100 ms)
+//   MONO_SHOW_END_TIME            1 = end time (NTP) instead of remaining
+//   MONO_MOCK                     1 = "mock ..." commands over Serial
+//   MONO_MOCK_AUTO                1 = boot into mock cycle mode
 #pragma once
 
 #include <Arduino.h>
 
 struct BambuState;  // include/bambu_state.h
 
-// --- Constantes ajustables -------------------------------------------------
+// --- Tunable constants -------------------------------------------------------
 #ifndef MONO_MAX_CHAR_TITLE_PER_LINE
 #define MONO_MAX_CHAR_TITLE_PER_LINE 11
 #endif
@@ -49,7 +49,7 @@ struct BambuState;  // include/bambu_state.h
 #define MONO_MOCK 1
 #endif
 
-// Pantallas (Paso 4). Prioridad en monoSelectScreen():
+// Screens (step 4). Priority in monoSelectScreen():
 // !connected > FAILED/print_error != 0 > FINISH > PAUSE > PREPARE > RUNNING > IDLE
 enum MonoScreen : uint8_t {
   MONO_SCR_OFFLINE = 0,
@@ -64,35 +64,35 @@ enum MonoScreen : uint8_t {
 MonoScreen monoSelectScreen(const BambuState &st);
 const char *monoScreenName(MonoScreen s);
 
-// --- Helpers (Paso 2, sin dibujar salvo los draw*) -------------------------
+// --- Helpers (step 2, no drawing except the draw* ones) -----------------------
 String monoCleanJobName(const String &raw);
 String monoCleanJobName(const char *raw);
-String monoFormatRemaining(int minutes);  // <0 = sin dato -> "--"
+String monoFormatRemaining(int minutes);  // <0 = no data -> "--"
 
-// Primitivas de dibujo (usan el oled interno; iconos sin glifos de fuente).
+// Drawing primitives (they use the internal oled; icons use no font glyphs).
 void monoDrawProgressBar(int y, int percent);          // drawRect(0,y,128,6)+fillRect map()
-void monoDrawStatusIcon(int x, int y, MonoScreen s);   // triangulo / pausa / error / check
-void monoDrawTitle(const String &clean);               // wrap 2 lineas o marquee 1 linea
+void monoDrawStatusIcon(int x, int y, MonoScreen s);   // triangle / pause / error / check
+void monoDrawTitle(const String &clean);               // 2-line wrap or 1-line marquee
 
-// --- API de pantallas -------------------------------------------------------
+// --- Screen API ----------------------------------------------------------------
 void monoDisplayInit();
 void monoShowBoot(const char *ssid, const char *ip);
 void monoShowMessage(const char *line1, const char *line2);
-void monoShowStatus(const BambuState &st);  // render inmediato (compat)
+void monoShowStatus(const BambuState &st);  // immediate render (compat)
 void monoShowError(unsigned long code);
 
-// Bucle: llamar cada loop(). Redibuja solo si cambia el estado o cada
-// MONO_REFRESH_MS; el marquee/parpadeo usan MONO_MARQUEE_MS (~10 fps).
-// Respeta monoDisplaySetEnabled(false) (apagado por inactividad).
+// Loop: call every iteration. Repaints only when the state changes or every
+// MONO_REFRESH_MS; marquee/blink run at MONO_MARQUEE_MS (~10 fps).
+// Honors monoDisplaySetEnabled(false) (idle display-off).
 void monoDisplayTick();
 void monoDisplaySetEnabled(bool on);
 bool monoDisplayIsEnabled();
 inline void oled_display(bool on) { monoDisplaySetEnabled(on); }
 
-// --- Modo pruebas (Paso 6) --------------------------------------------------
-// Serial 115200: "mock" (ayuda), "mock off", "mock cycle", "mock <n>".
-// Casos: 0 imp.0% corto, 1 imp.50% ~20ch, 2 imp.100% largo (marquee),
-// 3 pausa, 4 terminada, 5 error, 6 idle frio, 7 idle caliente (HOT),
-// 8 sin conexion. Con -D MONO_MOCK_AUTO=1 arranca en "cycle".
+// --- Test mode (step 6) --------------------------------------------------------
+// Serial 115200: "mock" (help), "mock off", "mock cycle", "mock <n>".
+// Cases: 0 print 0% short, 1 print 50% ~20ch, 2 print 100% long (marquee),
+// 3 pause, 4 done, 5 error, 6 cold idle, 7 hot idle (HOT), 8 offline.
+// With -D MONO_MOCK_AUTO=1 it boots into "cycle".
 void monoMockHandleSerial();
 bool monoMockActive();

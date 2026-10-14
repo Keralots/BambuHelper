@@ -1599,9 +1599,9 @@ void loop() {
     return;
   }
 #ifdef BOARD_IS_MONO
-  // Mono OLED: boot con SSID/IP una vez resuelto el WiFi; luego
-  // monoDisplayTick() decide pantalla, cadencia (1 s estatico / ~10 fps
-  // marquee-parpadeo) y modo mock ("mock ..." por Serial).
+  // Mono OLED: boot screen with SSID/IP once WiFi is resolved; then
+  // monoDisplayTick() picks the screen, the cadence (1 s static / ~10 fps
+  // marquee-blink) and the mock mode ("mock ..." over Serial).
   monoMockHandleSerial();
   {
     static bool monoNetShown = false;
