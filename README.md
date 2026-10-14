@@ -609,12 +609,12 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 
 ESP32-C3 SuperMini + SH1106 128x64 over I2C (`Adafruit_SH1106G`, no other
 library). ESP-Spotify-OLED style: `FreeMonoBold9pt7b` title, default font
-for the rest, `drawRect`/`fillRect` bar, primitive-drawn icons (no font
+for the rest, `drawRect`/`fillRect` bar, hand-drawn XBM bitmap icons (no font
 glyphs) and ASCII-transliterated names.
 
 ```
 Title (FreeMonoBold9pt, 1-2 lines or marquee)
-y=30   N 215/220  B 60/60
+y=30   [nozzle] 215/220  [bed] 60/60
 y=39   Layer 123/456
 y=48   [progress bar, 6 tall]
 y=56   [icon] 45%        - 1h 10m
@@ -624,11 +624,11 @@ y=56   [icon] 45%        - 1h 10m
 |---|---|---|
 | Offline | `!connected` | "Offline" + configured printer IP |
 | Heating | `PREPARE` | "Heating" + current/target temps |
-| Printing | `RUNNING` | Title, `N`/`B` (current only when target is 0), layer, bar, play icon + `%` and remaining on the right |
+| Printing | `RUNNING` | Title, nozzle/bed icons + temps (current only when target is 0), layer, bar, play icon + `%` and remaining on the right |
 | Pause | `PAUSE` | Same as printing, pause icon with blinking `%` |
 | Done | `FINISH` | Name, full bar, "Done" |
 | Error | `FAILED` or `print_error != 0` | "ERR" + raw code + name |
-| Idle | `IDLE` | "Idle", big `N`/`B`, `HOT` above the threshold, clock when NTP is up |
+| Idle | `IDLE` | "Idle", big clock (or big temps with icons when NTP is down), `HOT` + connection dot |
 
 Priority: `!connected` > `FAILED`/`print_error` > rest. Titles up to
 2x11 chars wrap on 2 lines; longer ones scroll as a ~10 fps marquee

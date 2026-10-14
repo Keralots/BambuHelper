@@ -1,7 +1,7 @@
 // BambuHelper-Mono: display layer for the SH1106 128x64 over I2C.
 // Style copied from ESP-Spotify-OLED (see REFERENCE_NOTES.md):
 // Adafruit_SH1106G, FreeMonoBold9pt7b for the title, default font for the
-// rest, bar via drawRect+fillRect, transliterated names.
+// rest, bar via drawRect+fillRect, hand-drawn bitmap icons, transliterated names.
 // Only exists with BOARD_IS_MONO (mono-c3 env).
 //
 // Data model (plan step 1): there is NO dedicated PrinterState struct.
@@ -69,7 +69,7 @@ String monoCleanJobName(const String &raw);
 String monoCleanJobName(const char *raw);
 String monoFormatRemaining(int minutes);  // <0 = no data -> "--"
 
-// Drawing primitives (they use the internal oled; icons use no font glyphs).
+// Drawing helpers (they use the internal oled; icons are XBM bitmaps, no font glyphs).
 void monoDrawProgressBar(int y, int percent);          // drawRect(0,y,128,6)+fillRect map()
 void monoDrawStatusIcon(int x, int y, MonoScreen s);   // triangle / pause / error / check
 void monoDrawTitle(const String &clean);               // 2-line wrap or 1-line marquee

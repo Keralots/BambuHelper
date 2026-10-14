@@ -272,12 +272,52 @@ MonoScreen monoSelectScreen(const BambuState &st) {
 // --- Format helpers -----------------------------------------------------------
 static int tempInt(float v) { return (int)(v + 0.5f); }
 
-// "N 215/220", or "N 215" when the target is 0.
-static void fmtTemp(char *dst, size_t n, char label, float cur, float target) {
+// "215/220", or "215" when the target is 0.
+static void fmtTempVal(char *dst, size_t n, float cur, float target) {
   if (target < 0.5f)
-    snprintf(dst, n, "%c %d", label, tempInt(cur));
+    snprintf(dst, n, "%d", tempInt(cur));
   else
-    snprintf(dst, n, "%c %d/%d", label, tempInt(cur), tempInt(target));
+    snprintf(dst, n, "%d/%d", tempInt(cur), tempInt(target));
+}
+
+// --- Temp icons (8x9 XBM bitmaps, no font glyphs) ---------------------------------
+// Hand-drawn like the reference repo's weather_icons.h. XBM order: bit0 of
+// each byte is the leftmost pixel, one byte per row (width 8).
+static const unsigned char NZL_BMP[] PROGMEM = {
+    0x3C, 0x3C, 0xFF, 0xFF, 0xFF, 0x7E, 0x7E, 0x3C, 0x18,
+};
+static const unsigned char BED_BMP[] PROGMEM = {
+    0x12, 0x24, 0x12, 0x00, 0xFF, 0xFF, 0x81, 0x81, 0x81,
+};
+#define TEMP_ICON_W 8
+#define TEMP_ICON_H 9
+
+static void drawNozzleIcon(int x, int y) {
+  oled.drawBitmap(x, y, NZL_BMP, TEMP_ICON_W, TEMP_ICON_H, SH110X_WHITE);
+}
+
+static void drawBedIcon(int x, int y) {
+  oled.drawBitmap(x, y, BED_BMP, TEMP_ICON_W, TEMP_ICON_H, SH110X_WHITE);
+}
+
+// Temps row: [nozzle icon] 215/220  [bed icon] 60/60, default font.
+static void drawTempsRow(int y, float nzl, float nzlT, float bed, float bedT) {
+  char nb[16], bb[16];
+  fmtTempVal(nb, sizeof(nb), nzl, nzlT);
+  fmtTempVal(bb, sizeof(bb), bed, bedT);
+  int16_t x1, y1;
+  uint16_t w, h;
+  int x = 0;
+  drawNozzleIcon(x, y);
+  x += 10;
+  oled.setCursor(x, y);
+  oled.print(nb);
+  oled.getTextBounds(String(nb), 0, 0, &x1, &y1, &w, &h);
+  x += (int)w + 6;
+  drawBedIcon(x, y);
+  x += 11;
+  oled.setCursor(x, y);
+  oled.print(bb);
 }
 
 static bool ntpOk() { return time(nullptr) > (time_t)NTP_SYNCED_EPOCH; }
@@ -309,13 +349,10 @@ static String bottomTime(const BambuState &st) {
 static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.clearDisplay();
   monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
-  char nb[20], bb[20], line[40];
-  fmtTemp(nb, sizeof(nb), 'N', st.nozzleTemp, st.nozzleTarget);
-  fmtTemp(bb, sizeof(bb), 'B', st.bedTemp, st.bedTarget);
-  snprintf(line, sizeof(line), "%s  %s", nb, bb);
-  oled.setCursor(0, TEMP_Y);
-  oled.print(line);
+  // Temps with icons (y = TEMP_Y).
+  drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.setCursor(0, LAYER_Y);
+  char line[32];
   if (st.totalLayers > 0) {
     snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
     oled.print(line);
@@ -374,10 +411,23 @@ static void renderIdle(const BambuState &st) {
     oled.setCursor((128 - (int)w) / 2, 42);
     oled.print(clk);
   } else {
-    char line[24];
-    snprintf(line, sizeof(line), "N%d B%d", tempInt(st.nozzleTemp), tempInt(st.bedTemp));
-    oled.setCursor(0, 42);
-    oled.print(line);
+    // Big actual temps with icons (targets rarely matter in idle).
+    char nb[8], bb[8];
+    snprintf(nb, sizeof(nb), "%d", tempInt(st.nozzleTemp));
+    snprintf(bb, sizeof(bb), "%d", tempInt(st.bedTemp));
+    int16_t x1, y1;
+    uint16_t w, h;
+    int x = 0;
+    drawNozzleIcon(x, 32);
+    x += 11;
+    oled.setCursor(x, 42);
+    oled.print(nb);
+    oled.getTextBounds(String(nb), 0, 0, &x1, &y1, &w, &h);
+    x += (int)w + 8;
+    drawBedIcon(x, 32);
+    x += 12;
+    oled.setCursor(x, 42);
+    oled.print(bb);
   }
   oled.setFont();
   oled.setTextSize(1);
@@ -439,12 +489,7 @@ static void renderOffline() {
 static void renderPrepare(const BambuState &st) {
   oled.clearDisplay();
   monoDrawTitle(String("Heating"));
-  char nb[20], bb[20], line[40];
-  fmtTemp(nb, sizeof(nb), 'N', st.nozzleTemp, st.nozzleTarget);
-  fmtTemp(bb, sizeof(bb), 'B', st.bedTemp, st.bedTarget);
-  snprintf(line, sizeof(line), "%s  %s", nb, bb);
-  oled.setCursor(0, TEMP_Y);
-  oled.print(line);
+  drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.setCursor(0, LAYER_Y);
   oled.print(monoCleanJobName(jobDisplayName(st)).substring(0, 21));
   monoDrawProgressBar(BAR_Y, 0);
