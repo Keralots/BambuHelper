@@ -21,6 +21,11 @@
 #include <driver/gpio.h>
 #include <time.h>
 
+#ifdef BOARD_IS_MONO
+#include <WiFi.h>
+#include "mono_display.h"
+#endif
+
 static unsigned long splashEnd = 0;
 static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
@@ -1577,6 +1582,9 @@ void setup() {
   Serial.printf("\n=== BambuHelper %s Starting ===\n", FW_VERSION);
 
   loadSettings();
+#ifdef BOARD_IS_MONO
+  monoDisplayInit();
+#endif
   recordBootSlotVersion();  // names this slot's fw for the OTA rollback UI
   initDisplay();
   Battery::begin();
@@ -1590,6 +1598,23 @@ void loop() {
     flushFrame();  // commit splash draws to panel (no-op on non-JC boards)
     return;
   }
+#ifdef BOARD_IS_MONO
+  // Fase 1: una sola pantalla con SSID/IP cuando el WiFi queda resuelto
+  // (tras el splash). El refresco periódico de estado llega en la Fase 3.
+  {
+    static bool monoNetShown = false;
+    if (!monoNetShown && splashEnd == 0) {
+      monoNetShown = true;
+      if (isAPMode()) {
+        String ip = WiFi.softAPIP().toString();
+        monoShowBoot(getAPSSID().c_str(), ip.c_str());
+      } else {
+        String ip = WiFi.localIP().toString();
+        monoShowBoot("WiFi STA", ip.c_str());
+      }
+    }
+  }
+#endif
 
   handleWiFi();
   handleWebServer();
