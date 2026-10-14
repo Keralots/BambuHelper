@@ -353,6 +353,7 @@ static void fmtClock(char *dst, size_t n) {
 // every MONO_END_TIME_ALT_MS (needs NTP; without a clock it stays put).
 static int endTimeAltPhase() {
 #if MONO_SHOW_END_TIME
+  if (!monoSettings.showEndTimeAlt) return 0;
   if (!ntpOk()) return 0;
   return (int)((millis() / (unsigned long)MONO_END_TIME_ALT_MS) % 2);
 #else
@@ -380,20 +381,23 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.clearDisplay();
   monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
   // Temps with icons (y = TEMP_Y).
-  drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
-  oled.setCursor(0, LAYER_Y);
-  char line[32];
-  if (st.totalLayers > 0) {
-    snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
-    oled.print(line);
-  } else if (st.layerNum > 0) {
-    snprintf(line, sizeof(line), "Layer %u", st.layerNum);
-    oled.print(line);
+  if (monoSettings.showTempsPrinting)
+    drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
+  if (monoSettings.showLayer) {
+    oled.setCursor(0, LAYER_Y);
+    char line[32];
+    if (st.totalLayers > 0) {
+      snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
+      oled.print(line);
+    } else if (st.layerNum > 0) {
+      snprintf(line, sizeof(line), "Layer %u", st.layerNum);
+      oled.print(line);
+    }
   }
-  monoDrawProgressBar(BAR_Y, st.progress);
+  if (monoSettings.showBar) monoDrawProgressBar(BAR_Y, st.progress);
   // Bottom row: icon + % on the left, time on the right.
   String pct = String((int)st.progress) + "%";
-  String t = bottomTime(st, endTimeAltPhase());
+  String t = monoSettings.showTimePrinting ? bottomTime(st, endTimeAltPhase()) : String("");
   int16_t x1, y1;
   uint16_t w, h;
   oled.getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
@@ -405,8 +409,10 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
     oled.setCursor(11, BOTTOM_Y);
     oled.print(pct);
   }
-  oled.setCursor(128 - (int)w, BOTTOM_Y);
-  oled.print(t);
+  if (t.length() > 0) {
+    oled.setCursor(128 - (int)w, BOTTOM_Y);
+    oled.print(t);
+  }
   oled.display();
 }
 
@@ -465,7 +471,8 @@ static void renderFinish(const BambuState &st) {
   oled.setFont();
   oled.setTextSize(1);
   // 3. Temps de enfriamiento abajo (misma fila que en printing).
-  drawTempsRow(54, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
+  if (monoSettings.showTempsDone)
+    drawTempsRow(54, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.display();
 }
 
@@ -474,10 +481,11 @@ static void renderIdle(const BambuState &st) {
   // 1. Fixed top title.
   monoDrawTitle(String("Idle"));
 
-  // 2. Big centered clock (Spotify-clock style); big temps when NTP is down.
+  // 2. Big centered clock (Spotify-clock style); big temps when NTP is down
+  // or when the clock is disabled in the web UI.
   oled.setFont(&FreeMonoBold9pt7b);
   oled.setTextSize(1);
-  if (ntpOk()) {
+  if (monoSettings.showClockIdle && ntpOk()) {
     char clk[8];
     fmtClock(clk, sizeof(clk));
     int16_t x1, y1;
@@ -509,7 +517,7 @@ static void renderIdle(const BambuState &st) {
 
   // 3. Bottom row (y = 56): HOT on the left ...
   oled.setCursor(0, BOTTOM_Y);
-  if (st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
+  if (monoSettings.showHotIdle && st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
     oled.print("HOT ");
   }
 
@@ -588,7 +596,21 @@ struct MonoSig {
   char job[40];
   int clockMin;  // for the idle clock
   int8_t timeAlt;  // remaining/end-time alternation phase (repaints on toggle)
+  uint8_t monoFlags;  // web toggles bitmask: a flip must repaint immediately
 };
+
+static uint8_t monoFlagsNow() {
+  uint8_t f = 0;
+  if (monoSettings.showTempsPrinting) f |= 0x01;
+  if (monoSettings.showTempsDone) f |= 0x02;
+  if (monoSettings.showTimePrinting) f |= 0x04;
+  if (monoSettings.showEndTimeAlt) f |= 0x08;
+  if (monoSettings.showLayer) f |= 0x10;
+  if (monoSettings.showBar) f |= 0x20;
+  if (monoSettings.showHotIdle) f |= 0x40;
+  if (monoSettings.showClockIdle) f |= 0x80;
+  return f;
+}
 
 static MonoSig s_last;
 static bool s_haveLast = false;
@@ -615,6 +637,7 @@ static MonoSig makeSig(MonoScreen scr, MonoScreen rawScr, const BambuState &st) 
   String j = monoCleanJobName(jobDisplayName(st));
   strlcpy(s.job, j.c_str(), sizeof(s.job));
   s.timeAlt = (int8_t)endTimeAltPhase();
+  s.monoFlags = monoFlagsNow();
   if (ntpOk()) {
     time_t now = time(nullptr);
     struct tm tmv;
@@ -631,7 +654,8 @@ static bool sigSame(const MonoSig &a, const MonoSig &b) {
          a.remaining == b.remaining && a.layer == b.layer && a.total == b.total &&
          a.nzl == b.nzl && a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT &&
          a.err == b.err && a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
-         a.clockMin == b.clockMin && a.timeAlt == b.timeAlt;
+         a.clockMin == b.clockMin && a.timeAlt == b.timeAlt &&
+         a.monoFlags == b.monoFlags;
 }
 
 static void renderNow(MonoScreen scr, const BambuState &st) {

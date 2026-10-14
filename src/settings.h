@@ -383,10 +383,24 @@ struct TasmotaSettings {
   bool    autoOffCancelOnDoor; // cancel this auto-off cycle if door opens while waiting
 };
 
+// Mono OLED (SH1106 128x64) display options. All default to true = current
+// behaviour. Stored as individual NVS bools like the rest of DisplaySettings.
+struct MonoDisplaySettings {
+  bool showTempsPrinting; // temps row while printing/prepare
+  bool showTempsDone;     // temps row on the Done screen
+  bool showTimePrinting;  // bottom-right remaining/end time while printing
+  bool showEndTimeAlt;    // alternate remaining with the bare end time (needs NTP)
+  bool showLayer;         // Layer x/y line while printing
+  bool showBar;           // progress bar while printing
+  bool showHotIdle;       // HOT warning on the idle screen
+  bool showClockIdle;     // big clock on idle (off = big temps)
+};
+
 extern char wifiSSID[33];
 extern char wifiPass[65];
 extern uint8_t brightness;
 extern DisplaySettings dispSettings;
+extern MonoDisplaySettings monoSettings;
 
 // The live neutral text colors (#163). Defined here rather than in config.h so
 // there is exactly one definition and no per-file #undef dance: a drawing file

@@ -17,7 +17,8 @@
 //
 // Tunable constants (all overridable with -D in platformio.ini):
 //   MONO_MAX_CHAR_TITLE_PER_LINE  static title length (def. 11, as in Spotify;
-//                               longer names scroll as a marquee on the same row)
+//                               longer names scroll as a marquee on the same row;
+//                               the Done screen wraps to 2 lines instead)
 //   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
 //   MONO_REFRESH_MS               static refresh (def. 1000 ms)
 //   MONO_MARQUEE_MS               marquee step (~10 fps, def. 100 ms)
@@ -26,6 +27,10 @@
 //   MONO_END_TIME_ALT_MS          remaining/end-time alternation period (def. 5000 ms)
 //   MONO_MOCK                     1 = "mock ..." commands over Serial
 //   MONO_MOCK_AUTO                1 = boot into mock cycle mode
+//
+// Runtime row toggles (web portal Print screen > Mono OLED, monoSettings in
+// settings.h, all default ON): showTempsPrinting, showLayer, showBar,
+// showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle, showHotIdle.
 #pragma once
 
 #include <Arduino.h>

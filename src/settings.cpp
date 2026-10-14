@@ -18,6 +18,16 @@ char wifiSSID[33] = {0};
 char wifiPass[65] = {0};
 uint8_t brightness = 200;
 DisplaySettings dispSettings;
+MonoDisplaySettings monoSettings = {
+  /*showTempsPrinting*/ true,
+  /*showTempsDone*/     true,
+  /*showTimePrinting*/  true,
+  /*showEndTimeAlt*/    true,
+  /*showLayer*/         true,
+  /*showBar*/           true,
+  /*showHotIdle*/       true,
+  /*showClockIdle*/     true,
+};
 GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
 DisplayPowerSettings dpSettings;
@@ -619,6 +629,14 @@ void loadSettings() {
   if (dispSettings.gestHold > GH_NONE) dispSettings.gestHold = GH_LED;
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
+  monoSettings.showTempsPrinting = prefs.getBool("mno_ptmp", true);
+  monoSettings.showTempsDone = prefs.getBool("mno_dtmp", true);
+  monoSettings.showTimePrinting = prefs.getBool("mno_ptim", true);
+  monoSettings.showEndTimeAlt = prefs.getBool("mno_endalt", true);
+  monoSettings.showLayer = prefs.getBool("mno_lyr", true);
+  monoSettings.showBar = prefs.getBool("mno_bar", true);
+  monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
+  monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
   {
     uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
     dispSettings.glowMode = (gm <= 2) ? gm : 0;
@@ -990,6 +1008,14 @@ void saveSettings() {
   prefs.putUChar("dsp_ghold", dispSettings.gestHold);
   prefs.putBool("dsp_bat", dispSettings.showBatteryIndicator);
   prefs.putBool("dsp_hidlp", dispSettings.hideStatusReadout);
+  prefs.putBool("mno_ptmp", monoSettings.showTempsPrinting);
+  prefs.putBool("mno_dtmp", monoSettings.showTempsDone);
+  prefs.putBool("mno_ptim", monoSettings.showTimePrinting);
+  prefs.putBool("mno_endalt", monoSettings.showEndTimeAlt);
+  prefs.putBool("mno_lyr", monoSettings.showLayer);
+  prefs.putBool("mno_bar", monoSettings.showBar);
+  prefs.putBool("mno_hot", monoSettings.showHotIdle);
+  prefs.putBool("mno_clk", monoSettings.showClockIdle);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);
