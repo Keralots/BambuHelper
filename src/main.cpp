@@ -1599,11 +1599,13 @@ void loop() {
     return;
   }
 #ifdef BOARD_IS_MONO
-  // Fase 1: una sola pantalla con SSID/IP cuando el WiFi queda resuelto
-  // (tras el splash). El refresco periódico de estado llega en la Fase 3.
+  // Mono OLED: boot con SSID/IP una vez resuelto el WiFi; luego
+  // monoDisplayTick() decide pantalla, cadencia (1 s estatico / ~10 fps
+  // marquee-parpadeo) y modo mock ("mock ..." por Serial).
+  monoMockHandleSerial();
   {
     static bool monoNetShown = false;
-    if (!monoNetShown && splashEnd == 0) {
+    if (!monoNetShown && splashEnd == 0 && !monoMockActive()) {
       monoNetShown = true;
       if (isAPMode()) {
         String ip = WiFi.softAPIP().toString();
@@ -1613,15 +1615,7 @@ void loop() {
         monoShowBoot("WiFi STA", ip.c_str());
       }
     }
-    // Refresco de estado 1 vez/s (la optimización a "solo si cambia" es Fase 3).
-    {
-      static unsigned long monoLastDraw = 0;
-      unsigned long nowMs = millis();
-      if (nowMs - monoLastDraw >= 1000) {
-        monoLastDraw = nowMs;
-        monoShowStatus(printers[0].state);
-      }
-    }
+    monoDisplayTick();
   }
 #endif
 
