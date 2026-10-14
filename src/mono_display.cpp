@@ -316,15 +316,25 @@ static void fmtClock(char *dst, size_t n) {
   snprintf(dst, n, "%02d:%02d", tmv.tm_hour, tmv.tm_min);
 }
 
-// Bottom row: remaining time, or the (optional) estimated end time.
-static String bottomTime(const BambuState &st) {
+// Bottom row: remaining time, alternating with the bare end time
+// every MONO_END_TIME_ALT_MS (needs NTP; without a clock it stays put).
+static int endTimeAltPhase() {
 #if MONO_SHOW_END_TIME
-  if (ntpOk() && (int)st.remainingMinutes >= 0 && st.remainingMinutes < 60 * 48) {
+  if (!ntpOk()) return 0;
+  return (int)((millis() / (unsigned long)MONO_END_TIME_ALT_MS) % 2);
+#else
+  return 0;
+#endif
+}
+
+static String bottomTime(const BambuState &st, int altPhase) {
+#if MONO_SHOW_END_TIME
+  if (altPhase == 1 && (int)st.remainingMinutes >= 0 && st.remainingMinutes < 60 * 48) {
     time_t end = time(nullptr) + (time_t)st.remainingMinutes * 60;
     struct tm tmv;
     localtime_r(&end, &tmv);
     char buf[16];
-    snprintf(buf, sizeof(buf), "end %02d:%02d", tmv.tm_hour, tmv.tm_min);
+    snprintf(buf, sizeof(buf), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
     return String(buf);
   }
 #endif
@@ -350,7 +360,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   monoDrawProgressBar(BAR_Y, st.progress);
   // Bottom row: icon + % on the left, time on the right.
   String pct = String((int)st.progress) + "%";
-  String t = bottomTime(st);
+  String t = bottomTime(st, endTimeAltPhase());
   int16_t x1, y1;
   uint16_t w, h;
   oled.getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
@@ -497,7 +507,8 @@ struct MonoSig {
   unsigned long err;
   bool connected;
   char job[40];
-  int clockMin;  // for the idle clock / end time
+  int clockMin;  // for the idle clock
+  int8_t timeAlt;  // remaining/end-time alternation phase (repaints on toggle)
 };
 
 static MonoSig s_last;
@@ -523,6 +534,7 @@ static MonoSig makeSig(MonoScreen scr, const BambuState &st) {
   s.connected = st.connected;
   String j = monoCleanJobName(jobDisplayName(st));
   strlcpy(s.job, j.c_str(), sizeof(s.job));
+  s.timeAlt = (int8_t)endTimeAltPhase();
   if (ntpOk()) {
     time_t now = time(nullptr);
     struct tm tmv;
@@ -539,7 +551,7 @@ static bool sigSame(const MonoSig &a, const MonoSig &b) {
          a.layer == b.layer && a.total == b.total && a.nzl == b.nzl &&
          a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT && a.err == b.err &&
          a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
-         a.clockMin == b.clockMin;
+         a.clockMin == b.clockMin && a.timeAlt == b.timeAlt;
 }
 
 static void renderNow(MonoScreen scr, const BambuState &st) {

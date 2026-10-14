@@ -21,7 +21,9 @@
 //   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
 //   MONO_REFRESH_MS               static refresh (def. 1000 ms)
 //   MONO_MARQUEE_MS               marquee step (~10 fps, def. 100 ms)
-//   MONO_SHOW_END_TIME            1 = end time (NTP) instead of remaining
+//   MONO_SHOW_END_TIME            1 = alternate remaining with the bare end
+//                               time (NTP) every MONO_END_TIME_ALT_MS
+//   MONO_END_TIME_ALT_MS          remaining/end-time alternation period (def. 5000 ms)
 //   MONO_MOCK                     1 = "mock ..." commands over Serial
 //   MONO_MOCK_AUTO                1 = boot into mock cycle mode
 #pragma once
@@ -44,7 +46,10 @@ struct BambuState;  // include/bambu_state.h
 #define MONO_MARQUEE_MS 100
 #endif
 #ifndef MONO_SHOW_END_TIME
-#define MONO_SHOW_END_TIME 0
+#define MONO_SHOW_END_TIME 1
+#endif
+#ifndef MONO_END_TIME_ALT_MS
+#define MONO_END_TIME_ALT_MS 5000
 #endif
 #ifndef MONO_MOCK
 #define MONO_MOCK 1

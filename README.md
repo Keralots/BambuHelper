@@ -649,7 +649,8 @@ Tunable constants (`src/mono_display.h`, overridable with `-D`):
 | `MONO_HOT_THRESHOLD_C` | 50 | `HOT` warning threshold |
 | `MONO_REFRESH_MS` | 1000 | Static refresh |
 | `MONO_MARQUEE_MS` | 100 | Marquee step (~10 fps) |
-| `MONO_SHOW_END_TIME` | 0 | 1 = end time (NTP) instead of remaining |
+| `MONO_SHOW_END_TIME` | 1 | 1 = alternate `- 1h 10m` with bare `HH:MM` (NTP) |
+| `MONO_END_TIME_ALT_MS` | 5000 | Remaining/end-time alternation period |
 | `MONO_MOCK` | 1 | `mock ...` commands over Serial |
 
 Measured 2026-10-14 (`pio run -e mono-c3`): RAM 58180/327680 (17.8 %),
