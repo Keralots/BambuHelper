@@ -1613,6 +1613,15 @@ void loop() {
         monoShowBoot("WiFi STA", ip.c_str());
       }
     }
+    // Refresco de estado 1 vez/s (la optimización a "solo si cambia" es Fase 3).
+    {
+      static unsigned long monoLastDraw = 0;
+      unsigned long nowMs = millis();
+      if (nowMs - monoLastDraw >= 1000) {
+        monoLastDraw = nowMs;
+        monoShowStatus(printers[0].state);
+      }
+    }
   }
 #endif
 
