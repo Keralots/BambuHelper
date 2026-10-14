@@ -613,10 +613,10 @@ for the rest, `drawRect`/`fillRect` bar, hand-drawn XBM bitmap icons (no font
 glyphs) and ASCII-transliterated names.
 
 ```
-Title (FreeMonoBold9pt, 1-2 lines or marquee)
-y=30   [nozzle] 215/220  [bed] 60/60
-y=39   Layer 123/456
-y=48   [progress bar, 6 tall]
+Title (FreeMonoBold9pt, 1 row at the very top, marquee if longer than 11 chars)
+y=21   [nozzle] 215/220  [bed] 60/60
+y=34   Layer 123/456
+y=46   [progress bar, 6 tall]
 y=56   [icon] 45%        - 1h 10m
 ```
 
@@ -630,9 +630,8 @@ y=56   [icon] 45%        - 1h 10m
 | Error | `FAILED` or `print_error != 0` | "ERR" + raw code + name |
 | Idle | `IDLE` | "Idle", big clock (or big temps with icons when NTP is down), `HOT` + connection dot |
 
-Priority: `!connected` > `FAILED`/`print_error` > rest. Titles up to
-2x11 chars wrap on 2 lines; longer ones scroll as a ~10 fps marquee
-(only while scrolling). Refresh: only on state change or every 1 s;
+Priority: `!connected` > `FAILED`/`print_error` > rest. The title is always
+one row: static up to 11 chars, marquee above that. Refresh: only on state change or every 1 s;
 I2C at 400 kHz. Idle display-off: `monoDisplaySetEnabled(false)`
 (alias `oled_display(false)`).
 
@@ -646,7 +645,7 @@ Tunable constants (`src/mono_display.h`, overridable with `-D`):
 
 | Constant | Default | What it does |
 |---|---|---|
-| `MONO_MAX_CHAR_TITLE_PER_LINE` | 11 | Title wrap cut |
+| `MONO_MAX_CHAR_TITLE_PER_LINE` | 11 | Static title length (marquee above it) |
 | `MONO_HOT_THRESHOLD_C` | 50 | `HOT` warning threshold |
 | `MONO_REFRESH_MS` | 1000 | Static refresh |
 | `MONO_MARQUEE_MS` | 100 | Marquee step (~10 fps) |

@@ -36,17 +36,17 @@
 #define MONO_MOCK_AUTO 0
 #endif
 
-// Layout checked for overlaps (default font = 6x8 px cells):
-// single-line title: baseline ~y=20 (spans ~8..20)
-// two-line title: baselines y=12 / y=27 (span ~0..12 and ~15..27)
-// TEMP_Y=30 (30..37), LAYER_Y=39 (39..46), BAR_Y=48 (48..53),
-// BOTTOM_Y=56 (56..63): 2 px of air between the bar and the bottom row.
-static const int TITLE_SINGLE_Y = 20;
-static const int TITLE_Y1 = 12;
-static const int TITLE_Y2 = 27;
-static const int TEMP_Y = 30;
-static const int LAYER_Y = 39;
-static const int BAR_Y = 48;
+// Layout checked for overlaps (default font = 6x8 px cells).
+// FreeMonoBold9pt7b caps: yOffset -10, height 11, so baseline y=N spans
+// N-10..N (measured in the font file). Title: always a single row at
+// baseline y=12 (glyphs 2..12, ~2 px top margin; longer names scroll as a
+// marquee on that same row, never wrapping).
+// TEMP_Y=21 (icons 21..29, text 21..28), LAYER_Y=34 (34..41),
+// BAR_Y=46 (46..51), BOTTOM_Y=56 (56..63): ~5 px of air between rows.
+static const int TITLE_SINGLE_Y = 12;
+static const int TEMP_Y = 21;
+static const int LAYER_Y = 34;
+static const int BAR_Y = 46;
 static const int BAR_H = 6;
 static const int BOTTOM_Y = 56;
 
@@ -189,25 +189,12 @@ void monoDrawTitle(const String &clean) {
   const int maxLine = MONO_MAX_CHAR_TITLE_PER_LINE;
   int len = (int)clean.length();
   if (len <= maxLine) {
+    // Fits: static single row.
     s_marqueeActive = false;
     oled.setCursor(0, TITLE_SINGLE_Y);
     oled.print(clean);
-  } else if (len <= 2 * maxLine) {
-    s_marqueeActive = false;
-    // Break at the last space within the limit, else a hard cut.
-    int cut = maxLine;
-    int sp = clean.lastIndexOf(' ', maxLine);
-    if (sp > maxLine - 5 && sp > 0) cut = sp;
-    String l1 = clean.substring(0, cut);
-    String l2 = clean.substring(cut);
-    l2.trim();
-    l1.trim();
-    oled.setCursor(0, TITLE_Y1);
-    oled.print(l1);
-    oled.setCursor(0, TITLE_Y2);
-    oled.print(l2);
   } else {
-    // Single-line horizontal marquee.
+    // Too long: single-row horizontal marquee (never wraps to 2 rows).
     s_marqueeActive = true;
     if (s_mqText != clean) marqueeReset(clean);
     int16_t x1, y1;

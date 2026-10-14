@@ -16,7 +16,8 @@
 //   errorCode=print_error, connected=MQTT connection state.
 //
 // Tunable constants (all overridable with -D in platformio.ini):
-//   MONO_MAX_CHAR_TITLE_PER_LINE  title wrap cut (def. 11, as in Spotify)
+//   MONO_MAX_CHAR_TITLE_PER_LINE  static title length (def. 11, as in Spotify;
+//                               longer names scroll as a marquee on the same row)
 //   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
 //   MONO_REFRESH_MS               static refresh (def. 1000 ms)
 //   MONO_MARQUEE_MS               marquee step (~10 fps, def. 100 ms)
@@ -72,7 +73,7 @@ String monoFormatRemaining(int minutes);  // <0 = no data -> "--"
 // Drawing helpers (they use the internal oled; icons are XBM bitmaps, no font glyphs).
 void monoDrawProgressBar(int y, int percent);          // drawRect(0,y,128,6)+fillRect map()
 void monoDrawStatusIcon(int x, int y, MonoScreen s);   // triangle / pause / error / check
-void monoDrawTitle(const String &clean);               // 2-line wrap or 1-line marquee
+void monoDrawTitle(const String &clean);               // 1 row, static or marquee
 
 // --- Screen API ----------------------------------------------------------------
 void monoDisplayInit();
