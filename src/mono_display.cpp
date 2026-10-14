@@ -410,18 +410,62 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.display();
 }
 
+static void wrapJobName2Lines(const String &clean, String &l1, String &l2) {
+  const int maxLine = MONO_MAX_CHAR_TITLE_PER_LINE;  // 11 con la fuente grande
+  String t = clean;
+  t.trim();
+  if ((int)t.length() <= maxLine) {
+    l1 = t;
+    l2 = "";
+    return;
+  }
+  // Relleno greedy por palabras para la primera linea.
+  int n = t.length();
+  int cut = -1;
+  int lastSpace = -1;
+  for (int i = 0; i < n && i <= maxLine; i++) {
+    if (t[i] == ' ') lastSpace = i;
+  }
+  if (lastSpace > 0) {
+    cut = lastSpace;
+  } else {
+    cut = maxLine;  // palabra larga: corte duro
+  }
+  l1 = t.substring(0, cut);
+  l1.trim();
+  String rest = t.substring(cut);
+  rest.trim();
+  if ((int)rest.length() > maxLine) rest = rest.substring(0, maxLine);
+  l2 = rest;
+}
+
 static void renderFinish(const BambuState &st) {
   oled.clearDisplay();
-  monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
-  // Cooling temps instead of a bare "Done" duplicate: same row as printing.
-  drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
-  // Single status line: was "Done" (TEMP_Y) + "100%" (LAYER_Y) duplicated.
-  oled.setCursor(0, LAYER_Y);
-  oled.print("Done 100%");
-  monoDrawProgressBar(BAR_Y, 100);
-  monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_FINISH);
-  oled.setCursor(11, BOTTOM_Y);
-  oled.print("finished");
+  // 1. Titulo en hasta 2 lineas (fuente grande).
+  String l1, l2;
+  wrapJobName2Lines(monoCleanJobName(jobDisplayName(st)), l1, l2);
+  oled.setFont(&FreeMonoBold9pt7b);
+  oled.setCursor(0, 12);
+  oled.print(l1);
+  if (l2.length() > 0) {
+    oled.setCursor(0, 25);
+    oled.print(l2);
+  }
+  // 2. DONE! en recuadro centrado.
+  int16_t x1, y1;
+  uint16_t w, h;
+  oled.getTextBounds("DONE!", 0, 0, &x1, &y1, &w, &h);
+  const int boxH = 18;
+  const int boxW = (int)w + 20;
+  const int boxX = (128 - boxW) / 2;
+  const int boxY = 32;
+  oled.drawRect(boxX, boxY, boxW, boxH, SH110X_WHITE);
+  oled.setCursor((128 - (int)w) / 2, boxY + 13);
+  oled.print("DONE!");
+  oled.setFont();
+  oled.setTextSize(1);
+  // 3. Temps de enfriamiento abajo (misma fila que en printing).
+  drawTempsRow(54, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.display();
 }
 
