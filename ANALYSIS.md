@@ -56,6 +56,13 @@ RAM estática libre ≈ 262 KB; el heap en marcha cae con TLS (~40-50 KB/sesión
 + `BAMBU_BUFFER_SIZE` 40 KB por conexión (x2-4 en multi-impresora).
 Re-medir tras Fase 2 y poner tabla antes/después.
 
+### Base `mono-c3` (Fase 1, código completo + capa SH1106, 2026-10-14)
+
+```
+RAM:   [==        ]  17.7% (used 58036 bytes from 327680 bytes)
+Flash: [========= ]  94.7% (used 1738636 bytes from 1835008 bytes)
+```
+
 ## 5. Riesgo de acoplamiento / alternativa
 
 La UI color (layouts por resolución, gauges, split, rotación, temas) está
