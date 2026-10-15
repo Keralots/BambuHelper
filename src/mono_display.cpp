@@ -60,6 +60,7 @@ static Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
 static bool s_enabled = true;
 static bool s_booted = false;
+static uint8_t s_appliedContrast = 255;  // last value sent via setContrast()
 
 // --- Transliteration (the equivalent of the reference repo's ----------------
 // --- replaceSpecialCharacters: the GFX fonts ship no accents, so map to ASCII)
@@ -969,6 +970,8 @@ void monoDisplayInit() {
   delay(250);
   oled.begin(OLED_I2C_ADDR, true);
   oled.setTextColor(SH110X_WHITE);
+  oled.setContrast(monoSettings.oledContrast);
+  s_appliedContrast = monoSettings.oledContrast;
   oled.setTextWrap(false);  // title wrap is manual; nothing else overflows
   s_booted = true;
   s_enabled = true;
@@ -1069,6 +1072,12 @@ bool monoDisplayIsEnabled() { return s_enabled; }
 
 void monoDisplayTick() {
   if (!s_booted || !s_enabled) return;
+  // Contrast is a hardware register, not pixels: push it when the web
+  // setting moves (slider saves instantly, this picks it up next loop).
+  if (s_appliedContrast != monoSettings.oledContrast) {
+    s_appliedContrast = monoSettings.oledContrast;
+    oled.setContrast(s_appliedContrast);
+  }
 #if MONO_MOCK
   BambuState mock;
   const BambuState *src = nullptr;

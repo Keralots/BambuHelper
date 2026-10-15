@@ -615,6 +615,13 @@ R"rawliteral(
       <input type="text" id="mno_wq" class="mono" value="%MONO_WQ%" placeholder="Madrid,ES" maxlength="63">
       <div class="hint">Free key from openweathermap.org. Use City,CC with no spaces. Key + location save with Apply Display Settings below.</div>
     </div>
+    <div class="field">
+      <label class="hstack" style="justify-content:space-between" for="mno_cont"><span>OLED contrast</span><span class="mono text-dim" id="mno_contVal">%MONO_CONT%</span></label>
+      <input type="range" id="mno_cont" min="0" max="255" step="1" value="%MONO_CONT%"
+             oninput="document.getElementById('mno_contVal').textContent=this.value"
+             onchange="toggleSetting('mno_cont',this.value)">
+      <div class="hint">SH1106 contrast, 255 is brightest (default). Applies instantly, no reboot.</div>
+    </div>
   </div>
 
 %EXTENDED_MODES_CARD%

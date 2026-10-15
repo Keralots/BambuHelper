@@ -198,6 +198,9 @@ static void readDisplayFromForm() {
   if (server.hasArg("mno_wq"))
     strlcpy(monoSettings.weatherQuery, server.arg("mno_wq").c_str(),
             sizeof(monoSettings.weatherQuery));
+  if (server.hasArg("mno_cont"))
+    monoSettings.oledContrast =
+        (uint8_t)constrain(server.arg("mno_cont").toInt(), 0, 255);
 
   // Edge glow
   if (server.hasArg("glowm")) {
@@ -878,6 +881,10 @@ static void handleToggleSetting() {
   else if (key == "mno_hot") monoSettings.showHotIdle = on;
   else if (key == "mno_splash") monoSettings.showSplash = on;
   else if (key == "mno_wen") monoSettings.weatherEnabled = on;
+  else if (key == "mno_cont") {
+    monoSettings.oledContrast =
+        (uint8_t)constrain(server.arg("val").toInt(), 0, 255);
+  }
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;

@@ -31,6 +31,7 @@ MonoDisplaySettings monoSettings = {
   /*weatherEnabled*/    false,
   /*weatherKey*/        "",
   /*weatherQuery*/      "Madrid,ES",
+  /*oledContrast*/      255,
 };
 GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
@@ -647,6 +648,7 @@ void loadSettings() {
           sizeof(monoSettings.weatherKey));
   strlcpy(monoSettings.weatherQuery, prefs.getString("mno_wq", "Madrid,ES").c_str(),
           sizeof(monoSettings.weatherQuery));
+  monoSettings.oledContrast = prefs.getUChar("mno_cont", 255);
   {
     uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
     dispSettings.glowMode = (gm <= 2) ? gm : 0;
@@ -1030,6 +1032,7 @@ void saveSettings() {
   prefs.putBool("mno_wen", monoSettings.weatherEnabled);
   prefs.putString("mno_wkey", monoSettings.weatherKey);
   prefs.putString("mno_wq", monoSettings.weatherQuery);
+  prefs.putUChar("mno_cont", monoSettings.oledContrast);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);

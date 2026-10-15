@@ -323,6 +323,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "MONO_WEN") == 0) { out = monoSettings.weatherEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_WKEY") == 0) { out = monoSettings.weatherKey; return true; }
   if (strcmp(name, "MONO_WQ") == 0) { out = monoSettings.weatherQuery; return true; }
+  if (strcmp(name, "MONO_CONT") == 0) { out = String(monoSettings.oledContrast); return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
   if (strcmp(name, "GESTURE_ROWS") == 0) {
     // AMS page entries only where the Cards style exists; data-ams lets the

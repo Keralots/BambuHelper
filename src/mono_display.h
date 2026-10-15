@@ -33,7 +33,8 @@
 // settings.h, all default ON except weather): showTempsPrinting, showLayer,
 // showBar, showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle,
 // showHotIdle, showSplash (boot screen; off = straight to clock unless WiFi
-// failed), weatherEnabled + weatherKey/weatherQuery (idle clock icon + temp).
+// failed), weatherEnabled + weatherKey/weatherQuery (idle clock icon + temp),
+// oledContrast (SH1106 hardware contrast 0-255, instant).
 #pragma once
 
 #include <Arduino.h>

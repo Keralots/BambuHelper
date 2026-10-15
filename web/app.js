@@ -1267,6 +1267,7 @@ function applyDisplay(){
   if (document.getElementById('mno_wen').checked) p.append('mno_wen', '1');
   p.append('mno_wkey', document.getElementById('mno_wkey').value);
   p.append('mno_wq', document.getElementById('mno_wq').value);
+  p.append('mno_cont', document.getElementById('mno_cont').value);
   for (var i = 0; i < GAUGE_KEYS.length; i++){
     var k = GAUGE_KEYS[i];
     p.append(k + '_a', document.getElementById(k + '_a').value);
