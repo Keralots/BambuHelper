@@ -1611,15 +1611,7 @@ void loop() {
       // show: AP mode or no STA connection means no WiFi (a missing printer
       // is NOT a failure - the idle screen already reports it as X).
       bool skipBoot = !monoSettings.showSplash && !isAPMode() && isWiFiConnected();
-      if (!skipBoot) {
-        if (isAPMode()) {
-          String ip = WiFi.softAPIP().toString();
-          monoShowBoot(getAPSSID().c_str(), ip.c_str());
-        } else {
-          String ip = WiFi.localIP().toString();
-          monoShowBoot("WiFi STA", ip.c_str());
-        }
-      }
+      if (!skipBoot) monoShowBoot();
     }
     monoDisplayTick();
   }

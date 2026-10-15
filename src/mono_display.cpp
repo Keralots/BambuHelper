@@ -5,10 +5,12 @@
 #include "mono_display.h"
 #include "mono_weather.h"
 #include "bambu_state.h"
+#include "bambu_mqtt.h"
 #include "config.h"
 #include "settings.h"
 #include "wifi_manager.h"
 
+#include <WiFi.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -120,6 +122,17 @@ String monoCleanJobName(const char *raw) {
 }
 
 String monoCleanJobName(const String &raw) { return monoCleanJobName(raw.c_str()); }
+
+// Printer friendly name, transliterated + trimmed for the OLED (no suffix
+// stripping: that is job-name only). "" when the slot has no name.
+static String monoPrinterLabel(uint8_t slot) {
+  if (slot >= MAX_PRINTERS) return String("");
+  char out[32];
+  deaccent(out, sizeof(out), printers[slot].config.name);
+  String s(out);
+  s.trim();
+  return s;
+}
 
 String monoFormatRemaining(int minutes) {
   char buf[16];
@@ -635,13 +648,27 @@ static void renderFailed(const BambuState &st) {
 
 static void renderOffline() {
   oled.clearDisplay();
-  monoDrawTitle(String("Offline"));
+  // Name first (scrolls when long), helper IP, then the printer target as
+  // the diagnostic line - the printer IP alone says nothing about which
+  // unit is down.
+  uint8_t slot = activePrinterIndex < MAX_PRINTERS ? activePrinterIndex : 0;
+  String nm = monoPrinterLabel(slot);
+  monoDrawTitle(nm.length() > 0 ? nm : String("Offline"));
+  String hip = isAPMode() ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
   oled.setCursor(0, TEMP_Y);
-  oled.print("printer IP:");
+  oled.print("IP " + hip);
   oled.setCursor(0, LAYER_Y);
-  const char *ip = "";
-  if (activePrinterIndex < MAX_PRINTERS) ip = printers[activePrinterIndex].config.ip;
-  oled.print((ip && ip[0]) ? ip : "--");
+  if (isPrinterConfigured(slot)) {
+    if (isCloudMode(printers[slot].config.mode)) {
+      oled.print("to cloud");
+    } else {
+      const char *pip = printers[slot].config.ip;
+      oled.print("to ");
+      oled.print((pip && pip[0]) ? pip : "--");
+    }
+  } else {
+    oled.print("--");
+  }
   monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_OFFLINE);
   oled.setCursor(11, BOTTOM_Y);
   oled.print("offline");
@@ -955,20 +982,39 @@ void monoDisplayInit() {
 #endif
 }
 
-void monoShowBoot(const char *ssid, const char *ip) {
+void monoShowBoot() {
   if (!s_booted || !s_enabled) return;
   oled.clearDisplay();
+  // Title: AP SSID in setup mode (scrolls when long), brand otherwise.
   oled.setFont(&FreeMonoBold9pt7b);
-  oled.setCursor(0, 15);
-  oled.print("Bambu");
+  if (isAPMode()) {
+    monoDrawTitle(getAPSSID());
+  } else {
+    oled.setCursor(0, 12);
+    oled.print("BambuHelper");
+  }
   oled.setFont();
   oled.setTextSize(1);
+  // Helper IP first, then the configured printer names (not the printer IP).
+  String hip = isAPMode() ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
   oled.setCursor(0, 26);
-  oled.print("Helper Mono");
-  oled.setCursor(0, 40);
-  oled.print(ssid ? ssid : "");
-  oled.setCursor(0, 52);
-  oled.print(ip ? ip : "");
+  oled.print(hip);
+  int y = 38;
+  int shown = 0;
+  for (uint8_t i = 0; i < MAX_PRINTERS && y <= 50; i++) {
+    if (!isPrinterConfigured(i)) continue;
+    String nm = monoPrinterLabel(i);
+    if (nm.length() == 0) nm = String("Printer ") + (int)(i + 1);
+    if (nm.length() > 21) nm = nm.substring(0, 21);
+    oled.setCursor(0, y);
+    oled.print(nm);
+    y += 12;
+    shown++;
+  }
+  if (shown == 0) {
+    oled.setCursor(0, 38);
+    oled.print("no printer");
+  }
   oled.display();
 }
 
