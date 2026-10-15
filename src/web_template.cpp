@@ -665,6 +665,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BOARD") == 0)        { out = BOARD_VARIANT; return true; }
   if (strcmp(name, "BOARD_NAME") == 0)   { out = BOARD_NAME; return true; }
   if (strcmp(name, "BOARD_PANEL") == 0)  { out = BOARD_PANEL; return true; }
+  if (strcmp(name, "IS_MONO") == 0) {
+#ifdef BOARD_IS_MONO
+    out = "1";
+#else
+    out = "0";
+#endif
+    return true;
+  }
   if (strcmp(name, "STATUS_CLASS") == 0) {
     out = st.connected ? "status-pill status-ok"
                        : isPrinterConfigured(0) ? "status-pill status-off"

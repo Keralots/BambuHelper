@@ -122,7 +122,7 @@ static const char PAGE_HTML_1[] PROGMEM = R"rawliteral(
 (function(){try{var t=localStorage.getItem('bh-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 </head>
-<body>
+<body data-mono="%IS_MONO%">
 
 <!-- ============ Top bar ============ -->
 <div class="topbar">

@@ -1409,6 +1409,51 @@ function toggleSetting(key, on){
     .catch(function(e){showToast('Toggle failed');console.warn('toggleSetting:',e);});
 }
 
+/* ============ Mono OLED board: hide non-mono settings ============
+   The mono-c3 board (SH1106 128x64) only uses Printer connection, the Mono
+   OLED card, Clock timezone/format, WiFi & System and Diagnostics. Everything
+   else is TFT-only markup that stays compiled in (other boards ignore the
+   data-mono flag) and is only hidden here, never deleted. */
+function isMonoBoard(){
+  return document.body && document.body.getAttribute('data-mono') === '1';
+}
+function hideCardByHeading(secId, text){
+  var sec = document.getElementById(secId);
+  if (!sec) return;
+  var heads = sec.querySelectorAll('.card h3');
+  for (var i = 0; i < heads.length; i++){
+    if (heads[i].textContent.indexOf(text) !== -1){
+      var card = heads[i].closest('.card');
+      if (card) card.hidden = true;
+    }
+  }
+}
+function applyMonoVisibility(){
+  if (!isMonoBoard()) return;
+  var hideNav = ['display', 'afterprint', 'colors', 'hardware', 'power'];
+  for (var i = 0; i < hideNav.length; i++){
+    var nav = document.querySelector('.nav-item[data-section="' + hideNav[i] + '"]');
+    if (nav) nav.hidden = true;
+    var sec = document.getElementById('sec-' + hideNav[i]);
+    if (sec) sec.hidden = true;
+  }
+  // Printer section: keep connection only; gauge layout / light / rotation
+  // are TFT/multi-printer concepts on a single-mono board.
+  hideCardByHeading('sec-printer', 'Gauge Layout');
+  hideCardByHeading('sec-printer', 'Chamber light');
+  hideCardByHeading('sec-printer', 'Printer rotation');
+  // Print screen section: keep only the Mono OLED card.
+  var ps = document.getElementById('sec-printscreen');
+  if (ps){
+    var cards = ps.querySelectorAll('.card');
+    for (var c = 0; c < cards.length; c++){
+      if (!cards[c].querySelector('#mno_ptmp')) cards[c].hidden = true;
+    }
+  }
+  // Clock section: the printer name/IP footer is a TFT status-bar concept.
+  hideCardByHeading('sec-clock', 'Clock screen info');
+}
+
 /* ============ Printer errors (HMS + print_error) ============
 
    This file is shared by every board, but the Printer Errors section is not:
@@ -2013,10 +2058,14 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   initHelpTips();
   initDirtyTracking();
   applyCardsHints();
+  applyMonoVisibility();
   // Initial section: URL hash, else last visited (localStorage), else printer.
   // Printer Errors only exists on boards that compiled its markup in, so it
-  // joins the list only when the page actually carries it.
+  // joins the list only when the page actually carries it. On mono the TFT
+  // sections are hidden above, so they leave the list too (a bookmarked #colors
+  // must fall back to printer instead of a blank panel).
   var SECTIONS = ['printer','display','printscreen','afterprint','clock','colors','hardware','wifi','power','diag'];
+  if (isMonoBoard()) SECTIONS = ['printer','printscreen','clock','wifi','diag'];
   if (document.getElementById('sec-errors')) SECTIONS.push('errors');
   var initId = 'printer';
   if (location.hash){
