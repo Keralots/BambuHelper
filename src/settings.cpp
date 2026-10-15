@@ -27,6 +27,7 @@ MonoDisplaySettings monoSettings = {
   /*showBar*/           true,
   /*showHotIdle*/       true,
   /*showClockIdle*/     true,
+  /*showStatusIdle*/    true,
   /*showSplash*/        true,
   /*weatherEnabled*/    false,
   /*weatherKey*/        "",
@@ -642,6 +643,7 @@ void loadSettings() {
   monoSettings.showBar = prefs.getBool("mno_bar", true);
   monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
   monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
+  monoSettings.showStatusIdle = prefs.getBool("mno_stat", true);
   monoSettings.showSplash = prefs.getBool("mno_splash", true);
   monoSettings.weatherEnabled = prefs.getBool("mno_wen", false);
   strlcpy(monoSettings.weatherKey, prefs.getString("mno_wkey", "").c_str(),
@@ -1028,6 +1030,7 @@ void saveSettings() {
   prefs.putBool("mno_bar", monoSettings.showBar);
   prefs.putBool("mno_hot", monoSettings.showHotIdle);
   prefs.putBool("mno_clk", monoSettings.showClockIdle);
+  prefs.putBool("mno_stat", monoSettings.showStatusIdle);
   prefs.putBool("mno_splash", monoSettings.showSplash);
   prefs.putBool("mno_wen", monoSettings.weatherEnabled);
   prefs.putString("mno_wkey", monoSettings.weatherKey);

@@ -394,7 +394,9 @@ struct MonoDisplaySettings {
   bool showBar;           // progress bar while printing
   bool showHotIdle;       // HOT warning on the idle screen
   bool showClockIdle;     // big clock on idle (off = big temps)
-  bool showSplash;        // boot screen with SSID/IP (off = straight to clock; failures still show)
+  bool showStatusIdle;    // connection X/circle on the idle clock
+  bool showSplash;        // boot screen with helper IP + printers, held ~3 s
+                         // (off = straight to clock; AP/no-WiFi still shows)
   bool weatherEnabled;    // OpenWeatherMap on the idle clock (needs key + location)
   char weatherKey[65];    // OpenWeatherMap API key (32 hex chars)
   char weatherQuery[64];  // location query, e.g. "Madrid,ES" (no spaces)

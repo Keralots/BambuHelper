@@ -1262,6 +1262,7 @@ function applyDisplay(){
   if (document.getElementById('mno_endalt').checked) p.append('mno_endalt', '1');
   if (document.getElementById('mno_dtmp').checked) p.append('mno_dtmp', '1');
   if (document.getElementById('mno_clk').checked) p.append('mno_clk', '1');
+  if (document.getElementById('mno_stat').checked) p.append('mno_stat', '1');
   if (document.getElementById('mno_hot').checked) p.append('mno_hot', '1');
   if (document.getElementById('mno_splash').checked) p.append('mno_splash', '1');
   if (document.getElementById('mno_wen').checked) p.append('mno_wen', '1');

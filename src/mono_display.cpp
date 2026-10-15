@@ -61,6 +61,7 @@ static Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 static bool s_enabled = true;
 static bool s_booted = false;
 static uint8_t s_appliedContrast = 255;  // last value sent via setContrast()
+static unsigned long s_bootHoldUntilMs = 0;  // boot screen hold window
 
 // --- Transliteration (the equivalent of the reference repo's ----------------
 // --- replaceSpecialCharacters: the GFX fonts ship no accents, so map to ASCII)
@@ -649,10 +650,12 @@ static void renderIdle(const BambuState &st) {
   // empty circle when idle and all good. Liveness needs fresh data, not just
   // the MQTT flag: in cloud mode the broker stays reachable with the printer
   // off, and LAN keepalive takes a minute to fail - both painted a stale
-  // circle instead of the X.
+  // circle instead of the X. Hidable via the web "connection icon" toggle.
   const int iconX = 116;
   const int iconY = 56;
-  if (!isWiFiConnected() || isAPMode()) {
+  if (!monoSettings.showStatusIdle) {
+    // nothing: clock + weather use the full width
+  } else if (!isWiFiConnected() || isAPMode()) {
     oled.drawTriangle(iconX + 3, iconY, iconX, iconY + 7, iconX + 7, iconY + 7,
                       SH110X_WHITE);
     oled.drawFastVLine(iconX + 3, iconY + 2, 3, SH110X_WHITE);
@@ -760,6 +763,7 @@ static uint16_t monoFlagsNow() {
   if (monoSettings.showClockIdle) f |= 0x80;
   if (monoSettings.weatherEnabled) f |= 0x100;
   if (!netSettings.use24h) f |= 0x200;  // 12h clock/end-time: repaint now
+  if (!monoSettings.showStatusIdle) f |= 0x400;
   return f;
 }
 
@@ -1017,7 +1021,15 @@ void monoDisplayInit() {
   s_booted = true;
   s_enabled = true;
   Serial.printf("MONO heap=%u\n", (unsigned)ESP.getFreeHeap());
-  monoShowMessage("BambuHelper", "Mono starting");
+  // The splash toggle owns every boot pixel: skipped means a blank panel
+  // until the tick paints the clock (this message was the "splash" users saw
+  // even with the toggle off).
+  if (monoSettings.showSplash) {
+    monoShowMessage("BambuHelper", "Mono starting");
+  } else {
+    oled.clearDisplay();
+    oled.display();
+  }
 #if MONO_MOCK && MONO_MOCK_AUTO
   s_mockOn = true;
   s_mockCycle = true;
@@ -1029,37 +1041,42 @@ void monoDisplayInit() {
 void monoShowBoot() {
   if (!s_booted || !s_enabled) return;
   oled.clearDisplay();
-  // Title: AP SSID in setup mode (scrolls when long), brand otherwise.
-  oled.setFont(&FreeMonoBold9pt7b);
-  if (isAPMode()) {
-    monoDrawTitle(getAPSSID());
-  } else {
-    oled.setCursor(0, 12);
-    oled.print("BambuHelper");
-  }
+  // All default font (21 chars/row): header, helper IP, section, names.
   oled.setFont();
   oled.setTextSize(1);
-  // Helper IP first, then the configured printer names (not the printer IP).
-  String hip = isAPMode() ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
-  oled.setCursor(0, 26);
-  oled.print(hip);
-  int y = 38;
+  bool ap = isAPMode();
+  String head = ap ? getAPSSID() : String("-- Bambu Helper --");
+  if (head.length() > 21) head = head.substring(0, 21);
+  oled.setCursor(0, 4);
+  oled.print(head);
+  String hip = ap ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+  if (hip == "0.0.0.0") hip = "connecting";
+  String ipline = "IP: " + hip;
+  if (ipline.length() > 21) ipline = ipline.substring(0, 21);
+  oled.setCursor(0, 12);
+  oled.print(ipline);
+  oled.setCursor(0, 20);
+  oled.print("Connected printers:");
+  int y = 28;
   int shown = 0;
-  for (uint8_t i = 0; i < MAX_PRINTERS && y <= 50; i++) {
+  for (uint8_t i = 0; i < MAX_PRINTERS && y <= 52; i++) {
     if (!isPrinterConfigured(i)) continue;
     String nm = monoPrinterLabel(i);
     if (nm.length() == 0) nm = String("Printer ") + (int)(i + 1);
     if (nm.length() > 21) nm = nm.substring(0, 21);
     oled.setCursor(0, y);
     oled.print(nm);
-    y += 12;
+    y += 8;
     shown++;
   }
   if (shown == 0) {
-    oled.setCursor(0, 38);
+    oled.setCursor(0, 28);
     oled.print("no printer");
   }
   oled.display();
+  // Hold it: the tick repaints every loop and would otherwise cover the boot
+  // screen on the very next iteration (which is why skip/show looked the same).
+  s_bootHoldUntilMs = millis() + (unsigned long)MONO_BOOT_HOLD_MS;
 }
 
 void monoShowMessage(const char *line1, const char *line2) {
@@ -1113,6 +1130,16 @@ bool monoDisplayIsEnabled() { return s_enabled; }
 
 void monoDisplayTick() {
   if (!s_booted || !s_enabled) return;
+  // Boot-screen hold: monoShowBoot() paints once and the tick below would
+  // cover it on the next loop, so hold the frame for the window. Mock mode
+  // always wins (review must not wait out the hold).
+  if (s_bootHoldUntilMs != 0) {
+    if ((long)(millis() - s_bootHoldUntilMs) < 0) {
+      if (!monoMockActive()) return;
+    } else {
+      s_bootHoldUntilMs = 0;
+    }
+  }
   // Contrast is a hardware register, not pixels: push it when the web
   // setting moves (slider saves instantly, this picks it up next loop).
   if (s_appliedContrast != monoSettings.oledContrast) {

@@ -32,7 +32,8 @@
 // Runtime row toggles (web portal Print screen > Mono OLED, monoSettings in
 // settings.h, all default ON except weather): showTempsPrinting, showLayer,
 // showBar, showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle,
-// showHotIdle, showSplash (boot screen; off = straight to clock unless WiFi
+// showStatusIdle (X/circle on the clock), showHotIdle,
+// showSplash (boot screen held ~3 s; off = straight to clock unless WiFi
 // failed), weatherEnabled + weatherKey/weatherQuery (idle clock icon + temp),
 // oledContrast (SH1106 hardware contrast 0-255, instant).
 #pragma once
@@ -62,6 +63,9 @@ struct BambuState;  // include/bambu_state.h
 #endif
 #ifndef MONO_MOCK
 #define MONO_MOCK 1
+#endif
+#ifndef MONO_BOOT_HOLD_MS
+#define MONO_BOOT_HOLD_MS 3000
 #endif
 
 // Screens (step 4). Priority in monoSelectScreen():
@@ -95,7 +99,8 @@ void monoDrawTitle(const String &clean);               // 1 row, static or marqu
 
 // --- Screen API ----------------------------------------------------------------
 void monoDisplayInit();
-void monoShowBoot();  // helper IP + configured printer names (setup: AP SSID)
+void monoShowBoot();  // helper IP + configured printer names, held ~3 s
+                      // (setup mode: AP SSID on the header row)
 void monoShowMessage(const char *line1, const char *line2);
 void monoShowStatus(const BambuState &st);  // immediate render (compat)
 void monoShowError(unsigned long code);

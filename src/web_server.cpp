@@ -189,6 +189,7 @@ static void readDisplayFromForm() {
   monoSettings.showEndTimeAlt = server.hasArg("mno_endalt");
   monoSettings.showTempsDone = server.hasArg("mno_dtmp");
   monoSettings.showClockIdle = server.hasArg("mno_clk");
+  monoSettings.showStatusIdle = server.hasArg("mno_stat");
   monoSettings.showHotIdle = server.hasArg("mno_hot");
   monoSettings.showSplash = server.hasArg("mno_splash");
   monoSettings.weatherEnabled = server.hasArg("mno_wen");
@@ -878,6 +879,7 @@ static void handleToggleSetting() {
   else if (key == "mno_endalt") monoSettings.showEndTimeAlt = on;
   else if (key == "mno_dtmp") monoSettings.showTempsDone = on;
   else if (key == "mno_clk") monoSettings.showClockIdle = on;
+  else if (key == "mno_stat") monoSettings.showStatusIdle = on;
   else if (key == "mno_hot") monoSettings.showHotIdle = on;
   else if (key == "mno_splash") monoSettings.showSplash = on;
   else if (key == "mno_wen") monoSettings.weatherEnabled = on;

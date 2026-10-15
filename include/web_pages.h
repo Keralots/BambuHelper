@@ -596,6 +596,10 @@ R"rawliteral(
       <label for="mno_clk">Show big clock when idle (off = big temps)</label>
     </label>
     <label class="check-row">
+      <input type="checkbox" id="mno_stat" value="1" %MONO_STAT% onchange="toggleSetting('mno_stat',this.checked)">
+      <label for="mno_stat">Show connection icon on the clock (X / circle)</label>
+    </label>
+    <label class="check-row">
       <input type="checkbox" id="mno_hot" value="1" %MONO_HOT% onchange="toggleSetting('mno_hot',this.checked)">
       <label for="mno_hot">Show HOT warning when idle</label>
     </label>

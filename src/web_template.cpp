@@ -318,6 +318,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "MONO_ENDALT") == 0) { out = monoSettings.showEndTimeAlt ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_DTMP") == 0) { out = monoSettings.showTempsDone ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_CLK") == 0) { out = monoSettings.showClockIdle ? "checked" : ""; return true; }
+  if (strcmp(name, "MONO_STAT") == 0) { out = monoSettings.showStatusIdle ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_HOT") == 0) { out = monoSettings.showHotIdle ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_SPLASH") == 0) { out = monoSettings.showSplash ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_WEN") == 0) { out = monoSettings.weatherEnabled ? "checked" : ""; return true; }
