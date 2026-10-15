@@ -62,6 +62,8 @@ static bool s_enabled = true;
 static bool s_booted = false;
 static uint8_t s_appliedContrast = 255;  // last value sent via setContrast()
 static unsigned long s_bootHoldUntilMs = 0;  // boot screen hold window
+static unsigned long s_lastBootDrawMs = 0;   // throttle for live boot repaints
+static void renderBootScreen();
 
 // --- Transliteration (the equivalent of the reference repo's ----------------
 // --- replaceSpecialCharacters: the GFX fonts ship no accents, so map to ASCII)
@@ -1038,8 +1040,27 @@ void monoDisplayInit() {
 #endif
 }
 
+// Liveness per slot for the boot list (same freshness rule as the idle
+// corner icon: flag + recent data, x5 stale window in cloud mode).
+static bool monoSlotLive(uint8_t slot) {
+  if (slot >= MAX_PRINTERS) return false;
+  const BambuState &s = printers[slot].state;
+  if (!s.connected || s.lastUpdate == 0) return false;
+  unsigned long staleMs = (unsigned long)BAMBU_STALE_TIMEOUT;
+  if (isCloudMode(printers[slot].config.mode)) staleMs *= 5UL;
+  return (millis() - s.lastUpdate) <= staleMs;
+}
+
 void monoShowBoot() {
   if (!s_booted || !s_enabled) return;
+  renderBootScreen();
+  // Hold it: the tick repaints every loop and would otherwise cover the boot
+  // screen on the very next iteration (which is why skip/show looked the same).
+  s_bootHoldUntilMs = millis() + (unsigned long)MONO_BOOT_HOLD_MS;
+  s_lastBootDrawMs = millis();
+}
+
+static void renderBootScreen() {
   oled.clearDisplay();
   // All default font (21 chars/row): header, helper IP, section, names.
   oled.setFont();
@@ -1056,14 +1077,15 @@ void monoShowBoot() {
   oled.setCursor(0, 12);
   oled.print(ipline);
   oled.setCursor(0, 20);
-  oled.print("Connected printers:");
+  oled.print("Printers:");
   int y = 28;
   int shown = 0;
   for (uint8_t i = 0; i < MAX_PRINTERS && y <= 52; i++) {
     if (!isPrinterConfigured(i)) continue;
     String nm = monoPrinterLabel(i);
     if (nm.length() == 0) nm = String("Printer ") + (int)(i + 1);
-    if (nm.length() > 21) nm = nm.substring(0, 21);
+    if (nm.length() > 16) nm = nm.substring(0, 16);
+    nm += monoSlotLive(i) ? " [on]" : " [off]";
     oled.setCursor(0, y);
     oled.print(nm);
     y += 8;
@@ -1074,9 +1096,6 @@ void monoShowBoot() {
     oled.print("no printer");
   }
   oled.display();
-  // Hold it: the tick repaints every loop and would otherwise cover the boot
-  // screen on the very next iteration (which is why skip/show looked the same).
-  s_bootHoldUntilMs = millis() + (unsigned long)MONO_BOOT_HOLD_MS;
 }
 
 void monoShowMessage(const char *line1, const char *line2) {
@@ -1135,7 +1154,15 @@ void monoDisplayTick() {
   // always wins (review must not wait out the hold).
   if (s_bootHoldUntilMs != 0) {
     if ((long)(millis() - s_bootHoldUntilMs) < 0) {
-      if (!monoMockActive()) return;
+      if (!monoMockActive()) {
+        // Live boot: repaint ~1 Hz so the [on]/[off] flags track MQTT while
+        // it connects (right after boot everything still reads [off]).
+        if (millis() - s_lastBootDrawMs >= 1000) {
+          s_lastBootDrawMs = millis();
+          renderBootScreen();
+        }
+        return;
+      }
     } else {
       s_bootHoldUntilMs = 0;
     }
