@@ -190,6 +190,7 @@ static void readDisplayFromForm() {
   monoSettings.showTempsDone = server.hasArg("mno_dtmp");
   monoSettings.showClockIdle = server.hasArg("mno_clk");
   monoSettings.showHotIdle = server.hasArg("mno_hot");
+  monoSettings.showSplash = server.hasArg("mno_splash");
 
   // Edge glow
   if (server.hasArg("glowm")) {
@@ -868,6 +869,7 @@ static void handleToggleSetting() {
   else if (key == "mno_dtmp") monoSettings.showTempsDone = on;
   else if (key == "mno_clk") monoSettings.showClockIdle = on;
   else if (key == "mno_hot") monoSettings.showHotIdle = on;
+  else if (key == "mno_splash") monoSettings.showSplash = on;
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;

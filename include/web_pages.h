@@ -599,6 +599,10 @@ R"rawliteral(
       <input type="checkbox" id="mno_hot" value="1" %MONO_HOT% onchange="toggleSetting('mno_hot',this.checked)">
       <label for="mno_hot">Show HOT warning when idle</label>
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="mno_splash" value="1" %MONO_SPLASH% onchange="toggleSetting('mno_splash',this.checked)">
+      <label for="mno_splash">Show boot screen with WiFi/IP (off = straight to clock)</label>
+    </label>
   </div>
 
 %EXTENDED_MODES_CARD%

@@ -394,6 +394,7 @@ struct MonoDisplaySettings {
   bool showBar;           // progress bar while printing
   bool showHotIdle;       // HOT warning on the idle screen
   bool showClockIdle;     // big clock on idle (off = big temps)
+  bool showSplash;        // boot screen with SSID/IP (off = straight to clock; failures still show)
 };
 
 extern char wifiSSID[33];

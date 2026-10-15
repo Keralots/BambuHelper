@@ -30,7 +30,8 @@
 //
 // Runtime row toggles (web portal Print screen > Mono OLED, monoSettings in
 // settings.h, all default ON): showTempsPrinting, showLayer, showBar,
-// showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle, showHotIdle.
+// showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle, showHotIdle,
+// showSplash (boot screen; off = straight to clock unless WiFi failed).
 #pragma once
 
 #include <Arduino.h>

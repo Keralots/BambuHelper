@@ -27,6 +27,7 @@ MonoDisplaySettings monoSettings = {
   /*showBar*/           true,
   /*showHotIdle*/       true,
   /*showClockIdle*/     true,
+  /*showSplash*/        true,
 };
 GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
@@ -637,6 +638,7 @@ void loadSettings() {
   monoSettings.showBar = prefs.getBool("mno_bar", true);
   monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
   monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
+  monoSettings.showSplash = prefs.getBool("mno_splash", true);
   {
     uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
     dispSettings.glowMode = (gm <= 2) ? gm : 0;
@@ -1016,6 +1018,7 @@ void saveSettings() {
   prefs.putBool("mno_bar", monoSettings.showBar);
   prefs.putBool("mno_hot", monoSettings.showHotIdle);
   prefs.putBool("mno_clk", monoSettings.showClockIdle);
+  prefs.putBool("mno_splash", monoSettings.showSplash);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);

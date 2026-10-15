@@ -319,6 +319,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "MONO_DTMP") == 0) { out = monoSettings.showTempsDone ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_CLK") == 0) { out = monoSettings.showClockIdle ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_HOT") == 0) { out = monoSettings.showHotIdle ? "checked" : ""; return true; }
+  if (strcmp(name, "MONO_SPLASH") == 0) { out = monoSettings.showSplash ? "checked" : ""; return true; }
   if (strcmp(name, "CLK_INFO") == 0) { out = dispSettings.showClockInfo ? "checked" : ""; return true; }
   if (strcmp(name, "GESTURE_ROWS") == 0) {
     // AMS page entries only where the Cards style exists; data-ams lets the
