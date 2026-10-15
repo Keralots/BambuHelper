@@ -17,7 +17,8 @@
 //
 // Tunable constants (all overridable with -D in platformio.ini):
 //   MONO_MAX_CHAR_TITLE_PER_LINE  static title length (def. 11, as in Spotify;
-//                               longer names scroll as a marquee on the same row;
+//                               printing wraps to 2 lines, prepare/failed/
+//                               offline scroll a single-row marquee;
 //                               the Done screen wraps to 2 lines instead)
 //   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
 //   MONO_REFRESH_MS               static refresh (def. 1000 ms)

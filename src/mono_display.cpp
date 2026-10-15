@@ -40,11 +40,12 @@
 
 // Layout checked for overlaps (default font = 6x8 px cells).
 // FreeMonoBold9pt7b caps: yOffset -10, height 11, so baseline y=N spans
-// N-10..N (measured in the font file). Title: always a single row at
-// baseline y=12 (glyphs 2..12, ~2 px top margin; longer names scroll as a
-// marquee on that same row, never wrapping).
+// N-10..N (measured in the font file). Printing (Spotify style): title 2x11
+// at baselines 13/26, info rows at y=31 (layer) and y=41 (plain-text temps),
+// bar at y=50..55, bottom row at y=57 (glyph + % left, time right).
+// Prepare/failed/offline keep the airy rows: title baseline y=12,
 // TEMP_Y=21 (icons 21..29, text 21..28), LAYER_Y=34 (34..41),
-// BAR_Y=46 (46..51), BOTTOM_Y=56 (56..63): ~5 px of air between rows.
+// BAR_Y=46 (46..51), BOTTOM_Y=56 (56..63).
 static const int TITLE_SINGLE_Y = 12;
 static const int TEMP_Y = 21;
 static const int LAYER_Y = 34;
@@ -391,14 +392,35 @@ static String bottomTime(const BambuState &st, int altPhase) {
 }
 
 // --- One render per screen (all end with display()) ----------------------------
+static void wrapJobName2Lines(const String &clean, String &l1, String &l2);
+
+// Spotify-style printing screen (ESP-Spotify-OLED reference): job title in
+// FreeMonoBold9pt7b wrapped to 2x11 lines (no marquee), two default-font info
+// lines (layer, plain-text temps), bar at y=50, status glyph + % bottom-left
+// with the remaining/end time bottom-right.
+static const int PRINT_TITLE_Y1 = 13;
+static const int PRINT_TITLE_Y2 = 26;
+static const int PRINT_INFO_Y1 = 31;
+static const int PRINT_INFO_Y2 = 41;
+static const int PRINT_BAR_Y = 50;
+static const int PRINT_BOTTOM_Y = 57;
+
 static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.clearDisplay();
-  monoDrawTitle(monoCleanJobName(jobDisplayName(st)));
-  // Temps with icons (y = TEMP_Y).
-  if (monoSettings.showTempsPrinting)
-    drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
+  s_marqueeActive = false;  // 2-line wrap never overflows: no marquee here
+  String l1, l2;
+  wrapJobName2Lines(monoCleanJobName(jobDisplayName(st)), l1, l2);
+  oled.setFont(&FreeMonoBold9pt7b);
+  oled.setCursor(0, PRINT_TITLE_Y1);
+  oled.print(l1);
+  if (l2.length() > 0) {
+    oled.setCursor(0, PRINT_TITLE_Y2);
+    oled.print(l2);
+  }
+  oled.setFont();
+  oled.setTextSize(1);
   if (monoSettings.showLayer) {
-    oled.setCursor(0, LAYER_Y);
+    oled.setCursor(0, PRINT_INFO_Y1);
     char line[32];
     if (st.totalLayers > 0) {
       snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
@@ -408,7 +430,16 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
       oled.print(line);
     }
   }
-  if (monoSettings.showBar) monoDrawProgressBar(BAR_Y, st.progress);
+  if (monoSettings.showTempsPrinting) {
+    char nb[16], bb[16];
+    fmtTempVal(nb, sizeof(nb), st.nozzleTemp, st.nozzleTarget);
+    fmtTempVal(bb, sizeof(bb), st.bedTemp, st.bedTarget);
+    oled.setCursor(0, PRINT_INFO_Y2);
+    oled.print(nb);
+    oled.print(" ");
+    oled.print(bb);
+  }
+  if (monoSettings.showBar) monoDrawProgressBar(PRINT_BAR_Y, st.progress);
   // Bottom row: icon + % on the left, time on the right.
   String pct = String((int)st.progress) + "%";
   String t = monoSettings.showTimePrinting ? bottomTime(st, endTimeAltPhase()) : String("");
@@ -419,12 +450,12 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   (void)y1;
   (void)h;
   if (blinkOn) {
-    monoDrawStatusIcon(0, BOTTOM_Y, scr);
-    oled.setCursor(11, BOTTOM_Y);
+    monoDrawStatusIcon(0, PRINT_BOTTOM_Y, scr);
+    oled.setCursor(11, PRINT_BOTTOM_Y);
     oled.print(pct);
   }
   if (t.length() > 0) {
-    oled.setCursor(128 - (int)w, BOTTOM_Y);
+    oled.setCursor(128 - (int)w, PRINT_BOTTOM_Y);
     oled.print(t);
   }
   oled.display();
