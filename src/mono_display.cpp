@@ -372,11 +372,29 @@ static bool monoPrinterLive(const BambuState &st) {
   return (millis() - st.lastUpdate) <= staleMs;
 }
 
-static void fmtClock(char *dst, size_t n) {
+// 24-hour checkbox (Clock section) also governs the mono times: 12h mode
+// drops the leading zero and reports AM/PM through *pm (NULL-tolerant).
+static int monoClockHour(int h24, bool *pm) {
+  if (netSettings.use24h) {
+    if (pm) *pm = false;
+    return h24;
+  }
+  if (pm) *pm = (h24 >= 12);
+  int h = h24 % 12;
+  return (h == 0) ? 12 : h;
+}
+
+static void fmtClockMode(char *dst, size_t n, bool *pm) {
   time_t now = time(nullptr);
   struct tm tmv;
   localtime_r(&now, &tmv);
-  snprintf(dst, n, "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+  bool isPM = false;
+  int h = monoClockHour(tmv.tm_hour, &isPM);
+  if (pm) *pm = isPM;
+  if (netSettings.use24h)
+    snprintf(dst, n, "%02d:%02d", h, tmv.tm_min);
+  else
+    snprintf(dst, n, "%d:%02d", h, tmv.tm_min);
 }
 
 // Bottom row: remaining time, alternating with the bare end time
@@ -398,7 +416,12 @@ static String bottomTime(const BambuState &st, int altPhase) {
     struct tm tmv;
     localtime_r(&end, &tmv);
     char buf[16];
-    snprintf(buf, sizeof(buf), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+    bool isPM = false;
+    int h = monoClockHour(tmv.tm_hour, &isPM);
+    if (netSettings.use24h)
+      snprintf(buf, sizeof(buf), "%02d:%02d", h, tmv.tm_min);
+    else
+      snprintf(buf, sizeof(buf), "%d:%02d%s", h, tmv.tm_min, isPM ? "pm" : "am");
     return String(buf);
   }
 #endif
@@ -545,12 +568,29 @@ static void renderIdle(const BambuState &st) {
     // (60,40) with the degree bitmap. No printer temps here by design.
     oled.setFont();
     oled.setTextSize(3);
-    oled.setCursor(20, 5);
     if (ntpOk()) {
-      char clk[8];
-      fmtClock(clk, sizeof(clk));
-      oled.print(clk);
+      char clk[10];
+      bool isPM = false;
+      fmtClockMode(clk, sizeof(clk), &isPM);
+      if (netSettings.use24h) {
+        oled.setCursor(20, 5);
+        oled.print(clk);
+      } else {
+        // Centered time + AM/PM block (5-char times leave no room at x=20).
+        int16_t x1, y1;
+        uint16_t w, h;
+        oled.getTextBounds(String(clk), 20, 5, &x1, &y1, &w, &h);
+        int x0 = (128 - ((int)w + 6 + 12)) / 2;
+        if (x0 < 0) x0 = 0;
+        oled.setCursor(x0, 5);
+        oled.print(clk);
+        oled.setTextSize(1);
+        oled.setCursor(x0 + (int)w + 6, 13);
+        oled.print(isPM ? "PM" : "AM");
+        oled.setTextSize(3);
+      }
     } else {
+      oled.setCursor(20, 5);
       oled.print("--:--");
     }
     if (monoSettings.weatherEnabled || monoMockActive()) {
@@ -719,6 +759,7 @@ static uint16_t monoFlagsNow() {
   if (monoSettings.showHotIdle) f |= 0x40;
   if (monoSettings.showClockIdle) f |= 0x80;
   if (monoSettings.weatherEnabled) f |= 0x100;
+  if (!netSettings.use24h) f |= 0x200;  // 12h clock/end-time: repaint now
   return f;
 }
 
