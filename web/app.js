@@ -1253,6 +1253,20 @@ function applyDisplay(){
   p.append('gsmooth', document.getElementById('gsmooth').value);
   p.append('warn_thr', document.getElementById('warn_thr').value);
   p.append('warn_clr', document.getElementById('warn_clr').value);
+  /* Mono OLED rows save instantly on change, but Apply posts the whole form:
+     without these the full-form save would wipe them all to off. */
+  if (document.getElementById('mno_ptmp').checked) p.append('mno_ptmp', '1');
+  if (document.getElementById('mno_lyr').checked) p.append('mno_lyr', '1');
+  if (document.getElementById('mno_bar').checked) p.append('mno_bar', '1');
+  if (document.getElementById('mno_ptim').checked) p.append('mno_ptim', '1');
+  if (document.getElementById('mno_endalt').checked) p.append('mno_endalt', '1');
+  if (document.getElementById('mno_dtmp').checked) p.append('mno_dtmp', '1');
+  if (document.getElementById('mno_clk').checked) p.append('mno_clk', '1');
+  if (document.getElementById('mno_hot').checked) p.append('mno_hot', '1');
+  if (document.getElementById('mno_splash').checked) p.append('mno_splash', '1');
+  if (document.getElementById('mno_wen').checked) p.append('mno_wen', '1');
+  p.append('mno_wkey', document.getElementById('mno_wkey').value);
+  p.append('mno_wq', document.getElementById('mno_wq').value);
   for (var i = 0; i < GAUGE_KEYS.length; i++){
     var k = GAUGE_KEYS[i];
     p.append(k + '_a', document.getElementById(k + '_a').value);

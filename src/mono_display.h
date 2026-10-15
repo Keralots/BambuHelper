@@ -30,9 +30,10 @@
 //   MONO_MOCK_AUTO                1 = boot into mock cycle mode
 //
 // Runtime row toggles (web portal Print screen > Mono OLED, monoSettings in
-// settings.h, all default ON): showTempsPrinting, showLayer, showBar,
-// showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle, showHotIdle,
-// showSplash (boot screen; off = straight to clock unless WiFi failed).
+// settings.h, all default ON except weather): showTempsPrinting, showLayer,
+// showBar, showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle,
+// showHotIdle, showSplash (boot screen; off = straight to clock unless WiFi
+// failed), weatherEnabled + weatherKey/weatherQuery (idle clock icon + temp).
 #pragma once
 
 #include <Arduino.h>
@@ -108,8 +109,10 @@ inline void oled_display(bool on) { monoDisplaySetEnabled(on); }
 
 // --- Test mode (step 6) --------------------------------------------------------
 // Serial 115200: "mock" (help), "mock off", "mock cycle", "mock <n>".
-// Cases: 0 print 0% short, 1 print 50% ~20ch, 2 print 100% long (marquee),
-// 3 pause, 4 done, 5 error, 6 cold idle, 7 hot idle (HOT), 8 offline.
+// Cases: 0 print 0% short, 1 print 50% ~20ch, 2 print long (2-line wrap),
+// 3 pause, 4 done, 5 error, 6 cold idle, 7 hot idle, 8 offline.
+// "mock w<code>" (e.g. "mock w10d", "mock w" clears) forces a demo weather
+// icon + 21C on the idle clock without network, for icon review.
 // With -D MONO_MOCK_AUTO=1 it boots into "cycle".
 void monoMockHandleSerial();
 bool monoMockActive();

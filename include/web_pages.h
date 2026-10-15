@@ -603,6 +603,18 @@ R"rawliteral(
       <input type="checkbox" id="mno_splash" value="1" %MONO_SPLASH% onchange="toggleSetting('mno_splash',this.checked)">
       <label for="mno_splash">Show boot screen with WiFi/IP (off = straight to clock)</label>
     </label>
+    <div class="field" style="margin-top:var(--sp-3)">
+      <label>Weather on the idle clock (OpenWeatherMap, every 5 min while idle)</label>
+      <label class="check-row">
+        <input type="checkbox" id="mno_wen" value="1" %MONO_WEN% onchange="toggleSetting('mno_wen',this.checked)">
+        <label for="mno_wen">Show weather icon + temperature</label>
+      </label>
+      <label for="mno_wkey">API key</label>
+      <input type="text" id="mno_wkey" class="mono" value="%MONO_WKEY%" placeholder="32-char API key" maxlength="64">
+      <label for="mno_wq" style="margin-top:var(--sp-2)">Location</label>
+      <input type="text" id="mno_wq" class="mono" value="%MONO_WQ%" placeholder="Madrid,ES" maxlength="63">
+      <div class="hint">Free key from openweathermap.org. Use City,CC with no spaces. Key + location save with Apply Display Settings below.</div>
+    </div>
   </div>
 
 %EXTENDED_MODES_CARD%

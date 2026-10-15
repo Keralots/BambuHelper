@@ -28,6 +28,9 @@ MonoDisplaySettings monoSettings = {
   /*showHotIdle*/       true,
   /*showClockIdle*/     true,
   /*showSplash*/        true,
+  /*weatherEnabled*/    false,
+  /*weatherKey*/        "",
+  /*weatherQuery*/      "Madrid,ES",
 };
 GaugeLabels gaugeLabels;
 NetworkSettings netSettings;
@@ -639,6 +642,11 @@ void loadSettings() {
   monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
   monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
   monoSettings.showSplash = prefs.getBool("mno_splash", true);
+  monoSettings.weatherEnabled = prefs.getBool("mno_wen", false);
+  strlcpy(monoSettings.weatherKey, prefs.getString("mno_wkey", "").c_str(),
+          sizeof(monoSettings.weatherKey));
+  strlcpy(monoSettings.weatherQuery, prefs.getString("mno_wq", "Madrid,ES").c_str(),
+          sizeof(monoSettings.weatherQuery));
   {
     uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
     dispSettings.glowMode = (gm <= 2) ? gm : 0;
@@ -1019,6 +1027,9 @@ void saveSettings() {
   prefs.putBool("mno_hot", monoSettings.showHotIdle);
   prefs.putBool("mno_clk", monoSettings.showClockIdle);
   prefs.putBool("mno_splash", monoSettings.showSplash);
+  prefs.putBool("mno_wen", monoSettings.weatherEnabled);
+  prefs.putString("mno_wkey", monoSettings.weatherKey);
+  prefs.putString("mno_wq", monoSettings.weatherQuery);
   prefs.putUShort("dsp_nozmx", dispSettings.nozzleScaleMax);
   prefs.putUShort("dsp_bedmx", dispSettings.bedScaleMax);
   prefs.putUShort("dsp_chbmx", dispSettings.chamberScaleMax);

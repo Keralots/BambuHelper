@@ -3,6 +3,7 @@
 #ifdef BOARD_IS_MONO
 
 #include "mono_display.h"
+#include "mono_weather.h"
 #include "bambu_state.h"
 #include "config.h"
 #include "settings.h"
@@ -524,20 +525,43 @@ static void renderFinish(const BambuState &st) {
 static void renderIdle(const BambuState &st) {
   oled.clearDisplay();
   s_marqueeActive = false;  // no title on idle: don't inherit a marquee cadence
-  // Big clock, no title. Big temps when NTP is down
-  // or when the clock is disabled in the web UI.
-  oled.setFont(&FreeMonoBold9pt7b);
-  if (monoSettings.showClockIdle && ntpOk()) {
-    oled.setTextSize(2);
-    char clk[8];
-    fmtClock(clk, sizeof(clk));
-    int16_t x1, y1;
-    uint16_t w, h;
-    oled.getTextBounds(String(clk), 0, 0, &x1, &y1, &w, &h);
-    oled.setCursor((128 - (int)w) / 2, 44);
-    oled.print(clk);
+  if (monoSettings.showClockIdle) {
+    // Spotify clock (ESP-Spotify-OLED printLocalTime): default font, time at
+    // size 3 on (20,5), 30x30 weather icon at (23,32), size-2 temperature at
+    // (60,40) with the degree bitmap. No printer temps here by design.
+    oled.setFont();
+    oled.setTextSize(3);
+    oled.setCursor(20, 5);
+    if (ntpOk()) {
+      char clk[8];
+      fmtClock(clk, sizeof(clk));
+      oled.print(clk);
+    } else {
+      oled.print("--:--");
+    }
+    if (monoSettings.weatherEnabled || monoMockActive()) {
+      MonoWeatherData w;
+      bool have = monoWeatherGet(w);
+      char tmp[8];
+      if (have)
+        snprintf(tmp, sizeof(tmp), "%d", tempInt(w.tempC));
+      else
+        snprintf(tmp, sizeof(tmp), "--");
+      size_t n = strlen(tmp);
+      oled.drawBitmap(23, 32, monoWeatherIcon(have ? w.icon : ""),
+                      MONO_WX_ICON_W, MONO_WX_ICON_H, SH110X_WHITE);
+      oled.setTextSize(2);
+      oled.setCursor(60, 40);
+      oled.print(tmp);
+      oled.drawBitmap(60 + 2 + n * 12, 40, monoDegreeBmp(), 8, 10, SH110X_WHITE);
+      oled.setCursor(60 + 2 + 9 + n * 12, 40);
+      oled.print("C");
+    }
+    oled.setFont();
+    oled.setTextSize(1);
   } else {
     // Big actual temps with icons (targets rarely matter in idle).
+    oled.setFont(&FreeMonoBold9pt7b);
     oled.setTextSize(1);
     char nb[8], bb[8];
     snprintf(nb, sizeof(nb), "%d", tempInt(st.nozzleTemp));
@@ -555,14 +579,15 @@ static void renderIdle(const BambuState &st) {
     x += 12;
     oled.setCursor(x, 42);
     oled.print(bb);
-  }
-  oled.setFont();
-  oled.setTextSize(1);
+    oled.setFont();
+    oled.setTextSize(1);
 
-  // Bottom row (y = 56): HOT on the left ...
-  oled.setCursor(0, BOTTOM_Y);
-  if (monoSettings.showHotIdle && st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
-    oled.print("HOT ");
+    // HOT warning lives on this fallback screen (the Spotify clock above has
+    // no room for it).
+    oled.setCursor(0, BOTTOM_Y);
+    if (monoSettings.showHotIdle && st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
+      oled.print("HOT ");
+    }
   }
 
   // ... and a status indicator in the bottom-right corner (8x8 box at 116,56):
@@ -650,11 +675,13 @@ struct MonoSig {
   char job[40];
   int clockMin;  // for the idle clock
   int8_t timeAlt;  // remaining/end-time alternation phase (repaints on toggle)
-  uint8_t monoFlags;  // web toggles bitmask: a flip must repaint immediately
+  uint16_t monoFlags;  // web toggles bitmask: a flip must repaint immediately
+  int wtemp;       // weather temp on the idle clock
+  char wicon[4];   // weather code on the idle clock
 };
 
-static uint8_t monoFlagsNow() {
-  uint8_t f = 0;
+static uint16_t monoFlagsNow() {
+  uint16_t f = 0;
   if (monoSettings.showTempsPrinting) f |= 0x01;
   if (monoSettings.showTempsDone) f |= 0x02;
   if (monoSettings.showTimePrinting) f |= 0x04;
@@ -663,6 +690,7 @@ static uint8_t monoFlagsNow() {
   if (monoSettings.showBar) f |= 0x20;
   if (monoSettings.showHotIdle) f |= 0x40;
   if (monoSettings.showClockIdle) f |= 0x80;
+  if (monoSettings.weatherEnabled) f |= 0x100;
   return f;
 }
 
@@ -692,6 +720,14 @@ static MonoSig makeSig(MonoScreen scr, MonoScreen rawScr, const BambuState &st) 
   strlcpy(s.job, j.c_str(), sizeof(s.job));
   s.timeAlt = (int8_t)endTimeAltPhase();
   s.monoFlags = monoFlagsNow();
+  MonoWeatherData w;
+  if (monoWeatherGet(w)) {
+    s.wtemp = tempInt(w.tempC);
+    strlcpy(s.wicon, w.icon, sizeof(s.wicon));
+  } else {
+    s.wtemp = -999;
+    s.wicon[0] = '\0';
+  }
   if (ntpOk()) {
     time_t now = time(nullptr);
     struct tm tmv;
@@ -709,7 +745,8 @@ static bool sigSame(const MonoSig &a, const MonoSig &b) {
          a.nzl == b.nzl && a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT &&
          a.err == b.err && a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
          a.clockMin == b.clockMin && a.timeAlt == b.timeAlt &&
-         a.monoFlags == b.monoFlags;
+         a.monoFlags == b.monoFlags && a.wtemp == b.wtemp &&
+         strcmp(a.wicon, b.wicon) == 0;
 }
 
 static void renderNow(MonoScreen scr, const BambuState &st) {
@@ -834,9 +871,9 @@ static void mockBuild(int idx, BambuState &o) {
 }
 
 static void mockHelp() {
-  Serial.println(F("mock: 0 print 0% short | 1 print 50% 20ch | 2 print long marquee | "
+  Serial.println(F("mock: 0 print 0% short | 1 print 50% 20ch | 2 print long wrap | "
                    "3 pause | 4 done | 5 error | 6 cold idle | 7 hot idle | 8 offline"));
-  Serial.println(F("usage: mock <n> | mock cycle | mock off"));
+  Serial.println(F("usage: mock <n> | mock cycle | mock off | mock w<code> (demo weather icon, empty clears)"));
 }
 
 static String s_serLine = "";
@@ -866,6 +903,11 @@ void monoMockHandleSerial() {
           s_mockLastMs = millis();
           s_haveLast = false;
           Serial.println(F("mock cycle: rotating 9 screens every 3 s"));
+        } else if (arg[0] == 'w') {
+          // Demo weather icon for the idle clock ("mock w10d", "mock w" clears).
+          // Checked before the numeric branch: toInt("w10d") is 0.
+          monoWeatherSetDemo(arg.substring(1).c_str());
+          s_haveLast = false;  // repaint the idle clock with the new icon
         } else {
           int idx = arg.toInt();
           if (idx >= 0 && idx <= 8) {
@@ -1006,6 +1048,14 @@ void monoDisplayTick() {
   const BambuState &st = *src;
   MonoScreen raw = monoSelectScreen(st);
   MonoScreen scr = monoEffectiveScreen(raw);
+  // Weather only feeds the idle clock: polling here keeps it off the
+  // printing path (no extra TLS while MQTT streams) and off the mock path
+  // (mock uses the "mock w<code>" demo instead of the network).
+#if MONO_MOCK
+  if (scr == MONO_SCR_IDLE && !s_mockOn) monoWeatherPoll();
+#else
+  if (scr == MONO_SCR_IDLE) monoWeatherPoll();
+#endif
   MonoSig sig = makeSig(scr, raw, st);
   bool changed = !s_haveLast || !sigSame(sig, s_last);
   unsigned long now = millis();
