@@ -343,6 +343,19 @@ static void drawTempsRow(int y, float nzl, float nzlT, float bed, float bedT) {
 
 static bool ntpOk() { return time(nullptr) > (time_t)NTP_SYNCED_EPOCH; }
 
+// Printer liveness for the idle corner icon: connected flag + fresh data.
+// Mirrors the main state machine's freshness rule (BAMBU_STALE_TIMEOUT, x5 in
+// cloud mode where the broker outlives the printer).
+static bool monoPrinterLive(const BambuState &st) {
+  if (!st.connected) return false;
+  if (st.lastUpdate == 0) return false;
+  unsigned long staleMs = (unsigned long)BAMBU_STALE_TIMEOUT;
+  if (activePrinterIndex < MAX_PRINTERS &&
+      isCloudMode(printers[activePrinterIndex].config.mode))
+    staleMs *= 5UL;
+  return (millis() - st.lastUpdate) <= staleMs;
+}
+
 static void fmtClock(char *dst, size_t n) {
   time_t now = time(nullptr);
   struct tm tmv;
@@ -523,7 +536,10 @@ static void renderIdle(const BambuState &st) {
 
   // ... and a status indicator in the bottom-right corner (8x8 box at 116,56):
   // warn triangle when the network is down, X when the printer is off,
-  // empty circle when idle and all good.
+  // empty circle when idle and all good. Liveness needs fresh data, not just
+  // the MQTT flag: in cloud mode the broker stays reachable with the printer
+  // off, and LAN keepalive takes a minute to fail - both painted a stale
+  // circle instead of the X.
   const int iconX = 116;
   const int iconY = 56;
   if (!isWiFiConnected() || isAPMode()) {
@@ -531,7 +547,7 @@ static void renderIdle(const BambuState &st) {
                       SH110X_WHITE);
     oled.drawFastVLine(iconX + 3, iconY + 2, 3, SH110X_WHITE);
     oled.drawPixel(iconX + 3, iconY + 6, SH110X_WHITE);
-  } else if (!st.connected) {
+  } else if (!monoPrinterLive(st)) {
     oled.drawLine(iconX, iconY, iconX + 7, iconY + 7, SH110X_WHITE);
     oled.drawLine(iconX + 7, iconY, iconX, iconY + 7, SH110X_WHITE);
   } else {
@@ -690,6 +706,7 @@ static unsigned long s_mockLastMs = 0;
 static void mockBuild(int idx, BambuState &o) {
   memset(&o, 0, sizeof(o));
   o.connected = true;
+  o.lastUpdate = millis();  // live data: keeps monoPrinterLive() true
   o.progress = 0;
   o.remainingMinutes = 0;
   switch (idx) {
