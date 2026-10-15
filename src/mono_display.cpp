@@ -6,6 +6,7 @@
 #include "bambu_state.h"
 #include "config.h"
 #include "settings.h"
+#include "wifi_manager.h"
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -478,23 +479,22 @@ static void renderFinish(const BambuState &st) {
 
 static void renderIdle(const BambuState &st) {
   oled.clearDisplay();
-  // 1. Fixed top title.
-  monoDrawTitle(String("Idle"));
-
-  // 2. Big centered clock (Spotify-clock style); big temps when NTP is down
+  s_marqueeActive = false;  // no title on idle: don't inherit a marquee cadence
+  // Big clock, no title. Big temps when NTP is down
   // or when the clock is disabled in the web UI.
   oled.setFont(&FreeMonoBold9pt7b);
-  oled.setTextSize(1);
   if (monoSettings.showClockIdle && ntpOk()) {
+    oled.setTextSize(2);
     char clk[8];
     fmtClock(clk, sizeof(clk));
     int16_t x1, y1;
     uint16_t w, h;
     oled.getTextBounds(String(clk), 0, 0, &x1, &y1, &w, &h);
-    oled.setCursor((128 - (int)w) / 2, 42);
+    oled.setCursor((128 - (int)w) / 2, 44);
     oled.print(clk);
   } else {
     // Big actual temps with icons (targets rarely matter in idle).
+    oled.setTextSize(1);
     char nb[8], bb[8];
     snprintf(nb, sizeof(nb), "%d", tempInt(st.nozzleTemp));
     snprintf(bb, sizeof(bb), "%d", tempInt(st.bedTemp));
@@ -515,20 +515,27 @@ static void renderIdle(const BambuState &st) {
   oled.setFont();
   oled.setTextSize(1);
 
-  // 3. Bottom row (y = 56): HOT on the left ...
+  // Bottom row (y = 56): HOT on the left ...
   oled.setCursor(0, BOTTOM_Y);
   if (monoSettings.showHotIdle && st.nozzleTemp > (float)MONO_HOT_THRESHOLD_C) {
     oled.print("HOT ");
   }
 
-  // 4. ... and a connection indicator in the bottom-right corner.
+  // ... and a status indicator in the bottom-right corner (8x8 box at 116,56):
+  // warn triangle when the network is down, X when the printer is off,
+  // empty circle when idle and all good.
   const int iconX = 116;
-  const int iconY = 57;
-  if (st.connected) {
-    oled.fillRect(iconX, iconY + 2, 8, 4, SH110X_WHITE);
+  const int iconY = 56;
+  if (!isWiFiConnected() || isAPMode()) {
+    oled.drawTriangle(iconX + 3, iconY, iconX, iconY + 7, iconX + 7, iconY + 7,
+                      SH110X_WHITE);
+    oled.drawFastVLine(iconX + 3, iconY + 2, 3, SH110X_WHITE);
+    oled.drawPixel(iconX + 3, iconY + 6, SH110X_WHITE);
+  } else if (!st.connected) {
+    oled.drawLine(iconX, iconY, iconX + 7, iconY + 7, SH110X_WHITE);
+    oled.drawLine(iconX + 7, iconY, iconX, iconY + 7, SH110X_WHITE);
   } else {
-    oled.drawRect(iconX, iconY + 1, 8, 6, SH110X_WHITE);
-    oled.drawLine(iconX, iconY + 1, iconX + 7, iconY + 6, SH110X_WHITE);
+    oled.drawCircle(iconX + 4, iconY + 4, 3, SH110X_WHITE);
   }
   oled.display();
 }
