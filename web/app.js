@@ -1255,12 +1255,10 @@ function applyDisplay(){
   p.append('warn_clr', document.getElementById('warn_clr').value);
   /* Mono OLED rows save instantly on change, but Apply posts the whole form:
      without these the full-form save would wipe them all to off. */
-  if (document.getElementById('mno_ptmp').checked) p.append('mno_ptmp', '1');
   if (document.getElementById('mno_lyr').checked) p.append('mno_lyr', '1');
   if (document.getElementById('mno_bar').checked) p.append('mno_bar', '1');
   if (document.getElementById('mno_timalt').checked) p.append('mno_timalt', '1');
   if (document.getElementById('mno_ptim').checked) p.append('mno_ptim', '1');
-  if (document.getElementById('mno_endalt').checked) p.append('mno_endalt', '1');
   if (document.getElementById('mno_dtmp').checked) p.append('mno_dtmp', '1');
   if (document.getElementById('mno_clk').checked) p.append('mno_clk', '1');
   if (document.getElementById('mno_stat').checked) p.append('mno_stat', '1');
@@ -1464,7 +1462,7 @@ function applyMonoVisibility(){
   if (ps){
     var cards = ps.querySelectorAll('.card');
     for (var c = 0; c < cards.length; c++){
-      if (!cards[c].querySelector('#mno_ptmp')) cards[c].hidden = true;
+      if (!cards[c].querySelector('#mno_lyr')) cards[c].hidden = true;
     }
   }
   // Clock section: the printer name/IP footer is a TFT status-bar concept.

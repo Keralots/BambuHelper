@@ -182,11 +182,9 @@ static void readDisplayFromForm() {
     if (tm >= 0 && tm <= 2) dispSettings.timeDisplayMode = (uint8_t)tm;
   }
   dispSettings.fanMatchPrinter = server.hasArg("fanmp");
-  monoSettings.showTempsPrinting = server.hasArg("mno_ptmp");
   monoSettings.showLayer = server.hasArg("mno_lyr");
   monoSettings.showBar = server.hasArg("mno_bar");
   monoSettings.showTimePrinting = server.hasArg("mno_ptim");
-  monoSettings.showEndTimeAlt = server.hasArg("mno_endalt");
   monoSettings.showTempsDone = server.hasArg("mno_dtmp");
   monoSettings.showClockIdle = server.hasArg("mno_clk");
   monoSettings.showStatusIdle = server.hasArg("mno_stat");
@@ -872,12 +870,10 @@ static void handleToggleSetting() {
   else if (key == "timem")   dispSettings.timeDisplayMode = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
   else if (key == "fanmp")   dispSettings.fanMatchPrinter = on;
   else if (key == "hidelp")  dispSettings.hideStatusReadout = on;
-  else if (key == "mno_ptmp") monoSettings.showTempsPrinting = on;
   else if (key == "mno_lyr") monoSettings.showLayer = on;
   else if (key == "mno_bar") monoSettings.showBar = on;
   else if (key == "mno_timalt") monoSettings.showTimeAlt = on;
   else if (key == "mno_ptim") monoSettings.showTimePrinting = on;
-  else if (key == "mno_endalt") monoSettings.showEndTimeAlt = on;
   else if (key == "mno_dtmp") monoSettings.showTempsDone = on;
   else if (key == "mno_clk") monoSettings.showClockIdle = on;
   else if (key == "mno_stat") monoSettings.showStatusIdle = on;
@@ -1806,10 +1802,8 @@ static void handleSettingsExport() {
   disp["fanMatchPrinter"] = dispSettings.fanMatchPrinter;
   disp["hideStatusReadout"] = dispSettings.hideStatusReadout;
   JsonObject mono = disp["mono"].to<JsonObject>();
-  mono["showTempsPrinting"] = monoSettings.showTempsPrinting;
   mono["showTempsDone"] = monoSettings.showTempsDone;
   mono["showTimePrinting"] = monoSettings.showTimePrinting;
-  mono["showEndTimeAlt"] = monoSettings.showEndTimeAlt;
   mono["showLayer"] = monoSettings.showLayer;
   mono["showBar"] = monoSettings.showBar;
   mono["showTimeAlt"] = monoSettings.showTimeAlt;
@@ -2242,10 +2236,8 @@ static void handleSettingsImportFinish() {
 
     JsonObject mono = disp["mono"];
     if (mono) {
-      if (mono["showTempsPrinting"].is<bool>()) monoSettings.showTempsPrinting = mono["showTempsPrinting"].as<bool>();
       if (mono["showTempsDone"].is<bool>()) monoSettings.showTempsDone = mono["showTempsDone"].as<bool>();
       if (mono["showTimePrinting"].is<bool>()) monoSettings.showTimePrinting = mono["showTimePrinting"].as<bool>();
-      if (mono["showEndTimeAlt"].is<bool>()) monoSettings.showEndTimeAlt = mono["showEndTimeAlt"].as<bool>();
       if (mono["showLayer"].is<bool>()) monoSettings.showLayer = mono["showLayer"].as<bool>();
       if (mono["showBar"].is<bool>()) monoSettings.showBar = mono["showBar"].as<bool>();
       if (mono["showTimeAlt"].is<bool>()) monoSettings.showTimeAlt = mono["showTimeAlt"].as<bool>();

@@ -568,10 +568,6 @@ R"rawliteral(
   <div class="card">
     <div class="card-head"><div><h3>Mono OLED</h3><p>Which rows the 128x64 OLED shows. Applies to the mono-c3 board only; other boards ignore it.</p></div></div>
     <label class="check-row">
-      <input type="checkbox" id="mno_ptmp" value="1" %MONO_PTMP% onchange="toggleSetting('mno_ptmp',this.checked)">
-      <label for="mno_ptmp">Show temps while printing</label>
-    </label>
-    <label class="check-row">
       <input type="checkbox" id="mno_lyr" value="1" %MONO_LYR% onchange="toggleSetting('mno_lyr',this.checked)">
       <label for="mno_lyr">Show Layer line while printing</label>
     </label>
@@ -586,10 +582,6 @@ R"rawliteral(
     <label class="check-row">
       <input type="checkbox" id="mno_ptim" value="1" %MONO_PTIM% onchange="toggleSetting('mno_ptim',this.checked)">
       <label for="mno_ptim">Show remaining time while printing</label>
-    </label>
-    <label class="check-row">
-      <input type="checkbox" id="mno_endalt" value="1" %MONO_ENDALT% onchange="toggleSetting('mno_endalt',this.checked)">
-      <label for="mno_endalt">Alternate remaining with end time (needs clock)</label>
     </label>
     <label class="check-row">
       <input type="checkbox" id="mno_dtmp" value="1" %MONO_DTMP% onchange="toggleSetting('mno_dtmp',this.checked)">

@@ -384,14 +384,12 @@ struct TasmotaSettings {
 };
 
 // Mono OLED (SH1106 128x64) display options. Factory defaults follow the
-// tuned mono layout: temps rows, idle status icon and HOT warning off; the
-// time/ETA/done-time alternation, layer line, bar, idle clock and splash on.
+// tuned mono layout: done-time temps, idle status icon and HOT warning off;
+// the time/ETA alternation, layer line, bar, idle clock and splash on.
 // Stored as individual NVS bools like the rest of DisplaySettings.
 struct MonoDisplaySettings {
-  bool showTempsPrinting; // temps row while printing/prepare
   bool showTempsDone;     // temps row on the Done screen
   bool showTimePrinting;  // bottom-right remaining/end time while printing
-  bool showEndTimeAlt;    // alternate remaining with the bare end time (needs NTP)
   bool showLayer;         // Layer x/y line while printing
   bool showBar;           // progress bar while printing
   bool showTimeAlt;       // alternate remaining time and ETA bottom-right every 5 s

@@ -402,19 +402,6 @@ static void fmtClockMode(char *dst, size_t n, bool *pm) {
     snprintf(dst, n, "%d:%02d", h, tmv.tm_min);
 }
 
-// Bottom row: remaining time, alternating with the bare end time
-// every MONO_END_TIME_ALT_MS (needs NTP; without a clock it stays put).
-static int endTimeAltPhase() {
-#if MONO_SHOW_END_TIME
-  if (!monoSettings.showEndTimeAlt) return 0;
-  if (!ntpOk()) return 0;
-  return (int)((millis() / (unsigned long)MONO_END_TIME_ALT_MS) % 2);
-#else
-  return 0;
-#endif
-}
-
-
 // --- One render per screen (all end with display()) ----------------------------
 static void wrapJobName2Lines(const String &clean, String &l1, String &l2);
 
@@ -526,12 +513,12 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
     oled.print(pctBuf);
   }
-  char layerBuf[16];
-  if (!hasData || st.totalLayers == 0)
-    snprintf(layerBuf, sizeof(layerBuf), "--/--");
-  else
-    snprintf(layerBuf, sizeof(layerBuf), "%u/%u", st.layerNum, st.totalLayers);
-  {
+  if (monoSettings.showLayer) {
+    char layerBuf[16];
+    if (!hasData || st.totalLayers == 0)
+      snprintf(layerBuf, sizeof(layerBuf), "--/--");
+    else
+      snprintf(layerBuf, sizeof(layerBuf), "%u/%u", st.layerNum, st.totalLayers);
     int16_t x1, y1;
     uint16_t w, h;
     oled.getTextBounds(layerBuf, 0, 0, &x1, &y1, &w, &h);
@@ -545,17 +532,20 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
                                                 isPause && blinkOn);
 
   // ── Fila bajo la barra: proceso actual a la izq | tiempo restante / ETA a la der ──
-  //     si showTimeAlt, se intercalan cada 5 s.
+  //     si showTimeAlt, se intercalan cada 5 s. Con showTimePrinting off la
+  //     fila queda sin tiempo a la derecha y el proceso ocupa todo el ancho.
   const char* stageTxt = stageToText(st);
   int16_t x1, y1;
   uint16_t etaW, etaH;
   int etaX = 128;
   char bottomRightBuf[16];
-  if (!hasData || st.gcodeStateId == GCODE_FAILED ||
-      st.gcodeStateId == GCODE_FINISH) {
+  if (!monoSettings.showTimePrinting) {
+    bottomRightBuf[0] = 0;
+  } else if (!hasData || st.gcodeStateId == GCODE_FAILED ||
+             st.gcodeStateId == GCODE_FINISH) {
     snprintf(bottomRightBuf, sizeof(bottomRightBuf), "--:--");
   } else if (monoSettings.showTimeAlt &&
-             (int)((millis() / 5000UL) % 2) == 1) {
+             (int)((millis() / (unsigned long)MONO_END_TIME_ALT_MS) % 2) == 1) {
     snprintf(bottomRightBuf, sizeof(bottomRightBuf), "%s",
              fmtRemainingShort((int)st.remainingMinutes).c_str());
   } else {
@@ -847,7 +837,6 @@ struct MonoSig {
   bool connected;
   char job[40];
   int clockMin;  // for the idle clock
-  int8_t timeAlt;  // remaining/end-time alternation phase (repaints on toggle)
   int8_t printTimeAlt;  // printing remaining/ETA alternation phase (repaints on toggle)
   uint16_t monoFlags;  // web toggles bitmask: a flip must repaint immediately
   int wtemp;       // weather temp on the idle clock
@@ -856,12 +845,11 @@ struct MonoSig {
 
 static uint16_t monoFlagsNow() {
   uint16_t f = 0;
-  if (monoSettings.showTempsPrinting) f |= 0x01;
-  if (monoSettings.showTempsDone) f |= 0x02;
-  if (monoSettings.showTimePrinting) f |= 0x04;
-  if (monoSettings.showEndTimeAlt) f |= 0x08;
-  if (monoSettings.showLayer) f |= 0x10;
-  if (monoSettings.showBar) f |= 0x20;
+  if (monoSettings.showTempsDone) f |= 0x01;
+  if (monoSettings.showTimePrinting) f |= 0x02;
+  if (monoSettings.showTimeAlt) f |= 0x04;
+  if (monoSettings.showLayer) f |= 0x08;
+  if (monoSettings.showBar) f |= 0x10;
   if (monoSettings.showHotIdle) f |= 0x40;
   if (monoSettings.showClockIdle) f |= 0x80;
   if (monoSettings.weatherEnabled) f |= 0x100;
@@ -894,9 +882,10 @@ static MonoSig makeSig(MonoScreen scr, MonoScreen rawScr, const BambuState &st) 
   s.connected = st.connected;
   String j = monoCleanJobName(jobDisplayName(st));
   strlcpy(s.job, j.c_str(), sizeof(s.job));
-  s.timeAlt = (int8_t)endTimeAltPhase();
   s.printTimeAlt =
-      monoSettings.showTimeAlt ? (int8_t)((millis() / 5000UL) % 2) : 0;
+      monoSettings.showTimeAlt
+          ? (int8_t)((millis() / (unsigned long)MONO_END_TIME_ALT_MS) % 2)
+          : 0;
   s.monoFlags = monoFlagsNow();
   MonoWeatherData w;
   if (monoWeatherGet(w)) {
@@ -922,7 +911,7 @@ static bool sigSame(const MonoSig &a, const MonoSig &b) {
          a.remaining == b.remaining && a.layer == b.layer && a.total == b.total &&
          a.nzl == b.nzl && a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT &&
          a.err == b.err && a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
-         a.clockMin == b.clockMin && a.timeAlt == b.timeAlt &&
+         a.clockMin == b.clockMin &&
          a.printTimeAlt == b.printTimeAlt &&
          a.monoFlags == b.monoFlags && a.wtemp == b.wtemp &&
          strcmp(a.wicon, b.wicon) == 0;
