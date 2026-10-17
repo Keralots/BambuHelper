@@ -93,7 +93,7 @@ String monoCleanJobName(const char *raw);
 String monoFormatRemaining(int minutes);  // <0 = no data -> "--"
 
 // Drawing helpers (they use the internal oled; icons are XBM bitmaps, no font glyphs).
-void monoDrawProgressBar(int y, int percent);          // drawRect(0,y,128,6)+fillRect map()
+void monoDrawProgressBar(int y, int percent, bool blinkOn = false);  // drawRect+fillRect map(); blink oculta el relleno cada ~500 ms
 void monoDrawStatusIcon(int x, int y, MonoScreen s);   // triangle / pause / error / check
 void monoDrawTitle(const String &clean);               // 1 row, static or marquee
 

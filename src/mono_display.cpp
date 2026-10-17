@@ -149,12 +149,14 @@ String monoFormatRemaining(int minutes) {
   return String(buf);
 }
 
-void monoDrawProgressBar(int y, int percent) {
+void monoDrawProgressBar(int y, int percent, bool blinkOn) {
   if (percent < 0) percent = 0;
   if (percent > 100) percent = 100;
   // Same bar as Spotify: drawRect + fillRect with map().
   oled.drawRect(0, y, 128, BAR_H, SH110X_WHITE);
-  oled.fillRect(0, y, map(percent, 0, 100, 0, 126), BAR_H, SH110X_WHITE);
+  int fill = map(percent, 0, 100, 0, 126);
+  if (blinkOn) fill = 0;  // parpadeo de la barra (relleno) en pausa
+  oled.fillRect(0, y, fill, BAR_H, SH110X_WHITE);
 }
 
 void monoDrawStatusIcon(int x, int y, MonoScreen s) {
@@ -412,25 +414,6 @@ static int endTimeAltPhase() {
 #endif
 }
 
-static String bottomTime(const BambuState &st, int altPhase) {
-#if MONO_SHOW_END_TIME
-  if (altPhase == 1 && (int)st.remainingMinutes >= 0 && st.remainingMinutes < 60 * 48) {
-    time_t end = time(nullptr) + (time_t)st.remainingMinutes * 60;
-    struct tm tmv;
-    localtime_r(&end, &tmv);
-    char buf[16];
-    bool isPM = false;
-    int h = monoClockHour(tmv.tm_hour, &isPM);
-    if (netSettings.use24h)
-      snprintf(buf, sizeof(buf), "%02d:%02d", h, tmv.tm_min);
-    else
-      snprintf(buf, sizeof(buf), "%d:%02d%s", h, tmv.tm_min, isPM ? "pm" : "am");
-    return String(buf);
-  }
-#endif
-  if (!st.connected) return String("--");
-  return monoFormatRemaining((int)st.remainingMinutes);
-}
 
 // --- One render per screen (all end with display()) ----------------------------
 static void wrapJobName2Lines(const String &clean, String &l1, String &l2);
@@ -441,14 +424,87 @@ static void wrapJobName2Lines(const String &clean, String &l1, String &l2);
 // with the remaining/end time bottom-right.
 static const int PRINT_TITLE_Y1 = 13;
 static const int PRINT_TITLE_Y2 = 26;
-static const int PRINT_INFO_Y1 = 31;
-static const int PRINT_INFO_Y2 = 41;
-static const int PRINT_BAR_Y = 50;
-static const int PRINT_BOTTOM_Y = 57;
+static const int PRINT_INFO_Y1 = 36;  // subido 2 px para no tocar la barra
+static const int PRINT_BAR_Y = 46;    // subida 4 px
+static const int PRINT_BOTTOM_Y = 55; // subido 2 px más
+
+// Tiempo restante corto: "-53m" / "-1h05m", "--" sin datos.
+static String fmtRemainingShort(int minutes) {
+  char buf[16];
+  if (minutes < 0) return String("--");
+  if (minutes < 60) {
+    snprintf(buf, sizeof(buf), "-%dm", minutes);
+  } else {
+    snprintf(buf, sizeof(buf), "-%dh%02dm", minutes / 60, minutes % 60);
+  }
+  return String(buf);
+}
+
+// ETA = hora local (NTP + zona horaria con DST) + minutos restantes.
+// Formato 24h (sin la palabra "ETA"), "+Nd" si cruza medianoche, "--:--" sin reloj.
+static String fmtETA(const BambuState &st) {
+  if (!ntpOk() || st.remainingMinutes < 0) return String("--:--");
+  time_t now = time(nullptr);
+  struct tm nowtm, endtm;
+  localtime_r(&now, &nowtm);
+  time_t end = now + (time_t)st.remainingMinutes * 60;
+  localtime_r(&end, &endtm);
+  int dayDiff = (endtm.tm_yday - nowtm.tm_yday) +
+                (endtm.tm_year - nowtm.tm_year) * 365;
+  if (dayDiff < 0) dayDiff = 0;
+  char buf[16];
+  if (dayDiff > 0)
+    snprintf(buf, sizeof(buf), "%02d:%02d+%d", endtm.tm_hour, endtm.tm_min,
+             dayDiff);
+  else
+    snprintf(buf, sizeof(buf), "%02d:%02d", endtm.tm_hour, endtm.tm_min);
+  return String(buf);
+}
+
+// Texto del proceso actual (fila bajo la barra, izquierda). Mapa único.
+static const char* stageToText(const BambuState &st) {
+  switch (st.gcodeStateId) {
+    case GCODE_PAUSE:   return "[Paused]";
+    case GCODE_FINISH:  return "[Finished]";
+    case GCODE_FAILED:  return "[Cancelled]";
+    default: break;
+  }
+  if (st.gcodeStateId == GCODE_RUNNING ||
+      st.gcodeStateId == GCODE_PREPARE) {
+    switch (st.stgCur) {
+      case 1:   case 40: case 47: case 48: return "Auto bed leveling";
+      case 2:   return "Heating bed";
+      case 7:   return "Heating nozzle";
+      case 49:  return "Heating chamber";
+      case 14:  return "Cleaning nozzle";
+      case 8:   case 19: case 12: case 18: return "Calibrating";
+      case 4:   case 22: case 24: return "Changing filament";
+      case 0:   return "Printing";
+      default: {
+        const char* lbl = stgCurLabel(st.stgCur);
+        return lbl ? lbl : "Printing";
+      }
+    }
+  }
+  static char buf[16];
+  const char* s = st.gcodeState;
+  if (!s || !s[0]) return "Unknown";
+  buf[0] = (char)toupper((unsigned char)s[0]);
+  size_t i;
+  for (i = 1; s[i] && i < sizeof(buf) - 1; i++)
+    buf[i] = (char)tolower((unsigned char)s[i]);
+  buf[i] = 0;
+  return buf;
+}
 
 static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.clearDisplay();
   s_marqueeActive = false;  // 2-line wrap never overflows: no marquee here
+  bool hasData = st.lastPrintDataMs != 0;
+  int pct = hasData ? (int)st.progress : 0;
+  bool isPause = (scr == MONO_SCR_PAUSE);
+
+  // ── Título: 2 líneas, sin cambios respecto al layout anterior ──
   String l1, l2;
   wrapJobName2Lines(monoCleanJobName(jobDisplayName(st)), l1, l2);
   oled.setFont(&FreeMonoBold9pt7b);
@@ -460,45 +516,83 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   }
   oled.setFont();
   oled.setTextSize(1);
-  if (monoSettings.showLayer) {
-    oled.setCursor(0, PRINT_INFO_Y1);
-    char line[32];
-    if (st.totalLayers > 0) {
-      snprintf(line, sizeof(line), "Layer %u/%u", st.layerNum, st.totalLayers);
-      oled.print(line);
-    } else if (st.layerNum > 0) {
-      snprintf(line, sizeof(line), "Layer %u", st.layerNum);
-      oled.print(line);
-    }
+
+  // ── Fila sobre la barra: % a la izquierda | capa/total + -tiempo a la derecha ──
+  oled.setCursor(0, PRINT_INFO_Y1);
+  if (!hasData)
+    oled.print(F("--%"));
+  else {
+    char pctBuf[8];
+    snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
+    oled.print(pctBuf);
   }
-  if (monoSettings.showTempsPrinting) {
-    char nb[16], bb[16];
-    fmtTempVal(nb, sizeof(nb), st.nozzleTemp, st.nozzleTarget);
-    fmtTempVal(bb, sizeof(bb), st.bedTemp, st.bedTarget);
-    oled.setCursor(0, PRINT_INFO_Y2);
-    oled.print(nb);
-    oled.print(" ");
-    oled.print(bb);
+  char layerBuf[32];
+  if (!hasData || st.totalLayers == 0)
+    snprintf(layerBuf, sizeof(layerBuf), "--/-- | --");
+  else
+    snprintf(layerBuf, sizeof(layerBuf), "%u/%u | %s", st.layerNum, st.totalLayers,
+             fmtRemainingShort((int)st.remainingMinutes).c_str());
+  {
+    int16_t x1, y1;
+    uint16_t w, h;
+    oled.getTextBounds(layerBuf, 0, 0, &x1, &y1, &w, &h);
+    oled.setCursor(128 - (int)w, PRINT_INFO_Y1);
+    oled.print(layerBuf);
   }
-  if (monoSettings.showBar) monoDrawProgressBar(PRINT_BAR_Y, st.progress);
-  // Bottom row: icon + % on the left, time on the right.
-  String pct = String((int)st.progress) + "%";
-  String t = monoSettings.showTimePrinting ? bottomTime(st, endTimeAltPhase()) : String("");
+
+  // ── Barra de progreso (estilo idéntico: borde 1 px, grosor BAR_H, relleno map());
+  //     en pausa el relleno parpadea cada ~500 ms (blinkOn, no bloqueante) ──
+  if (monoSettings.showBar) monoDrawProgressBar(PRINT_BAR_Y, pct,
+                                                isPause && blinkOn);
+
+  // ── Fila bajo la barra: proceso actual a la izquierda | ETA a la derecha ──
+  const char* stageTxt = stageToText(st);
+  String etaStr;
+  if (!hasData || st.gcodeStateId == GCODE_FAILED ||
+      st.gcodeStateId == GCODE_FINISH)
+    etaStr = String("--:--");
+  else
+    etaStr = fmtETA(st);
   int16_t x1, y1;
-  uint16_t w, h;
-  oled.getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
-  (void)x1;
-  (void)y1;
-  (void)h;
-  if (blinkOn) {
-    monoDrawStatusIcon(0, PRINT_BOTTOM_Y, scr);
-    oled.setCursor(11, PRINT_BOTTOM_Y);
-    oled.print(pct);
+  uint16_t etaW, etaH;
+  oled.getTextBounds(etaStr, 0, 0, &x1, &y1, &etaW, &etaH);
+  int etaX = 128 - (int)etaW;
+  int stageMaxW = etaX - 4;
+  char stageBuf[48];
+  if (stageMaxW > 0) {
+    int16_t sx1, sy1;
+    uint16_t sw, sh;
+    oled.getTextBounds(stageTxt, 0, 0, &sx1, &sy1, &sw, &sh);
+    if ((int)sw > stageMaxW) {
+      size_t len = strlen(stageTxt);
+      size_t cut = len;
+      while (cut > 0) {
+        char tmp[48];
+        size_t cp = (cut < sizeof(tmp) - 4) ? cut : sizeof(tmp) - 4;
+        memcpy(tmp, stageTxt, cp);
+        tmp[cp] = 0;
+        strlcat(tmp, "...", sizeof(tmp));
+        oled.getTextBounds(tmp, 0, 0, &sx1, &sy1, &sw, &sh);
+        if ((int)sw <= stageMaxW) break;
+        cut--;
+      }
+      char tmp[48];
+      size_t cp = (cut < sizeof(tmp) - 4) ? cut : sizeof(tmp) - 4;
+      memcpy(tmp, stageTxt, cp);
+      tmp[cp] = 0;
+      strlcat(tmp, "...", sizeof(tmp));
+      strlcpy(stageBuf, tmp, sizeof(stageBuf));
+    } else {
+      strlcpy(stageBuf, stageTxt, sizeof(stageBuf));
+    }
+  } else {
+    stageBuf[0] = 0;
   }
-  if (t.length() > 0) {
-    oled.setCursor(128 - (int)w, PRINT_BOTTOM_Y);
-    oled.print(t);
-  }
+  oled.setCursor(0, PRINT_BOTTOM_Y);
+  oled.print(stageBuf);
+  oled.setCursor(etaX, PRINT_BOTTOM_Y);
+  oled.print(etaStr);
+
   oled.display();
 }
 
