@@ -25,6 +25,7 @@ MonoDisplaySettings monoSettings = {
   /*showEndTimeAlt*/    true,
   /*showLayer*/         true,
   /*showBar*/           true,
+  /*showTimeAlt*/       false,
   /*showHotIdle*/       true,
   /*showClockIdle*/     true,
   /*showStatusIdle*/    true,
@@ -641,6 +642,7 @@ void loadSettings() {
   monoSettings.showEndTimeAlt = prefs.getBool("mno_endalt", true);
   monoSettings.showLayer = prefs.getBool("mno_lyr", true);
   monoSettings.showBar = prefs.getBool("mno_bar", true);
+  monoSettings.showTimeAlt = prefs.getBool("mno_timalt", false);
   monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
   monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
   monoSettings.showStatusIdle = prefs.getBool("mno_stat", true);
@@ -1028,6 +1030,7 @@ void saveSettings() {
   prefs.putBool("mno_endalt", monoSettings.showEndTimeAlt);
   prefs.putBool("mno_lyr", monoSettings.showLayer);
   prefs.putBool("mno_bar", monoSettings.showBar);
+  prefs.putBool("mno_timalt", monoSettings.showTimeAlt);
   prefs.putBool("mno_hot", monoSettings.showHotIdle);
   prefs.putBool("mno_clk", monoSettings.showClockIdle);
   prefs.putBool("mno_stat", monoSettings.showStatusIdle);

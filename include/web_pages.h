@@ -580,6 +580,10 @@ R"rawliteral(
       <label for="mno_bar">Show progress bar while printing</label>
     </label>
     <label class="check-row">
+      <input type="checkbox" id="mno_timalt" value="1" %MONO_TIMALT% onchange="toggleSetting('mno_timalt',this.checked)">
+      <label for="mno_timalt">Alternate remaining time and ETA bottom-right (5 s)</label>
+    </label>
+    <label class="check-row">
       <input type="checkbox" id="mno_ptim" value="1" %MONO_PTIM% onchange="toggleSetting('mno_ptim',this.checked)">
       <label for="mno_ptim">Show remaining time while printing</label>
     </label>

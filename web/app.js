@@ -1258,6 +1258,7 @@ function applyDisplay(){
   if (document.getElementById('mno_ptmp').checked) p.append('mno_ptmp', '1');
   if (document.getElementById('mno_lyr').checked) p.append('mno_lyr', '1');
   if (document.getElementById('mno_bar').checked) p.append('mno_bar', '1');
+  if (document.getElementById('mno_timalt').checked) p.append('mno_timalt', '1');
   if (document.getElementById('mno_ptim').checked) p.append('mno_ptim', '1');
   if (document.getElementById('mno_endalt').checked) p.append('mno_endalt', '1');
   if (document.getElementById('mno_dtmp').checked) p.append('mno_dtmp', '1');

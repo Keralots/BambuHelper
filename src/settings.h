@@ -392,6 +392,7 @@ struct MonoDisplaySettings {
   bool showEndTimeAlt;    // alternate remaining with the bare end time (needs NTP)
   bool showLayer;         // Layer x/y line while printing
   bool showBar;           // progress bar while printing
+  bool showTimeAlt;       // alternate remaining time and ETA bottom-right every 5 s
   bool showHotIdle;       // HOT warning on the idle screen
   bool showClockIdle;     // big clock on idle (off = big temps)
   bool showStatusIdle;    // connection X/circle on the idle clock

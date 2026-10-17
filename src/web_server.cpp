@@ -875,6 +875,7 @@ static void handleToggleSetting() {
   else if (key == "mno_ptmp") monoSettings.showTempsPrinting = on;
   else if (key == "mno_lyr") monoSettings.showLayer = on;
   else if (key == "mno_bar") monoSettings.showBar = on;
+  else if (key == "mno_timalt") monoSettings.showTimeAlt = on;
   else if (key == "mno_ptim") monoSettings.showTimePrinting = on;
   else if (key == "mno_endalt") monoSettings.showEndTimeAlt = on;
   else if (key == "mno_dtmp") monoSettings.showTempsDone = on;
@@ -1811,6 +1812,7 @@ static void handleSettingsExport() {
   mono["showEndTimeAlt"] = monoSettings.showEndTimeAlt;
   mono["showLayer"] = monoSettings.showLayer;
   mono["showBar"] = monoSettings.showBar;
+  mono["showTimeAlt"] = monoSettings.showTimeAlt;
   mono["showHotIdle"] = monoSettings.showHotIdle;
   mono["showClockIdle"] = monoSettings.showClockIdle;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
@@ -2246,6 +2248,7 @@ static void handleSettingsImportFinish() {
       if (mono["showEndTimeAlt"].is<bool>()) monoSettings.showEndTimeAlt = mono["showEndTimeAlt"].as<bool>();
       if (mono["showLayer"].is<bool>()) monoSettings.showLayer = mono["showLayer"].as<bool>();
       if (mono["showBar"].is<bool>()) monoSettings.showBar = mono["showBar"].as<bool>();
+      if (mono["showTimeAlt"].is<bool>()) monoSettings.showTimeAlt = mono["showTimeAlt"].as<bool>();
       if (mono["showHotIdle"].is<bool>()) monoSettings.showHotIdle = mono["showHotIdle"].as<bool>();
       if (mono["showClockIdle"].is<bool>()) monoSettings.showClockIdle = mono["showClockIdle"].as<bool>();
     }

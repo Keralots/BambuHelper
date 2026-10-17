@@ -517,7 +517,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.setFont();
   oled.setTextSize(1);
 
-  // ── Fila sobre la barra: % a la izquierda | capa/total + -tiempo a la derecha ──
+  // ── Fila sobre la barra: % a la izquierda | capa/total a la derecha ──
   oled.setCursor(0, PRINT_INFO_Y1);
   if (!hasData)
     oled.print(F("--%"));
@@ -526,12 +526,11 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
     oled.print(pctBuf);
   }
-  char layerBuf[32];
+  char layerBuf[16];
   if (!hasData || st.totalLayers == 0)
-    snprintf(layerBuf, sizeof(layerBuf), "--/-- | --");
+    snprintf(layerBuf, sizeof(layerBuf), "--/--");
   else
-    snprintf(layerBuf, sizeof(layerBuf), "%u/%u | %s", st.layerNum, st.totalLayers,
-             fmtRemainingShort((int)st.remainingMinutes).c_str());
+    snprintf(layerBuf, sizeof(layerBuf), "%u/%u", st.layerNum, st.totalLayers);
   {
     int16_t x1, y1;
     uint16_t w, h;
@@ -545,18 +544,25 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   if (monoSettings.showBar) monoDrawProgressBar(PRINT_BAR_Y, pct,
                                                 isPause && blinkOn);
 
-  // ── Fila bajo la barra: proceso actual a la izquierda | ETA a la derecha ──
+  // ── Fila bajo la barra: proceso actual a la izq | tiempo restante / ETA a la der ──
+  //     si showTimeAlt, se intercalan cada 5 s.
   const char* stageTxt = stageToText(st);
-  String etaStr;
-  if (!hasData || st.gcodeStateId == GCODE_FAILED ||
-      st.gcodeStateId == GCODE_FINISH)
-    etaStr = String("--:--");
-  else
-    etaStr = fmtETA(st);
   int16_t x1, y1;
   uint16_t etaW, etaH;
-  oled.getTextBounds(etaStr, 0, 0, &x1, &y1, &etaW, &etaH);
-  int etaX = 128 - (int)etaW;
+  int etaX = 128;
+  char bottomRightBuf[16];
+  if (!hasData || st.gcodeStateId == GCODE_FAILED ||
+      st.gcodeStateId == GCODE_FINISH) {
+    snprintf(bottomRightBuf, sizeof(bottomRightBuf), "--:--");
+  } else if (monoSettings.showTimeAlt &&
+             (int)((millis() / 5000UL) % 2) == 1) {
+    snprintf(bottomRightBuf, sizeof(bottomRightBuf), "%s",
+             fmtRemainingShort((int)st.remainingMinutes).c_str());
+  } else {
+    snprintf(bottomRightBuf, sizeof(bottomRightBuf), "%s", fmtETA(st).c_str());
+  }
+  oled.getTextBounds(bottomRightBuf, 0, 0, &x1, &y1, &etaW, &etaH);
+  etaX = 128 - (int)etaW;
   int stageMaxW = etaX - 4;
   char stageBuf[48];
   if (stageMaxW > 0) {
@@ -591,7 +597,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.setCursor(0, PRINT_BOTTOM_Y);
   oled.print(stageBuf);
   oled.setCursor(etaX, PRINT_BOTTOM_Y);
-  oled.print(etaStr);
+  oled.print(bottomRightBuf);
 
   oled.display();
 }
@@ -842,6 +848,7 @@ struct MonoSig {
   char job[40];
   int clockMin;  // for the idle clock
   int8_t timeAlt;  // remaining/end-time alternation phase (repaints on toggle)
+  int8_t printTimeAlt;  // printing remaining/ETA alternation phase (repaints on toggle)
   uint16_t monoFlags;  // web toggles bitmask: a flip must repaint immediately
   int wtemp;       // weather temp on the idle clock
   char wicon[4];   // weather code on the idle clock
@@ -888,6 +895,8 @@ static MonoSig makeSig(MonoScreen scr, MonoScreen rawScr, const BambuState &st) 
   String j = monoCleanJobName(jobDisplayName(st));
   strlcpy(s.job, j.c_str(), sizeof(s.job));
   s.timeAlt = (int8_t)endTimeAltPhase();
+  s.printTimeAlt =
+      monoSettings.showTimeAlt ? (int8_t)((millis() / 5000UL) % 2) : 0;
   s.monoFlags = monoFlagsNow();
   MonoWeatherData w;
   if (monoWeatherGet(w)) {
@@ -914,6 +923,7 @@ static bool sigSame(const MonoSig &a, const MonoSig &b) {
          a.nzl == b.nzl && a.nzlT == b.nzlT && a.bed == b.bed && a.bedT == b.bedT &&
          a.err == b.err && a.connected == b.connected && strcmp(a.job, b.job) == 0 &&
          a.clockMin == b.clockMin && a.timeAlt == b.timeAlt &&
+         a.printTimeAlt == b.printTimeAlt &&
          a.monoFlags == b.monoFlags && a.wtemp == b.wtemp &&
          strcmp(a.wicon, b.wicon) == 0;
 }

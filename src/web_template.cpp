@@ -314,6 +314,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "MONO_PTMP") == 0) { out = monoSettings.showTempsPrinting ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_LYR") == 0) { out = monoSettings.showLayer ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_BAR") == 0) { out = monoSettings.showBar ? "checked" : ""; return true; }
+  if (strcmp(name, "MONO_TIMALT") == 0) { out = monoSettings.showTimeAlt ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_PTIM") == 0) { out = monoSettings.showTimePrinting ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_ENDALT") == 0) { out = monoSettings.showEndTimeAlt ? "checked" : ""; return true; }
   if (strcmp(name, "MONO_DTMP") == 0) { out = monoSettings.showTempsDone ? "checked" : ""; return true; }
