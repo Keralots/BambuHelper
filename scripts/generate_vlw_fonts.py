@@ -61,6 +61,8 @@ FONTS = [
     # Card skin (HAS_CARD_SKIN boards only).
     ("inter_card_num", "Inter-Bold.ttf", 60, CARD_NUM_CHARSET),
     ("inter_card_lbl", "Inter-Bold.ttf", 10, CARD_LBL_CHARSET),
+    # Card temperature grid, 320x240 landscape (DISPLAY_240x320 boards).
+    ("inter_card_mid", "Inter-Bold.ttf", 32, CARD_NUM_CHARSET),
     # Card skin at 1.5x (DISPLAY_320x480 boards).
     ("inter_card_num_l", "Inter-Bold.ttf", 72, CARD_NUM_CHARSET),
     ("inter_card_lbl_l", "Inter-Bold.ttf", 14, CARD_LBL_CHARSET),

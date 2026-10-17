@@ -36,6 +36,12 @@ struct CardGeo {
   int16_t noAms;             // 1 = no room for an AMS column / strip
   int16_t k;                 // size scale in percent for fixed sizes and the font tier (100 / 150)
   int16_t valCap;            // cap height of the value face (degree ring placement)
+  // Printing with 4+ temperature cells (0 = no such variant): the cells as a
+  // grid in the bigger FONT_CARD_MID, hero rows at these lifted-header y values,
+  // band rule where the grid's second row ends at the panel bottom.
+  int16_t gdCols, gdRowH, gdLblOff, gdBaseOff, gdValCap;
+  int16_t gdNameCy, gdRemLblY, gdBigBase, gdBarY, gdLineCy;
+  int16_t valBig;            // runtime (frameGeo): band values in FONT_CARD_MID
 };
 
 // 320x240 landscape. Outer pad 1: the edge glow may overlap content (owner OK).
@@ -54,6 +60,9 @@ static const CardGeo CARD_GEO_LAND = {
   0, 0, 0, 0, 0, 0,
   0,
   100, 16,
+  3, 51, 5, 47, 24,
+  35, 48, 93, 102, 122,
+  0,
 };
 
 // 240x320 portrait: hero at the full 216 px width (same as the landscape hero
@@ -73,6 +82,9 @@ static const CardGeo CARD_GEO_PORT = {
   136, 154, 160, 188, 198, 0,
   0,
   100, 16,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0,
 };
 
 // 240x240 square: S1 layout. No AMS column/strip; temperatures 3x2 with
@@ -92,6 +104,9 @@ static const CardGeo CARD_GEO_SQ = {
   112, 132, 0, 0, 144, 1,
   1,
   100, 16,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0,
 };
 
 // 1.5x sets for the 320x480 profile (jc3248w535 and friends): fonts come from
@@ -111,6 +126,9 @@ static const CardGeo CARD_GEO_LAND_L = {      // 480x320
   0, 0, 0, 0, 0, 0,
   0,
   150, 19,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0,
 };
 
 static const CardGeo CARD_GEO_PORT_L = {      // 320x480
@@ -128,6 +146,9 @@ static const CardGeo CARD_GEO_PORT_L = {      // 320x480
   204, 231, 240, 282, 297, 0,
   0,
   150, 19,
+  0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0,
+  0,
 };
 
 #define LY_CARD_TEMP_MAX   6
