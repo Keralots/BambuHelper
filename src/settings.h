@@ -383,8 +383,10 @@ struct TasmotaSettings {
   bool    autoOffCancelOnDoor; // cancel this auto-off cycle if door opens while waiting
 };
 
-// Mono OLED (SH1106 128x64) display options. All default to true = current
-// behaviour. Stored as individual NVS bools like the rest of DisplaySettings.
+// Mono OLED (SH1106 128x64) display options. Factory defaults follow the
+// tuned mono layout: temps rows, idle status icon and HOT warning off; the
+// time/ETA/done-time alternation, layer line, bar, idle clock and splash on.
+// Stored as individual NVS bools like the rest of DisplaySettings.
 struct MonoDisplaySettings {
   bool showTempsPrinting; // temps row while printing/prepare
   bool showTempsDone;     // temps row on the Done screen

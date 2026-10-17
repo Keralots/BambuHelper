@@ -19,16 +19,16 @@ char wifiPass[65] = {0};
 uint8_t brightness = 200;
 DisplaySettings dispSettings;
 MonoDisplaySettings monoSettings = {
-  /*showTempsPrinting*/ true,
-  /*showTempsDone*/     true,
+  /*showTempsPrinting*/ false,
+  /*showTempsDone*/     false,
   /*showTimePrinting*/  true,
   /*showEndTimeAlt*/    true,
   /*showLayer*/         true,
   /*showBar*/           true,
-  /*showTimeAlt*/       false,
-  /*showHotIdle*/       true,
+  /*showTimeAlt*/       true,
+  /*showHotIdle*/       false,
   /*showClockIdle*/     true,
-  /*showStatusIdle*/    true,
+  /*showStatusIdle*/    false,
   /*showSplash*/        true,
   /*weatherEnabled*/    false,
   /*weatherKey*/        "",
@@ -636,16 +636,16 @@ void loadSettings() {
   if (dispSettings.gestHold > GH_NONE) dispSettings.gestHold = GH_LED;
   dispSettings.showBatteryIndicator = prefs.getBool("dsp_bat", def.showBatteryIndicator);
   dispSettings.hideStatusReadout = prefs.getBool("dsp_hidlp", def.hideStatusReadout);
-  monoSettings.showTempsPrinting = prefs.getBool("mno_ptmp", true);
-  monoSettings.showTempsDone = prefs.getBool("mno_dtmp", true);
+  monoSettings.showTempsPrinting = prefs.getBool("mno_ptmp", false);
+  monoSettings.showTempsDone = prefs.getBool("mno_dtmp", false);
   monoSettings.showTimePrinting = prefs.getBool("mno_ptim", true);
   monoSettings.showEndTimeAlt = prefs.getBool("mno_endalt", true);
   monoSettings.showLayer = prefs.getBool("mno_lyr", true);
   monoSettings.showBar = prefs.getBool("mno_bar", true);
-  monoSettings.showTimeAlt = prefs.getBool("mno_timalt", false);
-  monoSettings.showHotIdle = prefs.getBool("mno_hot", true);
+  monoSettings.showTimeAlt = prefs.getBool("mno_timalt", true);
+  monoSettings.showHotIdle = prefs.getBool("mno_hot", false);
   monoSettings.showClockIdle = prefs.getBool("mno_clk", true);
-  monoSettings.showStatusIdle = prefs.getBool("mno_stat", true);
+  monoSettings.showStatusIdle = prefs.getBool("mno_stat", false);
   monoSettings.showSplash = prefs.getBool("mno_splash", true);
   monoSettings.weatherEnabled = prefs.getBool("mno_wen", false);
   strlcpy(monoSettings.weatherKey, prefs.getString("mno_wkey", "").c_str(),

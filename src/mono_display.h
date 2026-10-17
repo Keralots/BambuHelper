@@ -30,7 +30,8 @@
 //   MONO_MOCK_AUTO                1 = boot into mock cycle mode
 //
 // Runtime row toggles (web portal Print screen > Mono OLED, monoSettings in
-// settings.h, all default ON except weather): showTempsPrinting, showLayer,
+// settings.h, defaults = tuned mono layout: temps/HotIdle/StatusIdle off,
+// the rest on, weather off): showTempsPrinting, showLayer,
 // showBar, showTimePrinting, showEndTimeAlt, showTempsDone, showClockIdle,
 // showStatusIdle (X/circle on the clock), showHotIdle,
 // showSplash (boot screen held ~3 s; off = straight to clock unless WiFi
