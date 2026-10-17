@@ -106,6 +106,10 @@
 #define WIFI_STA_PROBE_INTERVAL   120000  // 2 min between STA probes while in AP mode
 #define WIFI_STA_PROBE_CHECK_MS    10000  // 10s after probe start before checking result
 #define WIFI_AP_FALLBACK_MS       900000  // 15 min in phase 3 before falling back to AP
+// AP-fallback hint: below WEAK the failure is blamed on signal outright; below
+// MARGINAL only when the AP never rejected the password.
+#define WIFI_RSSI_WEAK            -85
+#define WIFI_RSSI_MARGINAL        -78
 
 // Improv WiFi serial setup window on first boot (no stored credentials).
 // During this window the device listens for Improv commands from the web
