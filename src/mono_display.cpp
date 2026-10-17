@@ -664,9 +664,13 @@ static void renderIdle(const BambuState &st) {
   oled.clearDisplay();
   s_marqueeActive = false;  // no title on idle: don't inherit a marquee cadence
   if (monoSettings.showClockIdle) {
-    // Spotify clock (ESP-Spotify-OLED printLocalTime): default font, time at
-    // size 3 on (20,5), 30x30 weather icon at (23,32), size-2 temperature at
-    // (60,40) with the degree bitmap. No printer temps here by design.
+    // Spotify clock (ESP-Spotify-OLED printLocalTime): default font, 30x30
+    // weather icon at (23,32), size-2 temperature at (60,40) with the degree
+    // bitmap. No printer temps here by design. With the weather row visible
+    // the clock sits at the Spotify-ish top anchor (y=5); with weather off
+    // the 24 px clock centers vertically on its own ((64-24)/2 = 20).
+    bool wxShown = monoSettings.weatherEnabled || monoMockActive();
+    int clkY = wxShown ? 5 : 20;
     oled.setFont();
     oled.setTextSize(3);
     if (ntpOk()) {
@@ -674,27 +678,27 @@ static void renderIdle(const BambuState &st) {
       bool isPM = false;
       fmtClockMode(clk, sizeof(clk), &isPM);
       if (netSettings.use24h) {
-        oled.setCursor(20, 5);
+        oled.setCursor(20, clkY);
         oled.print(clk);
       } else {
         // Centered time + AM/PM block (5-char times leave no room at x=20).
         int16_t x1, y1;
         uint16_t w, h;
-        oled.getTextBounds(String(clk), 20, 5, &x1, &y1, &w, &h);
+        oled.getTextBounds(String(clk), 20, clkY, &x1, &y1, &w, &h);
         int x0 = (128 - ((int)w + 6 + 12)) / 2;
         if (x0 < 0) x0 = 0;
-        oled.setCursor(x0, 5);
+        oled.setCursor(x0, clkY);
         oled.print(clk);
         oled.setTextSize(1);
-        oled.setCursor(x0 + (int)w + 6, 13);
+        oled.setCursor(x0 + (int)w + 6, clkY + 8);
         oled.print(isPM ? "PM" : "AM");
         oled.setTextSize(3);
       }
     } else {
-      oled.setCursor(20, 5);
+      oled.setCursor(20, clkY);
       oled.print("--:--");
     }
-    if (monoSettings.weatherEnabled || monoMockActive()) {
+    if (wxShown) {
       MonoWeatherData w;
       bool have = monoWeatherGet(w);
       char tmp[8];
