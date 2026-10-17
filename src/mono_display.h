@@ -16,10 +16,11 @@
 //   errorCode=print_error, connected=MQTT connection state.
 //
 // Tunable constants (all overridable with -D in platformio.ini):
-//   MONO_MAX_CHAR_TITLE_PER_LINE  static title length (def. 11, as in Spotify;
-//                               printing wraps to 2 lines, prepare/failed/
-//                               offline scroll a single-row marquee;
-//                               the Done screen wraps to 2 lines instead)
+//   MONO_MAX_CHAR_TITLE_PER_LINE  2-line title wrap width (def. 11, as in
+//                               Spotify); printing/Done wrap to 2 lines with
+//                               "..." on overflow, prepare/failed/offline
+//                               show a single row that is static while it
+//                               fits 128 px and marquee otherwise
 //   MONO_HOT_THRESHOLD_C          nozzle HOT warning in idle (def. 50 C)
 //   MONO_REFRESH_MS               static refresh (def. 1000 ms)
 //   MONO_MARQUEE_MS               marquee step (~10 fps, def. 100 ms)

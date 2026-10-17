@@ -67,6 +67,12 @@ static void renderBootScreen();
 
 // --- Transliteration (the equivalent of the reference repo's ----------------
 // --- replaceSpecialCharacters: the GFX fonts ship no accents, so map to ASCII)
+// Coverage is Latin-1/UTF-8 C3 only: Spanish/German/French-style diacritics
+// map to their bare letter, mapped-away multi-byte falls through silently,
+// and non-Latin scripts (Cyrillic, CJK...) are DROPPED by design - with no
+// glyphs in FreeMonoBold the alternative would be unreadable tofu. A name
+// written entirely in a non-Latin script shows as an empty title, which the
+// status screens tolerate (the status text still carries the state).
 static void deaccent(char *dst, size_t n, const char *src) {
   size_t j = 0;
   for (size_t i = 0; src[i] && j + 1 < n;) {
@@ -209,23 +215,21 @@ static void marqueeReset(const String &t) {
 
 void monoDrawTitle(const String &clean) {
   oled.setFont(&FreeMonoBold9pt7b);
-  const int maxLine = MONO_MAX_CHAR_TITLE_PER_LINE;
-  int len = (int)clean.length();
-  if (len <= maxLine) {
+  // Static vs marquee is decided in PIXELS, not characters: FreeMonoBold9 is
+  // ~7 px/char, so a 14-char title can still fit the 128 px row and scrolling
+  // 2 px before snapping back reads as a glitch.
+  int16_t x1, y1;
+  uint16_t w, h;
+  oled.getTextBounds(clean, 0, 0, &x1, &y1, &w, &h);
+  if ((int)w <= 128) {
     // Fits: static single row.
     s_marqueeActive = false;
     oled.setCursor(0, TITLE_SINGLE_Y);
     oled.print(clean);
   } else {
-    // Too long: single-row horizontal marquee (never wraps to 2 rows).
+    // Too wide: single-row horizontal marquee (never wraps to 2 rows).
     s_marqueeActive = true;
     if (s_mqText != clean) marqueeReset(clean);
-    int16_t x1, y1;
-    uint16_t w, h;
-    oled.getTextBounds(clean, 0, 0, &x1, &y1, &w, &h);
-    (void)x1;
-    (void)y1;
-    (void)h;
     unsigned long now = millis();
     if (now - s_mqLastMs >= (unsigned long)MONO_MARQUEE_MS) {
       s_mqLastMs = now;
@@ -617,7 +621,11 @@ static void wrapJobName2Lines(const String &clean, String &l1, String &l2) {
   l1.trim();
   String rest = t.substring(cut);
   rest.trim();
-  if ((int)rest.length() > maxLine) rest = rest.substring(0, maxLine);
+  // Overflow is marked with a bare "..." rather than a silent chop, so a
+  // cut name reads as truncated and the tail length is still guessable.
+  if ((int)rest.length() > maxLine) {
+    rest = rest.substring(0, maxLine - 3) + "...";
+  }
   l2 = rest;
 }
 
@@ -774,7 +782,7 @@ static void renderFailed(const BambuState &st) {
 #endif
   oled.setCursor(0, LAYER_Y);
   String name = monoCleanJobName(jobDisplayName(st));
-  if (name.length() > 21) name = name.substring(0, 21);
+  if (name.length() > 21) name = name.substring(0, 18) + "...";
   oled.print(name);
   monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_FAILED);
   oled.setCursor(11, BOTTOM_Y);
@@ -816,7 +824,9 @@ static void renderPrepare(const BambuState &st) {
   monoDrawTitle(String("Heating"));
   drawTempsRow(TEMP_Y, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.setCursor(0, LAYER_Y);
-  oled.print(monoCleanJobName(jobDisplayName(st)).substring(0, 21));
+  String nm = monoCleanJobName(jobDisplayName(st));
+  if (nm.length() > 21) nm = nm.substring(0, 18) + "...";
+  oled.print(nm);
   monoDrawProgressBar(BAR_Y, 0);
   monoDrawStatusIcon(0, BOTTOM_Y, MONO_SCR_PREPARE);
   oled.setCursor(11, BOTTOM_Y);
@@ -835,7 +845,8 @@ struct MonoSig {
   int nzl, nzlT, bed, bedT;
   unsigned long err;
   bool connected;
-  char job[40];
+  char job[128];  // full clean-name cap (subtaskName[128]); must track, or a
+                  // renamed job that shares its prefix never repaints
   int clockMin;  // for the idle clock
   int8_t printTimeAlt;  // printing remaining/ETA alternation phase (repaints on toggle)
   uint16_t monoFlags;  // web toggles bitmask: a flip must repaint immediately

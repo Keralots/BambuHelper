@@ -1809,6 +1809,14 @@ static void handleSettingsExport() {
   mono["showTimeAlt"] = monoSettings.showTimeAlt;
   mono["showHotIdle"] = monoSettings.showHotIdle;
   mono["showClockIdle"] = monoSettings.showClockIdle;
+  mono["showStatusIdle"] = monoSettings.showStatusIdle;
+  mono["showSplash"] = monoSettings.showSplash;
+  // weather enabled + city travel with the backup, but NOT the API key
+  // (backups end up in files/chats; re-entering the key in the web form is
+  // the only manual step).
+  mono["weatherEnabled"] = monoSettings.weatherEnabled;
+  mono["weatherQuery"] = monoSettings.weatherQuery;
+  mono["contrast"] = monoSettings.oledContrast;
   disp["showBatteryIndicator"] = dispSettings.showBatteryIndicator;
   disp["nozzleScaleMax"]  = dispSettings.nozzleScaleMax;
   disp["bedScaleMax"]     = dispSettings.bedScaleMax;
@@ -2243,6 +2251,14 @@ static void handleSettingsImportFinish() {
       if (mono["showTimeAlt"].is<bool>()) monoSettings.showTimeAlt = mono["showTimeAlt"].as<bool>();
       if (mono["showHotIdle"].is<bool>()) monoSettings.showHotIdle = mono["showHotIdle"].as<bool>();
       if (mono["showClockIdle"].is<bool>()) monoSettings.showClockIdle = mono["showClockIdle"].as<bool>();
+      if (mono["showStatusIdle"].is<bool>()) monoSettings.showStatusIdle = mono["showStatusIdle"].as<bool>();
+      if (mono["showSplash"].is<bool>()) monoSettings.showSplash = mono["showSplash"].as<bool>();
+      if (mono["weatherEnabled"].is<bool>()) monoSettings.weatherEnabled = mono["weatherEnabled"].as<bool>();
+      if (mono["weatherQuery"].is<const char*>())
+        sanitizeGaugeLabel(mono["weatherQuery"].as<const char*>(), monoSettings.weatherQuery,
+                           sizeof(monoSettings.weatherQuery));
+      if (mono["contrast"].is<uint8_t>() || mono["contrast"].is<unsigned int>() || mono["contrast"].is<int>())
+        monoSettings.oledContrast = (uint8_t)constrain(mono["contrast"].as<int>(), MONO_OLED_CONTRAST_MIN, 255);
     }
 
     JsonObject gauges = disp["gauges"];

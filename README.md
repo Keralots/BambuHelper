@@ -613,7 +613,8 @@ for the rest, `drawRect`/`fillRect` bar, hand-drawn XBM bitmap icons (no font
 glyphs) and ASCII-transliterated names.
 
 ```
-Title (FreeMonoBold9pt, 1 row at the very top, marquee if longer than 11 chars)
+Title (FreeMonoBold9pt, 1 row at the very top, marquee when it overflows
+128 px)
 y=21   [nozzle] 215/220  [bed] 60/60
 y=34   Layer 123/456
 y=46   [progress bar, 6 tall]
