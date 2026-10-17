@@ -404,6 +404,11 @@ struct MonoDisplaySettings {
   uint8_t oledContrast;   // SH1106 contrast 0-255 (255 = max, the driver default)
 };
 
+// SH1106 contrast floor: below ~20 the panel is effectively all-black, and a
+// 0-contrast value persists in NVS (invisible screen until the web UI is
+// opened blindly). Both save paths clamp with this.
+#define MONO_OLED_CONTRAST_MIN 20
+
 extern char wifiSSID[33];
 extern char wifiPass[65];
 extern uint8_t brightness;

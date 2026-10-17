@@ -192,14 +192,14 @@ static void readDisplayFromForm() {
   monoSettings.showSplash = server.hasArg("mno_splash");
   monoSettings.weatherEnabled = server.hasArg("mno_wen");
   if (server.hasArg("mno_wkey"))
-    strlcpy(monoSettings.weatherKey, server.arg("mno_wkey").c_str(),
-            sizeof(monoSettings.weatherKey));
+    sanitizeGaugeLabel(server.arg("mno_wkey").c_str(), monoSettings.weatherKey,
+                       sizeof(monoSettings.weatherKey));
   if (server.hasArg("mno_wq"))
-    strlcpy(monoSettings.weatherQuery, server.arg("mno_wq").c_str(),
-            sizeof(monoSettings.weatherQuery));
+    sanitizeGaugeLabel(server.arg("mno_wq").c_str(), monoSettings.weatherQuery,
+                       sizeof(monoSettings.weatherQuery));
   if (server.hasArg("mno_cont"))
     monoSettings.oledContrast =
-        (uint8_t)constrain(server.arg("mno_cont").toInt(), 0, 255);
+        (uint8_t)constrain(server.arg("mno_cont").toInt(), MONO_OLED_CONTRAST_MIN, 255);
 
   // Edge glow
   if (server.hasArg("glowm")) {
@@ -882,7 +882,7 @@ static void handleToggleSetting() {
   else if (key == "mno_wen") monoSettings.weatherEnabled = on;
   else if (key == "mno_cont") {
     monoSettings.oledContrast =
-        (uint8_t)constrain(server.arg("val").toInt(), 0, 255);
+        (uint8_t)constrain(server.arg("val").toInt(), MONO_OLED_CONTRAST_MIN, 255);
   }
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;

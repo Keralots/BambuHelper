@@ -646,9 +646,16 @@ void loadSettings() {
   monoSettings.weatherEnabled = prefs.getBool("mno_wen", false);
   strlcpy(monoSettings.weatherKey, prefs.getString("mno_wkey", "").c_str(),
           sizeof(monoSettings.weatherKey));
+  sanitizeGaugeLabel(monoSettings.weatherKey, monoSettings.weatherKey,
+                     sizeof(monoSettings.weatherKey));  // corrupt-NVS defense
   strlcpy(monoSettings.weatherQuery, prefs.getString("mno_wq", "Madrid,ES").c_str(),
           sizeof(monoSettings.weatherQuery));
-  monoSettings.oledContrast = prefs.getUChar("mno_cont", 255);
+  // Same graph hardening as gauge labels: control/HTML-unsafe chars out,
+  // strict UTF-8, trimmed - keeps the "stored sanitized, emit raw" invariant.
+  sanitizeGaugeLabel(monoSettings.weatherQuery, monoSettings.weatherQuery,
+                     sizeof(monoSettings.weatherQuery));
+  monoSettings.oledContrast =
+      (uint8_t)constrain(prefs.getUChar("mno_cont", 255), MONO_OLED_CONTRAST_MIN, 255);
   {
     uint8_t gm = prefs.getUChar("dsp_glowm", def.glowMode);
     dispSettings.glowMode = (gm <= 2) ? gm : 0;

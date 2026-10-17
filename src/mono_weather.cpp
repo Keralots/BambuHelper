@@ -29,10 +29,26 @@ static char s_fetchKey[65];
 static char s_fetchQuery[64];
 static TaskHandle_t s_fetchTask = nullptr;
 
+static void urlEncodeAppend(String &dst, const char *src) {
+  // RFC 3986 unreserved + comma (the City,CC separator) pass through;
+  // everything else - spaces, UTF-8 city names - goes per byte as %XX.
+  for (const unsigned char *p = (const unsigned char *)src; *p; p++) {
+    unsigned char c = *p;
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == ',') {
+      dst += (char)c;
+    } else {
+      char b[4];
+      snprintf(b, sizeof(b), "%%%02X", c);
+      dst += b;
+    }
+  }
+}
+
 static bool fetchWeather() {
   String url = "https://api.openweathermap.org/data/2.5/weather?units=metric&q=";
-  url += s_fetchQuery;
+  urlEncodeAppend(url, s_fetchQuery);
   url += "&APPID=";
+  // Key is hex-only, sanitized on every load; append as-is.
   url += s_fetchKey;
 
   WiFiClientSecure client;

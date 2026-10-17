@@ -617,7 +617,7 @@ R"rawliteral(
     </div>
     <div class="field">
       <label class="hstack" style="justify-content:space-between" for="mno_cont"><span>OLED contrast</span><span class="mono text-dim" id="mno_contVal">%MONO_CONT%</span></label>
-      <input type="range" id="mno_cont" min="0" max="255" step="1" value="%MONO_CONT%"
+      <input type="range" id="mno_cont" min="20" max="255" step="1" value="%MONO_CONT%"
              oninput="document.getElementById('mno_contVal').textContent=this.value"
              onchange="toggleSetting('mno_cont',this.value)">
       <div class="hint">SH1106 contrast, 255 is brightest (default). Applies instantly, no reboot.</div>
