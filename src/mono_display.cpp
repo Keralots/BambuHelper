@@ -1,5 +1,5 @@
 // BambuHelper-Mono: SH1106 128x64 over I2C with Adafruit GFX/SH110X.
-// Style copied from the ESP-Spotify-OLED reference repo (see REFERENCE_NOTES.md).
+// Style copied from the ESP-Spotify-OLED reference repo.
 #ifdef BOARD_IS_MONO
 
 #include "mono_display.h"
