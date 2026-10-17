@@ -21,7 +21,10 @@ struct MonoWeatherData {
 };
 
 // Call every mono tick while the idle clock is up. No-op when disabled,
-// unconfigured, offline, in mock mode, or before the poll is due.
+// unconfigured, offline, in mock mode, or before the poll is due. When due,
+// it snapshots key/query and spawns a one-shot "wx" FreeRTOS task (12 KB
+// stack) so the TLS handshake never blocks loop(); only one fetch at a
+// time, retried on the same cadence on failure.
 void monoWeatherPoll();
 
 // Last reading. Returns false when weather is disabled or nothing was ever

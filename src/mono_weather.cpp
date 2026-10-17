@@ -11,19 +11,29 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 static MonoWeatherData s_wx = {false, 0, ""};
 static unsigned long s_lastPollMs = 0;
 static char s_demoIcon[4] = "";
 static const float DEMO_TEMP_C = 21.0f;
 
+// The fetch runs in a one-shot FreeRTOS task: a TLS handshake + GET can take
+// anywhere from ~1 s to the 10 s timeout, and doing that inline in loop()
+// froze MQTT keepalive and the web server while the idle clock was up.
+// One task at a time is enforced with a busy flag, and the key/query strings
+// are snapshotted so the web UI cannot change them mid-fetch.
+static volatile bool s_fetchBusy = false;
+static char s_fetchKey[65];
+static char s_fetchQuery[64];
+static TaskHandle_t s_fetchTask = nullptr;
+
 static bool fetchWeather() {
-  if (monoSettings.weatherKey[0] == '\0' || monoSettings.weatherQuery[0] == '\0')
-    return false;
   String url = "https://api.openweathermap.org/data/2.5/weather?units=metric&q=";
-  url += monoSettings.weatherQuery;
+  url += s_fetchQuery;
   url += "&APPID=";
-  url += monoSettings.weatherKey;
+  url += s_fetchKey;
 
   WiFiClientSecure client;
   client.setInsecure();  // same as the reference (HTTP_INSECURE 1)
@@ -41,6 +51,7 @@ static bool fetchWeather() {
     if (!deserializeJson(doc, payload)) {
       const char *icon = doc["weather"][0]["icon"];
       if (icon && icon[0] != '\0' && !doc["main"]["temp"].isNull()) {
+        // Torn reads are benign: single writer (this task), value only draws.
         s_wx.tempC = doc["main"]["temp"].as<float>();
         strlcpy(s_wx.icon, icon, sizeof(s_wx.icon));
         s_wx.ok = true;
@@ -59,15 +70,37 @@ static bool fetchWeather() {
   return ok;
 }
 
+static void fetchTaskThunk(void *) {
+  fetchWeather();
+  s_fetchBusy = false;
+  s_fetchTask = nullptr;
+  vTaskDelete(nullptr);
+}
+
 void monoWeatherPoll() {
   if (!monoSettings.weatherEnabled) return;
   if (!isWiFiConnected() || isAPMode()) return;
   if (s_demoIcon[0] != '\0') return;  // mock demo short-circuits the network
+  if (monoSettings.weatherKey[0] == '\0' || monoSettings.weatherQuery[0] == '\0')
+    return;  // free check: don't even consume the cadence stamp
   unsigned long now = millis();
   if (now < 15000UL) return;  // let WiFi/MQTT/NTP settle after boot
-  if (s_wx.ok && now - s_lastPollMs < (unsigned long)MONO_WEATHER_POLL_MS) return;
-  s_lastPollMs = now;  // stamp even on failure: polite retry, not a hot loop
-  fetchWeather();
+  // Cadence applies to failures too: stamp on every attempt (success, HTTP
+  // error or TLS fault retry at the same 5 min rhythm, never a hot loop).
+  if (now - s_lastPollMs < (unsigned long)MONO_WEATHER_POLL_MS) return;
+  if (s_fetchBusy) return;  // previous attempt still draining (up to 10 s)
+  strlcpy(s_fetchKey, monoSettings.weatherKey, sizeof(s_fetchKey));
+  strlcpy(s_fetchQuery, monoSettings.weatherQuery, sizeof(s_fetchQuery));
+  s_lastPollMs = now;
+  s_fetchBusy = true;
+  // ~12 KB of stack for MbedTLS handshake + HTTPClient + ~1 KB JSON payload.
+  if (xTaskCreate(fetchTaskThunk, "wx", 12288, nullptr,
+                  1,  // loopTask prio: only CPU slices while crypto runs
+                  &s_fetchTask) != pdPASS) {
+    s_fetchBusy = false;
+    Serial.println(F("weather: task spawn failed"));
+    return;
+  }
 }
 
 bool monoWeatherGet(MonoWeatherData &out) {
