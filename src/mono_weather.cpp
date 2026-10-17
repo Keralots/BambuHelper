@@ -86,7 +86,7 @@ void monoWeatherPoll() {
   unsigned long now = millis();
   if (now < 15000UL) return;  // let WiFi/MQTT/NTP settle after boot
   // Cadence applies to failures too: stamp on every attempt (success, HTTP
-  // error or TLS fault retry at the same 5 min rhythm, never a hot loop).
+  // error or TLS fault retry at the same 15 min rhythm, never a hot loop).
   if (now - s_lastPollMs < (unsigned long)MONO_WEATHER_POLL_MS) return;
   if (s_fetchBusy) return;  // previous attempt still draining (up to 10 s)
   strlcpy(s_fetchKey, monoSettings.weatherKey, sizeof(s_fetchKey));

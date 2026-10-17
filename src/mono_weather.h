@@ -9,9 +9,10 @@
 #define MONO_WX_ICON_W 30
 #define MONO_WX_ICON_H 30
 
-// Poll cadence, overridable with -D (reference polls every 5 min).
+// Poll cadence, overridable with -D (reference polls every 5 min; this repo
+// settles for 15 min - weather barely moves faster than that).
 #ifndef MONO_WEATHER_POLL_MS
-#define MONO_WEATHER_POLL_MS (5UL * 60UL * 1000UL)
+#define MONO_WEATHER_POLL_MS (15UL * 60UL * 1000UL)
 #endif
 
 struct MonoWeatherData {

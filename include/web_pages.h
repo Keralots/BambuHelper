@@ -604,7 +604,7 @@ R"rawliteral(
       <label for="mno_splash">Show boot screen with WiFi/IP (off = straight to clock)</label>
     </label>
     <div class="field" style="margin-top:var(--sp-3)">
-      <label>Weather on the idle clock (OpenWeatherMap, every 5 min while idle)</label>
+      <label>Weather on the idle clock (OpenWeatherMap, every 15 min while idle)</label>
       <label class="check-row">
         <input type="checkbox" id="mno_wen" value="1" %MONO_WEN% onchange="toggleSetting('mno_wen',this.checked)">
         <label for="mno_wen">Show weather icon + temperature</label>
