@@ -18,6 +18,7 @@
 #include "camera_client.h"
 #include "thumb_fetch.h"
 #include "hms_lookup.h"
+#include "wifi_manager.h"
 #include <WiFi.h>
 #include <time.h>
 #if PANEL_HAS_IO_EXPANDER
@@ -747,10 +748,39 @@ static void drawAPMode() {
   const int16_t apIpY       = LY_AP_IP_Y;
 #endif
 
-  // Title
-  tft.setTextColor(CLR_GREEN, CLR_BG);
-  setFont(tft, LY_F_LARGE);
-  tft.drawString("WiFi Setup", cx, apTitleY);
+  // Title - or, after a failed connect, why it failed (see diagnoseStaFailure)
+  const WifiFailInfo& fail = getWifiFailInfo();
+  char hint[32] = "";
+  switch (fail.kind) {
+    case WIFI_FAIL_NOT_FOUND:     strlcpy(hint, "WiFi not found", sizeof(hint)); break;
+    case WIFI_FAIL_NAME_MISMATCH: strlcpy(hint, "WiFi name mismatch", sizeof(hint)); break;
+    case WIFI_FAIL_WEAK:          snprintf(hint, sizeof(hint), "Weak WiFi %d dBm", fail.rssi); break;
+    case WIFI_FAIL_PASS_SHORT:    strlcpy(hint, "Password too short", sizeof(hint)); break;
+    case WIFI_FAIL_BAD_PASS:      strlcpy(hint, "Wrong password?", sizeof(hint)); break;
+    case WIFI_FAIL_ENTERPRISE:    strlcpy(hint, "Unsupported WiFi", sizeof(hint)); break;
+    case WIFI_FAIL_NO_IP:         strlcpy(hint, "No IP from router", sizeof(hint)); break;
+    case WIFI_FAIL_OTHER:
+      if (fail.reason) snprintf(hint, sizeof(hint), "WiFi failed (%u)", fail.reason);
+      else strlcpy(hint, "WiFi failed", sizeof(hint));
+      break;
+    default: break;
+  }
+  if (hint[0]) {
+#if DISPLAY_IS_ROUND
+    const int16_t hintMaxW = LY_SC(170);   // rim-safe chord at the title row
+#else
+    const int16_t hintMaxW = uiW() - 12;
+#endif
+    char clipped[40];
+    tft.setTextColor(CLR_RED, CLR_BG);
+    setFont(tft, LY_F_BODY);
+    tft.drawString(ellipsizeToWidth(tft, hint, hintMaxW, clipped, sizeof(clipped)),
+                   cx, apTitleY);
+  } else {
+    tft.setTextColor(CLR_GREEN, CLR_BG);
+    setFont(tft, LY_F_LARGE);
+    tft.drawString("WiFi Setup", cx, apTitleY);
+  }
 
   // Instructions
   setFont(tft, LY_F_BODY);

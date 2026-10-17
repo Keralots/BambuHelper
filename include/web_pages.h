@@ -53,6 +53,11 @@ input:focus{border-color:#58A6FF}
 </head><body>
 <h1>BambuHelper</h1>
 <p class="sub">Initial Setup</p>
+<div class="card" id="fail" hidden style="border-color:#F85149">
+  <h2 style="color:#F85149" id="failT"></h2>
+  <p style="font-size:13px;line-height:1.45" id="failM"></p>
+  <p style="font-size:11px;color:#8B949E;margin-top:8px" id="failD"></p>
+</div>
 <div class="card">
   <h2>Connect to WiFi Network</h2>
   <p style="font-size:12px;color:#8B949E;margin-bottom:10px">Enter your WiFi credentials. After saving, the device will restart and connect to your network. You can then access the full settings at the device's IP address.</p>
@@ -74,6 +79,27 @@ function saveWifi(){
     .then(function(){document.body.innerHTML='<div style="text-align:center;padding-top:80px"><h2 style="color:#3FB950">WiFi Saved!</h2><p style="color:#8B949E;margin-top:10px">Restarting... Connect to your WiFi and open the device IP address in a browser.</p></div>';})
     .catch(function(e){document.getElementById('msg').style.color='#F85149';document.getElementById('msg').textContent='Connection error';console.warn('saveWifi:',e);});
 }
+fetch('/wifi/diag').then(function(r){return r.json();}).then(function(d){
+  if(!d||d.kind==='none')return;
+  var q='"'+d.ssid+'"',db=d.rssi?' ('+d.rssi+' dBm)':'',t,m;
+  var H={
+    not_found:['Network not found','Could not find '+q+'. Check the name. BambuHelper needs a 2.4 GHz network: 5 GHz-only networks and phone hotspots without "Maximize Compatibility" are invisible to it.'],
+    name_mismatch:['Network name mismatch','Could not find '+q+', but "'+d.near+'" is nearby. Names are case-sensitive - the field below now holds the name as seen.'],
+    weak:['Signal too weak',q+' was found, but the signal is too weak'+db+' to stay connected. Move the device closer to the router or an access point.'],
+    pass_short:['Password too short','The saved password for '+q+' is shorter than 8 characters, which WPA2 does not accept. Re-enter it below.'],
+    bad_pass:['Wrong password?',q+db+' rejected the connection. The password is most likely wrong - re-enter it below.'],
+    enterprise:['Unsupported network',q+' uses WPA2-Enterprise (user name + password login), which BambuHelper does not support. Use a WPA2/WPA3 Personal network.'],
+    no_ip:['No IP address',q+db+' accepted the connection, but the router never assigned an IP address. Check its DHCP server or MAC filter.'],
+    other:['Could not connect','Could not connect to '+q+db+'.']
+  }[d.kind];
+  if(!H)return;
+  document.getElementById('failT').textContent=H[0];
+  document.getElementById('failM').textContent=H[1];
+  document.getElementById('failD').textContent='Details: '+d.kind+', reason '+d.reason+(d.rssi?', '+d.rssi+' dBm, ch '+d.ch:'');
+  document.getElementById('fail').hidden=false;
+  var s=document.getElementById('ssid');
+  if(!s.value)s.value=d.kind==='name_mismatch'?d.near:d.ssid;
+}).catch(function(){});
 </script>
 </body></html>
 )rawliteral";
