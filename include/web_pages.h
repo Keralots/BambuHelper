@@ -609,11 +609,11 @@ R"rawliteral(
         <input type="checkbox" id="mno_wen" value="1" %MONO_WEN% onchange="toggleSetting('mno_wen',this.checked)">
         <label for="mno_wen">Show weather icon + temperature</label>
       </label>
-      <label for="mno_wkey">API key</label>
+      <label for="mno_wkey">Weather API key (OpenWeatherMap)</label>
       <input type="text" id="mno_wkey" class="mono" value="%MONO_WKEY%" placeholder="32-char API key" maxlength="64">
       <label for="mno_wq" style="margin-top:var(--sp-2)">Location</label>
       <input type="text" id="mno_wq" class="mono" value="%MONO_WQ%" placeholder="Madrid,ES" maxlength="63">
-      <div class="hint">Free key from openweathermap.org. Use City,CC with no spaces. Key + location save with Apply Display Settings below.</div>
+      <div class="hint">Free key: sign up at <a href="https://openweathermap.org/appid" target="_blank" style="color:var(--accent)">openweathermap.org</a> and copy it from <em>API keys</em>. Use City,CC with no spaces. Key + location save with Apply Display Settings below.</div>
     </div>
     <div class="field">
       <label class="hstack" style="justify-content:space-between" for="mno_cont"><span>OLED contrast</span><span class="mono text-dim" id="mno_contVal">%MONO_CONT%</span></label>
