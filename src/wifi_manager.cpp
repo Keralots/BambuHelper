@@ -38,6 +38,135 @@ static void capTxPower() {
 }
 #endif
 
+// --- Failure hint for AP fallback ---
+// Release builds log at level E, so the core's own "Reason: N" warning is
+// invisible; capture the reasons here. State covers everything since the last
+// successful IP, which is exactly the failed stretch that led to AP mode.
+static WifiFailInfo failInfo = {};
+static volatile uint8_t staLastReason = 0;
+static volatile bool staAuthRejected = false;
+static volatile bool staAssociated = false;
+
+static void onStaEvent(arduino_event_id_t event, arduino_event_info_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      staAssociated = true;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      staLastReason = 0;
+      staAuthRejected = false;
+      staAssociated = false;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
+      uint8_t r = info.wifi_sta_disconnected.reason;
+      if (r == WIFI_REASON_ASSOC_LEAVE) break;  // our own disconnect() calls
+      staLastReason = r;
+      if (r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || r == WIFI_REASON_HANDSHAKE_TIMEOUT ||
+          r == WIFI_REASON_AUTH_FAIL || r == WIFI_REASON_MIC_FAILURE ||
+          r == WIFI_REASON_802_1X_AUTH_FAILED) {
+        staAuthRejected = true;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+static void hookStaEvents() {
+  static bool hooked = false;
+  if (hooked) return;
+  WiFi.onEvent(onStaEvent);
+  hooked = true;
+}
+
+const WifiFailInfo& getWifiFailInfo() {
+  return failInfo;
+}
+
+const char* wifiFailKindName(WifiFailKind k) {
+  switch (k) {
+    case WIFI_FAIL_NOT_FOUND:     return "not_found";
+    case WIFI_FAIL_NAME_MISMATCH: return "name_mismatch";
+    case WIFI_FAIL_WEAK:          return "weak";
+    case WIFI_FAIL_PASS_SHORT:    return "pass_short";
+    case WIFI_FAIL_BAD_PASS:      return "bad_pass";
+    case WIFI_FAIL_ENTERPRISE:    return "enterprise";
+    case WIFI_FAIL_NO_IP:         return "no_ip";
+    case WIFI_FAIL_OTHER:         return "other";
+    default:                      return "none";
+  }
+}
+
+// Scan for the stored SSID and turn scan + captured reasons into one verdict.
+// Runs once on the way into AP mode; the STA side must be idle (a connecting
+// STA cannot scan). Async scan so the connecting animation keeps running.
+static void diagnoseStaFailure() {
+  WifiFailInfo fi = {};
+  fi.reason = staLastReason;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.scanNetworks(true, true);
+  int n;
+  unsigned long t0 = millis();
+  while ((n = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() - t0 < 10000) {
+    delay(50);
+    updateDisplay();
+    flushFrame();  // JC3248W535: push sprite to panel during blocking loop
+  }
+
+  bool exact = false, enterprise = false, secured = false;
+  String want = wifiSSID;
+  want.trim();
+  for (int i = 0; i < n; i++) {
+    String s = WiFi.SSID(i);
+    if (s == wifiSSID) {
+      // Mesh / multi-AP: judge by the best radio the device can hear.
+      if (!exact || WiFi.RSSI(i) > fi.rssi) {
+        fi.rssi = (int8_t)WiFi.RSSI(i);
+        fi.channel = (uint8_t)WiFi.channel(i);
+        wifi_auth_mode_t auth = WiFi.encryptionType(i);
+        enterprise = (auth == WIFI_AUTH_WPA2_ENTERPRISE);
+        secured = (auth != WIFI_AUTH_OPEN);
+      }
+      exact = true;
+    } else if (!fi.nearName[0] && s.length() > 0) {
+      String t = s;
+      t.trim();
+      if (t.equalsIgnoreCase(want)) strlcpy(fi.nearName, s.c_str(), sizeof(fi.nearName));
+    }
+  }
+  if (n > 0) WiFi.scanDelete();
+
+  const size_t passLen = strlen(wifiPass);
+  if (n >= 0 && !exact) {
+    fi.kind = fi.nearName[0] ? WIFI_FAIL_NAME_MISMATCH : WIFI_FAIL_NOT_FOUND;
+  } else if (n < 0) {
+    // Scan failed: the reasons alone are all we have.
+    fi.kind = staLastReason == WIFI_REASON_NO_AP_FOUND ? WIFI_FAIL_NOT_FOUND
+            : staAuthRejected ? WIFI_FAIL_BAD_PASS : WIFI_FAIL_OTHER;
+  } else if (fi.rssi < WIFI_RSSI_WEAK) {
+    fi.kind = WIFI_FAIL_WEAK;
+  } else if (enterprise) {
+    fi.kind = WIFI_FAIL_ENTERPRISE;
+  } else if (secured && passLen > 0 && passLen < 8) {
+    fi.kind = WIFI_FAIL_PASS_SHORT;
+  } else if (staAuthRejected) {
+    fi.kind = WIFI_FAIL_BAD_PASS;
+  } else if (fi.rssi < WIFI_RSSI_MARGINAL) {
+    fi.kind = WIFI_FAIL_WEAK;
+  } else if (staAssociated) {
+    fi.kind = WIFI_FAIL_NO_IP;
+  } else {
+    fi.kind = WIFI_FAIL_OTHER;
+  }
+  failInfo = fi;
+
+  Serial.printf("WiFi: failure hint %s (scan %d, rssi %d, ch %u, reason %u%s%s)\n",
+                wifiFailKindName(fi.kind), n, fi.rssi, fi.channel, fi.reason,
+                fi.nearName[0] ? ", near " : "", fi.nearName);
+}
+
 bool isWiFiConnected() {
   return WiFi.status() == WL_CONNECTED;
 }
@@ -177,6 +306,7 @@ static void completeWiFiStartup() {
 }
 
 static void beginStaConnectAttempt() {
+  hookStaEvents();
   // DHCP option 12; the core applies it to the STA netif inside WiFi.mode().
   WiFi.setHostname(netSettings.hostname);
   WiFi.mode(WIFI_STA);
@@ -260,6 +390,7 @@ void initWiFi() {
 
     splashStaStarted = false;
     Serial.println("WiFi connection failed, starting AP");
+    diagnoseStaFailure();
   }
 
   // No credentials or connection failed — bring AP up immediately so the
@@ -382,6 +513,8 @@ void handleWiFi() {
           phase3StartTime > 0 &&
           millis() - phase3StartTime >= WIFI_AP_FALLBACK_MS) {
         Serial.println("Phase 3 timeout — falling back to AP mode");
+        WiFi.disconnect();  // stop the reconnect cycle so the scan can run
+        diagnoseStaFailure();
         startAP();
         return;
       }

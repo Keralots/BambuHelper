@@ -551,8 +551,8 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
 // ---------------------------------------------------------------------------
 //  Scene pieces. All coordinates are screen coordinates.
 // ---------------------------------------------------------------------------
-static void drawDeg(Cv& cv, int16_t x, int16_t capTop, uint16_t c) {
-  const int16_t r = cv.S(3);
+static void drawDeg(Cv& cv, int16_t x, int16_t capTop, uint16_t c, int16_t r1 = 3) {
+  const int16_t r = cv.S(r1);
   cv.ring(x + r, capTop + r, r, c);
   cv.ring(x + r, capTop + r, r - 1, c);
 }
@@ -857,15 +857,17 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     char v[8];
     snprintf(v, sizeof(v), "%d", c.val);
     uint16_t vc = c.accent ? f.nozAccent : c.vclr;
-    cv.text(v, x, base, FONT_LARGE, vc, lgfx::textdatum_t::baseline_left);
-    cv.useFont(FONT_LARGE);
-    int16_t vx = x + cv.width(v) + 1;
+    const FontID vf = g.valBig ? FONT_CARD_MID : FONT_LARGE;
+    const FontID uf = g.valBig ? FONT_LARGE : FONT_BODY;
+    cv.text(v, x, base, vf, vc, lgfx::textdatum_t::baseline_left);
+    cv.useFont(vf);
+    int16_t vx = x + cv.width(v) + (g.valBig ? 2 : 1);
     if (c.unit == CU_DEG) {
-      drawDeg(cv, vx, base - g.valCap, f.dim);
+      drawDeg(cv, vx, base - g.valCap, f.dim, g.valBig ? 4 : 3);
     } else if (c.unit == CU_PCT) {
-      cv.text("%", vx, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
+      cv.text("%", vx, base, uf, f.dim, lgfx::textdatum_t::baseline_left);
     } else {
-      cv.text("/5", vx, base, FONT_BODY, f.dim, lgfx::textdatum_t::baseline_left);
+      cv.text("/5", vx, base, uf, f.dim, lgfx::textdatum_t::baseline_left);
     }
   }
 }
@@ -899,12 +901,41 @@ static CardGeo liftHeader(const CardGeo& g0) {
   return g;
 }
 
+// Printing with 4+ temperatures where the table has a grid variant: the cells in
+// rows of up to gdCols at FONT_CARD_MID, the hero moved up to make room. An AMS
+// column too tall for the shorter hero keeps the one-row band.
+static bool gridGeo(const CardFrame& f, const CardGeo& g0, CardGeo& g) {
+  if (!g0.gdCols || f.amsInBand || f.bandFilaments || f.cellCount < 4 || besideThumb(f, g0)) return false;
+  const int16_t cols = f.cellCount == 4 ? 2 : g0.gdCols;
+  const int16_t rows = (f.cellCount + cols - 1) / cols;
+  const int16_t rule = g0.H - 1 - (rows - 1) * g0.gdRowH - g0.gdBaseOff;
+  const int16_t d = g0.hdrRule - g.hdrRule;
+  if (f.amsShow && g0.amsColW) {
+    const int16_t trays = f.trayCount + (f.extShow ? 1 : 0);
+    if (g0.amsRowY - d + trays * g0.amsRowH - 3 > rule - 8) return false;
+  }
+  g.cellCols = cols;
+  g.cellRowH = g0.gdRowH;
+  g.cellLblOff = g0.gdLblOff;
+  g.cellBaseOff = g0.gdBaseOff;
+  g.valCap = g0.gdValCap;
+  g.valBig = 1;
+  g.nameCy = g0.gdNameCy; g.remLblY = g0.gdRemLblY; g.bigBase = g0.gdBigBase;
+  g.barY = g0.gdBarY; g.lineCy = g0.gdLineCy;
+  g.amsHdrY -= d; g.amsRowY -= d;
+  g.botRuleAms = g.botRuleNoAms = rule;
+  return true;
+}
+
 static CardGeo frameGeo(const CardFrame& f) {
   const CardGeo& g0 = geo();
   CardGeo g = liftHeader(g0);
   int16_t r0;
   switch (f.kind) {
-    case CK_PRINTING: r0 = bottomRule(f, g0); break;
+    case CK_PRINTING:
+      if (gridGeo(f, g0, g)) return g;
+      r0 = bottomRule(f, g0);
+      break;
     case CK_FINISHED: r0 = g0.finBotRule;     break;
     case CK_IDLE:     r0 = g0.idleBotRule;    break;
     default:          return g;              // AMS page: grid fills down from the header
@@ -1076,10 +1107,15 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
   }
   cv.noTier = false;
   if (f.showActiveFil && f.activeFil.known && f.thumbShow && g.amsColW) {
-    // Landscape: the column under the thumbnail, below its own rule.
-    const int16_t ry = g.hdrRule + cv.S(10) + g.thumbSize + cv.S(10);
-    cv.hline(g.pad, ry, g.thumbSize, f.track);
-    drawActiveFil(cv, f, g.pad, ry + (g.botRuleAms - ry) / 2, g.thumbSize);
+    // Landscape: the column under the thumbnail, below its own rule when
+    // there is room for one (not above the temperature grid).
+    const int16_t tb = g.hdrRule + cv.S(10) + g.thumbSize, ry = tb + cv.S(10);
+    if (g.botRuleAms - ry >= cv.S(30)) {
+      cv.hline(g.pad, ry, g.thumbSize, f.track);
+      drawActiveFil(cv, f, g.pad, ry + (g.botRuleAms - ry) / 2, g.thumbSize);
+    } else {
+      drawActiveFil(cv, f, g.pad, tb + (g.botRuleAms - tb) / 2, g.thumbSize);
+    }
   } else if (filOnLine && rightStart - leftEnd > cv.S(40)) {
     drawActiveFil(cv, f, leftEnd + cv.S(10), cy, rightStart - leftEnd - cv.S(18));
   }

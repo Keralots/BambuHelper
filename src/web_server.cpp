@@ -2815,6 +2815,22 @@ static void handleOtaRollback() {
   scheduleRestart(1500);
 }
 
+// Why the last STA connect failed - read by the AP setup page. Never the password.
+static void handleWifiDiag() {
+  const WifiFailInfo& fi = getWifiFailInfo();
+  JsonDocument doc;
+  doc["kind"] = wifiFailKindName(fi.kind);
+  doc["ssid"] = wifiSSID;
+  doc["rssi"] = fi.rssi;
+  doc["ch"] = fi.channel;
+  doc["reason"] = fi.reason;
+  doc["near"] = fi.nearName;
+  String json;
+  serializeJson(doc, json);
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.send(200, "application/json", json);
+}
+
 // Captive portal: redirect any unknown request to root
 // Android/Samsung check /generate_204 expecting 204 — returning 302 triggers popup.
 // Apple checks /hotspot-detect.html — non-"Success" body triggers popup.
@@ -2848,6 +2864,7 @@ void initWebServer() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save/wifi", HTTP_POST, handleSaveWifi);
+  server.on("/wifi/diag", HTTP_GET, handleWifiDiag);
   server.on("/save/printer", HTTP_POST, handleSavePrinter);
   server.on("/save/gaugelayout", HTTP_POST, handleSaveGaugeLayout);
   server.on("/save/rotation", HTTP_POST, handleSaveRotation);

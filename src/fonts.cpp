@@ -35,6 +35,10 @@
 #include "fonts/inter_card_lbl_l.h" // ~10 KB
 #define HAVE_CARD_L 1
 #endif
+#if defined(DISPLAY_240x320)
+#include "fonts/inter_card_mid.h"   // ~5 KB
+#define HAVE_CARD_MID 1
+#endif
 #endif
 
 static FontID currentFont = FONT_NONE;
@@ -113,6 +117,7 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
             break;
         case FONT_CARD_NUM_L:
         case FONT_CARD_LBL_L:
+        case FONT_CARD_MID:
             if (!loadFontInto(gfx, id)) applyBitmapFallback(gfx, FONT_LARGE);
             break;
         case FONT_7SEG:
@@ -165,6 +170,11 @@ static const uint8_t* fontData(FontID id) {
 #else
         case FONT_CARD_NUM: return inter_19;
         case FONT_CARD_LBL: return inter_10;
+#endif
+#if defined(HAVE_CARD_MID)
+        case FONT_CARD_MID: return inter_card_mid;
+#else
+        case FONT_CARD_MID: return inter_19;
 #endif
         default:          return nullptr;
     }
