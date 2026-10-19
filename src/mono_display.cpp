@@ -44,7 +44,7 @@
 // Layout checked for overlaps (default font = 6x8 px cells).
 // FreeMonoBold9pt7b caps: yOffset -10, height 11, so baseline y=N spans
 // N-10..N (measured in the font file). Printing (Spotify style): title 2x11
-// at baselines 13/26, info rows at y=31 (layer) and y=41 (plain-text temps),
+// at baselines 12/27, info rows at y=31 (layer) and y=41 (plain-text temps),
 // bar at y=50..55, bottom row at y=57 (glyph + % left, time right).
 // Prepare/failed/offline keep the airy rows: title baseline y=12,
 // TEMP_Y=21 (icons 21..29, text 21..28), LAYER_Y=34 (34..41),
@@ -413,11 +413,11 @@ static void wrapJobName2Lines(const String &clean, String &l1, String &l2);
 // FreeMonoBold9pt7b wrapped to 2x11 lines (no marquee), two default-font info
 // lines (layer, plain-text temps), bar at y=50, status glyph + % bottom-left
 // with the remaining/end time bottom-right.
-static const int PRINT_TITLE_Y1 = 13;
-static const int PRINT_TITLE_Y2 = 26;
-static const int PRINT_INFO_Y1 = 36;  // subido 2 px para no tocar la barra
-static const int PRINT_BAR_Y = 46;    // subida 4 px
-static const int PRINT_BOTTOM_Y = 55; // subido 2 px más
+static const int PRINT_TITLE_Y1 = 12;
+static const int PRINT_TITLE_Y2 = 27;
+static const int PRINT_INFO_Y1 = 36;
+static const int PRINT_BAR_Y = 46;
+static const int PRINT_BOTTOM_Y = 55;
 
 // Tiempo restante corto: "-53m" / "-1h05m", "--" sin datos.
 static String fmtRemainingShort(int minutes) {
