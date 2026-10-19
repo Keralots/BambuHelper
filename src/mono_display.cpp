@@ -44,8 +44,8 @@
 // Layout checked for overlaps (default font = 6x8 px cells).
 // FreeMonoBold9pt7b caps: yOffset -10, height 11, so baseline y=N spans
 // N-10..N (measured in the font file). Printing (Spotify style): title 2x11
-// at baselines 12/27, info rows at y=31 (layer) and y=41 (plain-text temps),
-// bar at y=50..55, bottom row at y=57 (glyph + % left, time right).
+// at baselines 12/27, info row at y=36 (%-layer), bar at y=46..51, bottom row
+// at y=55 (stage left, time right).
 // Prepare/failed/offline keep the airy rows: title baseline y=12,
 // TEMP_Y=21 (icons 21..29, text 21..28), LAYER_Y=34 (34..41),
 // BAR_Y=46 (46..51), BOTTOM_Y=56 (56..63).
@@ -161,7 +161,7 @@ void monoDrawProgressBar(int y, int percent, bool blinkOn) {
   // Same bar as Spotify: drawRect + fillRect with map().
   oled.drawRect(0, y, 128, BAR_H, SH110X_WHITE);
   int fill = map(percent, 0, 100, 0, 126);
-  if (blinkOn) fill = 0;  // parpadeo de la barra (relleno) en pausa
+  if (blinkOn) fill = 0;  // pause blink: hide the fill every other frame
   oled.fillRect(0, y, fill, BAR_H, SH110X_WHITE);
 }
 
@@ -419,7 +419,7 @@ static const int PRINT_INFO_Y1 = 36;
 static const int PRINT_BAR_Y = 46;
 static const int PRINT_BOTTOM_Y = 55;
 
-// Tiempo restante corto: "-53m" / "-1h05m", "--" sin datos.
+// Short remaining time: "-53m" / "-1h05m", "--" with no data.
 static String fmtRemainingShort(int minutes) {
   char buf[16];
   if (minutes < 0) return String("--");
@@ -431,8 +431,8 @@ static String fmtRemainingShort(int minutes) {
   return String(buf);
 }
 
-// ETA = hora local (NTP + zona horaria con DST) + minutos restantes.
-// Formato 24h (sin la palabra "ETA"), "+Nd" si cruza medianoche, "--:--" sin reloj.
+// ETA = local time (NTP + DST-aware timezone) + remaining minutes.
+// 24h format (no "ETA" word), "+Nd" when it crosses midnight, "--:--" with no clock.
 static String fmtETA(const BambuState &st) {
   if (!ntpOk() || st.remainingMinutes < 0) return String("--:--");
   time_t now = time(nullptr);
@@ -452,7 +452,7 @@ static String fmtETA(const BambuState &st) {
   return String(buf);
 }
 
-// Texto del proceso actual (fila bajo la barra, izquierda). Mapa único.
+// Current process text (row below the bar, left). Single map.
 static const char* stageToText(const BambuState &st) {
   switch (st.gcodeStateId) {
     case GCODE_PAUSE:   return "[Paused]";
@@ -495,7 +495,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   int pct = hasData ? (int)st.progress : 0;
   bool isPause = (scr == MONO_SCR_PAUSE);
 
-  // ── Título: 2 líneas, sin cambios respecto al layout anterior ──
+  // ── Title: 2 lines, unchanged from the previous layout ──
   String l1, l2;
   wrapJobName2Lines(monoCleanJobName(jobDisplayName(st)), l1, l2);
   oled.setFont(&FreeMonoBold9pt7b);
@@ -508,7 +508,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
   oled.setFont();
   oled.setTextSize(1);
 
-  // ── Fila sobre la barra: % a la izquierda | capa/total a la derecha ──
+  // ── Row above the bar: % on the left | layer/total on the right ──
   oled.setCursor(0, PRINT_INFO_Y1);
   if (!hasData)
     oled.print(F("--%"));
@@ -530,14 +530,14 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
     oled.print(layerBuf);
   }
 
-  // ── Barra de progreso (estilo idéntico: borde 1 px, grosor BAR_H, relleno map());
-  //     en pausa el relleno parpadea cada ~500 ms (blinkOn, no bloqueante) ──
+  // ── Progress bar (same style: 1 px border, BAR_H thick, map() fill);
+  //     when paused the fill blinks every ~500 ms (blinkOn, non-blocking) ──
   if (monoSettings.showBar) monoDrawProgressBar(PRINT_BAR_Y, pct,
                                                 isPause && blinkOn);
 
-  // ── Fila bajo la barra: proceso actual a la izq | tiempo restante / ETA a la der ──
-  //     si showTimeAlt, se intercalan cada 5 s. Con showTimePrinting off la
-  //     fila queda sin tiempo a la derecha y el proceso ocupa todo el ancho.
+  // ── Row below the bar: current process left | remaining time / ETA right ──
+  //     with showTimeAlt they alternate every 5 s. With showTimePrinting off
+  //     the row has no time on the right and the process uses the full width.
   const char* stageTxt = stageToText(st);
   int16_t x1, y1;
   uint16_t etaW, etaH;
@@ -597,7 +597,7 @@ static void renderPrinting(const BambuState &st, MonoScreen scr, bool blinkOn) {
 }
 
 static void wrapJobName2Lines(const String &clean, String &l1, String &l2) {
-  const int maxLine = MONO_MAX_CHAR_TITLE_PER_LINE;  // 11 con la fuente grande
+  const int maxLine = MONO_MAX_CHAR_TITLE_PER_LINE;  // 11 with the large font
   String t = clean;
   t.trim();
   if ((int)t.length() <= maxLine) {
@@ -605,7 +605,7 @@ static void wrapJobName2Lines(const String &clean, String &l1, String &l2) {
     l2 = "";
     return;
   }
-  // Relleno greedy por palabras para la primera linea.
+  // Greedy word wrap for the first line.
   int n = t.length();
   int cut = -1;
   int lastSpace = -1;
@@ -631,7 +631,7 @@ static void wrapJobName2Lines(const String &clean, String &l1, String &l2) {
 
 static void renderFinish(const BambuState &st) {
   oled.clearDisplay();
-  // 1. Titulo en hasta 2 lineas (fuente grande).
+  // 1. Title in up to 2 lines (large font).
   String l1, l2;
   wrapJobName2Lines(monoCleanJobName(jobDisplayName(st)), l1, l2);
   oled.setFont(&FreeMonoBold9pt7b);
@@ -654,7 +654,7 @@ static void renderFinish(const BambuState &st) {
   oled.print("DONE!");
   oled.setFont();
   oled.setTextSize(1);
-  // 3. Temps de enfriamiento abajo (misma fila que en printing).
+  // 3. Cooldown temps at the bottom (same row as in printing).
   if (monoSettings.showTempsDone)
     drawTempsRow(54, st.nozzleTemp, st.nozzleTarget, st.bedTemp, st.bedTarget);
   oled.display();
@@ -947,7 +947,7 @@ static void renderNow(MonoScreen scr, const BambuState &st) {
   }
 }
 
-// --- Modo pruebas (Paso 6) ------------------------------------------------------
+// --- Mock mode (Step 6) ---------------------------------------------------------
 #if MONO_MOCK
 static bool s_mockOn = false;
 static bool s_mockCycle = false;
@@ -1317,7 +1317,7 @@ void monoDisplayTick() {
   MonoSig sig = makeSig(scr, raw, st);
   bool changed = !s_haveLast || !sigSame(sig, s_last);
   unsigned long now = millis();
-  // Marquee/parpadeo => ~10 fps; estatico => 1 s.
+  // Marquee/blink => ~10 fps; static => 1 s.
   bool animated = s_marqueeActive || scr == MONO_SCR_PAUSE ||
                   (s_haveLast && s_last.scr != scr);
   if (scr == MONO_SCR_PAUSE) animated = true;
