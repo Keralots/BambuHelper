@@ -64,6 +64,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | ![Waveshare 2.8C round](img/ws_lcd_28c.jpg) | **Waveshare ESP32-S3-Touch-LCD-2.8C** | `480x480` **round** **ST7701** IPS panel on the ESP32-S3's LCD_CAM RGB bus (16-bit parallel, with a 3-wire SPI command interface), ESP32-S3R8 (`16MB` flash / `8MB` PSRAM), and **GT911** capacitive touch. Use the `ws_lcd_28c` firmware build. Gets its own `480x480` round layout - the 240x240 round dashboard at exactly 2x, with a larger font tier - and supports **up to 2 printers** (up to 4 with the experimental opt-in). LCD reset, LCD CS, touch reset and the buzzer all hang off an on-board **TCA9554** I2C IO expander; the buzzer is therefore on/off only, so melodies play as rhythm without pitch. Battery voltage is read on GPIO4. IMU, RTC and microSD are not wired up in firmware. Hardware-confirmed by the requester in issue [#171](https://github.com/Keralots/BambuHelper/issues/171). The RGB pixel clock runs at a conservative 12 MHz and is an `.ini` knob. Product page: [waveshare.com/esp32-s3-touch-lcd-2.8c.htm](https://www.waveshare.com/esp32-s3-touch-lcd-2.8c.htm) | _community_ |
 | ![CYD TZT variant](img/CYD_tzt.png) | **CYD / TZT L1435-2.4** (ST7789) | Looks almost identical to the standard CYD, but uses a `240x320` **ST7789V** panel (instead of ILI9341) and the backlight is on GPIO27. Use the `tzt_2432` firmware build - the regular `cyd` build will give you a black screen on this hardware. Due to RAM limits, this board supports **1 printer only**. Often sold on Aliexpress as *"TZT ESP32 LVGL 2.4 inch LCD TFT 240*320 With Touch"*. | _community_ |
 | ![CYD 2.4 ESP32-2432S024](img/cyd_2432s024.jpg) | **CYD 2.4" / ESP32-2432S024** (ILI9341) | The 2.4" sibling of the classic CYD - `240x320` **ILI9341** panel with **XPT2046** resistive touch, printed `ESP32-2432S024` on the back. Use the `cyd_2432s024` firmware build: the backlight is on GPIO27 and the touch chip shares the display SPI bus, so the regular `cyd` build gives a black screen with dead touch, and `tzt_2432` gives a white screen. Due to RAM limits, this board supports **1 printer only**. Hardware-confirmed by the requester in issue [#186](https://github.com/Keralots/BambuHelper/issues/186). | _community_ |
+| ![ESP32-C3 + SH1106 OLED](img/sh1106_128x64_oled.jpg) | **ESP32-C3 SuperMini + SH1106 1.3" OLED** | `128x64` monochrome **SH1106** OLED over I2C (SDA=GPIO8, SCL=GPIO9) on an ESP32-C3 SuperMini - no touch, no backlight. Use the `mono-c3` firmware build. Its own Spotify-style mono UI (idle clock/screensaver, printing, done, error, offline) with an optional OpenWeatherMap icon + temperature on the idle clock, configured from a **Mono OLED** card in the web interface. Supports **1 printer only**. Case: [MakerWorld model](https://makerworld.com/en/models/3424957-terminal-case-for-ssd1106-1-3-oled-and-esp32#profileId-3903569) | [@alejandrosnz](https://github.com/alejandrosnz) |
 
 ### Custom-Wired Displays (generic DIY env)
 
@@ -604,60 +605,6 @@ The built-in configuration portal (open the device's IP in any browser) covers e
 | Finished | Print complete with animation (auto-off after timeout) |
 | Clock | After finish timeout (if enabled) - shows digital clock with date |
 | Display Off | After finish timeout (if clock disabled) or printer powered off |
-
-## Mono OLED print screens (SH1106 128x64, env `mono-c3`)
-
-ESP32-C3 SuperMini + SH1106 128x64 over I2C (`Adafruit_SH1106G`, no other
-library). ESP-Spotify-OLED style: `FreeMonoBold9pt7b` title, default font
-for the rest, `drawRect`/`fillRect` bar, hand-drawn XBM bitmap icons (no font
-glyphs) and ASCII-transliterated names.
-
-```
-Title (FreeMonoBold9pt, 1 row at the very top, marquee when it overflows
-128 px)
-y=21   [nozzle] 215/220  [bed] 60/60
-y=34   Layer 123/456
-y=46   [progress bar, 6 tall]
-y=56   [icon] 45%        - 1h 10m
-```
-
-| Screen | When | Content |
-|---|---|---|
-| Offline | `!connected` | "Offline" + configured printer IP |
-| Heating | `PREPARE` | "Heating" + current/target temps |
-| Printing | `RUNNING` | Title, nozzle/bed icons + temps (current only when target is 0), layer, bar, play icon + `%` and remaining on the right |
-| Pause | `PAUSE` | Same as printing, pause icon with blinking `%` |
-| Done | `FINISH` | Name, full bar, "Done" |
-| Error | `FAILED` or `print_error != 0` | "ERR" + raw code + name |
-| Idle | `IDLE` | "Idle", big clock (or big temps with icons when NTP is down), `HOT` + connection dot |
-
-Priority: `!connected` > `FAILED`/`print_error` > rest. The title is always
-one row: static up to 11 chars, marquee above that. Refresh: only on state change or every 1 s;
-I2C at 400 kHz. Idle display-off: `monoDisplaySetEnabled(false)`
-(alias `oled_display(false)`).
-
-Mock over Serial (115200 baud): `mock <n>` pins one screen, `mock cycle`
-rotates all 9 every 3 s, `mock off` returns to live data. Cases: 0 print
-0% short, 1 print 50% ~20ch, 2 long print (marquee), 3 pause, 4 done,
-5 error, 6 cold idle, 7 hot idle (`HOT`), 8 offline. With
-`-D MONO_MOCK_AUTO=1` it boots into `cycle`.
-
-Tunable constants (`src/mono_display.h`, overridable with `-D`):
-
-| Constant | Default | What it does |
-|---|---|---|
-| `MONO_MAX_CHAR_TITLE_PER_LINE` | 11 | Static title length (marquee above it) |
-| `MONO_HOT_THRESHOLD_C` | 50 | `HOT` warning threshold |
-| `MONO_REFRESH_MS` | 1000 | Static refresh |
-| `MONO_MARQUEE_MS` | 100 | Marquee step (~10 fps) |
-| `MONO_END_TIME_ALT_MS` | 5000 | Remaining/end-time alternation period |
-| `MONO_MOCK` | 1 | `mock ...` commands over Serial |
-
-Measured 2026-10-14 (`pio run -e mono-c3`): RAM 58180/327680 (17.8 %),
-sections Flash 1747024/1835008, `firmware.bin` 1760912 B (about 74 KB
-of headroom in the 1835008 B slot). Phase-1 baseline: RAM 58036,
-Flash 1738636 (+144 B RAM / +8388 B Flash). Boot heap over Serial
-(`MONO heap=...`, usually >180 KB on C3).
 
 ## Display Power Management
 
