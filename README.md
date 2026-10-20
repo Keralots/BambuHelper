@@ -67,7 +67,7 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 
 ### Community Forks
 
-Some boards need a UI or toolchain that is too different to live in this firmware, so they are maintained as separate forks. They are not built, tested or supported here - please report issues to the fork.
+Some boards need a UI or toolchain that is too different to live in this firmware, so they are maintained as separate forks. They are not built, tested or supported here.
 
 | Display | Fork | Maintainer |
 |---|---|---|
