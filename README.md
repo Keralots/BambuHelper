@@ -65,6 +65,14 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 | ![CYD TZT variant](img/CYD_tzt.png) | **CYD / TZT L1435-2.4** (ST7789) | Looks almost identical to the standard CYD, but uses a `240x320` **ST7789V** panel (instead of ILI9341) and the backlight is on GPIO27. Use the `tzt_2432` firmware build - the regular `cyd` build will give you a black screen on this hardware. Due to RAM limits, this board supports **1 printer only**. Often sold on Aliexpress as *"TZT ESP32 LVGL 2.4 inch LCD TFT 240*320 With Touch"*. | _community_ |
 | ![CYD 2.4 ESP32-2432S024](img/cyd_2432s024.jpg) | **CYD 2.4" / ESP32-2432S024** (ILI9341) | The 2.4" sibling of the classic CYD - `240x320` **ILI9341** panel with **XPT2046** resistive touch, printed `ESP32-2432S024` on the back. Use the `cyd_2432s024` firmware build: the backlight is on GPIO27 and the touch chip shares the display SPI bus, so the regular `cyd` build gives a black screen with dead touch, and `tzt_2432` gives a white screen. Due to RAM limits, this board supports **1 printer only**. Hardware-confirmed by the requester in issue [#186](https://github.com/Keralots/BambuHelper/issues/186). | _community_ |
 
+### Community Forks
+
+Some displays need a UI that is too different to live in this firmware, so they are maintained as separate forks. They are not built, tested or supported here - please report issues to the fork.
+
+| Display | Fork | Maintainer |
+|---|---|---|
+| **ESP32-C3 SuperMini + SH1106 1.3" OLED** (`128x64` monochrome, I2C) | [alejandrosnz/BambuHelper](https://github.com/alejandrosnz/BambuHelper/tree/mono/c3-oled) - monochrome UI with idle clock, print progress and optional weather. 3D-printed case on [MakerWorld](https://makerworld.com/en/models/3424957-terminal-case-for-ssd1106-1-3-oled-and-esp32). | [@alejandrosnz](https://github.com/alejandrosnz) |
+
 ### Custom-Wired Displays (generic DIY env)
 
 Wired your own SPI display to a bare ESP32 and it doesn't match any board above? Instead of editing C++, there is a **generic DIY build** whose display driver and pins come from build flags in a `boards/*.ini` file. Set your wiring once and build - no source changes.
