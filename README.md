@@ -67,11 +67,15 @@ When using Bambu Cloud, BambuHelper connects through Bambu Lab's cloud MQTT serv
 
 ### Community Forks
 
-Some displays need a UI that is too different to live in this firmware, so they are maintained as separate forks. They are not built, tested or supported here - please report issues to the fork.
+Some boards need a UI or toolchain that is too different to live in this firmware, so they are maintained as separate forks. They are not built, tested or supported here - please report issues to the fork.
 
 | Display | Fork | Maintainer |
 |---|---|---|
 | **ESP32-C3 SuperMini + SH1106 1.3" OLED** (`128x64` monochrome, I2C) | [alejandrosnz/BambuHelper](https://github.com/alejandrosnz/BambuHelper/tree/mono/c3-oled) - monochrome UI with idle clock, print progress and optional weather. 3D-printed case on [MakerWorld](https://makerworld.com/en/models/3424957-terminal-case-for-ssd1106-1-3-oled-and-esp32). | [@alejandrosnz](https://github.com/alejandrosnz) |
+| **Waveshare ESP32-S3-Touch-LCD-4.3B** (`800x480` RGB, touch) | [honzo90/BambuHelper](https://github.com/honzo90/BambuHelper/tree/waveshare-43b) - full-size dashboard with AMS, clock and weather views, Polish or English UI. **Experimental** - see the fork's README for known issues. | [@honzo90](https://github.com/honzo90) |
+| **Waveshare ESP32-S3-Touch-AMOLED-1.75** (`466x466` round AMOLED, CO5300 + CST9217) | [oluapasuos/BambuHelper](https://github.com/oluapasuos/BambuHelper/tree/ws-amoled-175-port-v2) - port with its own 466x466 layout and touch rotation. | [@oluapasuos](https://github.com/oluapasuos) |
+| **RockBase NM-CYD-C5 2.8"** (ESP32-C5, ST7789 `240x320` + XPT2046) | [jamtur01/BambuHelper](https://github.com/jamtur01/BambuHelper/tree/nmc5) - needs the pioarduino platform for ESP32-C5 support. | [@jamtur01](https://github.com/jamtur01) |
+| **RAKwireless WisBlock RAK3312 + RAK14014** | [beegee-tokyo/BambuHelper-WisBlock](https://github.com/beegee-tokyo/BambuHelper-WisBlock) - prebuilt binaries in the fork's [Releases](https://github.com/beegee-tokyo/BambuHelper-WisBlock/releases); based on an older BambuHelper version. | [@beegee-tokyo](https://github.com/beegee-tokyo) |
 
 ### Custom-Wired Displays (generic DIY env)
 
