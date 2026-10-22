@@ -131,7 +131,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Button plug power control** - double-click the device button (or touchscreen) to switch the shown printer's smart plug on or off, with a hold-to-confirm safety screen - power a switched-off printer back on without opening a browser
 - **Chamber light control** - manual on/off buttons in the web UI plus per-printer automation: light off after a successful or failed print (with delay), on when a print starts; dual-bar printers (H2C/H2D) switch both bars
 - **Printer error reporting (HMS)** - a red `ERR` badge when the printer reports an HMS code or print error, a tap-to-open detail screen with the official Bambu wording, and optional edge-glow / buzzer / LED / wake-the-screen alerts
-- **Cards print screen (beta)** - an alternative to the gauges: big progress percentage, time left, finish time, one row of temperatures, plus an AMS column, the plate preview or the filaments of this print - see [Cards print screen (beta)](#cards-print-screen-beta)
+- **Cards print screen** - an alternative to the gauges: big progress percentage, time left, finish time, one row of temperatures, plus an AMS column, the plate preview or the filaments of this print - see [Cards print screen](#cards-print-screen)
 - **Animations** - loading spinner, progress pulse, completion celebration
 - **Web config portal** - dark-themed settings page for WiFi, network, printer, display, power, buzzer, and LED settings
 - **Network configuration** - DHCP or static IP, with optional IP display at startup
@@ -158,7 +158,9 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Battery support (Waveshare 2" and 1.54")** - on-screen battery indicator, charging detection, hold-to-power-off
 - **Exponential backoff** - reconnect attempts to offline printers gradually slow down to conserve resources
 
-## Cards print screen (beta)
+<a id="cards-print-screen-beta"></a>
+
+## Cards print screen
 
 A calmer alternative to the gauge dashboard, readable from across the room: a big progress percentage, the time left and the finish time, a progress bar, and a single row of temperatures. The Ready and Print Complete screens follow the same style.
 
@@ -167,7 +169,7 @@ The same print at the same moment, on the same 320x240 screen:
 <table>
 <tr>
 <td align="center"><img src="img/cards/print-gauges-ws_lcd_200-landscape.png" alt="Gauges print screen, 320x240 landscape"><br><sub>Gauges (default)</sub></td>
-<td align="center"><img src="img/cards/print-cards-ws_lcd_200-landscape.png" alt="Cards print screen, 320x240 landscape"><br><sub>Cards (beta)</sub></td>
+<td align="center"><img src="img/cards/print-cards-ws_lcd_200-landscape.png" alt="Cards print screen, 320x240 landscape"><br><sub>Cards</sub></td>
 </tr>
 </table>
 
@@ -191,7 +193,7 @@ Screenshots are taken from the device at native resolution.
 - **Header** - printer name, plug power, door state and the status badge; long job names scroll; the finish time gets a "+1" when the print ends tomorrow
 - **Colors** come from the existing Colors section (Background, Track, Progress Bar, Finish time, the accents, Door, and each gauge's value color for its temperature); temperatures switch to the warning color under the same **Warning threshold** as the gauges. The **Warm paper** preset suits it well
 
-Turn it on in the web interface under **Print screen**: **Print screen style** -> `Cards (beta)`, then pick **Card: left column** and **Card: bottom row**. While Cards is selected, the portal marks the settings it does not use as *Gauges only*. Split view (two printers at once) keeps the classic gauges.
+Turn it on in the web interface under **Print screen**: **Print screen style** -> `Cards`, then pick **Card: left column** and **Card: bottom row**. While Cards is selected, the portal marks the settings it does not use as *Gauges only*. Split view (two printers at once) keeps the classic gauges.
 
 Cards runs on every 240x320 and 320x480 board and on the square 240x240 boards with PSRAM. The 240x320 boards without PSRAM (CYD, TZT, CYD 2.4") draw it in strips, so a full screen change takes about a tenth of a second, and they cannot show the plate preview, which needs PSRAM. Tested on the CYD; the TZT and the CYD 2.4" use the same code but have not been tried yet. The ESP32-C3 boards, the round displays and the 480x480 SenseCAP keep the gauges.
 

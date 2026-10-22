@@ -425,7 +425,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out  = "<div class=\"field\"><label for=\"card\">Print screen style</label>";
     out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value);applyCardsHints()\">";
     opt(out, dispSettings.cardStyle, 0, "Gauges");
-    opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
+    opt(out, dispSettings.cardStyle, 1, "Cards");
     out += "</select>";
     out += "<span class=\"text-dim small\">Settings that only apply to Gauges are hidden while Cards is picked; split view keeps the gauges.</span></div>";
     out += "<div id=\"cardOpts\">";
