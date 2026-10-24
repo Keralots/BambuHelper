@@ -7,14 +7,25 @@
 //  serveMainPage() streams PAGE_HTML in 2 KB chunks via HTTP chunked transfer,
 //  substituting %FOO% placeholders inline. Peak heap during page render is the
 //  2 KB buffer plus any per-placeholder String allocation - typically <3 KB.
+//  The bilingual CYD build additionally uses a heap-allocated ROM inflater and
+//  one 4 KB output block, released when the response completes or disconnects.
 //
 //  serveApPage() sends the small AP-mode page verbatim. No substitution.
 // =============================================================================
 
 #include "web_template.h"
 #include "localization.h"
+struct TemplateSegment {
+  const char* data;
+  size_t len;
 #if defined(BAMBUHELPER_ZH_CN)
-#include "web_pages_zh_cn.h"
+  uint16_t rawLen;
+#endif
+};
+
+#if defined(BAMBUHELPER_ZH_CN)
+#include <rom/miniz.h>
+#include "web_pages_bilingual.h"
 #else
 #include "web_pages.h"
 #endif
@@ -57,6 +68,23 @@ static bool resolvePlaceholder(const char* name, String& out) {
   PrinterConfig& cfg = printers[0].config;
   BambuState& st = printers[0].state;
   char buf[8];
+
+  if (strcmp(name, "LANGUAGE_SETTINGS") == 0) {
+    out = "";
+#if defined(BAMBUHELPER_ZH_CN)
+    out = F("<div class=\"card\"><div class=\"field\">"
+            "<label for=\"language\">Language / 语言</label>"
+            "<select id=\"language\" onchange=\"saveLanguage(this.value)\">"
+            "<option value=\"en\" ");
+    if (!uiChinese) out += "selected";
+    out += ">English</option><option value=\"zh-CN\" ";
+    if (uiChinese) out += "selected";
+    out += F(">简体中文</option></select>"
+             "<div id=\"languageStatus\" role=\"status\" aria-live=\"polite\"></div>"
+             "</div></div>");
+#endif
+    return true;
+  }
 
   // --- Printer ---
   if (strcmp(name, "SSID") == 0)            { out = wifiSSID; return true; }
@@ -280,8 +308,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // present, since that file is shared by every board and sees no #if.
   if (strcmp(name, "HMS_NAV") == 0) {
 #if HAS_HMS_WEB_UI
-    out = F("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\">"
-            BH_TEXT("<span>Printer Errors</span></button>", "<span>打印机错误</span></button>"));
+    out = F(BH_TEXT("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\"><span>Printer Errors</span></button>", "  <button class=\"nav-item\" type=\"button\" data-section=\"errors\"><span>打印机错误</span></button>"));
 #else
     out = "";
 #endif
@@ -862,11 +889,6 @@ static bool resolvePlaceholder(const char* name, String& out) {
 // One piece of the page. The page is split so a board without the printer-error
 // feature never links its markup; the pieces stream back to back into a single
 // chunked response, so a split is invisible to the browser.
-struct TemplateSegment {
-  const char* data;
-  size_t      len;
-};
-
 static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   static const size_t BUF_SIZE = 2048;
   char* buf = (char*)malloc(BUF_SIZE + 1);
@@ -874,6 +896,19 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
     server.send(503, "text/plain", BH_TEXT("Out of memory", "内存不足"));
     return;
   }
+#if defined(BAMBUHELPER_ZH_CN)
+  // Keep the inflater off Arduino's small task stack. Each independent block
+  // needs only a 4 KB output buffer, not a 32 KB sliding-window dictionary.
+  auto* inflater = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));
+  auto* decoded = (mz_uint8*)malloc(4096);
+  if (!inflater || !decoded) {
+    free(inflater);
+    free(decoded);
+    free(buf);
+    server.send(503, "text/plain", BH_TEXT("Out of memory", "内存不足"));
+    return;
+  }
+#endif
   size_t bufLen = 0;
 
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -915,8 +950,24 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
 
   // On ESP32, PROGMEM is directly memory-mapped and readable as const char*.
   for (uint8_t seg = 0; seg < segCount && !aborted; seg++) {
-  const char* end = segs[seg].data + segs[seg].len;
-  const char* pos = segs[seg].data;
+  const char* data = segs[seg].data;
+  size_t length = segs[seg].len;
+#if defined(BAMBUHELPER_ZH_CN)
+  size_t inputSize = length, outputSize = segs[seg].rawLen;
+  tinfl_init(inflater);
+  if (tinfl_decompress(inflater, (const mz_uint8*)data, &inputSize,
+                       decoded, decoded, &outputSize,
+                       TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) != TINFL_STATUS_DONE ||
+      outputSize != segs[seg].rawLen) {
+    aborted = true;
+    server.client().stop();
+    break;
+  }
+  data = (const char*)decoded;
+  length = outputSize;
+#endif
+  const char* end = data + length;
+  const char* pos = data;
   const char* literalStart = pos;
 
   while (pos < end && !aborted) {
@@ -957,12 +1008,21 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   flush();
   if (!aborted) server.sendContent("");
   free(buf);
+#if defined(BAMBUHELPER_ZH_CN)
+  free(decoded);
+  free(inflater);
+#endif
 }
 
 // ---------------------------------------------------------------------------
 //  Public entry points
 // ---------------------------------------------------------------------------
 void serveMainPage() {
+#if defined(BAMBUHELPER_ZH_CN)
+  streamTemplate(uiChinese ? PAGE_MAIN_ZH : PAGE_MAIN_EN,
+                 uiChinese ? sizeof(PAGE_MAIN_ZH) / sizeof(TemplateSegment)
+                           : sizeof(PAGE_MAIN_EN) / sizeof(TemplateSegment));
+#else
   const TemplateSegment segs[] = {
     { PAGE_HTML_1, sizeof(PAGE_HTML_1) - 1 },
 #if HAS_HMS_WEB_UI
@@ -971,9 +1031,16 @@ void serveMainPage() {
     { PAGE_HTML_2, sizeof(PAGE_HTML_2) - 1 },
   };
   streamTemplate(segs, (uint8_t)(sizeof(segs) / sizeof(segs[0])));
+#endif
 }
 
 void serveApPage() {
+#if defined(BAMBUHELPER_ZH_CN)
+  streamTemplate(uiChinese ? PAGE_AP_ZH : PAGE_AP_EN,
+                 uiChinese ? sizeof(PAGE_AP_ZH) / sizeof(TemplateSegment)
+                           : sizeof(PAGE_AP_EN) / sizeof(TemplateSegment));
+#else
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/html", FPSTR(PAGE_AP_HTML));
+#endif
 }

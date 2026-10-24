@@ -12,6 +12,9 @@
 #include <cstring>   // memcpy/memmove/strlcpy used by the UTF-8 sanitizer helpers
 
 // Global state
+#if defined(BAMBUHELPER_ZH_CN)
+bool uiChinese = true;
+#endif
 PrinterSlot printers[MAX_PRINTERS];
 uint8_t activePrinterIndex = 0;
 RotationState rotState = { ROTATE_SMART, ROTATE_INTERVAL_MS, 0, 0, 0, false, 1 };
@@ -417,6 +420,10 @@ void loadSettings() {
   // Open read-write from the start: we may need to write a migration flag.
   // This is safe and avoids closing/reopening the partition mid-load.
   prefs.begin(NVS_NAMESPACE, false);
+
+#if defined(BAMBUHELPER_ZH_CN)
+  uiChinese = prefs.getBool("uiChinese", true);
+#endif
 
   // WiFi credentials
   strlcpy(wifiSSID, prefs.getString("wifiSSID", "").c_str(), sizeof(wifiSSID));
@@ -942,6 +949,9 @@ void loadSettings() {
 // ---------------------------------------------------------------------------
 void saveSettings() {
   prefs.begin(NVS_NAMESPACE, false);
+#if defined(BAMBUHELPER_ZH_CN)
+  prefs.putBool("uiChinese", uiChinese);
+#endif
 
   prefs.putString("wifiSSID", wifiSSID);
   prefs.putString("wifiPass", wifiPass);

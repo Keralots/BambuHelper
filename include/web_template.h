@@ -17,7 +17,8 @@ extern WebServer server;
 
 // Stream the main configuration page with %TOKEN% substitution.
 // Uses a 2 KB heap buffer + HTTP chunked transfer. Peak heap ~2 KB regardless
-// of total page size.
+// of total page size. The bilingual CYD build also allocates an inflater and
+// one 4 KB decompression block for the duration of the response.
 void serveMainPage();
 
 // Send the (small) AP-mode WiFi setup page. No placeholder substitution.

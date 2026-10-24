@@ -563,6 +563,9 @@ static void handleStatus() {
 
   // Device-wide (new design's Detected Hardware + WiFi live KV)
   doc["heap_kb"] = ESP.getFreeHeap() / 1024;
+#if defined(BAMBUHELPER_ZH_CN)
+  doc["language"] = uiChinese ? "zh-CN" : "en";
+#endif
   doc["uptime"] = (uint32_t)(millis() / 1000);
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
@@ -616,9 +619,7 @@ static void handleTimezones() {
 
 static void handleReset() {
   server.send(200, "text/html",
-    "<html><body style='background:#0D1117;color:#E6EDF3;text-align:center;padding-top:80px;font-family:sans-serif'>"
-    "<h2 style='color:#F85149'>Factory Reset</h2>"
-    BH_TEXT("<p>Restarting...</p></body></html>", "<p>正在重启…</p></body></html>"));
+    BH_TEXT("<html><body style='background:#0D1117;color:#E6EDF3;text-align:center;padding-top:80px;font-family:sans-serif'><h2 style='color:#F85149'>Factory Reset</h2><p>Restarting...</p></body></html>", "<html><body style='background:#0D1117;color:#E6EDF3;text-align:center;padding-top:80px;font-family:sans-serif'><h2 style='color:#F85149'>Factory Reset</h2><p>正在重启…</p></body></html>"));
   resetSettings();  // clears NVS and calls ESP.restart()
 }
 
@@ -834,6 +835,20 @@ static void handleDebugToggle() {
   server.send(200, "text/plain", mqttDebugLog ? "ON" : "OFF");
 }
 
+#if defined(BAMBUHELPER_ZH_CN)
+static void handleLanguageSetting() {
+  const String language = server.arg("language");
+  if (language != "en" && language != "zh-CN") {
+    server.send(400, "application/json", "{\"status\":\"error\"}");
+    return;
+  }
+  uiChinese = language == "zh-CN";
+  saveSettings();
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+  scheduleRestart();  // Reload all cached screen labels in the new language.
+}
+#endif
+
 static void handleToggleSetting() {
   if (!server.hasArg("key") || !server.hasArg("val")) {
     server.send(400, "text/plain", "Missing key/val");
@@ -974,7 +989,12 @@ static void handleToggleSetting() {
 //  again.
 // ---------------------------------------------------------------------------
 const char* webAssetCssVersion() { return WEB_APP_CSS_VER; }
-const char* webAssetJsVersion()  { return WEB_APP_JS_VER; }
+const char* webAssetJsVersion() {
+#if defined(BAMBUHELPER_ZH_CN)
+  if (!uiChinese) return WEB_APP_JS_EN_VER;
+#endif
+  return WEB_APP_JS_VER;
+}
 
 static void sendGzipAsset(const char* contentType, const uint8_t* data, size_t len) {
   server.sendHeader("Content-Encoding", "gzip");
@@ -983,7 +1003,15 @@ static void sendGzipAsset(const char* contentType, const uint8_t* data, size_t l
 }
 
 static void handleAppCss() { sendGzipAsset("text/css", WEB_APP_CSS_GZ, WEB_APP_CSS_GZ_LEN); }
-static void handleAppJs()  { sendGzipAsset("application/javascript", WEB_APP_JS_GZ, WEB_APP_JS_GZ_LEN); }
+static void handleAppJs() {
+#if defined(BAMBUHELPER_ZH_CN)
+  if (!uiChinese) {
+    sendGzipAsset("application/javascript", WEB_APP_JS_EN_GZ, WEB_APP_JS_EN_GZ_LEN);
+    return;
+  }
+#endif
+  sendGzipAsset("application/javascript", WEB_APP_JS_GZ, WEB_APP_JS_GZ_LEN);
+}
 
 static void handleCloudLogout() {
   clearCloudToken();
@@ -1143,8 +1171,7 @@ static void handleCloudLoginStart() {
 
   const bool save = (server.arg("save") == "1");
   if (save && password.length() > CLOUD_PASSWORD_MAX) {
-    sendCloudLoginError(BH_TEXT("That password is too long for this device to remember. ", "密码过长，设备无法保存。 ")
-                        BH_TEXT("Sign in without saving it, or use an emailed code.", "请不保存密码直接登录，或使用邮件验证码。"));
+    sendCloudLoginError(BH_TEXT("That password is too long for this device to remember. Sign in without saving it, or use an emailed code.", "密码过长，设备无法保存。 请不保存密码直接登录，或使用邮件验证码。"));
     return;
   }
 
@@ -1787,6 +1814,9 @@ static void handleSettingsExport() {
   rgb565ToHtml(dispSettings.doorClosedColor, buf); disp["doorClosedColor"] = String(buf);
   rgb565ToHtml(dispSettings.doorOpenColor, buf);   disp["doorOpenColor"] = String(buf);
   disp["roundSkin"] = dispSettings.roundSkin;
+#if defined(BAMBUHELPER_ZH_CN)
+  disp["language"] = uiChinese ? "zh-CN" : "en";
+#endif
   disp["cardStyle"] = dispSettings.cardStyle;
   disp["cardLeft"] = dispSettings.cardLeft;
   disp["cardBottom"] = dispSettings.cardBottom;
@@ -2177,6 +2207,13 @@ static void handleSettingsImportFinish() {
     if (disp["doorClosedColor"].is<const char*>()) dispSettings.doorClosedColor = htmlToRgb565(disp["doorClosedColor"]);
     if (disp["doorOpenColor"].is<const char*>())   dispSettings.doorOpenColor = htmlToRgb565(disp["doorOpenColor"]);
     if (disp["roundSkin"].is<int>()) { int rs = disp["roundSkin"].as<int>(); dispSettings.roundSkin = (rs >= 0 && rs <= 2) ? (uint8_t)rs : 0; }
+#if defined(BAMBUHELPER_ZH_CN)
+    if (disp["language"].is<const char*>()) {
+      const char* language = disp["language"];
+      if (strcmp(language, "en") == 0 || strcmp(language, "zh-CN") == 0)
+        uiChinese = strcmp(language, "zh-CN") == 0;
+    }
+#endif
     if (disp["cardStyle"].is<int>())  { int v = disp["cardStyle"].as<int>();  dispSettings.cardStyle  = (v == 1) ? 1 : 0; }
     if (disp["cardLeft"].is<int>())   { int v = disp["cardLeft"].as<int>();   dispSettings.cardLeft   = (v >= 0 && v <= 2) ? (uint8_t)v : 0; }
     if (disp["cardBottom"].is<int>()) { int v = disp["cardBottom"].as<int>(); dispSettings.cardBottom = (v == 1) ? 1 : 0; }
@@ -2824,6 +2861,9 @@ void initWebServer() {
   server.on("/screen.bmp", HTTP_GET, handleScreenBmp);
   server.on("/debug/toggle", HTTP_POST, handleDebugToggle);
   server.on("/save/toggle", HTTP_POST, handleToggleSetting);
+#if defined(BAMBUHELPER_ZH_CN)
+  server.on("/save/language", HTTP_POST, handleLanguageSetting);
+#endif
   server.on("/glow/test", HTTP_POST, handleGlowTest);
   server.on("/app.css", HTTP_GET, handleAppCss);
   server.on("/app.js", HTTP_GET, handleAppJs);

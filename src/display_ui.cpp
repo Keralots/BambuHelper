@@ -70,7 +70,7 @@ const char* stateBadgeText(const BambuState& s) {
   if (errorBadgeActive(s))   return ERROR_BADGE_TEXT;
   if (printerWasCanceled(s)) return CANCELED_STATE_TEXT;
 #if defined(BAMBUHELPER_ZH_CN)
-  switch (s.gcodeStateId) {
+  if (uiChinese) switch (s.gcodeStateId) {
     case GCODE_IDLE:    return "就绪";
     case GCODE_RUNNING: return "打印中";
     case GCODE_PAUSE:   return "已暂停";

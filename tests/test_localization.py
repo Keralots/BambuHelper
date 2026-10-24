@@ -4,12 +4,14 @@ import re
 import struct
 import sys
 import unittest
+import zlib
 from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from localize_web import javascript, markup, pages
+from compress_web import BLOCK_SIZE, blocks, header
 
 
 class Structure(HTMLParser):
@@ -23,6 +25,26 @@ class Structure(HTMLParser):
 
 
 class LocalizationTests(unittest.TestCase):
+    def test_compressed_blocks_round_trip_without_splitting_placeholders(self):
+        raw = (b"x" * (BLOCK_SIZE - 3) + b"%FW_VER%" + "中文".encode()) * 3
+        pieces = [zlib.decompress(blob, -15) for blob, length in blocks(raw)]
+        self.assertEqual(b"".join(pieces), raw)
+        self.assertTrue(all(len(piece) <= BLOCK_SIZE for piece in pieces))
+        self.assertTrue(all(piece.count(b"%") % 2 == 0 for piece in pieces))
+
+    def test_compressed_pages_keep_feature_gates_and_original_bytes(self):
+        source = (ROOT / "include" / "web_pages.h").read_text(encoding="utf-8")
+        for suffix, original in (("EN", source), ("ZH", pages(source))):
+            generated = header(original, suffix)
+            self.assertEqual(re.findall(r"^#(?:if|else|endif).*", original, re.M),
+                             re.findall(r"^#(?:if|else|endif).*", generated, re.M))
+            blobs = re.findall(r"static const uint8_t WEB_PAGE_\w+\[\] PROGMEM = \{([^}]+)\}", generated)
+            decoded = b"".join(zlib.decompress(bytes(int(x, 16) for x in blob.split(",")), -15) for blob in blobs)
+            expected = "".join(re.findall(r'R"rawliteral\(([\s\S]*?)\)rawliteral"', original)).encode()
+            self.assertEqual(decoded, expected)
+            self.assertIn("PAGE_MAIN_" + suffix, generated)
+            self.assertIn("PAGE_AP_" + suffix, generated)
+
     def test_markup_keeps_form_contract_and_escapes_attributes(self):
         source = '<label for="token">Access token</label><input id="token" name="token" value="Printer" placeholder="Password">'
         localized = markup(source)

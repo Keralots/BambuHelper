@@ -1170,6 +1170,8 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <p>Network credentials, settings backup, firmware updates, factory reset.</p>
   </div>
 
+  %LANGUAGE_SETTINGS%
+
   <div class="card">
     <div class="card-head">
       <div><h3>WiFi</h3></div>

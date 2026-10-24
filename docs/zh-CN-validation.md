@@ -5,27 +5,35 @@ Tested on 2026-10-24 against upstream commit
 
 ## Automated checks
 
-- `python -m unittest discover -s tests -v`: six tests passed. Covers HTML form
+- `python -m unittest discover -s tests -v`: eight tests passed. Covers HTML form
   structure, template placeholders, JavaScript protocol tokens, JSON machine
   fields, canonical printer states, and sorted font tables with complete
-  translated screen glyph coverage.
-- Generated localized JavaScript passed `node --check`.
+  translated screen glyph coverage, lossless compressed page reconstruction,
+  feature gates and placeholder-safe compression boundaries.
+- Both generated English and Chinese JavaScript passed `node --check`.
 - A local browser smoke test in headless Edge opened all 11 settings sections
   and checked Chinese missing-SSID validation on the setup page. No page errors.
 - All localized C++ printf format specifiers match their English originals.
 - `pio run -e cyd_zh_cn -e cyd -j 4`: both environments built successfully.
-  The final protocol-state correction was rebuilt and USB-flashed successfully
-  with `pio run -e cyd_zh_cn -t upload --upload-port COM4`.
+  The final bilingual environment was subsequently rebuilt with LovyanGFX
+  excluded from LTO, without the graphics type-compatibility warnings.
 
 ## Build size
 
-The final Chinese build uses 67,632 bytes of static RAM and 1,953,045 bytes of
-ELF flash sections. Its application `firmware.bin` is **1,959,616 bytes**, below
-the existing 1,966,080-byte OTA slot, with only 6,464 bytes spare. Check the
+The final bilingual build uses 67,372 bytes of static RAM and 1,942,093 bytes of
+ELF flash sections. Its application `firmware.bin` is **1,948,672 bytes**, below
+the existing 1,966,080-byte OTA slot, with 17,408 bytes spare. This is 10,944
+bytes smaller than the initial Chinese-only build despite retaining both
+languages. Check the
 actual binary size when extending the translation or adding glyphs.
 
-The original CYD partition layout is retained. Chinese builds use the existing
-no-exceptions configuration to accommodate the font subsets.
+The original CYD partition layout is retained. The opt-in bilingual build uses
+independent 4 KB DEFLATE template blocks, ESP32's ROM inflater, LTO and the
+existing no-exceptions configuration. The inflater state and output block are
+allocated only while serving a page, rather than on Arduino's small stack.
+LovyanGFX keeps its original non-LTO compilation because its extension base
+classes intentionally depend on include order. No features were removed to
+make room. The existing English environment keeps its original build options.
 
 ## Hardware smoke test
 
@@ -40,6 +48,15 @@ no-exceptions configuration to accommodate the font subsets.
 - The real device served `lang="zh-CN"` HTML and localized compressed
   JavaScript. Its `/card.bmp` capture was visually checked: Chinese state,
   remaining time, ETA, nozzle, bed, chamber and humidity labels rendered.
+- USB-flashed the final bilingual build, then used its real browser language
+  selector to switch Chinese -> English -> Chinese. Each change restarted the
+  device and retained the selected language and existing WiFi/printer settings.
+  Both Card screenshots were visually checked, and live printing data resumed
+  after each restart. The final Chinese status reported `RUNNING` at 84%.
+- The real bilingual portal opened all 11 settings sections without JavaScript
+  page errors. An unsupported language returned HTTP 400. Ten sequential page
+  requests all succeeded with the same reported free heap (81 KB), while the
+  printer remained connected.
 - No printer power, lighting, motion, pause or other control command was sent.
   Device captures, flash backups and credentials are not included in the PR.
 
