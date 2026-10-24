@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "clock_mode.h"
 #include "display_ui.h"
 #include "fonts.h"
@@ -303,7 +304,7 @@ static void drawClockInfo(int sw, int sh, int clockBottom, uint16_t bg, uint16_t
     for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
       if (!isPrinterConfigured(i)) continue;
       const PrinterConfig& cfg = printers[i].config;
-      const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
+      const char* name = (cfg.name[0] != '\0') ? cfg.name : BH_TEXT("Printer", "打印机");
       // Prefer the IP reported by the printer (works in cloud mode too); fall
       // back to the configured LAN IP before the first pushall arrives.
       const char* ip = (printers[i].state.localIp[0] != '\0') ? printers[i].state.localIp
@@ -404,8 +405,8 @@ void drawClock() {
 
   // Date string is needed up-front: the effective date scale clamps on the
   // rendered width of the actual text.
-  static const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  static const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  static const char* days[] = {BH_TEXT("Sun", "周日"), BH_TEXT("Mon", "周一"), BH_TEXT("Tue", "周二"), BH_TEXT("Wed", "周三"), BH_TEXT("Thu", "周四"), BH_TEXT("Fri", "周五"), BH_TEXT("Sat", "周六")};
+  static const char* months[] = {BH_TEXT("Jan", "1月"),BH_TEXT("Feb", "2月"),BH_TEXT("Mar", "3月"),BH_TEXT("Apr", "4月"),BH_TEXT("May", "5月"),BH_TEXT("Jun", "6月"),BH_TEXT("Jul", "7月"),BH_TEXT("Aug", "8月"),BH_TEXT("Sep", "9月"),BH_TEXT("Oct", "10月"),BH_TEXT("Nov", "11月"),BH_TEXT("Dec", "12月")};
   char dateBuf[28];
   const int day = now.tm_mday;
   const int mon = now.tm_mon + 1;

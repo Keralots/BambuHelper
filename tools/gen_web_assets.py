@@ -13,6 +13,7 @@ Wired in from platformio.ini as `extra_scripts = pre:tools/gen_web_assets.py`.
 import gzip
 import os
 import zlib
+import runpy
 
 Import("env")  # noqa: F821 - injected by PlatformIO/SCons
 
@@ -20,6 +21,22 @@ PROJECT_DIR = env.subst("$PROJECT_DIR")  # noqa: F821
 BUILD_DIR = env.subst("$BUILD_DIR")  # noqa: F821
 GEN_DIR = os.path.join(BUILD_DIR, "generated")
 OUT = os.path.join(GEN_DIR, "web_assets_gz.h")
+ZH_CN = "BAMBUHELPER_ZH_CN" in env.subst("$BUILD_FLAGS")
+
+LANGUAGE_JS = b'''
+function saveLanguage(value){
+  var st = document.getElementById('languageStatus');
+  fetch('/save/language', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'language=' + encodeURIComponent(value)
+  }).then(function(r){
+    if (!r.ok) throw Error('Save failed');
+    st.textContent = 'Language saved. Restarting...';
+    waitForReboot(st);
+  }).catch(function(){ st.textContent = 'Save failed'; });
+}
+'''
 
 ASSETS = [
     ("WEB_APP_CSS", os.path.join(PROJECT_DIR, "web", "app.css")),
@@ -47,6 +64,22 @@ def emit_array(name, raw):
 def main():
     os.makedirs(GEN_DIR, exist_ok=True)
 
+    if ZH_CN:
+        localize = runpy.run_path(os.path.join(PROJECT_DIR, "tools", "localize_web.py"))
+        compress = runpy.run_path(os.path.join(PROJECT_DIR, "tools", "compress_web.py"))
+        with open(os.path.join(PROJECT_DIR, "include", "web_pages.h"), encoding="utf-8") as fh:
+            english_pages = fh.read()
+        localized_pages = localize["pages"](english_pages)
+        page_header = compress["header"](english_pages, "EN") + "\n" + compress["header"](localized_pages, "ZH")
+        page_path = os.path.join(GEN_DIR, "web_pages_bilingual.h")
+        previous_pages = ""
+        if os.path.isfile(page_path):
+            with open(page_path, encoding="utf-8") as fh:
+                previous_pages = fh.read()
+        if page_header != previous_pages:
+            with open(page_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(page_header)
+
     body = []
     report = []
     for name, path in ASSETS:
@@ -54,6 +87,11 @@ def main():
             raise Exception(f"gen_web_assets: missing asset {path}")
         with open(path, "rb") as fh:
             raw = fh.read()
+        if ZH_CN and name == "WEB_APP_JS":
+            raw += LANGUAGE_JS
+            english_chunk, _, _ = emit_array("WEB_APP_JS_EN", raw)
+            body.append(english_chunk)
+            raw = localize["javascript"](raw.decode("utf-8")).encode("utf-8")
         chunk, raw_len, gz_len = emit_array(name, raw)
         body.append(chunk)
         report.append(f"{os.path.basename(path)} {raw_len} -> {gz_len} B")

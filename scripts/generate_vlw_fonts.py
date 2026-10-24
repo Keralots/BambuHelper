@@ -72,9 +72,11 @@ FONTS_DIR = Path(__file__).parent.parent / "fonts"
 OUT_DIR = Path(__file__).parent.parent / "include" / "fonts"
 
 
-def generate_vlw(ttf_path: str, pixel_size: int, charset=None) -> bytes:
+def generate_vlw(ttf_path: str, pixel_size: int, charset=None, weight=None) -> bytes:
     """Generate VLW binary data for the given font and size."""
     face = freetype.Face(str(ttf_path))
+    if weight is not None:
+        face.set_var_design_coords([weight])
     face.set_pixel_sizes(0, pixel_size)
 
     glyphs = []

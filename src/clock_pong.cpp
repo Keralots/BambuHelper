@@ -1,3 +1,4 @@
+#include "localization.h"
 /*
  * Pong/Breakout animated clock for BambuHelper
  * Ported from TFTClock project, adapted for TFT_eSPI.
@@ -727,8 +728,8 @@ void tickPongClock() {
   // Draw text on top (repairs any ball/paddle damage via cache invalidation)
   // Date (Font 2, smooth)
   {
-    const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+    const char* days[] = {BH_TEXT("Sun", "周日"), BH_TEXT("Mon", "周一"), BH_TEXT("Tue", "周二"), BH_TEXT("Wed", "周三"), BH_TEXT("Thu", "周四"), BH_TEXT("Fri", "周五"), BH_TEXT("Sat", "周六")};
+    const char* months[] = {BH_TEXT("Jan", "1月"),BH_TEXT("Feb", "2月"),BH_TEXT("Mar", "3月"),BH_TEXT("Apr", "4月"),BH_TEXT("May", "5月"),BH_TEXT("Jun", "6月"),BH_TEXT("Jul", "7月"),BH_TEXT("Aug", "8月"),BH_TEXT("Sep", "9月"),BH_TEXT("Oct", "10月"),BH_TEXT("Nov", "11月"),BH_TEXT("Dec", "12月")};
     char dateStr[28];
     int day = now.tm_mday, mon = now.tm_mon + 1, year = now.tm_year + 1900;
     switch (netSettings.dateFormat) {

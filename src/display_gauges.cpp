@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "display_gauges.h"
 #include "config.h"
 #include "layout.h"
@@ -1181,7 +1182,7 @@ void drawProgressArc(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     gfx.drawString(timeBuf, cx, cy + (compact ? LY_SC(10) : LY_SC(18)));
 
     if (compact) {
-      drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.progress, "Progress"), gc.label, bg);
+      drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.progress, BH_TEXT("Progress", "进度")), gc.label, bg);
     }
   }
 }
@@ -1536,7 +1537,7 @@ void drawLayerGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
       gfx.drawString(totalBuf, cx, cy + (useSmall ? LY_SC(8) : LY_SC(10)));
     }
 
-    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.layer, "Layer"), dispSettings.layer.label, bg);
+    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.layer, BH_TEXT("Layer", "层数")), dispSettings.layer.label, bg);
   }
 }
 
@@ -1580,7 +1581,7 @@ void drawClockWidget(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radiu
     setGaugeClearedTextColor(gfx, dispSettings.clockTimeColor, bg);
     gfx.drawString(timeBuf, cx, cy);
 
-    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.clock, "Clock"), dispSettings.clockDateColor, bg);
+    drawGaugeLabel(gfx, cx, cy, radius, gaugeLabelOr(gaugeLabels.clock, BH_TEXT("Clock", "时钟")), dispSettings.clockDateColor, bg);
   }
 }
 

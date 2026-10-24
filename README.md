@@ -1,5 +1,7 @@
 # BambuHelper
 
+[简体中文使用说明与 CYD 中文固件](README.zh-CN.md)
+
 Dedicated Bambu Lab printer monitor built with ESP32-S3 Super Mini and a 1.54" 240x240 color TFT display (ST7789).
 
 Connects to your printer via MQTT over TLS and displays a real-time dashboard with arc gauges, animations, live stats, and optional buzzer notifications.

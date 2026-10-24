@@ -7,12 +7,28 @@
 //  serveMainPage() streams PAGE_HTML in 2 KB chunks via HTTP chunked transfer,
 //  substituting %FOO% placeholders inline. Peak heap during page render is the
 //  2 KB buffer plus any per-placeholder String allocation - typically <3 KB.
+//  The bilingual CYD build additionally uses a heap-allocated ROM inflater and
+//  one 4 KB output block, released when the response completes or disconnects.
 //
 //  serveApPage() sends the small AP-mode page verbatim. No substitution.
 // =============================================================================
 
 #include "web_template.h"
+#include "localization.h"
+struct TemplateSegment {
+  const char* data;
+  size_t len;
+#if defined(BAMBUHELPER_ZH_CN)
+  uint16_t rawLen;
+#endif
+};
+
+#if defined(BAMBUHELPER_ZH_CN)
+#include <rom/miniz.h>
+#include "web_pages_bilingual.h"
+#else
 #include "web_pages.h"
+#endif
 
 #include "settings.h"
 #include "bambu_state.h"
@@ -33,7 +49,7 @@
 #define BOARD_NAME BOARD_VARIANT
 #endif
 #ifndef BOARD_PANEL
-#define BOARD_PANEL "Display"
+#define BOARD_PANEL BH_TEXT("Display", "显示")
 #endif
 
 // LED colours are full 24-bit, not the RGB565 the display settings use, so they
@@ -53,6 +69,23 @@ static bool resolvePlaceholder(const char* name, String& out) {
   BambuState& st = printers[0].state;
   char buf[8];
 
+  if (strcmp(name, "LANGUAGE_SETTINGS") == 0) {
+    out = "";
+#if defined(BAMBUHELPER_ZH_CN)
+    out = F("<div class=\"card\"><div class=\"field\">"
+            "<label for=\"language\">Language / 语言</label>"
+            "<select id=\"language\" onchange=\"saveLanguage(this.value)\">"
+            "<option value=\"en\" ");
+    if (!uiChinese) out += "selected";
+    out += ">English</option><option value=\"zh-CN\" ";
+    if (uiChinese) out += "selected";
+    out += F(">简体中文</option></select>"
+             "<div id=\"languageStatus\" role=\"status\" aria-live=\"polite\"></div>"
+             "</div></div>");
+#endif
+    return true;
+  }
+
   // --- Printer ---
   if (strcmp(name, "SSID") == 0)            { out = wifiSSID; return true; }
   if (strcmp(name, "MODE_LOCAL") == 0)      { out = cfg.mode == CONN_LOCAL ? "selected" : ""; return true; }
@@ -65,8 +98,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "REGION_CN") == 0)       { out = cfg.region == REGION_CN ? "selected" : ""; return true; }
   if (strcmp(name, "CLOUD_STATUS") == 0) {
     char tokenBuf[32];
-    if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) { out = "No token set"; return true; }
-    out = "Token active";
+    if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) { out = BH_TEXT("No token set", "尚未设置令牌"); return true; }
+    out = BH_TEXT("Token active", "令牌有效");
     char email[96];
     if (loadCloudEmail(email, sizeof(email))) { out += " ("; out += email; out += ")"; }
     return true;
@@ -190,14 +223,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
       // them; toggleQuadPrinterMode() clears the inline style without a reload.
       if (i >= 2 && !quadPrinterBeta) out += " style=\"display:none\"";
 #endif
-      out += ">Printer " + String(i + 1) + "</button>";
+      out += BH_TEXT(">Printer ", ">打印机 ") + String(i + 1) + "</button>";
     }
     return true;
   }
   if (strcmp(name, "TOPBAR_DOTS") == 0) {
     for (uint8_t i = 1; i < MAX_ACTIVE_PRINTERS; i++) {
       out += "<span class=\"status-dot\" id=\"topStatusDot" + String(i) +
-             "\" title=\"Printer " + String(i + 1) + " connection\"";
+             BH_TEXT("\" title=\"Printer ", "\" title=\"打印机 ") + String(i + 1) + " connection\"";
 #ifdef BOARD_LOW_RAM
       if (i == 1 && !dualPrinterUnsafe) out += " style=\"display:none\"";
 #endif
@@ -225,14 +258,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<input type=\"checkbox\" id=\"dualp\" value=\"1\" ";
     if (dualPrinterUnsafe) out += "checked";
     out += " onchange=\"toggleDualPrinterMode(this.checked)\">";
-    out += "<label for=\"dualp\">Enable 2-printer mode (experimental on low-RAM boards: two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device)</label>";
+    out += BH_TEXT("<label for=\"dualp\">Enable 2-printer mode (experimental on low-RAM boards: two simultaneous TLS+MQTT sessions may exhaust the heap and crash the device)</label>", "<label for=\"dualp\">启用双打印机模式（低内存开发板上的实验功能：同时运行两路 TLS+MQTT 可能耗尽堆内存并导致崩溃）</label>");
     out += "</label>";
 #elif defined(BOARD_HAS_PSRAM)
     out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"quadp\" value=\"1\" ";
     if (quadPrinterBeta) out += "checked";
     out += " onchange=\"toggleQuadPrinterMode(this.checked)\">";
-    out += "<label for=\"quadp\">Enable 4-printer mode (experimental: running 3-4 printers at once is not yet validated and may exhaust the heap or cause unstable connections. The split dual-screen layout still shows only the first two printers.)</label>";
+    out += BH_TEXT("<label for=\"quadp\">Enable 4-printer mode (experimental: running 3-4 printers at once is not yet validated and may exhaust the heap or cause unstable connections. The split dual-screen layout still shows only the first two printers.)</label>", "<label for=\"quadp\">启用四打印机模式（实验功能：同时运行 3–4 台尚未验证，可能耗尽堆内存或导致连接不稳定。分屏仍仅显示前两台打印机。）</label>");
     out += "</label>";
 #else
     out = "";
@@ -275,8 +308,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // present, since that file is shared by every board and sees no #if.
   if (strcmp(name, "HMS_NAV") == 0) {
 #if HAS_HMS_WEB_UI
-    out = F("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\">"
-            "<span>Printer Errors</span></button>");
+    out = F(BH_TEXT("  <button class=\"nav-item\" type=\"button\" data-section=\"errors\"><span>Printer Errors</span></button>", "  <button class=\"nav-item\" type=\"button\" data-section=\"errors\"><span>打印机错误</span></button>"));
 #else
     out = "";
 #endif
@@ -320,38 +352,38 @@ static bool resolvePlaceholder(const char* name, String& out) {
       if (ams) out += " data-ams=\"1\"";
       out += ">"; out += label; out += "</option>";
     };
-    out  = "<div class=\"field\"><label for=\"gtap\">Tap</label>";
+    out  = BH_TEXT("<div class=\"field\"><label for=\"gtap\">Tap</label>", "<div class=\"field\"><label for=\"gtap\">轻按</label>");
     out += "<select id=\"gtap\" onchange=\"toggleSetting('gtap',this.value)\">";
-    opt(dispSettings.gestTap, GT_SMART, "Smart cycle (errors, camera, drying, AMS, next printer)");
-    opt(dispSettings.gestTap, GT_NEXT,  "Next printer only");
+    opt(dispSettings.gestTap, GT_SMART, BH_TEXT("Smart cycle (errors, camera, drying, AMS, next printer)", "智能切换（错误、摄像头、烘干、AMS、下一台打印机）"));
+    opt(dispSettings.gestTap, GT_NEXT,  BH_TEXT("Next printer only", "仅切换下一台打印机"));
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestTap, GT_AMS,   "Switch status / AMS page", true);
+    opt(dispSettings.gestTap, GT_AMS,   BH_TEXT("Switch status / AMS page", "切换状态 / AMS 页面"), true);
 #endif
-    opt(dispSettings.gestTap, GT_WAKE,  "Wake the screen only");
+    opt(dispSettings.gestTap, GT_WAKE,  BH_TEXT("Wake the screen only", "仅唤醒屏幕"));
     out += "</select></div>";
-    out += "<div class=\"field\"><label for=\"gdbl\">Double tap</label>";
+    out += BH_TEXT("<div class=\"field\"><label for=\"gdbl\">Double tap</label>", "<div class=\"field\"><label for=\"gdbl\">双击</label>");
     out += "<select id=\"gdbl\" onchange=\"toggleSetting('gdbl',this.value)\">";
     opt(dispSettings.gestDouble, GD_OFF,  "Nothing");
-    opt(dispSettings.gestDouble, GD_PLUG, "Plug power on/off (confirm screen)");
+    opt(dispSettings.gestDouble, GD_PLUG, BH_TEXT("Plug power on/off (confirm screen)", "插座电源开关（需确认）"));
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestDouble, GD_AMS,  "Switch status / AMS page", true);
+    opt(dispSettings.gestDouble, GD_AMS,  BH_TEXT("Switch status / AMS page", "切换状态 / AMS 页面"), true);
 #endif
-    opt(dispSettings.gestDouble, GD_NEXT, "Next printer");
-    out += "</select><span class=\"text-dim small\">With a double tap set, a single tap waits ~0.5 s for a second one.</span></div>";
-    out += "<div class=\"field\"><label for=\"ghold\">Hold</label>";
+    opt(dispSettings.gestDouble, GD_NEXT, BH_TEXT("Next printer", "下一台打印机"));
+    out += BH_TEXT("</select><span class=\"text-dim small\">With a double tap set, a single tap waits ~0.5 s for a second one.</span></div>", "</select><span class=\"text-dim small\">设置双击后，单击会等待约 0.5 秒，以检测第二次点击。</span></div>");
+    out += BH_TEXT("<div class=\"field\"><label for=\"ghold\">Hold</label>", "<div class=\"field\"><label for=\"ghold\">长按</label>");
     out += "<select id=\"ghold\" onchange=\"toggleSetting('ghold',this.value)\">";
-    opt(dispSettings.gestHold, GH_LED,  "Status LED brightness");
+    opt(dispSettings.gestHold, GH_LED,  BH_TEXT("Status LED brightness", "状态 LED 亮度"));
 #if HAS_CARD_SKIN
-    opt(dispSettings.gestHold, GH_AMS,  "Switch status / AMS page", true);
+    opt(dispSettings.gestHold, GH_AMS,  BH_TEXT("Switch status / AMS page", "切换状态 / AMS 页面"), true);
 #endif
     opt(dispSettings.gestHold, GH_NONE, "Nothing");
     out += "</select>";
 #if TOUCH_WAKE_LONGPRESS
-    out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
+    out += BH_TEXT("<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>", "<span class=\"text-dim small\">此触摸屏可能将唤醒触摸识别为长按。</span>");
 #endif
     out += "</div>";
 #if HAS_CARD_SKIN
-    out += "<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>";
+    out += BH_TEXT("<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>", "<div class=\"help-text\" id=\"gestAmsNote\"><em>切换状态 / AMS 页面</em> 可在就绪和打印完成页面显示另一视图 30 秒。</div>");
 #endif
     return true;
   }
@@ -366,7 +398,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<input type=\"checkbox\" id=\"amst\" value=\"1\" ";
     out += dispSettings.amsTrayTypes ? "checked" : "";
     out += " onchange=\"toggleSetting('amst',this.checked)\">";
-    out += "<label for=\"amst\">Show filament type under AMS bars</label>";
+    out += BH_TEXT("<label for=\"amst\">Show filament type under AMS bars</label>", "<label for=\"amst\">在 AMS 料条下显示耗材类型</label>");
     out += "</label>";
 #else
     out = "";
@@ -388,7 +420,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<input type=\"checkbox\" id=\"invcol\" value=\"1\" ";
     out += dispSettings.invertColors ? "checked" : "";
     out += " onchange=\"toggleSetting('invcol',this.checked)\">";
-    out += "<label for=\"invcol\">Invert display colors (fix white background)</label>";
+    out += BH_TEXT("<label for=\"invcol\">Invert display colors (fix white background)</label>", "<label for=\"invcol\">反转显示颜色（修复白色背景）</label>");
     out += "</label>";
 #else
     out = "";
@@ -401,13 +433,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<input type=\"checkbox\" id=\"cydcls\" value=\"1\" ";
     out += dispSettings.cydPanelClassic ? "checked" : "";
     out += " onchange=\"toggleSetting('cydcls',this.checked)\">";
-    out += "<label for=\"cydcls\">Use Classic CYD panel fallback (older units only - device will reboot)</label>";
+    out += BH_TEXT("<label for=\"cydcls\">Use Classic CYD panel fallback (older units only - device will reboot)</label>", "<label for=\"cydcls\">使用经典 CYD 面板兼容模式（仅限旧款，设备会重启）</label>");
     out += "</label>";
     out += "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"cyd32e\" value=\"1\" ";
     out += dispSettings.cyd32eVariant ? "checked" : "";
     out += " onchange=\"toggleSetting('cyd32e',this.checked)\">";
-    out += "<label for=\"cyd32e\">ESP32-32E clone board (fixes silent speaker + stuck red LED - device will reboot)</label>";
+    out += BH_TEXT("<label for=\"cyd32e\">ESP32-32E clone board (fixes silent speaker + stuck red LED - device will reboot)</label>", "<label for=\"cyd32e\">ESP32-32E 兼容板（修复扬声器无声和红色 LED 常亮，设备会重启）</label>");
     out += "</label>";
 #else
     out = "";
@@ -422,33 +454,33 @@ static bool resolvePlaceholder(const char* name, String& out) {
       o += "<option value=\""; o += v; o += "\""; if (cur == v) o += " selected";
       o += ">"; o += label; o += "</option>";
     };
-    out  = "<div class=\"field\"><label for=\"card\">Print screen style</label>";
+    out  = BH_TEXT("<div class=\"field\"><label for=\"card\">Print screen style</label>", "<div class=\"field\"><label for=\"card\">打印页面样式</label>");
     out += "<select id=\"card\" onchange=\"toggleSetting('card',this.value);applyCardsHints()\">";
-    opt(out, dispSettings.cardStyle, 0, "Gauges");
-    opt(out, dispSettings.cardStyle, 1, "Cards (beta)");
+    opt(out, dispSettings.cardStyle, 0, BH_TEXT("Gauges", "仪表"));
+    opt(out, dispSettings.cardStyle, 1, BH_TEXT("Cards (beta)", "卡片（测试版）"));
     out += "</select>";
-    out += "<span class=\"text-dim small\">Settings that only apply to Gauges are hidden while Cards is picked; split view keeps the gauges.</span></div>";
+    out += BH_TEXT("<span class=\"text-dim small\">Settings that only apply to Gauges are hidden while Cards is picked; split view keeps the gauges.</span></div>", "<span class=\"text-dim small\">选择卡片样式时隐藏仅适用于仪表的设置；分屏仍使用仪表。</span></div>");
     out += "<div id=\"cardOpts\">";
-    out += "<div class=\"field\"><label for=\"cleft\">Card: left column</label>";
+    out += BH_TEXT("<div class=\"field\"><label for=\"cleft\">Card: left column</label>", "<div class=\"field\"><label for=\"cleft\">卡片：左侧栏</label>");
     out += "<select id=\"cleft\" onchange=\"toggleSetting('cleft',this.value)\">";
-    opt(out, dispSettings.cardLeft, 0, "AMS slots");
-    opt(out, dispSettings.cardLeft, 1, "None");
+    opt(out, dispSettings.cardLeft, 0, BH_TEXT("AMS slots", "AMS 槽位"));
+    opt(out, dispSettings.cardLeft, 1, BH_TEXT("None", "无"));
 #if HAS_CARD_THUMB
-    opt(out, dispSettings.cardLeft, 2, "Plate preview (Bambu cloud sign-in, else AMS)");
+    opt(out, dispSettings.cardLeft, 2, BH_TEXT("Plate preview (Bambu cloud sign-in, else AMS)", "打印板预览（需登录拓竹云，否则显示 AMS）"));
 #endif
     out += "</select></div>";
-    out += "<div class=\"field\"><label for=\"cbot\">Card: bottom row</label>";
+    out += BH_TEXT("<div class=\"field\"><label for=\"cbot\">Card: bottom row</label>", "<div class=\"field\"><label for=\"cbot\">卡片：底部行</label>");
     out += "<select id=\"cbot\" onchange=\"toggleSetting('cbot',this.value)\">";
-    opt(out, dispSettings.cardBottom, 0, "Temperatures");
-    opt(out, dispSettings.cardBottom, 1, "Filaments of this print");
+    opt(out, dispSettings.cardBottom, 0, BH_TEXT("Temperatures", "温度"));
+    opt(out, dispSettings.cardBottom, 1, BH_TEXT("Filaments of this print", "本次打印耗材"));
     out += "</select></div>";
-    out += "<div class=\"field\"><label for=\"cready\">Card: Ready screen</label>";
+    out += BH_TEXT("<div class=\"field\"><label for=\"cready\">Card: Ready screen</label>", "<div class=\"field\"><label for=\"cready\">卡片：就绪页面</label>");
     out += "<select id=\"cready\" onchange=\"toggleSetting('cready',this.value)\">";
-    opt(out, dispSettings.cardReady, 0, "Status");
-    opt(out, dispSettings.cardReady, 1, "AMS filament left");
-    opt(out, dispSettings.cardReady, 2, "Alternate status / AMS");
+    opt(out, dispSettings.cardReady, 0, BH_TEXT("Status", "状态"));
+    opt(out, dispSettings.cardReady, 1, BH_TEXT("AMS filament left", "AMS 剩余耗材"));
+    opt(out, dispSettings.cardReady, 2, BH_TEXT("Alternate status / AMS", "交替显示状态 / AMS"));
     out += "</select>";
-    out += "<span class=\"text-dim small\">A tap or the status / AMS gesture shows the other view for 30 s.</span></div>";
+    out += BH_TEXT("<span class=\"text-dim small\">A tap or the status / AMS gesture shows the other view for 30 s.</span></div>", "<span class=\"text-dim small\">单击或使用状态 / AMS 手势，可显示另一页面 30 秒。</span></div>");
     out += "</div>";
 #else
     out = "";
@@ -460,11 +492,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // Round boards only: printing dashboard skin picker. Posts through the
     // same /save/toggle endpoint as the checkboxes (val carries 0-2).
     auto sel = [&](uint8_t v) { return dispSettings.roundSkin == v ? " selected" : ""; };
-    out  = "<div class=\"field\"><label for=\"rskin\">Print dashboard skin</label>";
+    out  = BH_TEXT("<div class=\"field\"><label for=\"rskin\">Print dashboard skin</label>", "<div class=\"field\"><label for=\"rskin\">打印仪表盘样式</label>");
     out += "<select id=\"rskin\" onchange=\"toggleSetting('rskin',this.value)\">";
-    out += "<option value=\"0\""; out += sel(0); out += ">Rim (progress ring + mini gauges)</option>";
-    out += "<option value=\"1\""; out += sel(1); out += ">Speedo (large 240&deg; arc)</option>";
-    out += "<option value=\"2\""; out += sel(2); out += ">Rings (concentric progress/nozzle/bed)</option>";
+    out += "<option value=\"0\""; out += sel(0); out += BH_TEXT(">Rim (progress ring + mini gauges)</option>", ">Rim（进度环和小仪表）</option>");
+    out += "<option value=\"1\""; out += sel(1); out += BH_TEXT(">Speedo (large 240&deg; arc)</option>", ">Speedo（240° 大圆弧）</option>");
+    out += "<option value=\"2\""; out += sel(2); out += BH_TEXT(">Rings (concentric progress/nozzle/bed)</option>", ">Rings（进度 / 喷嘴 / 热床同心环）</option>");
     out += "</select>";
     out += "</div>";
 #else
@@ -477,21 +509,21 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // actually have extended grid modes, otherwise the whole card is empty.
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
     out  = "<div class=\"card\" data-gauges-only>";  // Cards never reads l8s/p9s
-    out += "<div class=\"card-head\"><div><h3>Extended grid modes</h3>";
+    out += BH_TEXT("<div class=\"card-head\"><div><h3>Extended grid modes</h3>", "<div class=\"card-head\"><div><h3>扩展网格模式</h3>");
     out += "<p>Trade the on-screen AMS area for extra gauge slots. ";
-    out += "Configure the new slots under <strong>Gauge Layout</strong>.</p>";
+    out += BH_TEXT("Configure the new slots under <strong>Gauge Layout</strong>.</p>", "Configure the new slots under <strong>仪表布局</strong>.</p>");
     out += "</div></div>";
     out += "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"l8s\" value=\"1\" ";
     out += dispSettings.landscape8Slots ? "checked" : "";
     out += " onchange=\"toggleGridMode('l8s', this.checked)\">";
-    out += "<label for=\"l8s\">Landscape 8 gauge slots (replaces AMS sidebar with a 2x4 grid)</label>";
+    out += BH_TEXT("<label for=\"l8s\">Landscape 8 gauge slots (replaces AMS sidebar with a 2x4 grid)</label>", "<label for=\"l8s\">横屏 8 仪表（用 2×4 网格替代 AMS 侧栏）</label>");
     out += "</label>";
     out += "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"p9s\" value=\"1\" ";
     out += dispSettings.portrait9Slots ? "checked" : "";
     out += " onchange=\"toggleGridMode('p9s', this.checked)\">";
-    out += "<label for=\"p9s\">Portrait 9 gauge slots (replaces AMS strip with a 3x3 grid)</label>";
+    out += BH_TEXT("<label for=\"p9s\">Portrait 9 gauge slots (replaces AMS strip with a 3x3 grid)</label>", "<label for=\"p9s\">竖屏 9 仪表（用 3×3 网格替代 AMS 条）</label>");
     out += "</label>";
     out += "</div>";
 #else
@@ -509,18 +541,18 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #if defined(DISPLAY_240x320) || defined(DISPLAY_320x480)
     out  = "<div id=\"landExtrasGroup\"";
     if (!dispSettings.landscape8Slots) out += " style=\"display:none\"";
-    out += "><div class=\"row-divider\">&#9656; Landscape extras (column 4, used by <em>Landscape 8 slots</em>)</div>";
+    out += BH_TEXT("><div class=\"row-divider\">&#9656; Landscape extras (column 4, used by <em>Landscape 8 slots</em>)</div>", "><div class=\"row-divider\">&#9656; Landscape extras (column 4, used by <em>横屏 8 个槽位</em>)</div>");
     out += "<div class=\"gauge-grid\">";
-    out += "<div class=\"cell\"><label>Col 4 top</label><select id=\"lx0\" class=\"gauge-slot-sel\"></select></div>";
-    out += "<div class=\"cell\"><label>Col 4 bot</label><select id=\"lx1\" class=\"gauge-slot-sel\"></select></div>";
+    out += BH_TEXT("<div class=\"cell\"><label>Col 4 top</label><select id=\"lx0\" class=\"gauge-slot-sel\"></select></div>", "<div class=\"cell\"><label>第 4 列上方</label><select id=\"lx0\" class=\"gauge-slot-sel\"></select></div>");
+    out += BH_TEXT("<div class=\"cell\"><label>Col 4 bot</label><select id=\"lx1\" class=\"gauge-slot-sel\"></select></div>", "<div class=\"cell\"><label>第 4 列下方</label><select id=\"lx1\" class=\"gauge-slot-sel\"></select></div>");
     out += "</div></div>";
     out += "<div id=\"portExtrasGroup\"";
     if (!dispSettings.portrait9Slots) out += " style=\"display:none\"";
-    out += "><div class=\"row-divider\">&#9656; Portrait extras (row 3, used by <em>Portrait 9 slots</em>)</div>";
+    out += BH_TEXT("><div class=\"row-divider\">&#9656; Portrait extras (row 3, used by <em>Portrait 9 slots</em>)</div>", "><div class=\"row-divider\">&#9656; Portrait extras (row 3, used by <em>竖屏 9 个槽位</em>)</div>");
     out += "<div class=\"gauge-grid\">";
-    out += "<div class=\"cell\"><label>Row 3 left</label><select id=\"px0\" class=\"gauge-slot-sel\"></select></div>";
-    out += "<div class=\"cell\"><label>Row 3 mid</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>";
-    out += "<div class=\"cell\"><label>Row 3 right</label><select id=\"px2\" class=\"gauge-slot-sel\"></select></div>";
+    out += BH_TEXT("<div class=\"cell\"><label>Row 3 left</label><select id=\"px0\" class=\"gauge-slot-sel\"></select></div>", "<div class=\"cell\"><label>第 3 行左侧</label><select id=\"px0\" class=\"gauge-slot-sel\"></select></div>");
+    out += BH_TEXT("<div class=\"cell\"><label>Row 3 mid</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>", "<div class=\"cell\"><label>第 3 行中间</label><select id=\"px1\" class=\"gauge-slot-sel\"></select></div>");
+    out += BH_TEXT("<div class=\"cell\"><label>Row 3 right</label><select id=\"px2\" class=\"gauge-slot-sel\"></select></div>", "<div class=\"cell\"><label>第 3 行右侧</label><select id=\"px2\" class=\"gauge-slot-sel\"></select></div>");
     out += "</div></div>";
 #else
     out = "";
@@ -578,7 +610,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     !defined(DISPLAY_480x480) && !DISPLAY_IS_ROUND
     out  = "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"amsv\" value=\"1\" onchange=\"syncAmsView()\">";
-    out += "<label for=\"amsv\">AMS view (replaces bottom gauges)</label>";
+    out += BH_TEXT("<label for=\"amsv\">AMS view (replaces bottom gauges)</label>", "<label for=\"amsv\">AMS 页面（替代底部仪表）</label>");
     out += "</label>";
 #else
     out = "";
@@ -664,7 +696,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "STATUS_TEXT") == 0) {
-    out = st.connected ? "Connected" : isPrinterConfigured(0) ? "Disconnected" : "Not Configured";
+    out = st.connected ? BH_TEXT("Connected", "已连接") : isPrinterConfigured(0) ? BH_TEXT("Disconnected", "已断开") : BH_TEXT("Not Configured", "未配置");
     return true;
   }
 
@@ -740,7 +772,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #if HAS_LED_PIXEL
     out  = "<option value=\"2\"";
     if (ledSettings.driver == LED_DRV_PIXEL) out += " selected";
-    out += ">WS2812 pixel (one data pin)</option>";
+    out += BH_TEXT(">WS2812 pixel (one data pin)</option>", ">WS2812 灯珠（单数据引脚）</option>");
 #else
     out = "";
 #endif
@@ -779,14 +811,14 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BAT_TOGGLE_ROW") == 0) {
 #if defined(BOARD_HAS_BATTERY)
     out  = "<div class=\"card\">";
-    out += "<div class=\"card-head\"><div><h3>Battery indicator</h3>";
-    out += "<p>For boards with a battery wired. Shows charge state on the display.</p></div></div>";
+    out += BH_TEXT("<div class=\"card-head\"><div><h3>Battery indicator</h3>", "<div class=\"card-head\"><div><h3>电池指示</h3>");
+    out += BH_TEXT("<p>For boards with a battery wired. Shows charge state on the display.</p></div></div>", "<p>适用于已连接电池的开发板，在屏幕上显示电池电量。</p></div></div>");
     out += "<label class=\"check-row\">";
     out += "<input type=\"checkbox\" id=\"batshow\"";
     if (dispSettings.showBatteryIndicator) out += " checked";
-    out += "><label for=\"batshow\">Show battery indicator</label>";
+    out += BH_TEXT("><label for=\"batshow\">Show battery indicator</label>", "><label for=\"batshow\">显示电池指示</label>");
     out += "</label>";
-    out += "<div class=\"hint\" style=\"padding-left:28px;margin-top:-4px\">Hide if your board has no battery wired (avoids phantom readings).</div>";
+    out += BH_TEXT("<div class=\"hint\" style=\"padding-left:28px;margin-top:-4px\">Hide if your board has no battery wired (avoids phantom readings).</div>", "<div class=\"hint\" style=\"padding-left:28px;margin-top:-4px\">未连接电池时请隐藏，避免显示虚假读数。</div>");
     out += "</div>";
 #else
     out = "";
@@ -805,7 +837,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
       out += String(i);
       out += "\" onclick=\"selectPowerTab(";
       out += String(i);
-      out += ")\">Plug ";
+      out += BH_TEXT(")\">Plug ", ")\">插座 ");
       out += String(i + 1);
       out += "</button>";
     }
@@ -813,19 +845,19 @@ static bool resolvePlaceholder(const char* name, String& out) {
   }
   if (strcmp(name, "POWER_SLOT_BLOCK") == 0) {
 #if TASMOTA_PLUG_COUNT == 1
-    out  = "<div class=\"field\"><label for=\"tsm_slot\">Assigned printer</label>";
-    out += "<select id=\"tsm_slot\"><option value=\"255\">Any printer</option>";
+    out  = BH_TEXT("<div class=\"field\"><label for=\"tsm_slot\">Assigned printer</label>", "<div class=\"field\"><label for=\"tsm_slot\">关联打印机</label>");
+    out += BH_TEXT("<select id=\"tsm_slot\"><option value=\"255\">Any printer</option>", "<select id=\"tsm_slot\"><option value=\"255\">任意打印机</option>");
     for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
       out += "<option value=\"";
       out += String(i);
       out += "\">";
       const char* nm = printers[i].config.name;
       if (nm[0] != '\0') out += nm;
-      else { out += "Printer "; out += String(i + 1); }
+      else { out += BH_TEXT("Printer ", "打印机 "); out += String(i + 1); }
       out += "</option>";
     }
     out += "</select>";
-    out += "<div class=\"hint\">When set to <em>Any printer</em>, energy stats and auto-off use Printer 1.</div></div>";
+    out += BH_TEXT("<div class=\"hint\">When set to <em>Any printer</em>, energy stats and auto-off use Printer 1.</div></div>", "<div class=\"hint\">设为 <em>任意打印机</em>时，电量统计和自动关机使用打印机 1。</div></div>");
 #else
     out = "";
 #endif
@@ -857,18 +889,26 @@ static bool resolvePlaceholder(const char* name, String& out) {
 // One piece of the page. The page is split so a board without the printer-error
 // feature never links its markup; the pieces stream back to back into a single
 // chunked response, so a split is invisible to the browser.
-struct TemplateSegment {
-  const char* data;
-  size_t      len;
-};
-
 static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   static const size_t BUF_SIZE = 2048;
   char* buf = (char*)malloc(BUF_SIZE + 1);
   if (!buf) {
-    server.send(503, "text/plain", "Out of memory");
+    server.send(503, "text/plain", BH_TEXT("Out of memory", "内存不足"));
     return;
   }
+#if defined(BAMBUHELPER_ZH_CN)
+  // Keep the inflater off Arduino's small task stack. Each independent block
+  // needs only a 4 KB output buffer, not a 32 KB sliding-window dictionary.
+  auto* inflater = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));
+  auto* decoded = (mz_uint8*)malloc(4096);
+  if (!inflater || !decoded) {
+    free(inflater);
+    free(decoded);
+    free(buf);
+    server.send(503, "text/plain", BH_TEXT("Out of memory", "内存不足"));
+    return;
+  }
+#endif
   size_t bufLen = 0;
 
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -910,8 +950,24 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
 
   // On ESP32, PROGMEM is directly memory-mapped and readable as const char*.
   for (uint8_t seg = 0; seg < segCount && !aborted; seg++) {
-  const char* end = segs[seg].data + segs[seg].len;
-  const char* pos = segs[seg].data;
+  const char* data = segs[seg].data;
+  size_t length = segs[seg].len;
+#if defined(BAMBUHELPER_ZH_CN)
+  size_t inputSize = length, outputSize = segs[seg].rawLen;
+  tinfl_init(inflater);
+  if (tinfl_decompress(inflater, (const mz_uint8*)data, &inputSize,
+                       decoded, decoded, &outputSize,
+                       TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) != TINFL_STATUS_DONE ||
+      outputSize != segs[seg].rawLen) {
+    aborted = true;
+    server.client().stop();
+    break;
+  }
+  data = (const char*)decoded;
+  length = outputSize;
+#endif
+  const char* end = data + length;
+  const char* pos = data;
   const char* literalStart = pos;
 
   while (pos < end && !aborted) {
@@ -952,12 +1008,21 @@ static void streamTemplate(const TemplateSegment* segs, uint8_t segCount) {
   flush();
   if (!aborted) server.sendContent("");
   free(buf);
+#if defined(BAMBUHELPER_ZH_CN)
+  free(decoded);
+  free(inflater);
+#endif
 }
 
 // ---------------------------------------------------------------------------
 //  Public entry points
 // ---------------------------------------------------------------------------
 void serveMainPage() {
+#if defined(BAMBUHELPER_ZH_CN)
+  streamTemplate(uiChinese ? PAGE_MAIN_ZH : PAGE_MAIN_EN,
+                 uiChinese ? sizeof(PAGE_MAIN_ZH) / sizeof(TemplateSegment)
+                           : sizeof(PAGE_MAIN_EN) / sizeof(TemplateSegment));
+#else
   const TemplateSegment segs[] = {
     { PAGE_HTML_1, sizeof(PAGE_HTML_1) - 1 },
 #if HAS_HMS_WEB_UI
@@ -966,9 +1031,16 @@ void serveMainPage() {
     { PAGE_HTML_2, sizeof(PAGE_HTML_2) - 1 },
   };
   streamTemplate(segs, (uint8_t)(sizeof(segs) / sizeof(segs[0])));
+#endif
 }
 
 void serveApPage() {
+#if defined(BAMBUHELPER_ZH_CN)
+  streamTemplate(uiChinese ? PAGE_AP_ZH : PAGE_AP_EN,
+                 uiChinese ? sizeof(PAGE_AP_ZH) / sizeof(TemplateSegment)
+                           : sizeof(PAGE_AP_EN) / sizeof(TemplateSegment));
+#else
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/html", FPSTR(PAGE_AP_HTML));
+#endif
 }

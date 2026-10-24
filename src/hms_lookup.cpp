@@ -33,10 +33,10 @@ static_assert(HMS_KNOWN_CODE_COUNT > 0, "hms_known.h generated an empty table");
 // ---------------------------------------------------------------------------
 const char* hmsSeverityLabel(uint8_t sev) {
   switch (sev) {
-    case 1:  return "FATAL";
-    case 2:  return "SERIOUS";
-    case 3:  return "COMMON";
-    default: return "INFO";
+    case 1:  return BH_TEXT("FATAL", "致命");
+    case 2:  return BH_TEXT("SERIOUS", "严重");
+    case 3:  return BH_TEXT("COMMON", "一般");
+    default: return BH_TEXT("INFO", "信息");
   }
 }
 
@@ -48,10 +48,10 @@ const char* hmsModuleLabel(uint32_t attr) {
   switch ((attr >> 24) & 0xFF) {
     case 0x07: return "AMS";    // AMS
     case 0x18: return "AMS";    // AMS, newer generation - same thing to a user
-    case 0x05: return "MAIN";   // mainboard
-    case 0x03: return "MC";     // motion controller
-    case 0x0C: return "XCAM";   // xcam / lidar
-    default:   return "MODULE";
+    case 0x05: return BH_TEXT("MAIN", "主板");   // mainboard
+    case 0x03: return BH_TEXT("MC", "运动");     // motion controller
+    case 0x0C: return BH_TEXT("XCAM", "相机");   // xcam / lidar
+    default:   return BH_TEXT("MODULE", "模块");
   }
 }
 

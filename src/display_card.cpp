@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "display_card.h"
 
 #if HAS_CARD_SKIN
@@ -245,12 +246,12 @@ static const char* pillWord(const BambuState& s) {
   const char* raw = stateBadgeText(s);
   if (raw != s.gcodeState) return raw;          // ERR / CANCELED overrides
   switch (s.gcodeStateId) {
-    case GCODE_RUNNING: return "PRINTING";
-    case GCODE_PREPARE: return "PREPARING";
-    case GCODE_PAUSE:   return "PAUSED";
-    case GCODE_FINISH:  return "FINISHED";
-    case GCODE_FAILED:  return "FAILED";
-    case GCODE_IDLE:    return "IDLE";
+    case GCODE_RUNNING: return BH_TEXT("PRINTING", "打印中");
+    case GCODE_PREPARE: return BH_TEXT("PREPARING", "准备中");
+    case GCODE_PAUSE:   return BH_TEXT("PAUSED", "已暂停");
+    case GCODE_FINISH:  return BH_TEXT("FINISHED", "已完成");
+    case GCODE_FAILED:  return BH_TEXT("FAILED", "失败");
+    case GCODE_IDLE:    return BH_TEXT("IDLE", "空闲");
     default:            return raw[0] ? raw : "--";
   }
 }
@@ -396,27 +397,27 @@ static void snapBottom(CardFrame& f, const BambuState& s, const char* serial, ui
   if (s.dualNozzle) {
     // The active nozzle's accent yields to the warning colour.
     const float nMax = (float)dispSettings.nozzleScaleMax;
-    addCell(f, "NOZZLE L", "NOZ L", s.nozzleTempN[1], CU_DEG,
+    addCell(f, BH_TEXT("NOZZLE L", "左喷嘴"), BH_TEXT("NOZ L", "喷左"), s.nozzleTempN[1], CU_DEG,
             tempClr(s.nozzleTempN[1], dispSettings.nozzleScaleMax, dispSettings.nozzle.value),
             s.activeNozzle == 1 && !tempOverWarn(s.nozzleTempN[1], nMax));
-    addCell(f, "NOZZLE R", "NOZ R", s.nozzleTempN[0], CU_DEG,
+    addCell(f, BH_TEXT("NOZZLE R", "右喷嘴"), BH_TEXT("NOZ R", "喷右"), s.nozzleTempN[0], CU_DEG,
             tempClr(s.nozzleTempN[0], dispSettings.nozzleScaleMax, dispSettings.nozzle.value),
             s.activeNozzle == 0 && !tempOverWarn(s.nozzleTempN[0], nMax));
   } else {
-    addCell(f, "NOZZLE", "NOZ", s.nozzleTemp, CU_DEG,
+    addCell(f, BH_TEXT("NOZZLE", "喷嘴"), BH_TEXT("NOZ", "喷嘴"), s.nozzleTemp, CU_DEG,
             tempClr(s.nozzleTemp, dispSettings.nozzleScaleMax, dispSettings.nozzle.value));
   }
-  addCell(f, "BED", "BED", s.bedTemp, CU_DEG, tempClr(s.bedTemp, dispSettings.bedScaleMax, dispSettings.bed.value));
+  addCell(f, BH_TEXT("BED", "热床"), BH_TEXT("BED", "热床"), s.bedTemp, CU_DEG, tempClr(s.bedTemp, dispSettings.bedScaleMax, dispSettings.bed.value));
   if (hasChamberSensor(serial) && s.chamberTemp > 0.5f)
-    addCell(f, "CHAMBER", "CHMB", s.chamberTemp, CU_DEG,
+    addCell(f, BH_TEXT("CHAMBER", "腔温"), BH_TEXT("CHMB", "腔温"), s.chamberTemp, CU_DEG,
             tempClr(s.chamberTemp, dispSettings.chamberScaleMax, dispSettings.chamberTemp.value));
   int8_t u = displayAmsUnit(s.ams, slot);
   if (u >= 0) {
     const AmsUnit& au = s.ams.units[u];
     if (au.temp > 0.5f)
       addCell(f, "AMS", "AMS", au.temp, CU_DEG, tempClr(au.temp, dispSettings.chamberScaleMax, dispSettings.textColor));
-    if (au.humidityRaw > 0)    addCell(f, "HUMIDITY", "HUM", au.humidityRaw, CU_PCT, dispSettings.textColor);
-    else if (au.humidity > 0)  addCell(f, "HUMIDITY", "HUM", au.humidity, CU_OF5, dispSettings.textColor);
+    if (au.humidityRaw > 0)    addCell(f, BH_TEXT("HUMIDITY", "湿度"), BH_TEXT("HUM", "湿度"), au.humidityRaw, CU_PCT, dispSettings.textColor);
+    else if (au.humidity > 0)  addCell(f, BH_TEXT("HUMIDITY", "湿度"), BH_TEXT("HUM", "湿度"), au.humidity, CU_OF5, dispSettings.textColor);
   }
 }
 
@@ -450,7 +451,7 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s, uint8_t slot) {
     f.trayCount = 1;
     fillTray(f.trays[0], a.ovTray, a.activeTray == AMS_TRAY_OVERFLOW);
   } else {
-    strlcpy(f.amsLabel, "SPOOL", sizeof(f.amsLabel));
+    strlcpy(f.amsLabel, BH_TEXT("SPOOL", "料卷"), sizeof(f.amsLabel));
   }
   if (a.vtPresent) {
     f.extShow = 1;
@@ -461,8 +462,8 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s, uint8_t slot) {
   }
 }
 
-// Copy UTF-8 text keeping only code points the VLW pack has (ASCII, Latin-1,
-// Latin Extended-A, Romanian S/T comma, euro); others would draw as boxes.
+// Copy UTF-8 text keeping only glyphs in the selected font, including the
+// Chinese subset. Unsupported characters would otherwise draw as boxes.
 static void copyRenderable(char* dst, size_t n, const char* src) {
   size_t o = 0;
   const uint8_t* p = (const uint8_t*)src;
@@ -476,8 +477,7 @@ static void copyRenderable(char* dst, size_t n, const char* src) {
     int k = 1;
     for (; k < len && (p[k] & 0xC0) == 0x80; k++) cp = (cp << 6) | (p[k] & 0x3F);
     if (k < len) { p += k; continue; }       // truncated sequence
-    bool ok = (cp >= 0x20 && cp < 0x7F) || (cp >= 0xA0 && cp < 0x180) ||
-              (cp >= 0x218 && cp <= 0x21B) || cp == 0x20AC;
+    bool ok = fontHasGlyph(FONT_BODY, cp);
     if (ok) {
       if (o + len >= n) break;
       memcpy(dst + o, p, len);
@@ -507,7 +507,7 @@ static void snapCommon(CardFrame& f, CardKind kind, PrinterSlot& p) {
   f.finish = dispSettings.finishColor;
   f.nozAccent = dispSettings.nozzle.arc;
 
-  copyRenderable(f.name, sizeof(f.name), p.config.name[0] ? p.config.name : "Printer");
+  copyRenderable(f.name, sizeof(f.name), p.config.name[0] ? p.config.name : BH_TEXT("Printer", "打印机"));
   if (getActiveConnCount() > 1) {
     for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++) {
       if (!isPrinterConfigured(i)) continue;
@@ -730,7 +730,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
   const int16_t yMax = g.H - g.pad;
   cv.hline(x0, rule, w, f.track);
   if (f.bandFilaments) {
-    cv.text("FILAMENTS", x0, rule + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(BH_TEXT("FILAMENTS", "耗材"), x0, rule + g.cellLblOff, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     // List form when every filament gets its own row: swatch, type, a bar of
     // what is left on the spool in its colour, and the percentage.
     const int16_t rowH = cv.S(22), listTop = rule + g.cellLblOff + cv.S(22);
@@ -822,7 +822,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       // Size from a digit template, not the live value: proportional digits
       // made the whole row shift by a pixel or two as a nozzle warmed up.
       // Nozzles always reserve three digits.
-      const bool nozzle = strncmp(c.lblShort, "NOZ", 3) == 0;
+      const bool nozzle = strncmp(c.lblShort, BH_TEXT("NOZ", "喷嘴"), 3) == 0;
       const char* tmpl = (nozzle || c.val >= 100 || c.val <= -10) ? "888" : "88";
       cv.useFont(FONT_LARGE);
       int16_t vw = cv.width(tmpl) + cv.S(c.unit == CU_DEG ? 8 : 16);
@@ -1052,10 +1052,10 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
     // The label at body size where the top-right corner has room; the small
     // caps face when a wide percent ("100%") would run into it.
     cv.useFont(FONT_BODY);
-    remLblFont = (g.k <= 100 && (pThumb || hr - cv.width("REMAINING") > pctEnd + 8))
+    remLblFont = (g.k <= 100 && (pThumb || hr - cv.width(BH_TEXT("REMAINING", "剩余")) > pctEnd + 8))
                      ? FONT_BODY : FONT_CARD_LBL;   // body face only at 1x - too big at 1.5x
-    if (pThumb) cv.text("REMAINING", hx, remLbl + cv.S(14), remLblFont, f.dim, lgfx::textdatum_t::top_left);
-    else        cv.text("REMAINING", hr, remLbl - (remLblFont == FONT_BODY ? cv.S(3) : 0), remLblFont, f.dim,
+    if (pThumb) cv.text(BH_TEXT("REMAINING", "剩余"), hx, remLbl + cv.S(14), remLblFont, f.dim, lgfx::textdatum_t::top_left);
+    else        cv.text(BH_TEXT("REMAINING", "剩余"), hr, remLbl - (remLblFont == FONT_BODY ? cv.S(3) : 0), remLblFont, f.dim,
                         lgfx::textdatum_t::top_right);
     if (f.remainMin > 0) {
       drawDuration(cv, hr, remBase, f.remainMin, f);
@@ -1084,9 +1084,9 @@ static void scenePrinting(Cv& cv, const CardFrame& f, const CardGeo& g) {
       cv.useFont(FONT_CARD_LBL);
       ex -= cv.width(f.etaDay) + cv.S(5);
     }
-    cv.text("ETA", ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
+    cv.text(BH_TEXT("ETA", "预计"), ex, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
     cv.useFont(FONT_CARD_LBL);
-    rightStart = ex - cv.width("ETA");
+    rightStart = ex - cv.width(BH_TEXT("ETA", "预计"));
   }
   int16_t leftEnd = hx;
   cv.noTier = true;                        // layer count / stage at the 1x body face on every tier
@@ -1145,24 +1145,24 @@ static void sceneFinished(Cv& cv, const CardFrame& f, const CardGeo& g) {
   cv.useFont(FONT_LARGE);
   fitText(cv, buf, sizeof(buf), f.head, hw);
   cv.text(buf, hx, g.finHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
-  cv.text("LAST PRINT", hx, g.finLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+  cv.text(BH_TEXT("LAST PRINT", "上次打印"), hx, g.finLblY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
   cv.useFont(FONT_BODY);
   fitText(cv, buf, sizeof(buf), f.job[0] ? f.job : "--", hw);
   cv.text(buf, hx, g.finNameCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
 
   int16_t x = hx;
   if (f.doneClock[0]) {
-    cv.text("DONE", x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(BH_TEXT("DONE", "完成"), x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     cv.text(f.doneClock, x, g.finRowCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
     cv.useFont(FONT_BODY);
     x += std::max<int16_t>(cv.width(f.doneClock), 30) + 18;
   }
   if (f.kwh[0]) {
-    cv.text("ENERGY", x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
+    cv.text(BH_TEXT("ENERGY", "电量"), x, g.finRowY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
     cv.text(f.kwh, x, g.finRowCy, FONT_BODY, f.txt, lgfx::textdatum_t::middle_left);
   }
   if (f.doorWait)
-    cv.text("Open door to dismiss", hx, g.finDoorCy, FONT_BODY, CLR_ORANGE, lgfx::textdatum_t::middle_left);
+    cv.text(BH_TEXT("Open door to dismiss", "开门关闭此页面"), hx, g.finDoorCy, FONT_BODY, CLR_ORANGE, lgfx::textdatum_t::middle_left);
   drawBottom(cv, f, g, g.finBotRule);
 }
 
@@ -1989,11 +1989,11 @@ bool drawCardFinished(PrinterSlot& p, bool force) {
   snapCommon(f, CK_FINISHED, p);
   if (!geo().amsColW) f.amsShow = 0;      // portrait / square finish: no AMS strip
   if (printerWasCanceled(s)) {
-    strlcpy(f.head, "Print canceled", sizeof(f.head)); f.headColor = CLR_YELLOW;
+    strlcpy(f.head, BH_TEXT("Print canceled", "打印已取消"), sizeof(f.head)); f.headColor = CLR_YELLOW;
   } else if (s.gcodeStateId == GCODE_FAILED) {
-    strlcpy(f.head, "Print failed", sizeof(f.head));   f.headColor = CLR_RED;
+    strlcpy(f.head, BH_TEXT("Print failed", "打印失败"), sizeof(f.head));   f.headColor = CLR_RED;
   } else {
-    strlcpy(f.head, "Print complete", sizeof(f.head)); f.headColor = f.finish;
+    strlcpy(f.head, BH_TEXT("Print complete", "打印完成"), sizeof(f.head)); f.headColor = f.finish;
   }
   formatFinishClock(f.doneClock, sizeof(f.doneClock), s);
   float kwh = tasmotaGetPrintKwhUsedForSlot(rotState.displayIndex);
@@ -2015,12 +2015,12 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
   if (s.gcodeStateId == GCODE_FINISH) {
     // Square: a 12-hour clock beside the headline leaves no room for "Print complete".
     const bool tight = geo().idleClockRight == 2 && f.ampm[0];
-    strlcpy(f.head, tight ? "Complete" : "Print complete", sizeof(f.head));
+    strlcpy(f.head, tight ? BH_TEXT("Complete", "完成") : BH_TEXT("Print complete", "打印完成"), sizeof(f.head));
     f.headColor = f.finish;               // job name stays as the sub line
   } else {
-    strlcpy(f.head, s.connected ? "Ready" : "Offline", sizeof(f.head));
+    strlcpy(f.head, s.connected ? BH_TEXT("Ready", "就绪") : BH_TEXT("Offline", "离线"), sizeof(f.head));
     f.headColor = f.txt;
-    strlcpy(f.job, s.connected ? "No active print" : "Waiting for printer", sizeof(f.job));
+    strlcpy(f.job, s.connected ? BH_TEXT("No active print", "暂无打印任务") : BH_TEXT("Waiting for printer", "等待打印机"), sizeof(f.job));
   }
 
   // Units first, then AMS HT units, tagged in CardTray::mark.

@@ -1,3 +1,4 @@
+#include "localization.h"
 #ifndef HMS_LOOKUP_H
 #define HMS_LOOKUP_H
 
@@ -26,7 +27,7 @@
 // code": codes Bambu ships no wording for are dropped before they get here
 // (hmsIsDescribed), so the only thing missing is this board's copy of the
 // sentence, and the portal really does have it in the published mirror.
-#define HMS_FALLBACK_TEXT  "Description in the web portal"
+#define HMS_FALLBACK_TEXT  BH_TEXT("Description in the web portal", "请在网页查看说明")
 
 // The print_error equivalent, and deliberately worded differently. print_error
 // is exempt from the undescribed-code rule - a stopped job is worth reporting
@@ -34,7 +35,7 @@
 // blank, and the mirror drops those blanks too. Promising the portal has the
 // text would be a lie in exactly that case, which is the only case a C3 (no
 // print_error table at all) and a blank feed entry can produce together.
-#define PRINT_ERROR_FALLBACK_TEXT  "No description published for this code"
+#define PRINT_ERROR_FALLBACK_TEXT  BH_TEXT("No description published for this code", "此错误码暂无说明")
 
 // "FATAL" / "SERIOUS" / "COMMON" / "INFO". `sev` is hmsSeverityOf(code);
 // anything outside 1-3 reads as INFO and never alerts.
@@ -150,7 +151,7 @@ const char* hmsKnownVersion(void);
 // drives the colour; the code identifies which error, so a repaint predicate can
 // tell one error from the next without diffing the whole array.
 #define ERROR_BADGE_TEXT   "ERR"
-#define CANCELED_STATE_TEXT "CANCELED"
+#define CANCELED_STATE_TEXT BH_TEXT("CANCELED", "已取消")
 
 struct ErrorBadge {
   bool     active;

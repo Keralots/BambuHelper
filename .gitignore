@@ -4,6 +4,7 @@
 .claude
 codex/
 .cache
+__pycache__/
 *.o
 *.obj
 *.elf
