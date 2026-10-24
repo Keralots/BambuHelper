@@ -48,6 +48,9 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id);
 // the id has no VLW blob (FONT_7SEG / FONT_NONE) or the load fails.
 bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id);
 
+// Used when filtering names against the selected (possibly subsetted) font.
+bool fontHasGlyph(FontID id, uint32_t codepoint);
+
 // Parsed once and kept (~9 B per glyph): select with gfx.setFont(cachedFont(id)).
 // For renderers that switch faces many times per frame. Null when unavailable.
 const lgfx::IFont* cachedFont(FontID id);

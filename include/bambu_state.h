@@ -1,3 +1,4 @@
+#include "localization.h"
 #ifndef BAMBU_STATE_H
 #define BAMBU_STATE_H
 
@@ -268,68 +269,68 @@ inline bool isPrintingGcodeState(PrinterGcodeState state) {
 // kept <=18 chars so they fit the 240px ETA line at FONT_BODY without auto-fit.
 inline const char* stgCurLabel(int8_t stg) {
   switch (stg) {
-    case 1:  return "Bed Leveling";
-    case 2:  return "Preheating Bed";
-    case 3:  return "Sweeping XY";
-    case 4:  return "Changing Filament";
-    case 7:  return "Heating Nozzle";
-    case 8:  return "Calibrating Flow";
-    case 9:  return "Scanning Bed";
-    case 10: return "Inspecting Layer 1";
-    case 11: return "Detecting Plate";
+    case 1:  return BH_TEXT("Bed Leveling", "热床调平");
+    case 2:  return BH_TEXT("Preheating Bed", "热床预热");
+    case 3:  return BH_TEXT("Sweeping XY", "XY 扫频");
+    case 4:  return BH_TEXT("Changing Filament", "更换耗材");
+    case 7:  return BH_TEXT("Heating Nozzle", "喷嘴加热");
+    case 8:  return BH_TEXT("Calibrating Flow", "流量校准");
+    case 9:  return BH_TEXT("Scanning Bed", "扫描热床");
+    case 10: return BH_TEXT("Inspecting Layer 1", "首层检测");
+    case 11: return BH_TEXT("Detecting Plate", "检测打印板");
     case 12:
-    case 18: return "Calibrating Lidar";
-    case 13: return "Homing";
-    case 14: return "Cleaning Nozzle";
-    case 15: return "Checking Temp";
-    case 19: return "Calibrating Flow";
-    case 22: return "Unloading Filament";
-    case 24: return "Loading Filament";
+    case 18: return BH_TEXT("Calibrating Lidar", "激光雷达校准");
+    case 13: return BH_TEXT("Homing", "归零");
+    case 14: return BH_TEXT("Cleaning Nozzle", "清理喷嘴");
+    case 15: return BH_TEXT("Checking Temp", "检查温度");
+    case 19: return BH_TEXT("Calibrating Flow", "流量校准");
+    case 22: return BH_TEXT("Unloading Filament", "退料");
+    case 24: return BH_TEXT("Loading Filament", "进料");
     case 25:
-    case 31: return "Motor Noise Cali";
-    case 29: return "Cooling Chamber";
-    case 36: return "Accuracy Check";
-    case 37: return "Accuracy Cali";
-    case 38: return "Accuracy Verify";
-    case 39: return "Nozzle Offset Cali";
-    case 40: return "Hot Bed Leveling";
-    case 41: return "Quick Release Chk";
-    case 42: return "Door/Cover Check";
-    case 43: return "Laser Cali";
-    case 44: return "Platform Check";
-    case 45: return "Cam Position Chk";
-    case 46: return "Camera Cali";
-    case 47: return "Bed Leveling 1";
-    case 48: return "Bed Leveling 2";
-    case 49: return "Heating Chamber";
-    case 50: return "Cooling Bed";
-    case 51: return "Cali Lines";
-    case 52: return "Checking Material";
-    case 53: return "Live Cam Cali";
-    case 54: return "Waiting for Bed";
-    case 55: return "Material Pos Chk";
-    case 56: return "Cutter Offset Cali";
-    case 57: return "Measuring Surface";
-    case 58: return "Thermal Precond";
-    case 59: return "Homing Blade";
-    case 60: return "Camera Offset Cali";
-    case 61: return "Blade Pos Cali";
-    case 62: return "Hotend Test";
-    case 63: return "Chamber Temp Wait";
-    case 64: return "Preparing Hotend";
-    case 65: return "Nozzle Clump Cali";
-    case 66: return "Purifying Air";
-    case 67: return "Rotary Measure";
-    case 68: return "Moving to Purge";
-    case 69: return "Cooling Nozzle";
-    case 70: return "Centering Head";
-    case 71: return "Arc Fitting";
-    case 72: return "Hotend Detect";
-    case 73: return "Plate Align Chk";
-    case 74: return "Foreign Object Chk";
-    case 75: return "Bed Underside Chk";
-    case 76: return "Pre-Extruding";
-    case 77: return "Preparing AMS";
+    case 31: return BH_TEXT("Motor Noise Cali", "电机降噪校准");
+    case 29: return BH_TEXT("Cooling Chamber", "腔体冷却");
+    case 36: return BH_TEXT("Accuracy Check", "精度检查");
+    case 37: return BH_TEXT("Accuracy Cali", "精度校准");
+    case 38: return BH_TEXT("Accuracy Verify", "精度验证");
+    case 39: return BH_TEXT("Nozzle Offset Cali", "喷嘴偏移校准");
+    case 40: return BH_TEXT("Hot Bed Leveling", "热床高温调平");
+    case 41: return BH_TEXT("Quick Release Chk", "快拆检查");
+    case 42: return BH_TEXT("Door/Cover Check", "舱门顶盖检查");
+    case 43: return BH_TEXT("Laser Cali", "激光校准");
+    case 44: return BH_TEXT("Platform Check", "平台检查");
+    case 45: return BH_TEXT("Cam Position Chk", "相机位置检查");
+    case 46: return BH_TEXT("Camera Cali", "相机校准");
+    case 47: return BH_TEXT("Bed Leveling 1", "热床调平 1");
+    case 48: return BH_TEXT("Bed Leveling 2", "热床调平 2");
+    case 49: return BH_TEXT("Heating Chamber", "腔体加热");
+    case 50: return BH_TEXT("Cooling Bed", "热床冷却");
+    case 51: return BH_TEXT("Cali Lines", "校准线");
+    case 52: return BH_TEXT("Checking Material", "耗材检查");
+    case 53: return BH_TEXT("Live Cam Cali", "实时相机校准");
+    case 54: return BH_TEXT("Waiting for Bed", "等待热床");
+    case 55: return BH_TEXT("Material Pos Chk", "耗材位置检查");
+    case 56: return BH_TEXT("Cutter Offset Cali", "切刀偏移校准");
+    case 57: return BH_TEXT("Measuring Surface", "测量表面");
+    case 58: return BH_TEXT("Thermal Precond", "温度预处理");
+    case 59: return BH_TEXT("Homing Blade", "刀片归零");
+    case 60: return BH_TEXT("Camera Offset Cali", "相机偏移校准");
+    case 61: return BH_TEXT("Blade Pos Cali", "刀片位置校准");
+    case 62: return BH_TEXT("Hotend Test", "热端测试");
+    case 63: return BH_TEXT("Chamber Temp Wait", "等待腔温");
+    case 64: return BH_TEXT("Preparing Hotend", "准备热端");
+    case 65: return BH_TEXT("Nozzle Clump Cali", "喷嘴积料校准");
+    case 66: return BH_TEXT("Purifying Air", "空气净化");
+    case 67: return BH_TEXT("Rotary Measure", "旋转测量");
+    case 68: return BH_TEXT("Moving to Purge", "移至冲刷位置");
+    case 69: return BH_TEXT("Cooling Nozzle", "喷嘴冷却");
+    case 70: return BH_TEXT("Centering Head", "打印头居中");
+    case 71: return BH_TEXT("Arc Fitting", "圆弧拟合");
+    case 72: return BH_TEXT("Hotend Detect", "热端检测");
+    case 73: return BH_TEXT("Plate Align Chk", "打印板对齐检查");
+    case 74: return BH_TEXT("Foreign Object Chk", "异物检查");
+    case 75: return BH_TEXT("Bed Underside Chk", "热床底部检查");
+    case 76: return BH_TEXT("Pre-Extruding", "预挤出");
+    case 77: return BH_TEXT("Preparing AMS", "准备 AMS");
     default: return nullptr;
   }
 }

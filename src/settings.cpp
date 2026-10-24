@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "settings.h"
 #include "config.h"
 #include "button.h"
@@ -700,7 +701,7 @@ void loadSettings() {
   // Door: default "Door" only on first run (key absent). An explicit empty value
   // means "hide the text, show just the padlock icon" - not "use default".
   if (prefs.isKey("gl_dor")) loadGaugeLabel("gl_dor", gaugeLabels.door, sizeof(gaugeLabels.door));
-  else strlcpy(gaugeLabels.door, "Door", sizeof(gaugeLabels.door));
+  else strlcpy(gaugeLabels.door, BH_TEXT("Door", "舱门"), sizeof(gaugeLabels.door));
 
   // Top progress bar color. Before this setting existed the bar reused the
   // Progress gauge arc color, so migrate absent keys to that value to avoid a

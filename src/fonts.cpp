@@ -6,9 +6,18 @@
 // give every translation unit its own copy (each `const uint8_t name[]` at
 // namespace scope has internal linkage). Defining them once in a .cpp keeps
 // a single copy in flash regardless of how many places call setFont().
+#if defined(BAMBUHELPER_ZH_CN)
+#include "fonts/zh_inter_10.h"
+#include "fonts/zh_inter_14.h"
+#include "fonts/zh_inter_19.h"
+#define inter_10 zh_inter_10
+#define inter_14 zh_inter_14
+#define inter_19 zh_inter_19
+#else
 #include "fonts/inter_10.h"
 #include "fonts/inter_14.h"
 #include "fonts/inter_19.h"
+#endif
 #if defined(DISPLAY_320x480)
 // jc3248w535 carries an extra ~105 KB font blob so the gauge primary value
 // can render larger on the bigger canvas. Excluded from other boards to
@@ -29,7 +38,12 @@
 
 #if HAS_CARD_SKIN
 #include "fonts/inter_card_num.h"   // ~15 KB
+#if defined(BAMBUHELPER_ZH_CN)
+#include "fonts/zh_inter_card_lbl.h"
+#define inter_card_lbl zh_inter_card_lbl
+#else
 #include "fonts/inter_card_lbl.h"   // ~7 KB
+#endif
 #if defined(DISPLAY_320x480)
 #include "fonts/inter_card_num_l.h" // ~23 KB
 #include "fonts/inter_card_lbl_l.h" // ~10 KB
@@ -183,6 +197,24 @@ static const uint8_t* fontData(FontID id) {
 bool loadFontInto(lgfx::LovyanGFX& gfx, FontID id) {
     const uint8_t* data = fontData(id);
     return data && gfx.loadFont(data);
+}
+
+bool fontHasGlyph(FontID id, uint32_t codepoint) {
+    const uint8_t* data = fontData(id);
+    if (!data) return false;
+    auto read32 = [](const uint8_t* p) {
+        return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+               ((uint32_t)p[2] << 8) | p[3];
+    };
+    uint32_t lo = 0, hi = read32(data);
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        uint32_t cp = read32(data + 24 + mid * 28);
+        if (cp == codepoint) return true;
+        if (cp < codepoint) lo = mid + 1;
+        else hi = mid;
+    }
+    return false;
 }
 
 static lgfx::PointerWrapper* cacheSrc[16];

@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "cloud_login.h"
 
 #if HAS_CLOUD_LOGIN
@@ -303,7 +304,7 @@ static bool ensureCsrf() {
   CloudResponse r;
   cloudRequest(siteHost(currentRegion()), "/api/csrf", "GET", nullptr, true, r);
   if (g_csrf.length() == 0) {
-    return fail("Could not reach the Bambu sign-in service.", g_state);
+    return fail(BH_TEXT("Could not reach the Bambu sign-in service.", "无法连接拓竹登录服务。"), g_state);
   }
   return true;
 }
@@ -335,20 +336,20 @@ static String extractToken(const String& body) {
 
 static bool storeToken(const String& token) {
   if (token.length() == 0) {
-    return fail("Signed in, but no token came back.");
+    return fail(BH_TEXT("Signed in, but no token came back.", "登录成功，但未收到令牌。"));
   }
   // Every consumer reads the token back through a 1200-byte buffer, so storing
   // a longer one would truncate on load and surface later as an expired token
   // that never stops being expired.
   if (token.length() >= CLOUD_TOKEN_MAX) {
     Serial.printf("CLOUD: token is %d bytes, too long to store\n", token.length());
-    return fail("Bambu's token is larger than this device can store.");
+    return fail(BH_TEXT("Bambu's token is larger than this device can store.", "拓竹返回的令牌过长，设备无法保存。"));
   }
 
   if (!saveCloudToken(token.c_str())) {
     // A sign-in that reports success but silently lost its token leaves the
     // user with nothing to debug - refuse loudly instead.
-    return fail("Signed in, but the token could not be stored - settings storage is full. Factory-reset (export settings first) and try again.");
+    return fail(BH_TEXT("Signed in, but the token could not be stored - settings storage is full. Factory-reset (export settings first) and try again.", "登录成功，但设置存储空间已满，无法保存令牌。请先导出设置，再恢复出厂设置并重试。"));
   }
   if (g_email.length() > 0) saveCloudEmail(g_email.c_str());
 
@@ -378,7 +379,7 @@ static bool handleLoginReply(const CloudResponse& r) {
   if (r.truncated || err) {
     Serial.printf("CLOUD: login reply unreadable (%s), len=%d, truncated=%d\n",
                   err.c_str(), r.body.length(), r.truncated ? 1 : 0);
-    return fail(r.truncated ? "Bambu's answer was too large to read."
+    return fail(r.truncated ? BH_TEXT("Bambu's answer was too large to read.", "拓竹服务响应过大，无法读取。")
                             : "Bambu's answer could not be read.");
   }
 
@@ -399,7 +400,7 @@ static bool handleLoginReply(const CloudResponse& r) {
       // retrying a login that can only fail.
       g_neededTwoFactor = true;
       Serial.println("CLOUD: 2FA demanded but no tfaKey came with it");
-      return fail("Bambu asked for a 2FA code but sent no challenge. Try again.");
+      return fail(BH_TEXT("Bambu asked for a 2FA code but sent no challenge. Try again.", "拓竹要求双重验证码，但未提供验证信息，请重试。"));
     }
     g_tfaKey = tfaKey;
     g_neededTwoFactor = true;
@@ -444,7 +445,7 @@ static bool handleLoginReply(const CloudResponse& r) {
   Serial.printf("CLOUD: login reply had no token, len=%d, fields: %s\n",
                 r.body.length(), fields.c_str());
 
-  return fail("Bambu accepted the sign-in but sent no token.");
+  return fail(BH_TEXT("Bambu accepted the sign-in but sent no token.", "拓竹已接受登录，但未返回令牌。"));
 }
 
 bool cloudLoginWithPassword(const char* email, const char* password) {
@@ -460,7 +461,7 @@ bool cloudLoginWithPassword(const char* email, const char* password) {
   CloudResponse r;
   if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/login", "POST",
                     payload.c_str(), false, r)) {
-    return fail("Could not reach the Bambu sign-in service.");
+    return fail(BH_TEXT("Could not reach the Bambu sign-in service.", "无法连接拓竹登录服务。"));
   }
   Serial.printf("CLOUD: user/login HTTP %d, len=%d\n", r.status, r.body.length());
   return handleLoginReply(r);
@@ -480,7 +481,7 @@ bool cloudLoginRequestEmailCode(const char* email) {
   CloudResponse r;
   if (!cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/sendemail/code",
                     "POST", payload.c_str(), false, r)) {
-    return fail("Could not reach the Bambu sign-in service.");
+    return fail(BH_TEXT("Could not reach the Bambu sign-in service.", "无法连接拓竹登录服务。"));
   }
   Serial.printf("CLOUD: sendemail/code HTTP %d\n", r.status);
 
@@ -495,7 +496,7 @@ bool cloudLoginRequestEmailCode(const char* email) {
 bool cloudLoginSubmitCode(const char* code) {
   const CloudLoginState keep = g_state;   // so a mistyped code can be retried
   if (keep != CLOUD_LOGIN_NEED_TFA && keep != CLOUD_LOGIN_NEED_EMAIL_CODE) {
-    return fail("Nothing is waiting for a code - start again.", keep);
+    return fail(BH_TEXT("Nothing is waiting for a code - start again.", "当前没有等待验证码的登录请求，请重新开始。"), keep);
   }
 
   // The authenticator leg is the one Bambu keeps on the website host, session
@@ -523,12 +524,12 @@ bool cloudLoginSubmitCode(const char* code) {
   CloudResponse r;
   if (!cloudRequest(host, path, "POST", payload.c_str(), tfa, r)) {
     // A blip on the way out must not throw away a code the user still holds.
-    return fail("Could not reach the Bambu sign-in service - try the code again.", keep);
+    return fail(BH_TEXT("Could not reach the Bambu sign-in service - try the code again.", "无法连接拓竹登录服务，请重试验证码。"), keep);
   }
   Serial.printf("CLOUD: %s HTTP %d, len=%d\n", path, r.status, r.body.length());
 
   if (r.status != 200) {
-    setErrorFrom(r, "That code was not accepted.");
+    setErrorFrom(r, BH_TEXT("That code was not accepted.", "验证码未被接受。"));
     g_state = keep;
     return false;
   }
@@ -537,7 +538,7 @@ bool cloudLoginSubmitCode(const char* code) {
     bool ok = handleLoginReply(r);
     // handleLoginReply describes a finished sign-in; back on the code step that
     // reads as a contradiction, so say what the user can act on.
-    if (!ok) fail("That code was not accepted.", keep);
+    if (!ok) fail(BH_TEXT("That code was not accepted.", "验证码未被接受。"), keep);
     return ok;
   }
 
@@ -589,7 +590,7 @@ bool cloudLoginRefreshStored() {
     clearCloudPassword();
     cloudLoginReset();
     g_state = CLOUD_LOGIN_FAILED;
-    g_message = "The saved password needs a 2FA code, so the token could not be renewed. Sign in again.";
+    g_message = BH_TEXT("The saved password needs a 2FA code, so the token could not be renewed. Sign in again.", "账号需要双重验证码，无法使用已保存密码续期令牌，请重新登录。");
     return false;
   }
   return ok && g_state == CLOUD_LOGIN_OK;

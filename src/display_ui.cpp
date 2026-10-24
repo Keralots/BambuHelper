@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "display_ui.h"
 #include "display_gauges.h"
 #include "display_split.h"
@@ -68,6 +69,17 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
 const char* stateBadgeText(const BambuState& s) {
   if (errorBadgeActive(s))   return ERROR_BADGE_TEXT;
   if (printerWasCanceled(s)) return CANCELED_STATE_TEXT;
+#if defined(BAMBUHELPER_ZH_CN)
+  switch (s.gcodeStateId) {
+    case GCODE_IDLE:    return "就绪";
+    case GCODE_RUNNING: return "打印中";
+    case GCODE_PAUSE:   return "已暂停";
+    case GCODE_PREPARE: return "准备中";
+    case GCODE_FINISH:  return "已完成";
+    case GCODE_FAILED:  return "失败";
+    default: break;
+  }
+#endif
   return s.gcodeState;
 }
 
@@ -577,7 +589,7 @@ void initDisplay() {
     tft.drawString("BambuHelper", sw / 2, sh / 2 + LY_SPLASH_TITLE_DY);
     setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-    tft.drawString("Printer Monitor", sw / 2, sh / 2 + LY_SPLASH_SUB_DY);
+    tft.drawString(BH_TEXT("Printer Monitor", "打印机监控"), sw / 2, sh / 2 + LY_SPLASH_SUB_DY);
     setFont(tft, LY_F_SMALL);
     tft.drawString(FW_VERSION, sw / 2, sh / 2 + LY_SPLASH_VER_DY);
   }
@@ -674,11 +686,11 @@ ScreenState getScreenState() {
 //  Nozzle label helper (dual nozzle H2D/H2C)
 // ---------------------------------------------------------------------------
 // Nozzle label honoring custom overrides. side: 'R', 'L', or 0 (single/combined).
-// Per-side override wins; else the combined "Nozzle" override (or default) plus
+// Per-side override wins; else the combined BH_TEXT("Nozzle", "喷嘴") override (or default) plus
 // the R/L suffix. Returns a static buffer (synchronous draw, one label at a time).
 const char* nozzleSideLabel(char side) {
   static char buf[GAUGE_LABEL_LEN + 4];
-  const char* base = gaugeLabelOr(gaugeLabels.nozzle, "Nozzle");
+  const char* base = gaugeLabelOr(gaugeLabels.nozzle, BH_TEXT("Nozzle", "喷嘴"));
   if (side == 'R') {
     if (gaugeLabels.nozzleRight[0]) { strlcpy(buf, gaugeLabels.nozzleRight, sizeof(buf)); return buf; }
     snprintf(buf, sizeof(buf), "%s R", base); return buf;
@@ -701,10 +713,10 @@ static const char* nozzleLabel(const BambuState& s) {
 // ---------------------------------------------------------------------------
 static const char* speedLevelName(uint8_t level) {
   switch (level) {
-    case 1: return "Silent";
-    case 2: return "Std";
-    case 3: return "Sport";
-    case 4: return "Ludicr";
+    case 1: return BH_TEXT("Silent", "静音");
+    case 2: return BH_TEXT("Std", "标准");
+    case 3: return BH_TEXT("Sport", "运动");
+    case 4: return BH_TEXT("Ludicr", "狂暴");
     default: return "---";
   }
 }
@@ -752,16 +764,16 @@ static void drawAPMode() {
   const WifiFailInfo& fail = getWifiFailInfo();
   char hint[32] = "";
   switch (fail.kind) {
-    case WIFI_FAIL_NOT_FOUND:     strlcpy(hint, "WiFi not found", sizeof(hint)); break;
-    case WIFI_FAIL_NAME_MISMATCH: strlcpy(hint, "WiFi name mismatch", sizeof(hint)); break;
-    case WIFI_FAIL_WEAK:          snprintf(hint, sizeof(hint), "Weak WiFi %d dBm", fail.rssi); break;
-    case WIFI_FAIL_PASS_SHORT:    strlcpy(hint, "Password too short", sizeof(hint)); break;
-    case WIFI_FAIL_BAD_PASS:      strlcpy(hint, "Wrong password?", sizeof(hint)); break;
-    case WIFI_FAIL_ENTERPRISE:    strlcpy(hint, "Unsupported WiFi", sizeof(hint)); break;
-    case WIFI_FAIL_NO_IP:         strlcpy(hint, "No IP from router", sizeof(hint)); break;
+    case WIFI_FAIL_NOT_FOUND:     strlcpy(hint, BH_TEXT("WiFi not found", "未找到 WiFi"), sizeof(hint)); break;
+    case WIFI_FAIL_NAME_MISMATCH: strlcpy(hint, BH_TEXT("WiFi name mismatch", "WiFi 名称不符"), sizeof(hint)); break;
+    case WIFI_FAIL_WEAK:          snprintf(hint, sizeof(hint), BH_TEXT("Weak WiFi %d dBm", "WiFi 较弱 %d dBm"), fail.rssi); break;
+    case WIFI_FAIL_PASS_SHORT:    strlcpy(hint, BH_TEXT("Password too short", "密码过短"), sizeof(hint)); break;
+    case WIFI_FAIL_BAD_PASS:      strlcpy(hint, BH_TEXT("Wrong password?", "密码错误？"), sizeof(hint)); break;
+    case WIFI_FAIL_ENTERPRISE:    strlcpy(hint, BH_TEXT("Unsupported WiFi", "不支持此 WiFi"), sizeof(hint)); break;
+    case WIFI_FAIL_NO_IP:         strlcpy(hint, BH_TEXT("No IP from router", "未获取到 IP"), sizeof(hint)); break;
     case WIFI_FAIL_OTHER:
-      if (fail.reason) snprintf(hint, sizeof(hint), "WiFi failed (%u)", fail.reason);
-      else strlcpy(hint, "WiFi failed", sizeof(hint));
+      if (fail.reason) snprintf(hint, sizeof(hint), BH_TEXT("WiFi failed (%u)", "WiFi 失败（%u）"), fail.reason);
+      else strlcpy(hint, BH_TEXT("WiFi failed", "WiFi 连接失败"), sizeof(hint));
       break;
     default: break;
   }
@@ -779,13 +791,13 @@ static void drawAPMode() {
   } else {
     tft.setTextColor(CLR_GREEN, CLR_BG);
     setFont(tft, LY_F_LARGE);
-    tft.drawString("WiFi Setup", cx, apTitleY);
+    tft.drawString(BH_TEXT("WiFi Setup", "WiFi 配网"), cx, apTitleY);
   }
 
   // Instructions
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString("Connect to WiFi:", cx, apSsidLblY);
+  tft.drawString(BH_TEXT("Connect to WiFi:", "连接此 WiFi："), cx, apSsidLblY);
 
   // AP SSID
   tft.setTextColor(CLR_CYAN, CLR_BG);
@@ -798,13 +810,13 @@ static void drawAPMode() {
   // Password
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString("Password:", cx, apPassLblY);
+  tft.drawString(BH_TEXT("Password:", "密码："), cx, apPassLblY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
   tft.drawString(WIFI_AP_PASSWORD, cx, apPassY);
 
   // IP
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString("Then open:", cx, apOpenY);
+  tft.drawString(BH_TEXT("Then open:", "然后打开："), cx, apOpenY);
   tft.setTextColor(CLR_ORANGE, CLR_BG);
   setFont(tft, LY_F_LARGE);
   tft.drawString("192.168.4.1", cx, apIpY);
@@ -825,9 +837,9 @@ static void drawConnectingWiFi() {
   // Title
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString("Connecting to WiFi", cx, cy - LY_SC(20));
+  tft.drawString(BH_TEXT("Connecting to WiFi", "正在连接 WiFi"), cx, cy - LY_SC(20));
 
-  int16_t tw = tft.textWidth("Connecting to WiFi");
+  int16_t tw = tft.textWidth(BH_TEXT("Connecting to WiFi", "正在连接 WiFi"));
   drawAnimDots(tft, cx + tw / 2, cy - LY_SC(26), CLR_TEXT);
 
   // Slide bar
@@ -864,7 +876,7 @@ static void drawWiFiConnected() {
 
   tft.setTextColor(CLR_GREEN, CLR_BG);
   setFont(tft, LY_F_LARGE);
-  tft.drawString("WiFi Connected", midX, midY + LY_SC(10));
+  tft.drawString(BH_TEXT("WiFi Connected", "WiFi 已连接"), midX, midY + LY_SC(10));
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
   setFont(tft, LY_F_BODY);
@@ -886,10 +898,10 @@ static void drawOtaUpdate() {
 
   // Title
   setFont(tft, LY_F_LARGE);
-  tft.drawString("Updating", cx, cy - LY_SC(60));
+  tft.drawString(BH_TEXT("Updating", "正在更新"), cx, cy - LY_SC(60));
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-  tft.drawString("BambuHelper firmware", cx, cy - LY_SC(36));
+  tft.drawString(BH_TEXT("BambuHelper firmware", "BambuHelper 固件"), cx, cy - LY_SC(36));
 
   // Progress bar
   int pct = getOtaAutoProgress();
@@ -916,7 +928,7 @@ static void drawOtaUpdate() {
 
   // Warning
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.drawString("Do not power off", cx, cy + LY_SC(58));
+  tft.drawString(BH_TEXT("Do not power off", "请勿断电"), cx, cy + LY_SC(58));
 }
 
 // ---------------------------------------------------------------------------
@@ -949,14 +961,14 @@ static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode m
   if (mode == POM_STARTING) {
     setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT, CLR_BG);
-    tft.drawString("Printer starting...", cx, cy);
+    tft.drawString(BH_TEXT("Printer starting...", "打印机启动中…"), cx, cy);
     return;
   }
 
   // POM_OFF
   setFont(tft, LY_F_LARGE);
   tft.setTextColor(CLR_ORANGE, CLR_BG);
-  tft.drawString("Printer Off", cx, cy - LY_SC(24));
+  tft.drawString(BH_TEXT("Printer Off", "打印机已关机"), cx, cy - LY_SC(24));
 
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
@@ -977,7 +989,7 @@ static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode m
     setFont(tft, LY_F_SMALL);
     tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
     char hint[40];
-    tft.drawString(ellipsizeToWidth(tft, "Hold to power on",
+    tft.drawString(ellipsizeToWidth(tft, BH_TEXT("Hold to power on", "长按开机"),
                                     uiW() - LY_SC(12), hint, sizeof(hint)),
                    cx, cy + LY_SC(34));
   }
@@ -1021,9 +1033,9 @@ static void drawConnectingMQTT() {
   // Title
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, CLR_BG);
-  tft.drawString("Connecting to Printer", cx, cy - LY_SC(40));
+  tft.drawString(BH_TEXT("Connecting to Printer", "正在连接打印机"), cx, cy - LY_SC(40));
 
-  int16_t tw = tft.textWidth("Connecting to Printer");
+  int16_t tw = tft.textWidth(BH_TEXT("Connecting to Printer", "正在连接打印机"));
   drawAnimDots(tft, cx + tw / 2, cy - LY_SC(46), CLR_TEXT);
   tft.setTextDatum(MC_DATUM);
 
@@ -1065,7 +1077,7 @@ static void drawConnectingMQTT() {
     tft.setTextDatum(MC_DATUM);
 
     char buf[40];
-    snprintf(buf, sizeof(buf), "Attempt: %u", d.attempts + d.probes);
+    snprintf(buf, sizeof(buf), BH_TEXT("Attempt: %u", "尝试：%u"), d.attempts + d.probes);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, cy + LY_SC(50));
 
@@ -1078,8 +1090,8 @@ static void drawConnectingMQTT() {
         // invalidated earlier if the user does "log out everywhere" or
         // changes their password. The cookie in the browser may still look
         // valid; the server is the source of truth.
-        tft.drawString("Token rejected", cx, cy + LY_SC(62));
-        tft.drawString("Re-paste in web setup", cx, cy + LY_SC(74));
+        tft.drawString(BH_TEXT("Token rejected", "令牌无效"), cx, cy + LY_SC(62));
+        tft.drawString(BH_TEXT("Re-paste in web setup", "请在网页重新填写令牌"), cx, cy + LY_SC(74));
       } else {
         snprintf(buf, sizeof(buf), "Err: %s", mqttRcToString(d.lastRc));
         tft.drawString(buf, cx, cy + LY_SC(62));
@@ -1125,14 +1137,14 @@ static void drawIdleNoPrinter() {
 
   tft.setTextColor(CLR_TEXT, CLR_BG);
   setFont(tft, LY_F_BODY);
-  tft.drawString("WiFi Connected", cx, npWifiY);
+  tft.drawString(BH_TEXT("WiFi Connected", "WiFi 已连接"), cx, npWifiY);
 
   tft.fillCircle(cx, npDotY, LY_SC(5), dispSettings.statusOkColor);   // connected indicator
 
   tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
   setFont(tft, LY_F_BODY);
-  tft.drawString("No printer configured", cx, npMsgY);
-  tft.drawString("Open in browser:", cx, npOpenY);
+  tft.drawString(BH_TEXT("No printer configured", "尚未配置打印机"), cx, npMsgY);
+  tft.drawString(BH_TEXT("Open in browser:", "在浏览器中打开："), cx, npOpenY);
 
   tft.setTextColor(CLR_ORANGE, CLR_BG);
   setFont(tft, LY_F_LARGE);
@@ -1283,14 +1295,14 @@ static void drawIdleDryingRound(PrinterSlot& p) {
                 dryProgress, dispSettings.progress.arc, forceRedraw || unitChanged);
   }
 
-  // Title: "Drying" (+ rotation index with several units), curved on top
+  // Title: BH_TEXT("Drying", "烘干") (+ rotation index with several units), curved on top
   if (unitChanged) {
     markFrameDirty();
     char title[24];
     if (dryCount > 1)
-      snprintf(title, sizeof(title), "Drying  (%u/%u)", dryDisplayIdx + 1, dryCount);
+      snprintf(title, sizeof(title), BH_TEXT("Drying  (%u/%u)", "烘干（%u/%u）"), dryDisplayIdx + 1, dryCount);
     else
-      snprintf(title, sizeof(title), "Drying");
+      snprintf(title, sizeof(title), BH_TEXT("Drying", "烘干"));
     drawCurvedString(tft, title, cx, cx, LY_RND_ARC_R, false,
                      CLR_TEXT_DIM, LY_F_BODY, LY_RND_ARC_STATUS_HDEG);
   }
@@ -1512,7 +1524,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       tft.setTextDatum(MC_DATUM);
       setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString("Remaining", infoCx, 72);
+      tft.drawString(BH_TEXT("Remaining", "剩余"), infoCx, 72);
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(timeBuf, infoCx, 96);
@@ -1526,7 +1538,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       tft.setTextDatum(MC_DATUM);
       setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString("Humidity", infoCx, 128);
+      tft.drawString(BH_TEXT("Humidity", "湿度"), infoCx, 128);
       setFont(tft, FONT_LARGE);
       tft.setTextColor(amsHumidityColor(u.humidityRaw, u.humidity, u.present), CLR_BG);
       tft.drawString(humBuf, infoCx, 152);
@@ -1571,7 +1583,7 @@ static void drawIdleDrying(PrinterSlot& p) {
       const int16_t humY = 200;
       tft.fillRect(0, humY - 14, SCREEN_W, 30, CLR_BG);
       char humBuf[24];
-      snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+      snprintf(humBuf, sizeof(humBuf), BH_TEXT("Humidity: %d%%", "湿度：%d%%"), u.humidityRaw);
 
       tft.setTextDatum(MC_DATUM);
       setFont(tft, FONT_LARGE);
@@ -1616,7 +1628,7 @@ static void drawIdleDrying(PrinterSlot& p) {
   if (humidityChanged) {
     tft.fillRect(0, 158, SCREEN_W, 25, CLR_BG);
     char humBuf[24];
-    snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", u.humidityRaw);
+    snprintf(humBuf, sizeof(humBuf), BH_TEXT("Humidity: %d%%", "湿度：%d%%"), u.humidityRaw);
 
     tft.setTextDatum(MC_DATUM);
     setFont(tft, FONT_BODY);
@@ -1752,13 +1764,13 @@ static const char* formatIdleFinishBadge(char* buf, size_t n, const BambuState& 
                                          int16_t maxW) {
   char clock[16];
   if (!formatFinishClock(clock, sizeof(clock), s)) {
-    strlcpy(buf, "Print Complete", n);
+    strlcpy(buf, BH_TEXT("Print Complete", "打印完成"), n);
     return buf;
   }
-  snprintf(buf, n, "Print Complete @ %s", clock);
+  snprintf(buf, n, BH_TEXT("Print Complete @ %s", "打印完成于 %s"), clock);
   if (maxW > 0 && tft.textWidth(buf) > maxW) {
-    snprintf(buf, n, "Complete @ %s", clock);
-    if (tft.textWidth(buf) > maxW) strlcpy(buf, "Print Complete", n);
+    snprintf(buf, n, BH_TEXT("Complete @ %s", "完成于 %s"), clock);
+    if (tft.textWidth(buf) > maxW) strlcpy(buf, BH_TEXT("Print Complete", "打印完成"), n);
   }
   return buf;
 }
@@ -1931,7 +1943,7 @@ static void drawIdle() {
       // that an error sends people looking for a fault that does not exist.
       const bool canceled = printerWasCanceled(s);
       stateColor = canceled ? CLR_YELLOW : CLR_RED;
-      stateStr   = canceled ? "CANCELED" : "ERROR";
+      stateStr   = canceled ? BH_TEXT("CANCELED", "已取消") : BH_TEXT("ERROR", "错误");
     } else if (stateBadgeOverrideColor(s, stateColor)) {
       // An error standing while gcode_state reads IDLE / FINISH / UNKNOWN - the
       // ladder below would paint a green "Ready" straight over a live fault, and
@@ -1939,7 +1951,7 @@ static void drawIdle() {
       stateStr = stateBadgeText(s);
     } else if (s.gcodeStateId == GCODE_IDLE) {
       stateColor = dispSettings.statusOkColor;
-      stateStr = "Ready";
+      stateStr = BH_TEXT("Ready", "就绪");
     } else if (s.gcodeStateId == GCODE_FINISH) {
       // The finished screen is one-shot: waking a slept display dismisses it
       // (finishDismissedByWake in main.cpp) and lands here instead. Carry the
@@ -1958,9 +1970,9 @@ static void drawIdle() {
       // for a fault that does not exist.
       const bool canceled = printerWasCanceled(s);
       stateColor = canceled ? CLR_YELLOW : CLR_RED;
-      stateStr   = canceled ? "CANCELED" : "ERROR";
+      stateStr   = canceled ? BH_TEXT("CANCELED", "已取消") : BH_TEXT("ERROR", "错误");
     } else if (s.gcodeStateId == GCODE_UNKNOWN) {
-      stateStr = "Waiting...";
+      stateStr = BH_TEXT("Waiting...", "等待中…");
     }
     tft.fillRect(0, lyIdleStateY, scrW, lyIdleStateH, CLR_BG);
     tft.setTextColor(stateColor, CLR_BG);
@@ -1974,7 +1986,7 @@ static void drawIdle() {
     markFrameDirty();
   }
 
-  // "Press to refresh" hint for cloud printers stuck in UNKNOWN state
+  // BH_TEXT("Press to refresh", "按下刷新") hint for cloud printers stuck in UNKNOWN state
   {
     static unsigned long unknownSinceMs = 0;
     static bool hintShown = false;
@@ -1993,7 +2005,7 @@ static void drawIdle() {
         setFont(tft, LY_F_SMALL);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(CLR_TEXT_DARK, CLR_BG);
-        tft.drawString("Press to refresh", cx, hintY);
+        tft.drawString(BH_TEXT("Press to refresh", "按下刷新"), cx, hintY);
       }
       hintShown = showHint;
     }
@@ -3049,7 +3061,7 @@ static void drawPlateGauge(int16_t cx, int16_t cy, int16_t radius, uint8_t slot,
   setFont(tft, sm ? FONT_SMALL : FONT_BODY);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(CLR_TEXT, dispSettings.bgColor);
-  tft.drawString("Plate", cx, cy + radius + (sm ? 3 : -1));
+  tft.drawString(BH_TEXT("Plate", "打印板"), cx, cy + radius + (sm ? 3 : -1));
 }
 
 // ---------------------------------------------------------------------------
@@ -3230,42 +3242,42 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       break;
     case GAUGE_BED:
       drawTempGauge(tft, cx, cy, r, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                    dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, fr,
+                    dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, BH_TEXT("Bed", "热床")), nullptr, fr,
                     &dispSettings.bed, smooth ? smoothBedTemp : -1.0f);
       break;
     case GAUGE_PART_FAN:
       drawFanGauge(tft, cx, cy, r, s.coolingFanPct, dispSettings.partFan.arc,
-                   gaugeLabelOr(gaugeLabels.partFan, "Part"), fr,
+                   gaugeLabelOr(gaugeLabels.partFan, BH_TEXT("Part", "模型")), fr,
                    &dispSettings.partFan, smooth ? smoothPartFan : -1.0f);
       break;
     case GAUGE_AUX_FAN:
       drawFanGauge(tft, cx, cy, r, s.auxFanPct, dispSettings.auxFan.arc,
-                   gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux"), fr,
+                   gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? BH_TEXT("L.Aux", "左辅助") : BH_TEXT("Aux", "辅助")), fr,
                    &dispSettings.auxFan, smooth ? smoothAuxFan : -1.0f);
       break;
     case GAUGE_AUX_FAN_RIGHT:
       drawFanGauge(tft, cx, cy, r, s.auxFanRightPct, dispSettings.auxFanRight.arc,
-                   gaugeLabelOr(gaugeLabels.auxFanRight, "R.Aux"), fr,
+                   gaugeLabelOr(gaugeLabels.auxFanRight, BH_TEXT("R.Aux", "右辅助")), fr,
                    &dispSettings.auxFanRight, smooth ? smoothAuxRightFan : -1.0f);
       break;
     case GAUGE_CHAMBER_FAN:
       drawFanGauge(tft, cx, cy, r, s.chamberFanPct, dispSettings.chamberFan.arc,
-                   gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber"), fr,
+                   gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? BH_TEXT("Exhaust", "排风") : BH_TEXT("Chamber", "腔温")), fr,
                    &dispSettings.chamberFan, smooth ? smoothChamberFan : -1.0f);
       break;
     case GAUGE_EXHAUST_FAN:
       drawFanGauge(tft, cx, cy, r, s.exhaustFanPct, dispSettings.exhaustFan.arc,
-                   gaugeLabelOr(gaugeLabels.exhaustFan, "Exhaust"), fr,
+                   gaugeLabelOr(gaugeLabels.exhaustFan, BH_TEXT("Exhaust", "排风")), fr,
                    &dispSettings.exhaustFan, smooth ? smoothExhaustFan : -1.0f);
       break;
     case GAUGE_CHAMBER_TEMP:
       drawTempGauge(tft, cx, cy, r, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
-                    dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, "Chamber"), nullptr, fr,
+                    dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, BH_TEXT("Chamber", "腔温")), nullptr, fr,
                     &dispSettings.chamberTemp, smooth ? smoothChamberTemp : -1.0f);
       break;
     case GAUGE_HEATBREAK:
       drawFanGauge(tft, cx, cy, r, s.heatbreakFanPct, dispSettings.heatbreak.arc,
-                   gaugeLabelOr(gaugeLabels.heatbreak, "HBreak"), fr,
+                   gaugeLabelOr(gaugeLabels.heatbreak, BH_TEXT("HBreak", "喉管")), fr,
                    &dispSettings.heatbreak, smooth ? smoothHeatbreakFan : -1.0f);
       break;
     case GAUGE_CLOCK:
@@ -3276,7 +3288,7 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       break;
     case GAUGE_POWER:
       drawPowerGauge(tft, cx, cy, r, tasmotaGetWattsForSlot(slotIndex),
-                     tasmotaIsActiveForSlot(slotIndex), gaugeLabelOr(gaugeLabels.power, "Power"), fr);
+                     tasmotaIsActiveForSlot(slotIndex), gaugeLabelOr(gaugeLabels.power, BH_TEXT("Power", "功率")), fr);
       break;
     case GAUGE_CAMERA:
       drawCameraGauge(cx, cy, r, fr);  // inert placeholder when not streaming
@@ -3346,7 +3358,7 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
   // a color that only appears in one of the three timeDisplayMode settings
   // looks broken to anyone who is not using that mode.
   auto duration = [&]() -> uint16_t {
-    if (labelRemaining) snprintf(buf, n, "Remaining: %dh %02dm", h, m);
+    if (labelRemaining) snprintf(buf, n, BH_TEXT("Remaining: %dh %02dm", "剩余：%d时 %02d分"), h, m);
     else                snprintf(buf, n, "%dh %02dm", h, m);
     if (maxW > 0 && labelRemaining && tft.textWidth(buf) > maxW)
       snprintf(buf, n, "%dh %02dm", h, m);
@@ -3423,12 +3435,12 @@ uint16_t formatEtaLine(uint16_t remainingMin, uint8_t mode, bool labelRemaining,
 //  the round finished screen links against it too.
 // ---------------------------------------------------------------------------
 void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s) {
-  static const char* kMsg = "Print Complete!";
+  static const char* kMsg = BH_TEXT("Print Complete!", "打印完成！");
   // Shorter wording, used only when the full headline plus the timestamp still
   // overflows the budget at the small font (the round 240 screen in 12h mode:
   // 213 px vs a 190 px rim-safe span). Keeping the time is worth more there
   // than the longer phrasing, and it is the last step before the time is cut.
-  static const char* kMsgShort = "Completed";
+  static const char* kMsgShort = BH_TEXT("Completed", "已完成");
 
   // Empty when the user turned the timestamp off, or when the print finished
   // before NTP had a valid clock.
@@ -3485,7 +3497,7 @@ void drawFinishHeadline(int16_t cx, int16_t y, int16_t maxW, const BambuState& s
 static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
                                   int16_t maxW, FontID measureFont,
                                   bool showError = false) {
-  if (s.gcodeStateId == GCODE_PAUSE)  { strlcpy(buf, "PAUSED", bufLen); return CLR_YELLOW; }
+  if (s.gcodeStateId == GCODE_PAUSE)  { strlcpy(buf, BH_TEXT("PAUSED", "已暂停"), bufLen); return CLR_YELLOW; }
   if (showError) {
     const ErrorBadge eb = errorBadgeFor(s);
     if (eb.active) {
@@ -3493,8 +3505,8 @@ static uint16_t buildRoundEtaLine(BambuState& s, char* buf, size_t bufLen,
       return errorSeverityColor(eb.severity);
     }
   }
-  if (printerWasCanceled(s))          { strlcpy(buf, "CANCELED", bufLen); return CLR_YELLOW; }
-  if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, "ERROR!", bufLen); return CLR_RED; }
+  if (printerWasCanceled(s))          { strlcpy(buf, BH_TEXT("CANCELED", "已取消"), bufLen); return CLR_YELLOW; }
+  if (s.gcodeStateId == GCODE_FAILED) { strlcpy(buf, BH_TEXT("ERROR!", "错误！"), bufLen); return CLR_RED; }
   if (const char* stage = runningStageLabel(s)) {   // prep / mid-print substage
     strlcpy(buf, stage, bufLen);
     return dispSettings.statusOkColor;
@@ -3595,7 +3607,7 @@ static void drawRoundLayerOrPower(BambuState& s, int16_t cx, int16_t y,
     tft.drawString(buf, x0 + LY_ICON16 + LY_SC(2), y);
   } else if (s.totalLayers > 0) {
     char buf[24];
-    snprintf(buf, sizeof(buf), "layer %u / %u", s.layerNum, s.totalLayers);
+    snprintf(buf, sizeof(buf), BH_TEXT("layer %u / %u", "层 %u / %u"), s.layerNum, s.totalLayers);
     setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
     tft.drawString(buf, cx, y);
@@ -3858,7 +3870,7 @@ static void drawPrintingSpeedo() {
     // dim, which put the same word in two different colours depending on the
     // board shape and made the Status OK accent look broken on round.
     const uint16_t stColor = stateBadgeColor(s);
-    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : BH_TEXT("Printer", "打印机");
     drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx,
                          LY_RND_SPD_STATUS_R, false,
                          dispSettings.printerNameColor, stColor, LY_F_BODY,
@@ -4063,7 +4075,7 @@ static void drawPrintingRound() {
     // dim, which put the same word in two different colours depending on the
     // board shape and made the Status OK accent look broken on round.
     const uint16_t stColor = stateBadgeColor(s);
-    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : BH_TEXT("Printer", "打印机");
     drawCurvedStringPair(tft, name, stateBadgeText(s), cx, cx, LY_RND_ARC_R,
                          false, dispSettings.printerNameColor, stColor,
                          LY_F_BODY, LY_RND_ARC_STATUS_HDEG,
@@ -4439,7 +4451,7 @@ static void drawPrinting() {
     // L.Aux) depend on s.airductFuncs, which starts at 0 and gets bits OR'd in
     // once the first pushall with device.airduct.parts lands. The slot cache
     // skips redraws when the type hasn't changed, so without this invalidation
-    // the initial "Chamber"/"Aux" labels drawn on boot would stick forever
+    // the initial BH_TEXT("Chamber", "腔温")/BH_TEXT("Aux", "辅助") labels drawn on boot would stick forever
     // even after the bitmask updates. Force a redraw for those slots when the
     // mask changes (typically once per session, on the first pushall).
     static uint32_t prevAirductFuncs = 0;
@@ -4580,24 +4592,24 @@ static void drawPrinting() {
           break;
         case GAUGE_BED:
           drawTempGauge(tft, cx, cy, gR, s.bedTemp, s.bedTarget, (float)dispSettings.bedScaleMax,
-                        dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, "Bed"), nullptr, fr,
+                        dispSettings.bed.arc, gaugeLabelOr(gaugeLabels.bed, BH_TEXT("Bed", "热床")), nullptr, fr,
                         &dispSettings.bed, smoothBedTemp);
           break;
         case GAUGE_PART_FAN:
           drawFanGauge(tft, cx, cy, gR, s.coolingFanPct, dispSettings.partFan.arc,
-                       gaugeLabelOr(gaugeLabels.partFan, "Part"), fr,
+                       gaugeLabelOr(gaugeLabels.partFan, BH_TEXT("Part", "模型")), fr,
                        &dispSettings.partFan, smoothPartFan);
           break;
         case GAUGE_AUX_FAN:
-          // Re-label to "L.Aux" only when the printer actually has a right-aux
-          // counterpart (func=6). Otherwise it's the only aux fan, so keep "Aux".
+          // Re-label to BH_TEXT("L.Aux", "左辅助") only when the printer actually has a right-aux
+          // counterpart (func=6). Otherwise it's the only aux fan, so keep BH_TEXT("Aux", "辅助").
           drawFanGauge(tft, cx, cy, gR, s.auxFanPct, dispSettings.auxFan.arc,
-                       gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? "L.Aux" : "Aux"), fr,
+                       gaugeLabelOr(gaugeLabels.auxFan, (s.airductFuncs & (1u << 6)) ? BH_TEXT("L.Aux", "左辅助") : BH_TEXT("Aux", "辅助")), fr,
                        &dispSettings.auxFan, smoothAuxFan);
           break;
         case GAUGE_AUX_FAN_RIGHT:
           drawFanGauge(tft, cx, cy, gR, s.auxFanRightPct, dispSettings.auxFanRight.arc,
-                       gaugeLabelOr(gaugeLabels.auxFanRight, "R.Aux"), fr,
+                       gaugeLabelOr(gaugeLabels.auxFanRight, BH_TEXT("R.Aux", "右辅助")), fr,
                        &dispSettings.auxFanRight, smoothAuxRightFan);
           break;
         case GAUGE_CHAMBER_FAN:
@@ -4605,24 +4617,24 @@ static void drawPrinting() {
           // airduct printers that report func=2 (H2C/X2D) the same legacy field actually
           // carries the EXHAUST fan value, not a chamber fan. Relabel the gauge so the
           // displayed name matches reality on those models. X1C/P/A and other non-airduct
-          // models keep the "Chamber" label that matches Bambu's own UI terminology.
+          // models keep the BH_TEXT("Chamber", "腔温") label that matches Bambu's own UI terminology.
           drawFanGauge(tft, cx, cy, gR, s.chamberFanPct, dispSettings.chamberFan.arc,
-                       gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? "Exhaust" : "Chamber"), fr,
+                       gaugeLabelOr(gaugeLabels.chamberFan, (s.airductFuncs & (1u << 2)) ? BH_TEXT("Exhaust", "排风") : BH_TEXT("Chamber", "腔温")), fr,
                        &dispSettings.chamberFan, smoothChamberFan);
           break;
         case GAUGE_EXHAUST_FAN:
           drawFanGauge(tft, cx, cy, gR, s.exhaustFanPct, dispSettings.exhaustFan.arc,
-                       gaugeLabelOr(gaugeLabels.exhaustFan, "Exhaust"), fr,
+                       gaugeLabelOr(gaugeLabels.exhaustFan, BH_TEXT("Exhaust", "排风")), fr,
                        &dispSettings.exhaustFan, smoothExhaustFan);
           break;
         case GAUGE_CHAMBER_TEMP:
           drawTempGauge(tft, cx, cy, gR, s.chamberTemp, 0.0f, (float)dispSettings.chamberScaleMax,
-                        dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, "Chamber"), nullptr, fr,
+                        dispSettings.chamberTemp.arc, gaugeLabelOr(gaugeLabels.chamberTemp, BH_TEXT("Chamber", "腔温")), nullptr, fr,
                         &dispSettings.chamberTemp, smoothChamberTemp);
           break;
         case GAUGE_HEATBREAK:
           drawFanGauge(tft, cx, cy, gR, s.heatbreakFanPct, dispSettings.heatbreak.arc,
-                       gaugeLabelOr(gaugeLabels.heatbreak, "HBreak"), fr,
+                       gaugeLabelOr(gaugeLabels.heatbreak, BH_TEXT("HBreak", "喉管")), fr,
                        &dispSettings.heatbreak, smoothHeatbreakFan);
           break;
         case GAUGE_CLOCK:
@@ -4635,7 +4647,7 @@ static void drawPrinting() {
           drawPowerGauge(tft, cx, cy, gR,
                          tasmotaGetWattsForSlot(rotState.displayIndex),
                          tasmotaIsActiveForSlot(rotState.displayIndex),
-                         gaugeLabelOr(gaugeLabels.power, "Power"), fr);
+                         gaugeLabelOr(gaugeLabels.power, BH_TEXT("Power", "功率")), fr);
           break;
         case GAUGE_CAMERA:
           drawCameraGauge(cx, cy, gR, fr);
@@ -4753,15 +4765,15 @@ static void drawPrinting() {
     if (s.gcodeStateId == GCODE_PAUSE) {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
-      tft.drawString("PAUSED", etaCx, eff_etaTextY);
+      tft.drawString(BH_TEXT("PAUSED", "已暂停"), etaCx, eff_etaTextY);
     } else if (printerWasCanceled(s)) {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
-      tft.drawString("CANCELED", etaCx, eff_etaTextY);
+      tft.drawString(BH_TEXT("CANCELED", "已取消"), etaCx, eff_etaTextY);
     } else if (s.gcodeStateId == GCODE_FAILED) {
       setFont(tft, FONT_LARGE);
       tft.setTextColor(CLR_RED, CLR_BG);
-      tft.drawString("ERROR!", etaCx, eff_etaTextY);
+      tft.drawString(BH_TEXT("ERROR!", "错误！"), etaCx, eff_etaTextY);
     } else if (const char* stage = runningStageLabel(s)) {
       // Prep / mid-print substage (changing filament, leveling...) - the ETA is
       // meaningless here anyway (mc_percent/remaining sit at 0 during prep).
@@ -5041,7 +5053,7 @@ static void drawFinishedRound() {
     if (waitingForDoor) {
       char clipped[24];
       tft.setTextColor(CLR_ORANGE, CLR_BG);
-      tft.drawString(ellipsizeToWidth(tft, "Open door to dismiss", LY_SC(124),
+      tft.drawString(ellipsizeToWidth(tft, BH_TEXT("Open door to dismiss", "开门关闭此页面"), LY_SC(124),
                                       clipped, sizeof(clipped)),
                      cx, LY_RND_FIN_TIME_Y);
     } else if (kwh >= 0.0f) {
@@ -5139,7 +5151,7 @@ static void drawFinished() {
     tft.setTextDatum(ML_DATUM);
     setFont(tft, FONT_BODY);
     tft.setTextColor(dispSettings.printerNameColor, hdrBg);
-    const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+    const char* name = (p.config.name[0] != '\0') ? p.config.name : BH_TEXT("Printer", "打印机");
     tft.drawString(name, LY_HDR_NAME_X, finHdrCY);
 
     // Status badge (right). FINISH unless the shared override ladder claims the
@@ -5326,7 +5338,7 @@ static void drawFinished() {
     if (waitingForDoor) {
       tft.setTextDatum(MC_DATUM);
       tft.setTextColor(CLR_ORANGE, CLR_BG);
-      tft.drawString("Open door to dismiss", cx, eff_finWifiY);
+      tft.drawString(BH_TEXT("Open door to dismiss", "开门关闭此页面"), cx, eff_finWifiY);
     } else {
       drawWifiSignalIndicator(s, eff_finWifiY);
 
@@ -5480,7 +5492,7 @@ static void drawPowerConfirm() {
     if (full) {
       setFont(tft, LY_F_LARGE);
       tft.setTextColor(CLR_TEXT, bg);
-      tft.drawString("Sending...", cx, cy);
+      tft.drawString(BH_TEXT("Sending...", "发送中…"), cx, cy);
       markFrameDirty();
     }
     powerConfirmMarkSendingDrawn();
@@ -5492,8 +5504,8 @@ static void drawPowerConfirm() {
     if (full) {
       setFont(tft, LY_F_LARGE);
       tft.setTextColor(v.resultOk ? CLR_GREEN : CLR_ORANGE, bg);
-      const char* msg = v.resultOk ? (v.desiredOn ? "Turned ON" : "Turned OFF")
-                                   : "Plug offline";
+      const char* msg = v.resultOk ? (v.desiredOn ? BH_TEXT("Turned ON", "已开机") : BH_TEXT("Turned OFF", "已关机"))
+                                   : BH_TEXT("Plug offline", "插座离线");
       tft.drawString(msg, cx, cy);
       markFrameDirty();
     }
@@ -5531,17 +5543,17 @@ static void drawPowerConfirm() {
   if (full) {
     setFont(tft, LY_F_BODY);
     tft.setTextColor(CLR_TEXT, bg);
-    tft.drawString(v.desiredOn ? "Turn ON printer" : "Turn OFF printer", cx, titleY);
+    tft.drawString(v.desiredOn ? BH_TEXT("Turn ON printer", "开启打印机") : BH_TEXT("Turn OFF printer", "关闭打印机"), cx, titleY);
 
     setFont(tft, LY_F_LARGE);
     char nameBuf[28];
-    snprintf(nameBuf, sizeof(nameBuf), "\"%s\"", (v.name && v.name[0]) ? v.name : "printer");
+    snprintf(nameBuf, sizeof(nameBuf), "\"%s\"", (v.name && v.name[0]) ? v.name : BH_TEXT("printer", "打印机"));
     tft.drawString(nameBuf, cx, nameY);
 
     if (v.warn) {
       setFont(tft, LY_F_BODY);
       tft.setTextColor(CLR_TEXT, bg);
-      tft.drawString("PRINTING", cx, warnY);
+      tft.drawString(BH_TEXT("PRINTING", "打印中"), cx, warnY);
     }
 
     setFont(tft, LY_F_SMALL);
@@ -5551,19 +5563,19 @@ static void drawPowerConfirm() {
     // Keep the key instruction straight and prominent; curve the secondary
     // hint along the bottom rim (same style/constants as the printing ETA)
     // so it stays inside the circle and can't clip on the round bezel.
-    tft.drawString("hold to confirm", cx, cy + LY_SC(64));
+    tft.drawString(BH_TEXT("hold to confirm", "长按确认"), cx, cy + LY_SC(64));
     if (v.offline) {
       tft.setTextColor(CLR_ORANGE, bg);
-      tft.drawString("plug offline", cx, cy + LY_SC(82));
+      tft.drawString(BH_TEXT("plug offline", "插座离线"), cx, cy + LY_SC(82));
     }
-    drawCurvedString(tft, "tap to cancel", cx, cy, LY_RND_ARC_R, true,
+    drawCurvedString(tft, BH_TEXT("tap to cancel", "轻按取消"), cx, cy, LY_RND_ARC_R, true,
                      CLR_TEXT_DIM, LY_F_SMALL, LY_RND_ARC_ETA_HDEG);
 #else
-    tft.drawString("hold to confirm", cx, hintY);
-    tft.drawString("tap to cancel",   cx, hintY + 18);
+    tft.drawString(BH_TEXT("hold to confirm", "长按确认"), cx, hintY);
+    tft.drawString(BH_TEXT("tap to cancel", "轻按取消"),   cx, hintY + 18);
     if (v.offline) {
       tft.setTextColor(CLR_ORANGE, bg);
-      tft.drawString("plug offline", cx, hintY + 36);
+      tft.drawString(BH_TEXT("plug offline", "插座离线"), cx, hintY + 36);
     }
 #endif
   }
@@ -5703,7 +5715,7 @@ static void hmsEntryLines(uint32_t attr, uint32_t code,
     *colorOut = errorSeverityColor(sev);
   } else {
     printErrorFormatCode(code, codeOut, codeLen);
-    snprintf(labelOut, labelLen, "PRINT ERROR");
+    snprintf(labelOut, labelLen, BH_TEXT("PRINT ERROR", "打印错误"));
     *colorOut = CLR_RED;
   }
 }
@@ -5748,7 +5760,7 @@ static void drawHmsScreen() {
   tft.setTextDatum(TC_DATUM);
   setFont(tft, LY_F_BODY);
   tft.setTextColor(CLR_TEXT, bg);
-  tft.drawString("Printer error", cx, topY);
+  tft.drawString(BH_TEXT("Printer error", "打印机错误"), cx, topY);
 
   if (total > 0) {
     char label[32], codeStr[HMS_CODE_STR_LEN];
@@ -5769,13 +5781,13 @@ static void drawHmsScreen() {
                     maxW, smallH + LY_SC(2), 3, CLR_TEXT, bg, /*centered=*/true);
     if (total > 1) {
       char more[16];
-      snprintf(more, sizeof(more), "+%u more", (unsigned)(total - 1));
+      snprintf(more, sizeof(more), BH_TEXT("+%u more", "另有 %u 项"), (unsigned)(total - 1));
       tft.setTextDatum(TC_DATUM);
       tft.setTextColor(CLR_TEXT_DIM, bg);
       tft.drawString(more, cx, cx + LY_SC(46));
     }
   }
-  drawCurvedString(tft, "tap to close", cx, cx, LY_RND_ARC_R, true,
+  drawCurvedString(tft, BH_TEXT("tap to close", "轻按关闭"), cx, cx, LY_RND_ARC_R, true,
                    CLR_TEXT_DIM, LY_F_SMALL, LY_RND_ARC_ETA_HDEG);
 #else
   const int16_t margin = 6;
@@ -5785,13 +5797,13 @@ static void drawHmsScreen() {
   tft.setTextDatum(TC_DATUM);
   setFont(tft, FONT_BODY);
   tft.setTextColor(CLR_TEXT, bg);
-  tft.drawString("Printer error", cx, y);
+  tft.drawString(BH_TEXT("Printer error", "打印机错误"), cx, y);
   y += bodyH + 1;
 
   setFont(tft, FONT_SMALL);
   tft.setTextColor(CLR_TEXT_DIM, bg);
   char clipped[48];
-  const char* name = (p.config.name[0] != '\0') ? p.config.name : "Printer";
+  const char* name = (p.config.name[0] != '\0') ? p.config.name : BH_TEXT("Printer", "打印机");
   tft.drawString(ellipsizeToWidth(tft, name, maxW, clipped, sizeof(clipped)), cx, y);
   y += smallH + 3;
   tft.drawFastHLine(margin, y, maxW, CLR_TRACK);
@@ -5801,7 +5813,7 @@ static void drawHmsScreen() {
   const int16_t footY = H - smallH - 3;
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(CLR_TEXT_DIM, bg);
-  tft.drawString("tap to close", cx, footY);
+  tft.drawString(BH_TEXT("tap to close", "轻按关闭"), cx, footY);
 
   uint8_t shown = 0;
   for (uint8_t i = 0; i < total; i++) {
@@ -5866,7 +5878,7 @@ static void drawHmsScreen() {
   // Fits when the glyph box ends at or before the footer's top edge.
   if (hidden > 0 && y + smallH <= footY) {
     char more[20];
-    snprintf(more, sizeof(more), "+%u more", (unsigned)hidden);
+    snprintf(more, sizeof(more), BH_TEXT("+%u more", "另有 %u 项"), (unsigned)hidden);
     setFont(tft, FONT_SMALL);
     tft.setTextDatum(TL_DATUM);
     tft.setTextColor(CLR_TEXT_DIM, bg);

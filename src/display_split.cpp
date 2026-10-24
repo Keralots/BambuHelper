@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "display_split.h"
 #include "config.h"
 #include "layout.h"
@@ -132,12 +133,12 @@ uint16_t stateColor(uint8_t gid) {
 // Short status word shown next to the state dot in each band header.
 const char* stateLabel(uint8_t gid) {
   switch (gid) {
-    case GCODE_RUNNING: return "Printing";
-    case GCODE_PAUSE:   return "Paused";
-    case GCODE_PREPARE: return "Preparing";
-    case GCODE_FINISH:  return "Done";
-    case GCODE_FAILED:  return "Failed";
-    case GCODE_IDLE:    return "Idle";
+    case GCODE_RUNNING: return BH_TEXT("Printing", "打印中");
+    case GCODE_PAUSE:   return BH_TEXT("Paused", "已暂停");
+    case GCODE_PREPARE: return BH_TEXT("Preparing", "准备中");
+    case GCODE_FINISH:  return BH_TEXT("Done", "完成");
+    case GCODE_FAILED:  return BH_TEXT("Failed", "失败");
+    case GCODE_IDLE:    return BH_TEXT("Idle", "空闲");
     default:            return "";   // UNKNOWN / OTHER: dot only, no misleading text
   }
 }
@@ -241,13 +242,13 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(CLR_ORANGE, CLR_BG);
     const int16_t stRight = dotCX - 9;
-    tft.drawString("Drying", stRight, g.hdrCY);
-    const int16_t stLeft = stRight - tft.textWidth("Drying");
+    tft.drawString(BH_TEXT("Drying", "烘干"), stRight, g.hdrCY);
+    const int16_t stLeft = stRight - tft.textWidth(BH_TEXT("Drying", "烘干"));
 
     setFont(tft, FONT_BODY);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
-    const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
+    const char* name = (cfg.name[0] != '\0') ? cfg.name : BH_TEXT("Printer", "打印机");
     drawClippedName(name, g.x + g.margin, g.hdrCY, stLeft - 4 - (g.x + g.margin));
   }
 
@@ -296,13 +297,13 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
       tft.setTextDatum(MC_DATUM);
       setFont(tft, FONT_SMALL);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString("Remaining", rightCx, bodyTop + bodyH * 15 / 100);
+      tft.drawString(BH_TEXT("Remaining", "剩余"), rightCx, bodyTop + bodyH * 15 / 100);
       setFont(tft, FONT_BODY);
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(timeBuf, rightCx, bodyTop + bodyH * 37 / 100);
       setFont(tft, FONT_SMALL);
       tft.setTextColor(CLR_TEXT_DIM, CLR_BG);
-      tft.drawString("Humidity", rightCx, bodyTop + bodyH * 62 / 100);
+      tft.drawString(BH_TEXT("Humidity", "湿度"), rightCx, bodyTop + bodyH * 62 / 100);
       setFont(tft, FONT_BODY);
       tft.setTextColor(humClr, CLR_BG);
       tft.drawString(humBuf, rightCx, bodyTop + bodyH * 84 / 100);
@@ -315,7 +316,7 @@ void drawDryingBand(const BambuState& s, const PrinterConfig& cfg,
       tft.setTextColor(CLR_YELLOW, CLR_BG);
       tft.drawString(timeBuf, cx, bodyTop + bodyH * 58 / 100);
       char humLine[12];
-      snprintf(humLine, sizeof(humLine), "Hum %s", humBuf);
+      snprintf(humLine, sizeof(humLine), BH_TEXT("Hum %s", "湿度 %s"), humBuf);
       tft.setTextColor(humClr, CLR_BG);
       tft.drawString(humLine, cx, bodyTop + bodyH * 86 / 100);
     }
@@ -389,7 +390,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     const int16_t dotCX = g.x + g.w - g.margin - 5;
     tft.fillCircle(dotCX, g.hdrCY, 5, stClr);
     const char* st = badge.active ? ERROR_BADGE_TEXT
-                   : canceled     ? "Canceled"
+                   : canceled     ? BH_TEXT("Canceled", "已取消")
                                   : stateLabel(s.gcodeStateId);
     int16_t stLeft = dotCX - 10;   // name still clears the dot when status is empty
     if (st[0] != '\0') {
@@ -405,7 +406,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     setFont(tft, FONT_BODY);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(dispSettings.printerNameColor, CLR_BG);
-    const char* name = (cfg.name[0] != '\0') ? cfg.name : "Printer";
+    const char* name = (cfg.name[0] != '\0') ? cfg.name : BH_TEXT("Printer", "打印机");
     const int16_t nameMaxW = stLeft - 4 - (g.x + g.margin);
     drawClippedName(name, g.x + g.margin, g.hdrCY, nameMaxW);
     sPrevHdrState[bandIdx] = s.gcodeStateId;
@@ -478,7 +479,7 @@ void drawBand(const BambuState& s, const PrinterConfig& cfg, uint8_t slotIndex,
     char etaStr[40];
     setFont(tft, g.etaFont);   // set before building: formatEtaLine measures to fit
     const bool hasEta = buildSplitEta(s, etaStr, sizeof(etaStr), g.w - 4);
-    if (!hasEta) strlcpy(etaStr, "ETA: --", sizeof(etaStr));
+    if (!hasEta) strlcpy(etaStr, BH_TEXT("ETA: --", "预计：--"), sizeof(etaStr));
     const uint16_t etaClr = hasEta ? dispSettings.etaColor : CLR_TEXT_DIM;
 
     if (g.etaCY > 0) {

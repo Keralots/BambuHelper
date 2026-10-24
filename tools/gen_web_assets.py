@@ -13,6 +13,7 @@ Wired in from platformio.ini as `extra_scripts = pre:tools/gen_web_assets.py`.
 import gzip
 import os
 import zlib
+import runpy
 
 Import("env")  # noqa: F821 - injected by PlatformIO/SCons
 
@@ -20,6 +21,7 @@ PROJECT_DIR = env.subst("$PROJECT_DIR")  # noqa: F821
 BUILD_DIR = env.subst("$BUILD_DIR")  # noqa: F821
 GEN_DIR = os.path.join(BUILD_DIR, "generated")
 OUT = os.path.join(GEN_DIR, "web_assets_gz.h")
+ZH_CN = "BAMBUHELPER_ZH_CN" in env.subst("$BUILD_FLAGS")
 
 ASSETS = [
     ("WEB_APP_CSS", os.path.join(PROJECT_DIR, "web", "app.css")),
@@ -47,6 +49,19 @@ def emit_array(name, raw):
 def main():
     os.makedirs(GEN_DIR, exist_ok=True)
 
+    if ZH_CN:
+        localize = runpy.run_path(os.path.join(PROJECT_DIR, "tools", "localize_web.py"))
+        with open(os.path.join(PROJECT_DIR, "include", "web_pages.h"), encoding="utf-8") as fh:
+            localized_pages = localize["pages"](fh.read())
+        page_path = os.path.join(GEN_DIR, "web_pages_zh_cn.h")
+        previous_pages = ""
+        if os.path.isfile(page_path):
+            with open(page_path, encoding="utf-8") as fh:
+                previous_pages = fh.read()
+        if localized_pages != previous_pages:
+            with open(page_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(localized_pages)
+
     body = []
     report = []
     for name, path in ASSETS:
@@ -54,6 +69,8 @@ def main():
             raise Exception(f"gen_web_assets: missing asset {path}")
         with open(path, "rb") as fh:
             raw = fh.read()
+        if ZH_CN and name == "WEB_APP_JS":
+            raw = localize["javascript"](raw.decode("utf-8")).encode("utf-8")
         chunk, raw_len, gz_len = emit_array(name, raw)
         body.append(chunk)
         report.append(f"{os.path.basename(path)} {raw_len} -> {gz_len} B")

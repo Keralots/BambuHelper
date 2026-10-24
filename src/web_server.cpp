@@ -1,3 +1,4 @@
+#include "localization.h"
 #include "web_server.h"
 #include <new>
 #include "web_template.h"
@@ -257,14 +258,14 @@ static void handleSavePrinter() {
 #ifdef BOARD_LOW_RAM
   if (slot > 0 && !dualPrinterUnsafe) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode in Printer Settings to configure printer 2.\"}");
+      BH_TEXT("{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode in Printer Settings to configure printer 2.\"}", "{\"status\":\"error\",\"message\":\"请在打印机设置中启用实验性双打印机模式，再配置打印机 2。\"}"));
     return;
   }
 #endif
 #ifdef BOARD_HAS_PSRAM
   if (slot > 1 && !quadPrinterBeta) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode under WiFi & System > Danger zone to configure printer 3/4.\"}");
+      BH_TEXT("{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode under WiFi & System > Danger zone to configure printer 3/4.\"}", "{\"status\":\"error\",\"message\":\"请在 WiFi 与系统 > 危险操作中启用实验性四打印机模式，再配置打印机 3/4。\"}"));
     return;
   }
 #endif
@@ -323,18 +324,18 @@ static void handleSavePrinter() {
   }
   if (isCloudMode(cfg.mode)) {
     if (strlen(cfg.serial) == 0)
-      warnings += "Serial number is required for cloud mode. ";
+      warnings += BH_TEXT("Serial number is required for cloud mode. ", "云模式需要填写序列号。 ");
     if (strlen(cfg.cloudUserId) == 0 && !tokenStoreFailed)
-      warnings += "Cloud token is missing or invalid (userId extraction failed). ";
+      warnings += BH_TEXT("Cloud token is missing or invalid (userId extraction failed). ", "云令牌缺失或无效，无法读取用户 ID。 ");
   } else {
     if (strlen(cfg.ip) == 0)
-      warnings += "Printer IP address is required. ";
+      warnings += BH_TEXT("Printer IP address is required. ", "请填写打印机 IP 地址。 ");
     if (strlen(cfg.serial) == 0)
-      warnings += "Serial number is required (used for MQTT topic). ";
+      warnings += BH_TEXT("Serial number is required (used for MQTT topic). ", "请填写序列号，用于 MQTT 主题。 ");
     if (strlen(cfg.accessCode) == 0)
-      warnings += "Access code is required. ";
+      warnings += BH_TEXT("Access code is required. ", "请填写访问码。 ");
     else if (strlen(cfg.accessCode) != 8)
-      warnings += "Access code should be 8 characters (check printer LCD). ";
+      warnings += BH_TEXT("Access code should be 8 characters (check printer LCD). ", "访问码应为 8 个字符，请查看打印机屏幕。 ");
   }
 
   savePrinterConfig(slot);
@@ -385,14 +386,14 @@ static void handleSaveGaugeLayout() {
 #ifdef BOARD_LOW_RAM
   if (slot > 0 && !dualPrinterUnsafe) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode to configure printer 2.\"}");
+      BH_TEXT("{\"status\":\"error\",\"message\":\"Enable experimental 2-printer mode to configure printer 2.\"}", "{\"status\":\"error\",\"message\":\"请启用实验性双打印机模式，再配置打印机 2。\"}"));
     return;
   }
 #endif
 #ifdef BOARD_HAS_PSRAM
   if (slot > 1 && !quadPrinterBeta) {
     server.send(200, "application/json",
-      "{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode to configure printer 3/4.\"}");
+      BH_TEXT("{\"status\":\"error\",\"message\":\"Enable experimental 4-printer mode to configure printer 3/4.\"}", "{\"status\":\"error\",\"message\":\"请启用实验性四打印机模式，再配置打印机 3/4。\"}"));
     return;
   }
 #endif
@@ -617,7 +618,7 @@ static void handleReset() {
   server.send(200, "text/html",
     "<html><body style='background:#0D1117;color:#E6EDF3;text-align:center;padding-top:80px;font-family:sans-serif'>"
     "<h2 style='color:#F85149'>Factory Reset</h2>"
-    "<p>Restarting...</p></body></html>");
+    BH_TEXT("<p>Restarting...</p></body></html>", "<p>正在重启…</p></body></html>"));
   resetSettings();  // clears NVS and calls ESP.restart()
 }
 
@@ -1000,7 +1001,7 @@ static void handleCloudPrinters() {
   char token[1200];
   if (!loadCloudToken(token, sizeof(token))) {
     server.send(200, "application/json",
-                "{\"printers\":[],\"message\":\"Sign in or paste a token first.\"}");
+                BH_TEXT("{\"printers\":[],\"message\":\"Sign in or paste a token first.\"}", "{\"printers\":[],\"message\":\"请先登录或粘贴令牌。\"}"));
     return;
   }
 
@@ -1013,7 +1014,7 @@ static void handleCloudPrinters() {
   String response;
   if (!cloudFetchDeviceList(token, region, response)) {
     server.send(200, "application/json",
-                "{\"printers\":[],\"message\":\"Bambu refused the request - the token may have expired.\"}");
+                BH_TEXT("{\"printers\":[],\"message\":\"Bambu refused the request - the token may have expired.\"}", "{\"printers\":[],\"message\":\"拓竹拒绝请求，令牌可能已过期。\"}"));
     return;
   }
 
@@ -1029,7 +1030,7 @@ static void handleCloudPrinters() {
   JsonDocument doc;
   if (deserializeJson(doc, response, DeserializationOption::Filter(filter))) {
     server.send(200, "application/json",
-                "{\"printers\":[],\"message\":\"Could not read the account's printer list.\"}");
+                BH_TEXT("{\"printers\":[],\"message\":\"Could not read the account's printer list.\"}", "{\"printers\":[],\"message\":\"无法读取账号的打印机列表。\"}"));
     return;
   }
 
@@ -1117,14 +1118,14 @@ static void handleCloudLoginStart() {
   String email = server.arg("email");
   email.trim();
   if (email.length() == 0) {
-    sendCloudLoginError("Enter your Bambu account email.");
+    sendCloudLoginError(BH_TEXT("Enter your Bambu account email.", "请输入拓竹账号邮箱。"));
     return;
   }
   // Both credentials are read back out of fixed buffers. Storing something
   // longer would truncate on load and then fail every silent renewal for good,
   // reported as a wrong password rather than as the length problem it is.
   if (email.length() > CLOUD_EMAIL_MAX) {
-    sendCloudLoginError("That email address is too long for this device to store.");
+    sendCloudLoginError(BH_TEXT("That email address is too long for this device to store.", "邮箱地址过长，设备无法保存。"));
     return;
   }
 
@@ -1136,14 +1137,14 @@ static void handleCloudLoginStart() {
 
   String password = server.arg("password");
   if (password.length() == 0) {
-    sendCloudLoginError("Enter your password.");
+    sendCloudLoginError(BH_TEXT("Enter your password.", "请输入密码。"));
     return;
   }
 
   const bool save = (server.arg("save") == "1");
   if (save && password.length() > CLOUD_PASSWORD_MAX) {
-    sendCloudLoginError("That password is too long for this device to remember. "
-                        "Sign in without saving it, or use an emailed code.");
+    sendCloudLoginError(BH_TEXT("That password is too long for this device to remember. ", "密码过长，设备无法保存。 ")
+                        BH_TEXT("Sign in without saving it, or use an emailed code.", "请不保存密码直接登录，或使用邮件验证码。"));
     return;
   }
 
@@ -1312,12 +1313,12 @@ static void handleLightSet() {
   if (server.hasArg("slot")) slot = server.arg("slot").toInt();
   if (slot >= MAX_ACTIVE_PRINTERS) slot = 0;
   if (!isPrinterConfigured(slot)) {
-    server.send(409, "application/json", "{\"status\":\"error\",\"message\":\"printer not configured\"}");
+    server.send(409, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"printer not configured\"}", "{\"status\":\"error\",\"message\":\"打印机尚未配置\"}"));
     return;
   }
   String mode = server.hasArg("mode") ? server.arg("mode") : String();
   if (mode != "on" && mode != "off") {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"mode must be on or off\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"mode must be on or off\"}", "{\"status\":\"error\",\"message\":\"模式必须为 on 或 off\"}"));
     return;
   }
   requestLightCommand(slot, mode == "on");
@@ -1366,7 +1367,7 @@ static void handleLedPreview() {
   if (rawPin < 1 || rawPin > 48 ||
       (rgb && (rawG < 1 || rawG > 48 || rawB < 1 || rawB > 48))) {
     previewLed(false, LED_DRV_SINGLE, 0, 0, 0, false, 0, 0);
-    server.send(400, "application/json", "{\"error\":\"pin out of range\"}");
+    server.send(400, "application/json", BH_TEXT("{\"error\":\"pin out of range\"}", "{\"error\":\"引脚超出范围\"}"));
     return;
   }
 
@@ -1397,7 +1398,7 @@ static void handleLedTest() {
     if (v >= 0 && v <= 2) md = (uint8_t)v;
   }
   if (md == LED_FINISH_OFF) {
-    server.send(409, "application/json", "{\"status\":\"err\",\"error\":\"mode off\"}");
+    server.send(409, "application/json", BH_TEXT("{\"status\":\"err\",\"error\":\"mode off\"}", "{\"status\":\"err\",\"error\":\"模式已关闭\"}"));
     return;
   }
 
@@ -1419,7 +1420,7 @@ static void handleLedTest() {
   }
 
   if (!ledTriggerTestEffect(md, sec, br, ledColorArg("col", ledSettings.colorFinished))) {
-    server.send(409, "application/json", "{\"status\":\"err\",\"error\":\"LED not attached - enable it first\"}");
+    server.send(409, "application/json", BH_TEXT("{\"status\":\"err\",\"error\":\"LED not attached - enable it first\"}", "{\"status\":\"err\",\"error\":\"LED 未连接，请先启用\"}"));
     return;
   }
   server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -1632,7 +1633,7 @@ static void handleSavePower() {
 
   int plug = server.hasArg("plug") ? server.arg("plug").toInt() : 0;
   if (plug < 0 || plug >= TASMOTA_PLUG_COUNT) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid plug index\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Invalid plug index\"}", "{\"status\":\"error\",\"message\":\"插座编号无效\"}"));
     return;
   }
   TasmotaSettings& s = tasmotaSettings[plug];
@@ -1681,18 +1682,18 @@ static void handleSavePower() {
 static void handlePowerControl() {
   int plug = server.hasArg("plug") ? server.arg("plug").toInt() : 0;
   if (plug < 0 || plug >= TASMOTA_PLUG_COUNT || !tasmotaSettings[plug].enabled) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Plug not enabled\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Plug not enabled\"}", "{\"status\":\"error\",\"message\":\"插座未启用\"}"));
     return;
   }
   if (!server.hasArg("on")) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing on parameter\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Missing on parameter\"}", "{\"status\":\"error\",\"message\":\"缺少 on 参数\"}"));
     return;
   }
   bool on = (server.arg("on").toInt() != 0);
   if (tasmotaSetPower((uint8_t)plug, on)) {
     server.send(200, "application/json", "{\"status\":\"ok\"}");
   } else {
-    server.send(502, "application/json", "{\"status\":\"error\",\"message\":\"Plug did not respond\"}");
+    server.send(502, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Plug did not respond\"}", "{\"status\":\"error\",\"message\":\"插座无响应\"}"));
   }
 }
 
@@ -2020,7 +2021,7 @@ static void handleSettingsImportFinish() {
   if (settingsImportOverflow) {
     settingsImportOverflow = false;
     server.send(400, "application/json",
-      "{\"status\":\"error\",\"message\":\"Settings file too large (max 12 KB)\"}");
+      BH_TEXT("{\"status\":\"error\",\"message\":\"Settings file too large (max 12 KB)\"}", "{\"status\":\"error\",\"message\":\"设置文件过大（最大 12 KB）\"}"));
     return;
   }
 
@@ -2029,11 +2030,11 @@ static void handleSettingsImportFinish() {
   settingsImportBuf = "";  // free memory
 
   if (err) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Invalid JSON\"}", "{\"status\":\"error\",\"message\":\"JSON 无效\"}"));
     return;
   }
   if (!doc["_type"].is<const char*>() || strcmp(doc["_type"], "bambuhelper_settings") != 0) {
-    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Not a BambuHelper settings file\"}");
+    server.send(400, "application/json", BH_TEXT("{\"status\":\"error\",\"message\":\"Not a BambuHelper settings file\"}", "{\"status\":\"error\",\"message\":\"不是 BambuHelper 设置文件\"}"));
     return;
   }
 
@@ -2441,7 +2442,7 @@ static void handleSettingsImportFinish() {
   saveBuzzerSettings();
   saveLedSettings();   // sanitizes pin (incl. conflict with freshly-imported buzzer/button)
 
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Settings imported. Restarting...\"}");
+  server.send(200, "application/json", BH_TEXT("{\"status\":\"ok\",\"message\":\"Settings imported. Restarting...\"}", "{\"status\":\"ok\",\"message\":\"设置已导入，正在重启…\"}"));
   scheduleRestart();
 }
 
@@ -2520,13 +2521,13 @@ static void otaAutoTaskFn(void* param) {
 
 static void handleOtaAuto() {
   if (otaAutoInProgress) {
-    server.send(409, "application/json", "{\"error\":\"Update already in progress\"}");
+    server.send(409, "application/json", BH_TEXT("{\"error\":\"Update already in progress\"}", "{\"error\":\"正在进行更新\"}"));
     return;
   }
 
   String url = server.arg("url");
   if (!isExpectedOtaAssetUrl(url)) {
-    server.send(400, "application/json", "{\"error\":\"Missing or invalid url\"}");
+    server.send(400, "application/json", BH_TEXT("{\"error\":\"Missing or invalid url\"}", "{\"error\":\"URL 缺失或无效\"}"));
     return;
   }
 
@@ -2546,7 +2547,7 @@ static void handleOtaAuto() {
     otaAutoStatus = "failed: out of memory";
     otaAutoInProgress = false;
     otaMqttReinitPending = true;  // no reboot coming - restore MQTT
-    server.send(500, "application/json", "{\"error\":\"Out of memory\"}");
+    server.send(500, "application/json", BH_TEXT("{\"error\":\"Out of memory\"}", "{\"error\":\"内存不足\"}"));
     return;
   }
 
@@ -2610,7 +2611,7 @@ static void handleOtaUpload() {
     if (otaFirstChunk && upload.currentSize > 0) {
       otaFirstChunk = false;
       if (upload.buf[0] != 0xE9) {
-        otaError = "Invalid firmware file";
+        otaError = BH_TEXT("Invalid firmware file", "固件文件无效");
         Update.abort();
         otaInProgress = false;
         return;
@@ -2657,7 +2658,7 @@ static void handleOtaFinish() {
     return;
   }
   server.send(200, "application/json",
-    "{\"status\":\"ok\",\"message\":\"Update successful. Restarting...\"}");
+    BH_TEXT("{\"status\":\"ok\",\"message\":\"Update successful. Restarting...\"}", "{\"status\":\"ok\",\"message\":\"更新成功，正在重启…\"}"));
   scheduleRestart(1500);
 }
 
@@ -2675,23 +2676,23 @@ static void handleOtaFinish() {
 static const esp_partition_t* rollbackCandidate(String& fwVersion, const char** reason) {
   *reason = "";
   const esp_partition_t* other = esp_ota_get_next_update_partition(NULL);
-  if (!other) { *reason = "this device has no second app slot"; return nullptr; }
+  if (!other) { *reason = BH_TEXT("this device has no second app slot", "此设备没有第二个应用分区"); return nullptr; }
 
   esp_app_desc_t desc;
   if (esp_ota_get_partition_description(other, &desc) != ESP_OK) {
-    *reason = "the other app slot is empty"; return nullptr;
+    *reason = BH_TEXT("the other app slot is empty", "另一应用分区为空"); return nullptr;
   }
   const esp_app_desc_t* run = esp_ota_get_app_description();
   if (strncmp(desc.project_name, run->project_name, sizeof(desc.project_name)) != 0) {
-    *reason = "the other app slot holds something else"; return nullptr;
+    *reason = BH_TEXT("the other app slot holds something else", "另一应用分区包含其他内容"); return nullptr;
   }
   if (memcmp(desc.app_elf_sha256, run->app_elf_sha256, sizeof(desc.app_elf_sha256)) == 0) {
-    *reason = "the other app slot holds this same build"; return nullptr;
+    *reason = BH_TEXT("the other app slot holds this same build", "另一应用分区为相同版本"); return nullptr;
   }
   esp_ota_img_states_t st;
   if (esp_ota_get_state_partition(other, &st) != ESP_OK) st = ESP_OTA_IMG_UNDEFINED;
   if (st == ESP_OTA_IMG_INVALID || st == ESP_OTA_IMG_ABORTED) {
-    *reason = "the firmware in the other slot previously failed to boot"; return nullptr;
+    *reason = BH_TEXT("the firmware in the other slot previously failed to boot", "另一分区的固件之前启动失败"); return nullptr;
   }
 
   char note[48];
@@ -2741,10 +2742,10 @@ static void handleOtaRollback() {
     return;
   }
   Serial.printf("OTA: rollback -> %s (%s)\n", other->label,
-                fw.length() > 0 ? fw.c_str() : "unknown version");
+                fw.length() > 0 ? fw.c_str() : BH_TEXT("unknown version", "未知版本"));
   disconnectBambuMqtt();
   server.send(200, "application/json",
-    "{\"status\":\"ok\",\"message\":\"Booting the other firmware slot...\"}");
+    BH_TEXT("{\"status\":\"ok\",\"message\":\"Booting the other firmware slot...\"}", "{\"status\":\"ok\",\"message\":\"正在启动另一固件分区…\"}"));
   scheduleRestart(1500);
 }
 
