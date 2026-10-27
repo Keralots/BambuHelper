@@ -1325,10 +1325,22 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
   g_colon.w = 0;
   drawHeader(cv, f, g);
   const int16_t x0 = g.pad, xr = g.W - g.pad;
-  cv.text(f.head, x0, g.idleHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
+  // Landscape: the big clock sits at the right; text gets the space left of it.
+  int16_t textW = xr - x0;
+  if (g.idleClockRight == 1 && f.clock[0]) {
+    cv.useFont(FONT_CARD_NUM);
+    int16_t clkW = cv.width(f.clock);
+    if (f.ampm[0]) { cv.useFont(FONT_CARD_LBL); clkW += cv.width(f.ampm) + 4; }
+    textW = std::max<int16_t>(cv.S(60), xr - clkW - cv.S(8) - x0);
+  }
+  char head[sizeof(f.head)];
+  strlcpy(head, f.head, sizeof(head));
+  cv.useFont(FONT_LARGE);
+  if (cv.width(head) > textW && !strcmp(head, "Print complete")) strlcpy(head, "Complete", sizeof(head));
+  cv.text(head, x0, g.idleHeadCy, FONT_LARGE, f.headColor, lgfx::textdatum_t::middle_left);
   char buf[64];
   cv.useFont(FONT_BODY);
-  fitText(cv, buf, sizeof(buf), f.job, g.idleClockRight == 1 ? cv.S(170) : xr - x0);
+  fitText(cv, buf, sizeof(buf), f.job, textW);
   cv.text(buf, x0, g.idleSubCy, FONT_BODY, f.dim, lgfx::textdatum_t::middle_left);
   if (f.clock[0]) {
     if (g.idleClockRight == 2) {                     // square: small clock beside the headline
