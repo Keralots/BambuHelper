@@ -106,10 +106,12 @@ static void diagnoseStaFailure() {
   fi.reason = staLastReason;
 
   WiFi.mode(WIFI_STA);
-  WiFi.scanNetworks(true, true);
+  // The core fails an async scan after 20 x max_ms_per_chan; its 300 ms default
+  // (6 s) is shorter than a full show-hidden scan takes, so ask for 500 (10 s).
+  WiFi.scanNetworks(true, true, false, 500);
   int n;
   unsigned long t0 = millis();
-  while ((n = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() - t0 < 10000) {
+  while ((n = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() - t0 < 12000) {
     delay(50);
     updateDisplay();
     flushFrame();  // JC3248W535: push sprite to panel during blocking loop
