@@ -1,0 +1,108 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'img/**'
+      - 'tools/companion/**'
+      - 'tools/*.exe'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'img/**'
+      - 'tools/companion/**'
+      - 'tools/*.exe'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIO_VERSION: '6.1.19'
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      envs: ${{ steps.envs.outputs.envs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Portal script syntax
+        run: node --check web/app.js
+
+      - name: Error tables match the portal mirror
+        run: python -c "import sys; sys.path.insert(0, 'tools'); import release; release.check_error_tables()"
+
+      - name: List environments
+        id: envs
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import glob, json, re
+          envs = []
+          for f in ["platformio.ini"] + sorted(glob.glob("boards/*.ini")):
+              envs += re.findall(r"^\[env:([^\]]+)\]", open(f, encoding="utf-8").read(), re.M)
+          print("envs=" + json.dumps(envs))
+          EOF
+
+  build:
+    name: ${{ matrix.env }}
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJson(needs.checks.outputs.envs) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            ~/.platformio/.cache
+          key: pio-${{ runner.os }}-${{ env.PIO_VERSION }}-${{ hashFiles('platformio.ini', 'boards/*.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-${{ env.PIO_VERSION }}-
+
+      - name: Install PlatformIO
+        run: pip install "platformio==${PIO_VERSION}"
+
+      - name: Build
+        run: pio run -e "${{ matrix.env }}"
+
+      - name: Image fits its app partition
+        run: python tools/ci_slot_check.py "${{ matrix.env }}"
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: .pio/build/${{ matrix.env }}/firmware.bin
+          retention-days: 14
+          if-no-files-found: error
