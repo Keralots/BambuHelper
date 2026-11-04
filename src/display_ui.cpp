@@ -1164,6 +1164,25 @@ void resetDryingRotation() {
   dryRotateMs = millis();
 }
 
+// A tap moved dryDisplayIdx (#203): repaint from the renderer on the next frame.
+static bool dryTapRepaint = false;
+
+// Unit rotation shared by both drying renderers.
+static void tickDryingRotation(uint8_t dryCount) {
+  bool dwellOver = dryCount > 1 && millis() - dryRotateMs >= dryRotateIntervalMs();
+  if (dwellOver) dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
+  if (dwellOver || dryTapRepaint) {
+    dryTapRepaint = false;
+    dryRotateMs = millis();
+    forceRedraw = true;
+    tft.fillScreen(CLR_BG);
+    markFrameDirty();
+    resetGaugeTextCache();
+  }
+  // Index is shared across printers and a unit can finish mid-rotation.
+  if (dryDisplayIdx >= dryCount) dryDisplayIdx = 0;
+}
+
 // Draw a string left-aligned, hard-truncating at character boundary if it
 // doesn't fit maxW. No ellipsis.
 // Assumes font and text color are already configured by the caller.
@@ -1232,6 +1251,16 @@ static uint8_t countDryingUnits(const AmsState& ams) {
 // a multi-AMS printer lasts long enough for every unit to come around.
 uint8_t dryingUnitCount(const AmsState& ams) { return countDryingUnits(ams); }
 
+bool dryingTapNextUnit() {
+  if (currentScreen != SCREEN_IDLE || !wasDrying) return false;
+  uint8_t dryCount = countDryingUnits(displayedPrinter().state.ams);
+  if (dryCount < 2) return false;
+  bool pastLast = dryDisplayIdx + 1 >= dryCount;
+  dryDisplayIdx = pastLast ? 0 : dryDisplayIdx + 1;
+  dryTapRepaint = true;
+  return !pastLast;
+}
+
 #if DISPLAY_IS_ROUND
 // Round (GC9A01) drying screen: rim ring = drying progress, centered text
 // stack (title, remaining time, AMS temp, humidity). The square layout's
@@ -1241,15 +1270,7 @@ static void drawIdleDryingRound(PrinterSlot& p) {
   const int16_t cx = SCREEN_W / 2;
 
   uint8_t dryCount = countDryingUnits(s.ams);
-  if (dryCount > 1 && millis() - dryRotateMs >= dryRotateIntervalMs()) {
-    dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
-    dryRotateMs = millis();
-    forceRedraw = true;
-    tft.fillScreen(CLR_BG);
-    markFrameDirty();
-    resetGaugeTextCache();
-  }
-  if (dryCount <= 1) dryDisplayIdx = 0;
+  tickDryingRotation(dryCount);
 
   int8_t ui = findDryingUnit(s.ams, dryDisplayIdx);
   if (ui < 0) return;
@@ -1378,15 +1399,7 @@ static void drawIdleDrying(PrinterSlot& p) {
 
   // Count drying units and handle rotation
   uint8_t dryCount = countDryingUnits(s.ams);
-  if (dryCount > 1 && millis() - dryRotateMs >= dryRotateIntervalMs()) {
-    dryDisplayIdx = (dryDisplayIdx + 1) % dryCount;
-    dryRotateMs = millis();
-    forceRedraw = true;
-    tft.fillScreen(CLR_BG);
-    markFrameDirty();
-    resetGaugeTextCache();
-  }
-  if (dryCount <= 1) dryDisplayIdx = 0;
+  tickDryingRotation(dryCount);
 
   int8_t ui = findDryingUnit(s.ams, dryDisplayIdx);
   if (ui < 0) return;  // no drying unit found (shouldn't happen)

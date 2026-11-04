@@ -415,6 +415,13 @@ static void doTapActions() {
   }
   if (cur == SCREEN_PRINTING && openDryPeek()) return;
 
+  // Idle drying screen with several units (#203): each tap shows the next one.
+  // Same rotation reset as closeDryPeek(), so the printer stays put meanwhile.
+  if (cur == SCREEN_IDLE && dryingTapNextUnit()) {
+    rotState.lastRotateMs = millis();
+    return;
+  }
+
   // Finish / AMS drying toggle (#183). Tapping out returns to the automatic
   // choice and advances the printer, the same shape as the camera and peek stops.
   if (finishDryChoiceActive() &&

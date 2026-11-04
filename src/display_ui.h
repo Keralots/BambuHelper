@@ -95,6 +95,10 @@ uint8_t dryingUnitCount(const AmsState& ams);
 // Restart the rotation at the first drying unit. Called when a peek opens so
 // the unit shown is deterministic rather than a function of wall-clock timing.
 void resetDryingRotation();
+// Tap on the idle drying screen (#203): show the next unit. False when there is
+// nothing to step, or past the last unit (rewound to the first) so the tap can
+// carry on down the cycle.
+bool dryingTapNextUnit();
 
 extern lgfx::LovyanGFX* tft_ptr;
 // Macro (NOT a reference) so callers' `tft.method()` always dereferences the
