@@ -64,7 +64,10 @@ public:
     // DMA-capable internal RAM for pixel chunks and register parameters.
     _buf = (uint16_t*)heap_caps_malloc(CHUNK_PIXELS * 2, MALLOC_CAP_DMA);
     _cmd = (uint8_t*)heap_caps_malloc(64, MALLOC_CAP_DMA);
-    if (!_buf || !_cmd) return false;
+    if (!_buf || !_cmd) {
+      Serial.println("ST77922: DMA buffer alloc failed");
+      return false;
+    }
 
     spi_bus_config_t buscfg = {};
     buscfg.data0_io_num = PIN_D0;
@@ -75,7 +78,11 @@ public:
     buscfg.max_transfer_sz = CHUNK_PIXELS * 2 + 8;
     buscfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS |
                    SPICOMMON_BUSFLAG_QUAD;
-    if (spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) return false;
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+      Serial.printf("ST77922: spi_bus_initialize failed (%d)\n", (int)err);
+      return false;
+    }
 
     spi_device_interface_config_t devcfg = {};
     devcfg.mode = 0;
@@ -83,7 +90,11 @@ public:
     devcfg.spics_io_num = PIN_CS;
     devcfg.flags = SPI_DEVICE_HALFDUPLEX;
     devcfg.queue_size = 17;
-    if (spi_bus_add_device(SPI2_HOST, &devcfg, &_dev) != ESP_OK) return false;
+    err = spi_bus_add_device(SPI2_HOST, &devcfg, &_dev);
+    if (err != ESP_OK) {
+      Serial.printf("ST77922: spi_bus_add_device failed (%d)\n", (int)err);
+      return false;
+    }
 
     const size_t n = sizeof(es3c35p_lcd_init_cmds) / sizeof(es3c35p_lcd_init_cmds[0]);
     for (size_t i = 0; i < n; i++) {

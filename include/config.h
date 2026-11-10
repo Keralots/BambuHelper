@@ -205,6 +205,13 @@
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
 #endif
 
+// Panel class behind the frame sprite (display_ui.h FramePanel typedef).
+#if defined(BOARD_IS_ES3C35P)
+#define PANEL_FRAME_IS_ST77922  1
+#else
+#define PANEL_FRAME_IS_ST77922  0
+#endif
+
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
 // SenseCAP (PCA9535), ws_lcd_350 and ws_lcd_28c (TCA9554). This cap only signals "bring up
 // Wire.h for the expander"; the per-chip register bring-up stays board-specific
