@@ -255,7 +255,7 @@
 #define BOARD_HAS_ONBOARD_RGB_PWM    0
 #endif
 
-#if defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_ES3N28P)
+#if defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_ES3C35P)
 #define BOARD_HAS_ONBOARD_RGB_PIXEL  1
 #else
 #define BOARD_HAS_ONBOARD_RGB_PIXEL  0
@@ -620,6 +620,8 @@
 #if BOARD_HAS_ONBOARD_RGB_PIXEL
 #if defined(BOARD_IS_ES3N28P)
 #define ONBOARD_RGB_DATA_PIN  42
+#elif defined(BOARD_IS_ES3C35P)
+#define ONBOARD_RGB_DATA_PIN  40    // LCDwiki ES3C35P WS2812
 #else
 #define ONBOARD_RGB_DATA_PIN  21    // Waveshare ESP32-S3-Zero
 #endif
