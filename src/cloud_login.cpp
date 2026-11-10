@@ -170,7 +170,7 @@ static bool cloudRequest(const char* host, const char* path, const char* method,
 
   String req = String(method) + " " + path + " HTTP/1.1\r\n";
   req += "Host: ";        req += host; req += "\r\n";
-  req += "User-Agent: bambu_network_agent/01.09.05.01\r\n";
+  req += "User-Agent: " CLOUD_USER_AGENT "\r\n";
   req += "Accept: application/json\r\n";
   req += "Content-Type: application/json\r\n";
   if (useSession && g_jar.length() > 0)  { req += "Cookie: ";           req += g_jar;  req += "\r\n"; }
@@ -314,6 +314,13 @@ static void setErrorFrom(const CloudResponse& r, const char* fallback) {
   JsonDocument doc;
   if (r.body.length() > 0 && !deserializeJson(doc, r.body) && doc["error"].is<const char*>()) {
     fail((const char*)doc["error"]);
+  } else if (r.status == 403 || r.status == 429) {
+    // No JSON error: Bambu's edge (Cloudflare) answered instead of the account
+    // service. Blaming the address or the password would send the user the
+    // wrong way (#206).
+    Serial.printf("CLOUD: request blocked at the edge, HTTP %d\n", r.status);
+    fail("Bambu's servers blocked this request. Wait a few minutes and try again; "
+         "if it keeps happening, update BambuHelper.");
   } else {
     fail(fallback);
   }
@@ -603,8 +610,7 @@ void cloudLoginSelfTest(String& out) {
 
   // Throwaway credentials: reaching "Incorrect account or password." proves the
   // account endpoint answers this device. A multi-kilobyte HTML body instead
-  // means Cloudflare stepped in - historically rate limiting, so wait it out
-  // before reading anything more into it.
+  // means Cloudflare stepped in - rate limiting, or a refused User-Agent (#206).
   CloudResponse login;
   bool ok1 = cloudRequest(apiHost(currentRegion()), "/v1/user-service/user/login", "POST",
                           "{\"account\":\"probe@bambuhelper.invalid\","

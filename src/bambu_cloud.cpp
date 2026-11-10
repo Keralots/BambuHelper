@@ -44,17 +44,10 @@ static const char* getBambuSiteBase(CloudRegion region) {
 //  Helpers
 // ---------------------------------------------------------------------------
 
-// Set common headers that mimic OrcaSlicer client
-static void setSlicerHeaders(HTTPClient& http) {
+// Common headers for the cloud JSON API.
+static void setCloudHeaders(HTTPClient& http) {
+  http.setUserAgent(CLOUD_USER_AGENT);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("User-Agent", "bambu_network_agent/01.09.05.01");
-  http.addHeader("X-BBL-Client-Name", "OrcaSlicer");
-  http.addHeader("X-BBL-Client-Type", "slicer");
-  http.addHeader("X-BBL-Client-Version", "01.09.05.51");
-  http.addHeader("X-BBL-Language", "en-US");
-  http.addHeader("X-BBL-OS-Type", "linux");
-  http.addHeader("X-BBL-OS-Version", "6.2.0");
-  http.addHeader("X-BBL-Agent-Version", "01.09.05.01");
   http.addHeader("Accept", "application/json");
 }
 
@@ -67,7 +60,7 @@ static int httpsRequestWith(WiFiClientSecure& tls, const char* method,
   HTTPClient http;
   if (!http.begin(tls, url)) { http.end(); return -1; }
 
-  setSlicerHeaders(http);
+  setCloudHeaders(http);
   if (authToken && strlen(authToken) > 0) {
     String auth = "Bearer ";
     auth += authToken;
@@ -255,7 +248,7 @@ bool cloudFetchPlateThumbUrl(const char* token, CloudRegion region, const char* 
   HTTPClient http;
   if (!http.begin(tls, api)) return false;
   http.setTimeout(10000);
-  setSlicerHeaders(http);
+  setCloudHeaders(http);
   http.addHeader("Authorization", String("Bearer ") + token);
   int code = http.GET();
   int size = http.getSize();

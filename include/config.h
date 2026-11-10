@@ -6,6 +6,10 @@
 // =============================================================================
 #define FW_VERSION          "v3.9.1"
 
+// Sent on every Bambu cloud HTTPS call. Our own name: a borrowed slicer agent
+// string gets refused once Bambu retires that slicer version (#206).
+#define CLOUD_USER_AGENT    "BambuHelper/" FW_VERSION
+
 // Board variant — injected into the web UI for OTA asset filtering.
 // Normally set via build_flags in platformio.ini; this is a fallback.
 #ifndef BOARD_VARIANT
