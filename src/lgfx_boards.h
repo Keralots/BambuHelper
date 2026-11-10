@@ -689,9 +689,23 @@ public:
     // databus class hard-codes them at construction anyway.
     setPanel(&_panel);
   }
-  lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
+  lgfx::Panel_AXS15231B_AGFX* framePanel() { return &_panel; }
 };
 static LGFX_JC3248W535 _tft_instance;
+#elif defined(BOARD_IS_ES3C35P)
+// --- LCDwiki ES3C35P + ST77922 320x480 QSPI ----------------------------------
+// Panel_ST77922_QSPI owns its SPI device (registers on 1 line, pixels on 4 - a
+// combination no stock LovyanGFX / Arduino_GFX bus can produce). Pins are fixed
+// inside the panel class: CS=10 SCLK=12 D0=11 D1=13 D2=14 D3=9.
+// Same frame-sprite contract as the JC3248W535 block above.
+#include "lgfx_panel_st77922_qspi.hpp"
+class LGFX_ES3C35P : public lgfx::LGFX_Device {
+  lgfx::Panel_ST77922_QSPI _panel;
+public:
+  LGFX_ES3C35P() { setPanel(&_panel); }
+  lgfx::Panel_ST77922_QSPI* framePanel() { return &_panel; }
+};
+static LGFX_ES3C35P _tft_instance;
 #elif defined(BOARD_IS_C3_ROUND)
 // --- ESP32-C3 Super Mini + GC9A01 1.28" round 240x240 ------------------------
 // Bare 7-pin SPI module, same wiring as the ST7789 C3 map (SCL=21, SDA=20,

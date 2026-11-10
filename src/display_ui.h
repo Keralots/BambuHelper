@@ -6,7 +6,13 @@
 
 // Forward-declare the panel type so callers can use the pointer without
 // pulling in the full header (which includes Arduino_GFX headers).
-namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; } }
+namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; class Panel_ST77922_QSPI; } }
+// Panel wrapper type of the boards that draw into a full-frame PSRAM sprite.
+#if PANEL_FRAME_IS_ST77922
+typedef lgfx::Panel_ST77922_QSPI FramePanel;
+#else
+typedef lgfx::Panel_AXS15231B_AGFX FramePanel;
+#endif
 
 enum ScreenState {
   SCREEN_SPLASH,
@@ -111,9 +117,9 @@ extern lgfx::LovyanGFX* tft_ptr;
 // LGFX_Device, not LovyanGFX, so it cannot go through `tft`.
 lgfx::LGFX_Device& displayDevice();
 
-// Direct pointer to the AXS15231B panel wrapper; only non-null on
-// BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
-extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
+// Direct pointer to the frame-sprite panel wrapper; only non-null when
+// PANEL_REQUIRES_AXS_FRAME_SPRITE. flushFrame() pushes the sprite through it.
+extern FramePanel* g_axs_panel;
 
 void initDisplay();
 void updateDisplay();
@@ -124,15 +130,15 @@ bool screenCaptureBegin(const uint16_t** buf, int16_t* w, int16_t* h);
 void screenCaptureEnd();
 
 // Flush the off-screen framebuffer sprite to the panel in one contiguous
-// raster write. No-op on boards that draw directly (all except
-// BOARD_IS_JC3248W535, which uses a full-screen PSRAM sprite to work around
-// the AXS15231B QSPI-mode addressing limits). Call once per loop tick after
+// raster write. No-op on boards that draw directly (all except the
+// PANEL_REQUIRES_AXS_FRAME_SPRITE ones - JC3248W535 and ES3C35P - whose QSPI
+// panels cannot take arbitrary windows). Call once per loop tick after
 // UI draws to commit the frame.
 void flushFrame();
 
 // Mark the off-screen framebuffer sprite as dirty so the next flushFrame()
 // actually pushes to the panel. No-op on boards that draw directly (all
-// except BOARD_IS_JC3248W535). Call from any code path that writes pixels
+// except PANEL_REQUIRES_AXS_FRAME_SPRITE). Call from any code path that writes pixels
 // into the sprite; a keepalive tick in flushFrame() guarantees the panel
 // still gets a refresh even if a dirty mark is missed.
 void markFrameDirty();

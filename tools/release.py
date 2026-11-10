@@ -56,6 +56,7 @@ WEB_FLASHER_BOARDS = [
     "ws_lcd_28c",
     "wt32_sc01_plus",
     "jc3248w535",
+    "es3c35p",
     "cyd",
     "tzt_2432",
     "cyd_2432s024",

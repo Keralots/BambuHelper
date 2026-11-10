@@ -255,6 +255,22 @@ const BOARDS = {
     ],
     credit: { name: '@theNailz', u: 'https://github.com/theNailz' },
   },
+  es3c35p: {
+    chipFamily: 'ESP32-S3',
+    label: 'LCDwiki ES3C35P 3.5" (320x480, ST77922 QSPI) - community (not owned by maintainer)',
+    name: 'LCDwiki ES3C35P 3.5"',
+    badge: 'community',
+    display: '3.5" ST77922, 320x480, QSPI',
+    touch: 'capacitive (in display IC)',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'All-in-one 3.5" ESP32-S3 board with 16MB flash, 8MB octal ' +
+          'PSRAM, a battery sense input and a WS2812 status LED on GPIO 40. ' +
+          'Reuses the JC3248W535 full-frame layout. There is no buzzer ' +
+          'hardware and no ES8311 audio driver yet.',
+    links: [
+      { t: 'LCDwiki', u: 'http://www.lcdwiki.com/' },
+    ],
+  },
   cyd: {
     chipFamily: 'ESP32',
     label: 'CYD / ESP32-2432S028 (ILI9341, 240x320)',

@@ -115,7 +115,7 @@ lgfx::LGFX_Device& displayDevice() { return _tft_instance; }
 // Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
 // other boards so the extern declaration in display_ui.h is always satisfied.
 #if PANEL_REQUIRES_AXS_FRAME_SPRITE
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+FramePanel* g_axs_panel = _tft_instance.framePanel();
 
 // Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
 // initDisplay() (via tft_ptr), then flushed to the panel once per loop()
@@ -132,7 +132,7 @@ static bool g_frame_dirty = true;
 static unsigned long g_last_flush_ms = 0;
 static const unsigned long FRAME_KEEPALIVE_MS = 500;
 #else
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+FramePanel* g_axs_panel = nullptr;
 #endif
 
 void markFrameDirty() {
