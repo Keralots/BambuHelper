@@ -192,7 +192,10 @@
 #define DISPLAY_IS_ROUND  0
 #endif
 
-#if defined(BOARD_IS_JC3248W535)
+// ES3C35P's ST77922 QSPI panel follows the same contract (fixed native 320x480
+// portrait, whole-frame push via pushRawPixels(), rotation on the sprite), so it
+// shares this path. The macro keeps its historical AXS name.
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_ES3C35P)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
@@ -211,7 +214,7 @@
 // Touch panels where a wake tap reads as a long press (resistive XPT2046 - both the
 // library driver and the LovyanGFX shared-bus one on cyd_2432s024 - and AXS15231B).
 // main.cpp suppresses hold-to-dim on the sleep screens for these.
-#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(BOARD_IS_CYD_2432S024)
+#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(USE_ST77922_TOUCH) || defined(BOARD_IS_CYD_2432S024)
 #define TOUCH_WAKE_LONGPRESS  1
 #else
 #define TOUCH_WAKE_LONGPRESS  0
@@ -355,6 +358,7 @@
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
+    defined(BOARD_IS_ES3C35P) || \
     defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
     defined(BOARD_IS_WS28C)
 #define HAS_FULL_HMS_TABLE  1
@@ -461,7 +465,7 @@
 //  Edge glow (border light effect on print complete / failed)
 // =============================================================================
 #define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
-#if defined(BOARD_IS_JC3248W535)
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_ES3C35P)
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
 #elif DISPLAY_IS_ROUND
 #define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges, 25 fps fine
@@ -539,6 +543,10 @@
 // S3 default (GPIO 5) is this board's display SCLK — initBuzzer() drives the pin
 // as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
 // the panel after boot. Disable (0) so the SPI clock is left alone.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_ES3C35P)
+// LCDwiki ES3C35P: no buzzer; audio is an ES8311 codec + amp, which has no GPIO
+// backend here. The generic S3 default (GPIO 5) is this board's SD CLK. Disable (0).
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_WS28C)
 // Waveshare 2.8C: the buzzer is expander bit 7, not a GPIO, so there is no pin

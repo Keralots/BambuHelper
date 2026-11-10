@@ -258,6 +258,17 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_ES3C35P)
+  // LCDwiki ES3C35P (ST77922 QSPI 320x480, touch inside the display IC)
+  if (pin == 9 || pin == 10 || pin == 11 || pin == 12 || pin == 13 || pin == 14) return false; // display QSPI
+  if (pin == 41) return false;                                                     // backlight
+  if (pin == 38 || pin == 39 || pin == 47 || pin == 48) return false;              // touch I2C SDA/SCL + INT + RST
+  if (pin == 2 || pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) return false; // SD card (4-bit SDIO)
+  if (pin == 1 || pin == 8 || pin == 40) return false;                             // audio amp EN, battery sense, WS2812
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_C3)
   // LOLIN C3 mini
   if (pin == 6 || pin == 7 || pin == 10 || pin == 20 || pin == 21) return false;   // display SPI

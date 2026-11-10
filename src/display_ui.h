@@ -6,7 +6,13 @@
 
 // Forward-declare the panel type so callers can use the pointer without
 // pulling in the full header (which includes Arduino_GFX headers).
-namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; } }
+namespace lgfx { inline namespace v1 { class Panel_AXS15231B_AGFX; class Panel_ST77922_QSPI; } }
+// Panel wrapper type of the boards that draw into a full-frame PSRAM sprite.
+#if defined(BOARD_IS_ES3C35P)
+typedef lgfx::Panel_ST77922_QSPI FramePanel;
+#else
+typedef lgfx::Panel_AXS15231B_AGFX FramePanel;
+#endif
 
 enum ScreenState {
   SCREEN_SPLASH,
@@ -113,7 +119,7 @@ lgfx::LGFX_Device& displayDevice();
 
 // Direct pointer to the AXS15231B panel wrapper; only non-null on
 // BOARD_IS_JC3248W535 builds. Used by the sprite direct-push diagnostic.
-extern lgfx::Panel_AXS15231B_AGFX* g_axs_panel;
+extern FramePanel* g_axs_panel;
 
 void initDisplay();
 void updateDisplay();
