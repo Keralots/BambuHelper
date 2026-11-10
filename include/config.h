@@ -4,7 +4,7 @@
 // =============================================================================
 //  Firmware version
 // =============================================================================
-#define FW_VERSION          "v3.9.1"
+#define FW_VERSION          "v3.9.2"
 
 // Sent on every Bambu cloud HTTPS call. Our own name: a borrowed slicer agent
 // string gets refused once Bambu retires that slicer version (#206).
