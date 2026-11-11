@@ -23,7 +23,7 @@ void drawGaugeLabel(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16_t radius
 // Raw -D test, not DISPLAY_IS_ROUND: this header does not include config.h,
 // and display_gauges.cpp includes it before its own config.h - the capability
 // would evaluate to 0 and silently undeclare everything below.
-#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480)
+#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
 // Full-circle rim progress ring (round displays). Fill runs clockwise from
 // 12 o'clock; incremental redraw unless forceRedraw / regression / color change.
 // cacheSlot (0-2) selects an independent incremental-draw cache so the Rings

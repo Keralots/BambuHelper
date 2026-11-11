@@ -15,13 +15,13 @@
 // keep the C3 / S3 Mini flash footprints unchanged.
 #include "fonts/inter_22.h"
 #endif
-#if defined(DISPLAY_ROUND_480) || (defined(DISPLAY_320x480) && HAS_CARD_SKIN)
+#if defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466) || (defined(DISPLAY_320x480) && HAS_CARD_SKIN)
 // inter_20 (24 px regular): 2x body on the 480 round profile, Card body text
 // at 1.5x on the 320x480 boards. 16 MB boards only.
 #include "fonts/inter_20.h"
 #define HAVE_INTER_20 1
 #endif
-#if defined(DISPLAY_ROUND_480)
+#if defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
 // Rest of the 2x tier for the 480 round profile.
 #include "fonts/inter_27.h"
 #include "fonts/inter_37.h"
@@ -88,14 +88,14 @@ void setFont(lgfx::LovyanGFX& gfx, FontID id) {
 #endif
             break;
         case FONT_BODY_2X:
-#if defined(DISPLAY_ROUND_480)
+#if defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
             if (!gfx.loadFont(inter_27)) applyBitmapFallback(gfx, FONT_BODY_2X);
 #else
             if (!gfx.loadFont(inter_14)) applyBitmapFallback(gfx, FONT_BODY);
 #endif
             break;
         case FONT_LARGE_2X:
-#if defined(DISPLAY_ROUND_480)
+#if defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
             if (!gfx.loadFont(inter_37)) applyBitmapFallback(gfx, FONT_LARGE_2X);
 #else
             if (!gfx.loadFont(inter_19)) applyBitmapFallback(gfx, FONT_LARGE);
@@ -144,7 +144,7 @@ static const uint8_t* fontData(FontID id) {
 #else
             return inter_19;
 #endif
-#if defined(DISPLAY_ROUND_480)
+#if defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
         case FONT_SMALL_2X: return inter_20;
         case FONT_BODY_2X:  return inter_27;
         case FONT_LARGE_2X: return inter_37;

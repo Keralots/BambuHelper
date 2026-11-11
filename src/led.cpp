@@ -258,6 +258,19 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_AMOLED175)
+  // Waveshare ESP32-S3-Touch-AMOLED-1.75 (CO5300 QSPI 466x466 + CST9217)
+  if (pin >= 4 && pin <= 7) return false;                                          // display QSPI D0-D3
+  if (pin == 12 || pin == 38 || pin == 39) return false;                           // display CS/SCK/RST
+  if (pin == 14 || pin == 15) return false;                                        // shared I2C (touch, PMU, codecs, IMU, RTC)
+  if (pin == 11 || pin == 40) return false;                                        // CST9217 INT/RST
+  if (pin >= 1 && pin <= 3) return false;                                          // microSD CMD/CLK/D0
+  if (pin >= 8 && pin <= 10) return false;                                         // I2S DOUT/SCLK/DIN
+  if (pin == 42 || pin == 45 || pin == 46) return false;                           // I2S MCLK/LRCK + speaker PA
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_C3)
   // LOLIN C3 mini
   if (pin == 6 || pin == 7 || pin == 10 || pin == 20 || pin == 21) return false;   // display SPI

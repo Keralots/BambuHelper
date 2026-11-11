@@ -168,6 +168,26 @@ void sanitizeButtonPin() {
   if (buttonPin == GT911_SCL) { clash("GT911 touch SCL"); return; }
   if (buttonPin == GT911_INT) { clash("GT911 touch INT"); return; }
 #endif
+#if defined(USE_CST92XX)
+  if (buttonPin == CST92XX_SDA) { clash("CST92xx touch SDA"); return; }
+  if (buttonPin == CST92XX_SCL) { clash("CST92xx touch SCL"); return; }
+  if (buttonPin == CST92XX_INT) { clash("CST92xx touch INT"); return; }
+  if (buttonPin == CST92XX_RST) { clash("CST92xx touch RST"); return; }
+#endif
+#if defined(BOARD_IS_AMOLED175)
+  {
+    // QSPI display, I2S audio, microSD, USB and flash/PSRAM. The header's
+    // free pins are 16/17/18 (+ UART 43/44).
+    const uint8_t p = buttonPin;
+    const bool reserved =
+      (p >= 4 && p <= 7) || p == 12 || p == 38 || p == 39 ||  // QSPI display
+      (p >= 1 && p <= 3) ||                                   // microSD
+      (p >= 8 && p <= 10) || p == 42 || p == 45 || p == 46 || // ES8311/ES7210 I2S + PA
+      (p == 19 || p == 20) ||                                 // USB CDC
+      (p >= 26 && p <= 37);                                   // flash/PSRAM
+    if (reserved) { clash("AMOLED175 onboard peripheral"); return; }
+  }
+#endif
 #if defined(BOARD_IS_WS28C)
   {
     // ST7701 RGB bus + the octal-PSRAM/USB pins. LCD reset, LCD CS, touch

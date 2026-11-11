@@ -82,7 +82,8 @@ static bool resolvePlaceholder(const char* name, String& out) {
     // field. Boards without a controllable backlight (7-pin round GC9A01
     // modules wire BLK hardwired on, BACKLIGHT_PIN=-1) hide them entirely -
     // setBacklight() is a no-op there and the sliders would do nothing.
-#if defined(BACKLIGHT_PIN) && (BACKLIGHT_PIN >= 0)
+    // AMOLED panels dim through a DCS register instead of a pin.
+#if (defined(BACKLIGHT_PIN) && (BACKLIGHT_PIN >= 0)) || PANEL_BRIGHTNESS_DCS
     out = "";
 #else
     out = "display:none";

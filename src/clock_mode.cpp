@@ -44,7 +44,7 @@ static float sizeIndexToScale(int idx) {
 }
 
 static int autoSizeIndex() {
-  if (SCREEN_W >= 480) return 3;   // Large
+  if (SCREEN_W >= 466) return 3;   // Large (480 panels + the 466 AMOLED)
   if (SCREEN_W >= 320) return 2;   // Medium
   return 1;                        // Normal
 }
