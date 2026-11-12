@@ -15,6 +15,7 @@ Usage:
     python merge_bins.py --board ws_lcd_154 # build Waveshare 1.54 firmware
     python merge_bins.py --board ws_lcd_280 # build Waveshare 2.8 firmware (community)
     python merge_bins.py --board ws_lcd_350 # build Waveshare 3.5 firmware (community)
+    python merge_bins.py --board ws_amoled_175 # build Waveshare AMOLED 1.75 firmware (experimental)
     python merge_bins.py --board jc3248w535 # build Guition JC3248W535 firmware
     python merge_bins.py --board sc05_x    # build Panlee SC05_X / ZX2D80CE02S firmware
     python merge_bins.py --all              # build all board variants
@@ -142,6 +143,14 @@ BOARDS = {
         'build_env': 'ws_lcd_28c',
         'board_id': 'ws_lcd_28c',
     },
+    'ws_amoled_175': {                   # experimental / untested
+        'build_dir': '.pio/build/ws_amoled_175',
+        'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
+        'partitions_offset': 0x8000,
+        'firmware_offset': 0x10000,
+        'build_env': 'ws_amoled_175',
+        'board_id': 'ws_amoled_175',
+    },
     'jc3248w535': {
         'build_dir': '.pio/build/jc3248w535',
         'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
@@ -219,6 +228,8 @@ BOARD_ALIASES = {
     'ws_lcd_350': 'ws_lcd_350',
     'ws28c': 'ws_lcd_28c',
     'ws_lcd_28c': 'ws_lcd_28c',
+    'amoled175': 'ws_amoled_175',
+    'ws_amoled_175': 'ws_amoled_175',
     'jc': 'jc3248w535',
     'jc3248w535': 'jc3248w535',
     'sc01': 'wt32_sc01_plus',

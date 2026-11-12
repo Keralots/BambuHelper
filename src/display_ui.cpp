@@ -116,13 +116,22 @@ lgfx::LGFX_Device& displayDevice() { return _tft_instance; }
 // other boards so the extern declaration in display_ui.h is always satisfied.
 #if PANEL_REQUIRES_AXS_FRAME_SPRITE
 lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+#else
+lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+#endif
 
+#if PANEL_HAS_FRAME_SPRITE
 // Full-frame PSRAM sprite. All BambuHelper draws are redirected here in
 // initDisplay() (via tft_ptr), then flushed to the panel once per loop()
-// tick via flushFrame(). The AXS15231B in QSPI mode cannot address
-// arbitrary Y per draw (see lgfx_panel_axs15231b_agfx.hpp), so a
-// framebuffer-and-single-raster-flush is the only reliable render path.
+// tick via flushFrame(). Neither panel on this path can take arbitrary
+// draws (see PANEL_HAS_FRAME_SPRITE in config.h), so a framebuffer-and-
+// single-raster-flush is the only reliable render path.
 static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
+static const int16_t FRAME_W = 320, FRAME_H = 480;
+#else
+static const int16_t FRAME_W = LY_W, FRAME_H = LY_H;
+#endif
 
 // Dirty flag: start true so the very first flushFrame() pushes the cleared
 // sprite + splash. Redraw sites call markFrameDirty() to request another
@@ -131,25 +140,29 @@ static lgfx::LGFX_Sprite _frame_sprite(&_tft_instance);
 static bool g_frame_dirty = true;
 static unsigned long g_last_flush_ms = 0;
 static const unsigned long FRAME_KEEPALIVE_MS = 500;
-#else
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
 #endif
 
 void markFrameDirty() {
-#if PANEL_REQUIRES_AXS_FRAME_SPRITE
+#if PANEL_HAS_FRAME_SPRITE
   g_frame_dirty = true;
 #endif
 }
 
 void flushFrame() {
-#if PANEL_REQUIRES_AXS_FRAME_SPRITE
-  if (!g_axs_panel || !_frame_sprite.getBuffer()) return;
+#if PANEL_HAS_FRAME_SPRITE
+  if (!_frame_sprite.getBuffer()) return;
   unsigned long now = millis();
   bool keepalive_due = (now - g_last_flush_ms) >= FRAME_KEEPALIVE_MS;
   if (!g_frame_dirty && !keepalive_due) return;
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
+  if (!g_axs_panel) return;
   g_axs_panel->pushRawPixels(
     static_cast<uint16_t*>(_frame_sprite.getBuffer()),
     320u * 480u);
+#elif PANEL_CO5300_FRAME_SPRITE
+  // A starved DMA heap leaves the frame dirty, so the next tick retries.
+  if (!_tft_instance.pushFrame(_frame_sprite.getBuffer())) return;
+#endif
   g_frame_dirty = false;
   g_last_flush_ms = now;
 #endif
@@ -298,7 +311,9 @@ static bool tickGaugeSmooth(const BambuState& s, bool snap) {
 static uint8_t lastAppliedBrightness = 0;
 
 void setBacklight(uint8_t level) {
-#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+#if PANEL_BRIGHTNESS_DCS
+  _tft_instance.setBrightness(level);   // AMOLED: DCS 0x51, no PWM pin
+#elif defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
   analogWrite(BACKLIGHT_PIN, level);
 #endif
   lastAppliedBrightness = level;
@@ -518,10 +533,11 @@ void initDisplay() {
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 #endif
-#if PANEL_REQUIRES_AXS_FRAME_SPRITE
+#if PANEL_HAS_FRAME_SPRITE
   // Panel MADCTL stays at 0 forever — RASET-skip + LSB-first byte-order
-  // invariants in pushRawPixels depend on native orientation. User-facing
-  // rotation is applied to the PSRAM sprite after tft_ptr is redirected.
+  // invariants in pushRawPixels depend on native orientation (and the CO5300
+  // pushFrame streams native rows). User-facing rotation is applied to the
+  // PSRAM sprite after tft_ptr is redirected.
   tft.setRotation(0);
 #else
   tft.setRotation(dispSettings.rotation);
@@ -531,17 +547,19 @@ void initDisplay() {
   tft.fillScreen(CLR_BG);
   Serial.println("Display: fillScreen done");
 
-#if PANEL_REQUIRES_AXS_FRAME_SPRITE
-  // Allocate 320x480x16bpp PSRAM sprite (300 KB) and redirect tft_ptr so all
-  // subsequent draws (splash, UI, refreshes) render into the sprite buffer.
-  // Panel cannot address arbitrary Y in QSPI mode — instead we flush the
-  // whole sprite to the panel once per loop tick via flushFrame().
+#if PANEL_HAS_FRAME_SPRITE
+  // Allocate the native-size 16bpp PSRAM sprite (JC 320x480 = 300 KB, AMOLED
+  // 466x466 = 424 KB) and redirect tft_ptr so all subsequent draws (splash,
+  // UI, refreshes) render into the sprite buffer. The panel cannot take
+  // arbitrary draws — instead we flush the whole sprite to the panel once per
+  // loop tick via flushFrame().
   _frame_sprite.setPsram(true);
   _frame_sprite.setColorDepth(16);
-  if (_frame_sprite.createSprite(320, 480)) {
+  if (_frame_sprite.createSprite(FRAME_W, FRAME_H)) {
     _frame_sprite.setTextDatum(MC_DATUM);  // match the tft defaults used below
     tft_ptr = &_frame_sprite;
-    Serial.printf("Display: frame sprite 320x480 allocated in PSRAM, free=%u\n",
+    Serial.printf("Display: frame sprite %dx%d allocated in PSRAM, free=%u\n",
+                  FRAME_W, FRAME_H,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     tft.setRotation(sanitizeRotation(dispSettings.rotation));
     tft.fillScreen(CLR_BG);
@@ -559,7 +577,9 @@ void initDisplay() {
   Serial.println("Display: touch calibration set");
 #endif
 
-#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+#if PANEL_BRIGHTNESS_DCS
+  setBacklight(200);
+#elif defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
   pinMode(BACKLIGHT_PIN, OUTPUT);
   setBacklight(200);
 #endif
@@ -5523,7 +5543,7 @@ static void drawPowerConfirm() {
 #elif defined(DISPLAY_480x480)
   const int16_t RR = 84, RT = 18;
   const int16_t YSH = 0;
-#elif defined(DISPLAY_ROUND_480)
+#elif defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
   const int16_t RR = LY_SC(34), RT = LY_SC(8);   // 2x the round-240 dot
   const int16_t YSH = 0;
 #else
@@ -5531,7 +5551,7 @@ static void drawPowerConfirm() {
   const int16_t YSH = 0;
 #endif
   // LY_SC() is 1x everywhere except the 480 round profile, so these are the
-  // unchanged 240/320/480 offsets and only double on ws_lcd_28c.
+  // unchanged 240/320/480 offsets and only scale up on the round 480/466 boards.
   const int16_t titleY = cy - LY_SC(70) - YSH;
   const int16_t nameY  = cy - LY_SC(44) - YSH;
   const int16_t warnY  = cy - LY_SC(16) - YSH;

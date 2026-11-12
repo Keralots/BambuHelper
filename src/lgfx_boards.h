@@ -692,6 +692,116 @@ public:
   lgfx::Panel_AXS15231B_AGFX* panelAXS() { return &_panel; }
 };
 static LGFX_JC3248W535 _tft_instance;
+#elif defined(BOARD_IS_AMOLED175)
+// --- Waveshare ESP32-S3-Touch-AMOLED-1.75 (CO5300 466x466 round, QSPI) -------
+// Native LovyanGFX Panel_CO5300 over quad Bus_SPI. The stock class is shaped for
+// a LilyGO 502x410 panel, so geometry and the init list are overridden with the
+// values from Waveshare's BSP (esp32_s3_touch_amoled_1_75.c): 466x466 visible,
+// column gap 6 (CASET 6..471), row gap 0.
+//
+// Drawing never reaches this panel directly. Panel_AMOLED drops any draw with an
+// odd x or odd width, and LovyanGFX's own AMOLED framebuffer rounds its row
+// stride up to 468 px while flushing with a 466 px stride (sheared image). So
+// display_ui renders into a 466x466 PSRAM sprite (PANEL_CO5300_FRAME_SPRITE) and
+// pushFrame() streams it here at rotation 0. Rotation is applied to the sprite.
+#include <lgfx/v1/panel/Panel_CO5300.hpp>
+
+class Panel_CO5300_466 : public lgfx::Panel_CO5300 {
+public:
+  Panel_CO5300_466() {
+    _cfg.memory_width  = _cfg.panel_width  = 466;
+    _cfg.memory_height = _cfg.panel_height = 466;
+  }
+
+  const uint8_t* getInitCommands(uint8_t listno) const override {
+    static constexpr uint8_t list0[] = {
+      0xFE, 1, 0x20,                         // page 0x20: Waveshare panel tuning
+      0x19, 1, 0x10,
+      0x1C, 1, 0xA0,
+      0xFE, 1, 0x00,                         // page 0
+      0xC4, 1, 0x80,                         // QSPI mode
+      0x3A, 1, 0x55,                         // RGB565
+      0x35, 1, 0x00,                         // TE on
+      0x53, 1, 0x20,
+      0x51, 1, 0xC8,                         // brightness (setBacklight takes over)
+      0x63, 1, 0xFF,
+      0x2A, 4, 0x00, 0x06, 0x01, 0xD7,       // CASET 6..471
+      0x2B, 4 | CMD_INIT_DELAY, 0x00, 0x00, 0x01, 0xD1, 120,  // RASET 0..465
+      0x11, CMD_INIT_DELAY, 255,             // sleep out, 500 ms
+      0x29, CMD_INIT_DELAY, 20,              // display on
+      0xFF, 0xFF
+    };
+    return (listno == 0) ? list0 : nullptr;
+  }
+
+  // Stream a full native-orientation frame (RGB565 as LovyanGFX stores it,
+  // stride == panel width). Rows are staged through internal DMA buffers
+  // because the source lives in PSRAM - same scheme as
+  // Panel_AMOLED_Framebuffer::display(), with the correct stride.
+  bool pushFrame(const uint8_t* src) {
+    static constexpr uint32_t ROWS = 4;
+    const uint32_t w = _cfg.panel_width, h = _cfg.panel_height;
+    const size_t rowBytes = w * 2;
+    uint8_t* buf[2] = { _bus->getDMABuffer(rowBytes * ROWS),
+                        _bus->getDMABuffer(rowBytes * ROWS) };
+    if (!buf[0] || !buf[1]) return false;   // DMA heap starved: retry next tick
+
+    beginTransaction();
+    setWindow(0, 0, w - 1, h - 1);
+    start_qspi();
+    uint32_t y = 0;
+    for (int i = 0; y < h; ++i) {
+      const uint32_t n = (h - y) < ROWS ? (h - y) : ROWS;
+      uint8_t* lb = buf[i & 1];
+      memcpy(lb, src + y * rowBytes, n * rowBytes);
+      _bus->writeBytes(lb, n * rowBytes, false, true);
+      y += n;
+    }
+    endTransaction();
+    return true;
+  }
+};
+
+class LGFX_AMOLED175 : public lgfx::LGFX_Device {
+  Panel_CO5300_466 _panel;
+  lgfx::Bus_SPI    _bus;
+public:
+  LGFX_AMOLED175() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host    = SPI2_HOST;
+      cfg.spi_mode    = 0;
+      cfg.freq_write  = 40000000;
+      cfg.freq_read   = 16000000;
+      cfg.pin_sclk    = 38;
+      cfg.pin_io0     = 4;
+      cfg.pin_io1     = 5;
+      cfg.pin_io2     = 6;
+      cfg.pin_io3     = 7;
+      cfg.dma_channel = SPI_DMA_CH_AUTO;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs       = 12;
+      cfg.pin_rst      = 39;
+      cfg.panel_width  = 466;
+      cfg.panel_height = 466;
+      cfg.memory_width  = 466;
+      cfg.memory_height = 466;
+      cfg.offset_x     = 6;   // column gap; Panel_AMOLED adds it in setWindow()
+      cfg.offset_y     = 0;
+      cfg.readable     = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+  bool pushFrame(const void* src) {
+    return _panel.pushFrame(static_cast<const uint8_t*>(src));
+  }
+};
+static LGFX_AMOLED175 _tft_instance;
 #elif defined(BOARD_IS_C3_ROUND)
 // --- ESP32-C3 Super Mini + GC9A01 1.28" round 240x240 ------------------------
 // Bare 7-pin SPI module, same wiring as the ST7789 C3 map (SCL=21, SDA=20,

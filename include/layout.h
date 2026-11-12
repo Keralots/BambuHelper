@@ -14,6 +14,8 @@
   #include "layout_480x480.h"    // SenseCAP Indicator: ST7701S 480x480
 #elif defined(DISPLAY_ROUND_480)
   #include "layout_round480.h"  // ST7701 2.8" round 480x480
+#elif defined(DISPLAY_ROUND_466)
+  #include "layout_round466.h"  // CO5300 1.75" round AMOLED 466x466
 #elif defined(DISPLAY_ROUND_240)
   #include "layout_round240.h"  // GC9A01 1.28" round 240x240
 #elif defined(DISPLAY_320x480)
@@ -31,7 +33,7 @@
 // name worth inventing. Raster/AA safety margins are NOT wrapped: they stay
 // 1-2 physical pixels at any size.
 //
-// Only layout_round480.h overrides these today; every other profile is 1x and
+// Only the round 480/466 profiles override these; every other profile is 1x and
 // its generated code is unchanged.
 #ifndef LY_SC
 #define LY_SC(v)  (v)
@@ -58,6 +60,8 @@
 #endif
 
 // Drawn footprint of the 16x16 1-bit icons (src/icons.h block-scales them).
+#ifndef LY_ICON16
 #define LY_ICON16  LY_SC(16)
+#endif
 
 #endif // LAYOUT_H

@@ -178,28 +178,51 @@
 // in CLAUDE.md. (Pre-existing presence-only macros such as BOARD_HAS_PSRAM /
 // BOARD_HAS_BATTERY / BOARD_HAS_*_AUDIO are grandfathered - do not blanket-convert.)
 
-// JC3248W535 AXS15231B QSPI panel cannot address an arbitrary Y per draw, so all
-// drawing renders into a full-frame PSRAM sprite flushed once per loop tick. The
-// guarded code is AXS-typed (Panel_AXS15231B_AGFX, fixed 320x480) and is 1:1 with
-// JC today - a different full-frame panel (e.g. the CO5300 AMOLED) needs its own
-// path, not this one.
 // Round panel. All three print skins, the round clock face, the edge-glow ring
 // and the round idle/finished/AP screens are shared; only the LY_RND_* geometry
 // and the font tier differ per resolution.
 //
 // NOTE: derived here, so it is only visible to a TU that has already reached
 // this point in config.h. include/layout.h and src/display_gauges.h are both
-// included earlier than that and MUST keep the raw two-flag test.
-#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480)
+// included earlier than that and MUST keep the raw flag test.
+#if defined(DISPLAY_ROUND_240) || defined(DISPLAY_ROUND_480) || defined(DISPLAY_ROUND_466)
 #define DISPLAY_IS_ROUND  1
 #else
 #define DISPLAY_IS_ROUND  0
 #endif
 
+// Full-frame PSRAM sprite: every draw lands in a native-size sprite (tft_ptr is
+// retargeted to it), user rotation is applied to the sprite, and flushFrame()
+// pushes the whole frame once per loop tick when dirty. The panel itself stays
+// at rotation 0. How the frame reaches the glass is per panel:
+//   PANEL_REQUIRES_AXS_FRAME_SPRITE  JC3248W535 AXS15231B - cannot address an
+//                                    arbitrary Y per draw (Panel_AXS15231B_AGFX)
+//   PANEL_CO5300_FRAME_SPRITE        CO5300 AMOLED - drops odd-x / odd-width
+//                                    draws, and LovyanGFX's own AMOLED
+//                                    framebuffer mis-strides a 466 px width
 #if defined(BOARD_IS_JC3248W535)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
+#endif
+
+#if defined(BOARD_IS_AMOLED175)
+#define PANEL_CO5300_FRAME_SPRITE  1
+#else
+#define PANEL_CO5300_FRAME_SPRITE  0
+#endif
+
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE || PANEL_CO5300_FRAME_SPRITE
+#define PANEL_HAS_FRAME_SPRITE  1
+#else
+#define PANEL_HAS_FRAME_SPRITE  0
+#endif
+
+// Brightness is a panel DCS register (AMOLED), not a PWM backlight GPIO.
+#if defined(BOARD_IS_AMOLED175)
+#define PANEL_BRIGHTNESS_DCS  1
+#else
+#define PANEL_BRIGHTNESS_DCS  0
 #endif
 
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
@@ -289,7 +312,7 @@
 #elif defined(DISPLAY_240x320) && !defined(BOARD_IS_C3)
 #define HAS_CARD_SKIN  1   // band path (CARD_BAND_RENDER); not on a C3 (DIY), too little RAM
 #elif !defined(DISPLAY_240x320) && !defined(DISPLAY_320x480) && !defined(DISPLAY_480x480) && \
-      !defined(DISPLAY_ROUND_240) && !defined(DISPLAY_ROUND_480) && defined(BOARD_HAS_PSRAM)
+      !DISPLAY_IS_ROUND && defined(BOARD_HAS_PSRAM)
 #define HAS_CARD_SKIN  1   // 240x240 square, PSRAM boards only (full-frame sprite)
 #else
 #define HAS_CARD_SKIN  0
@@ -360,7 +383,7 @@
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
     defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
-    defined(BOARD_IS_WS28C)
+    defined(BOARD_IS_WS28C) || defined(BOARD_IS_AMOLED175)
 #define HAS_FULL_HMS_TABLE  1
 #else
 #define HAS_FULL_HMS_TABLE  0
@@ -445,6 +468,8 @@
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
 #elif defined(BOARD_IS_WS28C)
 #define BUTTON_DEFAULT_PIN    0       // 2.8C: touch is the input; GPIO4 is the battery ADC
+#elif defined(BOARD_IS_AMOLED175)
+#define BUTTON_DEFAULT_PIN    0       // AMOLED 1.75: touch is the input; GPIO4 is QSPI D0
 #elif defined(BOARD_IS_SENSECAP)
 #define BUTTON_DEFAULT_PIN    38      // SenseCAP Indicator: GPIO38 (inverted, normally HIGH)
 #else
@@ -465,7 +490,7 @@
 //  Edge glow (border light effect on print complete / failed)
 // =============================================================================
 #define GLOW_THICKNESS_PX        8         // border band thickness (rectangular)
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_HAS_FRAME_SPRITE
 #define GLOW_ANIM_MS             80        // every tick flushes the full QSPI frame - keep modest
 #elif DISPLAY_IS_ROUND
 #define GLOW_ANIM_MS             40        // round ring = a few fillArc wedges, 25 fps fine
@@ -543,6 +568,10 @@
 // S3 default (GPIO 5) is this board's display SCLK — initBuzzer() drives the pin
 // as a GPIO regardless of the enabled flag, which would hijack SCLK and freeze
 // the panel after boot. Disable (0) so the SPI clock is left alone.
+#define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_AMOLED175)
+// Waveshare AMOLED 1.75: sound is the ES8311 I2S codec, which ignores the pin.
+// The generic S3 default (GPIO 5) is a QSPI data line here.
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_WS28C)
 // Waveshare 2.8C: the buzzer is expander bit 7, not a GPIO, so there is no pin
