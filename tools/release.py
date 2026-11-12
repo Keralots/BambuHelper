@@ -54,6 +54,7 @@ WEB_FLASHER_BOARDS = [
     "sc05_x",
     "ws_lcd_350",
     "ws_lcd_28c",
+    "ws_amoled_175",
     "wt32_sc01_plus",
     "jc3248w535",
     "cyd",

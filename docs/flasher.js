@@ -222,6 +222,23 @@ const BOARDS = {
       { t: 'hardware notes (#171)', u: 'https://github.com/Keralots/BambuHelper/issues/171' },
     ],
   },
+  ws_amoled_175: {
+    chipFamily: 'ESP32-S3',
+    label: 'Waveshare ESP32-S3-Touch-AMOLED-1.75 (466x466 round) - community (not owned by maintainer)',
+    name: 'Waveshare ESP32-S3-Touch-AMOLED-1.75',
+    badge: 'community',
+    display: '1.75" CO5300 AMOLED, 466x466 round, QSPI',
+    touch: 'CST9217 capacitive',
+    printers: 'up to 2 (opt-in 4)',
+    desc: 'Round AMOLED all-in-one with ESP32-S3R8 (16MB flash, 8MB ' +
+          'PSRAM). Runs the round dashboard with its three print skins ' +
+          '(Rim / Speedo / Rings) at 466x466. Brightness is set on the ' +
+          'panel itself; battery via the AXP2101 PMU, sound via the ES8311 ' +
+          'codec.',
+    links: [
+      { t: 'product page', u: 'https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm' },
+    ],
+  },
   wt32_sc01_plus: {
     chipFamily: 'ESP32-S3',
     label: 'Panlee WT32-SC01 Plus 3.5" (320x480) - community (not owned by maintainer)',

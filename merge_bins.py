@@ -143,7 +143,7 @@ BOARDS = {
         'build_env': 'ws_lcd_28c',
         'board_id': 'ws_lcd_28c',
     },
-    'ws_amoled_175': {                   # experimental / untested
+    'ws_amoled_175': {                   # community
         'build_dir': '.pio/build/ws_amoled_175',
         'bootloader_offset': 0x0,       # ESP32-S3 starts at 0x0
         'partitions_offset': 0x8000,
