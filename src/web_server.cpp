@@ -1248,7 +1248,9 @@ static void handlePrinterConfig() {
   // of a coarse "has airduct" boolean (which would falsely enable Aux-Right on H2C).
   doc["hasAuxFanRight"] = (st.airductFuncs & (1u << 6)) != 0;  // X2D only
   doc["hasExhaustFan"]  = (st.airductFuncs & (1u << 2)) != 0;  // X2D + H2C
-  doc["hasDualNozzle"]  = st.dualNozzle;                       // H2D/H2C/X2D per-nozzle temp gauges
+  // H2D/H2C/X2D per-nozzle temp gauges. Serial fallback: the live flag needs the
+  // first extruder report, so the portal would hide the options right after boot.
+  doc["hasDualNozzle"]  = st.dualNozzle || isDualNozzleSerial(cfg.serial);
   doc["hasTasmota"]     = tasmotaConfiguredForSlot(slot);      // gates the Power gauge option
 #if BOARD_HAS_CAMERA
   // Camera gauge: only LAN-mode P1/A1 with an access code serve the port-6000

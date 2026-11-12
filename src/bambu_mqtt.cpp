@@ -62,6 +62,12 @@ static bool isP2SSerial(const char* serial) {
   return serial && strncmp(serial, "22E", 3) == 0;
 }
 
+// H2D "094", H2C "31B". Others (X2D) are only detected from extruder.info[].
+bool isDualNozzleSerial(const char* serial) {
+  if (!serial) return false;
+  return strncmp(serial, "094", 3) == 0 || strncmp(serial, "31B", 3) == 0;
+}
+
 // Printers that report the door sensor in home_flag bit 23 (per Bambu Lab wiki
 // + ha-bambulab convention): X1C "00M", X1E "03W".
 // H2 series and P2S use "stat" instead; P1/A1 have no door sensor.
