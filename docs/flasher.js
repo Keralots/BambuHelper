@@ -74,6 +74,7 @@ const BOARDS = {
           'pinout to the standard esp32s3_zero build, only the panel differs.',
     links: [
       { t: 'display module', u: 'https://pl.aliexpress.com/item/1005007523612119.html' },
+      { t: '3D-printable case', u: 'https://makerworld.com/en/models/3617981' },
       { t: 'wiring guide', u: 'https://github.com/Keralots/BambuHelper#default-wiring' },
     ],
   },
