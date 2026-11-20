@@ -62,6 +62,11 @@ static bool isP2SSerial(const char* serial) {
   return serial && strncmp(serial, "22E", 3) == 0;
 }
 
+// H2S "093": single nozzle, so the extruder.info dual-nozzle detection misses it.
+static bool isH2SSerial(const char* serial) {
+  return serial && strncmp(serial, "093", 3) == 0;
+}
+
 // H2D "094", H2C "31B". Others (X2D) are only detected from extruder.info[].
 bool isDualNozzleSerial(const char* serial) {
   if (!serial) return false;
@@ -78,7 +83,7 @@ static bool usesHomeFlagDoorSensor(const char* serial) {
 }
 
 static bool usesStatDoorSensor(bool dualNozzle, const char* serial) {
-  return dualNozzle || isP2SSerial(serial);
+  return dualNozzle || isP2SSerial(serial) || isH2SSerial(serial);
 }
 
 
@@ -1427,7 +1432,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     s.speedLevel = print["spd_lvl"].as<int>();
 
   // Door sensor: model-specific field and bit layout.
-  //   - H2D/H2C (dualNozzle) and P2S ("22E"): "stat" hex string, bit
+  //   - H2D/H2C (dualNozzle), H2S ("093") and P2S ("22E"): "stat" hex string, bit
   //     0x00800000 = door open.
   //     H2C sends 9+ hex digits (>32 bit), must use strtoull.
   //     Note: X1C also sends "stat" but with different semantics (bit 23 is
@@ -1439,7 +1444,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
     uint64_t statVal = strtoull(print["stat"].as<const char*>(), nullptr, 16);
     bool wasOpen = s.doorOpen;
     s.doorOpen = (statVal & 0x00800000ULL) != 0;
-    const char* source = s.dualNozzle ? "H2 stat" : "P2S stat";
+    const char* source = isP2SSerial(serial) ? "P2S stat" : "H2 stat";
     if (!s.doorSensorPresent) {
       s.doorSensorPresent = true;
       MQTT_LOG("door sensor detected (%s=0x%llX, door=%s)", source, statVal, s.doorOpen ? "OPEN" : "CLOSED");
