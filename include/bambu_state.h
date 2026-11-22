@@ -44,6 +44,7 @@ struct AmsTray {
   uint16_t colorRgb565;    // pre-converted for TFT
   char     type[16];       // "PLA Matte" etc.
   int8_t   remain;         // 0-100%, -1 = unknown/third-party
+  uint16_t weightG;        // spool net weight from tray_weight, 0 = unknown
 };
 
 struct AmsUnit {

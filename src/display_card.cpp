@@ -26,11 +26,11 @@
 enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2, CK_AMS = 3 };
 
 struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; int8_t remain;
-                   char mark; };   // idle swatch list: 'x' tray, '|' unit gap, '/' HT group
+                   char mark; int16_t grams; };   // grams -1 = show remain%   // idle swatch list: 'x' tray, '|' unit gap, '/' HT group
 struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
-struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; };
+struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; int16_t grams; };
 // AMS page: one tile per tray, boxes = an AMS unit (4 tiles), an AMS HT or the external spool (1 tile).
-struct CardAmsTile { uint16_t color; char type[10]; char slot[4]; uint8_t present, active; int8_t remain; };
+struct CardAmsTile { uint16_t color; char type[10]; char slot[4]; uint8_t present, active; int8_t remain; int16_t grams; };
 struct CardAmsBox  { char label[10]; char env[16]; uint8_t n, region; CardAmsTile t[4]; };
 
 enum : uint8_t { CU_DEG = 0, CU_PCT = 1, CU_OF5 = 2 };
@@ -312,20 +312,21 @@ static void fillTray(CardTray& t, const AmsTray& src, bool active) {
   copyType(t.type, sizeof(t.type), src.present ? src.type : "");
   t.active  = active ? 1 : 0;
   t.remain  = src.present ? src.remain : -1;
+  t.grams   = amsTrayGrams(t.remain, src.weightG);
 }
 
 // Resolve one print.mapping entry, (unitId << 8) | trayId, against live AMS data.
 static void resolveMapEntry(const BambuState& s, uint16_t raw, CardChip& c) {
   const AmsState& a = s.ams;
   const uint8_t uid = (uint8_t)(raw >> 8), tid = (uint8_t)(raw & 0xFF);
-  c.known = 0; c.active = 0; c.color = dispSettings.textDimColor; c.remain = -1;
+  c.known = 0; c.active = 0; c.color = dispSettings.textDimColor; c.remain = -1; c.grams = -1;
   strlcpy(c.type, "?", sizeof(c.type));
   for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++) {
     if (!a.units[i].present || a.units[i].id != uid) continue;
     if (i < AMS_TRAY_UNITS && tid < AMS_TRAYS_PER_UNIT) {
       const AmsTray& t = a.trays[i * AMS_TRAYS_PER_UNIT + tid];
       if (!t.present) return;
-      c.known = 1; c.color = t.colorRgb565; c.remain = t.remain;
+      c.known = 1; c.color = t.colorRgb565; c.remain = t.remain; c.grams = amsTrayGrams(t.remain, t.weightG);
       copyType(c.type, sizeof(c.type), t.type);
       c.active = (a.activeTray == i * AMS_TRAYS_PER_UNIT + tid) ? 1 : 0;
       return;
@@ -334,6 +335,7 @@ static void resolveMapEntry(const BambuState& s, uint16_t raw, CardChip& c) {
   }
   if (a.ovUnitId == uid && a.ovTrayId == tid && a.ovTray.present) {
     c.known = 1; c.color = a.ovTray.colorRgb565; c.remain = a.ovTray.remain;
+    c.grams = amsTrayGrams(a.ovTray.remain, a.ovTray.weightG);
     copyType(c.type, sizeof(c.type), a.ovTray.type);
     c.active = (a.activeTray == AMS_TRAY_OVERFLOW) ? 1 : 0;
   }
@@ -736,7 +738,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     const int16_t rowH = cv.S(22), listTop = rule + g.cellLblOff + cv.S(22);
     if (!f.chipMore && f.chipCount * rowH <= yMax - listTop + rowH / 2) {
       cv.useFont(FONT_BODY);
-      const int16_t pctW = cv.width("100%");
+      const int16_t pctW = cv.width(filamentLeftWidest());
       // Bar starts after the longest name, but keeps at least 40 px.
       int16_t typeW = 0;
       for (uint8_t i = 0; i < f.chipCount; i++) typeW = std::max<int16_t>(typeW, cv.width(f.chips[i].type));
@@ -756,7 +758,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
         if (c.known && c.remain >= 0) {
           const int16_t fw = (int16_t)((int32_t)barW * (c.remain > 100 ? 100 : c.remain) / 100);
           if (fw >= bh) cv.rrect(barX, cy - bh / 2, fw, bh, bh / 2, c.color == f.bg ? f.txt : c.color);
-          snprintf(buf, sizeof(buf), "%d%%", c.remain);
+          formatFilamentLeft(buf, sizeof(buf), c.remain, c.grams);
         } else {
           strlcpy(buf, "--", sizeof(buf));
         }
@@ -770,8 +772,8 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
     const int16_t moreW = cv.width("+8") + 8;
     for (uint8_t i = 0; i < f.chipCount; i++) {
       const CardChip& c = f.chips[i];
-      char pct[6] = "";
-      if (c.known && c.remain >= 0) snprintf(pct, sizeof(pct), "%d%%", c.remain);
+      char pct[8] = "";
+      if (c.known && c.remain >= 0) formatFilamentLeft(pct, sizeof(pct), c.remain, c.grams);
       cv.useFont(FONT_CARD_LBL);
       const int16_t pw = pct[0] ? cv.width(pct) + 4 : 0;
       cv.useFont(FONT_BODY);
@@ -1236,7 +1238,7 @@ static bool drawIdleList(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int
   if (!n) return false;
   const int16_t avail = yLimit - y, colGap = cv.S(14), textX = cv.S(19);
   cv.useFont(FONT_CARD_LBL);
-  const int16_t pctW = cv.width("100%") + 6;
+  const int16_t pctW = cv.width(filamentLeftWidest()) + 6;
   uint8_t cols = 0, rows = 0;
   int16_t cw = 0;
   for (uint8_t c = 1; c <= 3 && !cols; c++) {        // fewest columns whose rows fit
@@ -1261,7 +1263,7 @@ static bool drawIdleList(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int
     const int16_t cy = top + cv.S(8);
     const bool known = t.present && t.remain >= 0;
     CardChip c = {};
-    c.color = t.color; c.known = t.present; c.active = t.active; c.remain = t.remain;
+    c.color = t.color; c.known = t.present; c.active = t.active; c.remain = t.remain; c.grams = t.grams;
     drawChipDot(cv, cx + cv.S(7), cy, c, f);
     const int16_t tx = cx + textX;
     cv.useFont(FONT_BODY);
@@ -1269,7 +1271,7 @@ static bool drawIdleList(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int
     cv.text(buf, tx, cy + 1, FONT_BODY, t.active ? f.txt : f.dim, lgfx::textdatum_t::middle_left);
     if (!known) continue;
     if (pct) {
-      snprintf(buf, sizeof(buf), "%d%%", t.remain);
+      formatFilamentLeft(buf, sizeof(buf), t.remain, t.grams);
       cv.text(buf, cx + cw, cy + 1, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::middle_right);
     }
     idleBar(cv, f, t, cx + textX, top + rowH - cv.S(5), cw - textX, cv.S(3));
@@ -1424,6 +1426,7 @@ static void fillTile(CardAmsTile& t, const AmsTray& src, bool active, const char
   t.color   = src.colorRgb565;
   t.active  = active ? 1 : 0;
   t.remain  = src.present ? src.remain : -1;
+  t.grams   = amsTrayGrams(t.remain, src.weightG);
   char buf[16];
   strlcpy(buf, src.present ? src.type : "", sizeof(buf));
   if (char* sp = strchr(buf, ' ')) *sp = '\0';   // "PLA Matte" -> "PLA": a tile is ~30 px wide
@@ -1606,14 +1609,14 @@ static void drawAmsTile(Cv& cv, const CardAmsTile& t, const CardFrame& f,
   cv.useFont(tf);
   fitText(cv, buf, sizeof(buf), type, w - 2);
   cv.text(buf, x + w / 2, ty + cv.S(4), tf, ink, lgfx::textdatum_t::top_center);
-  char pct[6];
-  if (t.remain >= 0) snprintf(pct, sizeof(pct), "%d", t.remain);
-  else strlcpy(pct, "--", sizeof(pct));
-  // Sized for the widest value ("100") so every tile of a grid shares one face.
+  char pct[8];
+  formatFilamentLeft(pct, sizeof(pct), t.remain, t.grams, false);
+  // Sized for the widest value ("100" / "1000g") so every tile of a grid shares one face.
+  const char* widest = filamentLeftWidest(false);
   FontID pf = th >= cv.S(60) ? FONT_LARGE : FONT_BODY;
   cv.useFont(pf);
-  if (cv.width("100") > w - cv.S(6)) { pf = FONT_BODY; cv.useFont(pf); }
-  if (cv.width("100") > w - cv.S(6) || th < cv.S(36)) pf = FONT_CARD_LBL;
+  if (cv.width(widest) > w - cv.S(6)) { pf = FONT_BODY; cv.useFont(pf); }
+  if (cv.width(widest) > w - cv.S(6) || th < cv.S(36)) pf = FONT_CARD_LBL;
   cv.text(pct, x + w / 2, ty + th - cv.S(4), pf, ink, lgfx::textdatum_t::bottom_center);
 }
 

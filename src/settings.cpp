@@ -201,6 +201,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.hideClockDate = false;
   ds.showClockInfo = false;
   ds.amsTrayTypes = true;       // default ON: preserves existing per-tray labels
+  ds.amsGrams = false;          // default %: grams only on spools with a weight
   ds.buttonPowerControl = false;  // #136: default OFF (opt-in per device)
   ds.gestTap = GT_SMART;
   ds.gestDouble = GD_OFF;
@@ -606,6 +607,7 @@ void loadSettings() {
   dispSettings.hideClockDate = prefs.getBool("dsp_clkhd", def.hideClockDate);
   dispSettings.showClockInfo = prefs.getBool("dsp_clkif", def.showClockInfo);
   dispSettings.amsTrayTypes = prefs.getBool("dsp_amst", def.amsTrayTypes);
+  dispSettings.amsGrams = prefs.getBool("dsp_amsg", def.amsGrams);
   dispSettings.buttonPowerControl = prefs.getBool("dsp_btpw", def.buttonPowerControl);
   dispSettings.gestTap  = prefs.getUChar("dsp_gtap", def.gestTap);
   if (dispSettings.gestTap > GT_WAKE) dispSettings.gestTap = GT_SMART;
@@ -984,6 +986,7 @@ void saveSettings() {
   prefs.putBool("dsp_clkhd", dispSettings.hideClockDate);
   prefs.putBool("dsp_clkif", dispSettings.showClockInfo);
   prefs.putBool("dsp_amst", dispSettings.amsTrayTypes);
+  prefs.putBool("dsp_amsg", dispSettings.amsGrams);
   prefs.putBool("dsp_btpw", dispSettings.buttonPowerControl);
   prefs.putUChar("dsp_gtap", dispSettings.gestTap);
   prefs.putUChar("dsp_gdbl", dispSettings.gestDouble);

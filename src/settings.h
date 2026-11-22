@@ -111,6 +111,7 @@ struct DisplaySettings {
   bool     hideClockDate;  // minimalist mode: time only, no date line
   bool     showClockInfo;  // footer on the idle/clock screen: each configured printer's name + LAN IP
   bool     amsTrayTypes;   // show per-tray filament-type label under AMS bars (portrait strip); off = taller bars, no text
+  bool     amsGrams;       // filament left as grams (remain% x tray_weight) where the spool reports a weight
   bool     buttonPowerControl; // #136: derived, == (gestDouble == GD_PLUG); kept for the Power card + old backups
   uint8_t  gestTap;            // single tap:  GT_SMART / GT_NEXT / GT_AMS / GT_WAKE
   uint8_t  gestDouble;         // double tap:  GD_OFF / GD_PLUG / GD_AMS / GD_NEXT

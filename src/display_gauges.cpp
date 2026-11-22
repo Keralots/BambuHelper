@@ -1710,10 +1710,11 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
       gfx.setTextColor(txtColor, swatchColor);
       gfx.drawString(typeLabel, tCX, tCY - 6);
 
-      // Remaining %
+      // Remaining % or grams
       char remainBuf[8];
       if (tray.remain >= 0) {
-        snprintf(remainBuf, sizeof(remainBuf), "%d%%", tray.remain);
+        formatFilamentLeft(remainBuf, sizeof(remainBuf), tray.remain,
+                           amsTrayGrams(tray.remain, tray.weightG));
       } else {
         strlcpy(remainBuf, "--%", sizeof(remainBuf));
       }
@@ -1773,4 +1774,20 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
     gfx.setTextColor(hColor, bg);
     gfx.drawString(humBuf, cx, cy);
   }
+}
+
+int16_t amsTrayGrams(int8_t remain, uint16_t weightG) {
+  if (!dispSettings.amsGrams || remain < 0 || weightG == 0) return -1;
+  return (int16_t)(((int32_t)(remain > 100 ? 100 : remain) * weightG + 50) / 100);
+}
+
+void formatFilamentLeft(char* buf, size_t n, int8_t remain, int16_t grams, bool pctSign) {
+  if (grams > 0 && remain >= 0) snprintf(buf, n, "%dg", grams);
+  else if (remain < 0) strlcpy(buf, "--", n);
+  else                 snprintf(buf, n, pctSign ? "%d%%" : "%d", remain);
+}
+
+const char* filamentLeftWidest(bool pctSign) {
+  if (dispSettings.amsGrams) return "1000g";
+  return pctSign ? "100%" : "100";
 }

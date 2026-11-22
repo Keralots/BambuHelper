@@ -356,6 +356,28 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "AMSG_ROW") == 0) {
+    // Only where filament left is printed as text: the Card style + AMS page,
+    // and the 480x480 AMS gauge. The classic strips draw bars only.
+#if HAS_CARD_SKIN || defined(DISPLAY_480x480)
+    out  = "<label class=\"check-row\">";
+    out += "<input type=\"checkbox\" id=\"amsg\" value=\"1\" ";
+    out += dispSettings.amsGrams ? "checked" : "";
+    out += " onchange=\"toggleSetting('amsg',this.checked)\">";
+    out += "<label for=\"amsg\">Show filament left in grams</label>";
+    out += "</label>";
+    out += "<div class=\"help-text\" style=\"padding-left:28px\">Bambu spools report their weight, so the AMS shows e.g. 810g instead of 81%. "
+           "Spools without that data keep the percentage. ";
+#if HAS_CARD_SKIN
+    out += "Shown by the Card style and the AMS page.</div>";
+#else
+    out += "Shown by the AMS gauge.</div>";
+#endif
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "AMST_ROW") == 0) {
     // Per-tray filament-type labels only render in the enhanced portrait AMS
     // strip, and only 320x480 (Guition / ws_lcd_350) drives the 3-AMS case

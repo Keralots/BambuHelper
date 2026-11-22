@@ -3145,7 +3145,8 @@ bool gaugeTileValueChanged(uint8_t gt, const BambuState& s, const BambuState& p)
       int idx = ui * AMS_TRAYS_PER_UNIT + tr;
       const AmsTray& ct = s.ams.trays[idx]; const AmsTray& pt = p.ams.trays[idx];
       if (ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565 ||
-          ct.remain != pt.remain || (!isBars && strcmp(ct.type, pt.type) != 0)) return true;
+          ct.remain != pt.remain || ct.weightG != pt.weightG ||
+          (!isBars && strcmp(ct.type, pt.type) != 0)) return true;
     }
     return false;
   }
@@ -4576,7 +4577,7 @@ static void drawPrinting() {
                   int idx = ui * AMS_TRAYS_PER_UNIT + t;
                   const AmsTray &ct = s.ams.trays[idx], &pt = prevState.ams.trays[idx];
                   if (ct.present != pt.present || ct.colorRgb565 != pt.colorRgb565
-                      || ct.remain != pt.remain
+                      || ct.remain != pt.remain || ct.weightG != pt.weightG
                       || (!isBars && strcmp(ct.type, pt.type) != 0)) {
                     needDraw = true; break;
                   }
@@ -4755,7 +4756,8 @@ static void drawPrinting() {
         const AmsTray& pt = prevState.ams.trays[t];
         if (ct.present != pt.present
             || ct.colorRgb565 != pt.colorRgb565
-            || ct.remain != pt.remain) needDraw = true;
+            || ct.remain != pt.remain
+            || ct.weightG != pt.weightG) needDraw = true;
       }
     }
     bool enhanced = useEnhancedPortraitAms(s.ams);

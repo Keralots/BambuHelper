@@ -530,9 +530,14 @@ static void parseTrayFields(JsonObject tray, AmsTray& t, uint8_t logIdx) {
     // halt long before this matters cosmetically.
     if (rawRemain == 0) rawRemain = -1;
     t.remain = rawRemain;
+    // tray_weight is a string ("1000"); "0" on spools without RFID data.
+    int w = tray["tray_weight"].is<const char*>() ? atoi(tray["tray_weight"].as<const char*>())
+          : tray["tray_weight"].is<int>() ? tray["tray_weight"].as<int>() : 0;
+    t.weightG = (w > 0 && w < 10000) ? (uint16_t)w : 0;
   } else {
     t.present = false;
     t.type[0] = '\0';
+    t.weightG = 0;
   }
 }
 

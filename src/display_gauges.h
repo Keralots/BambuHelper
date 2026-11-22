@@ -142,4 +142,13 @@ void drawAmsFilamentAllGauge(lgfx::LovyanGFX& gfx, int16_t cx, int16_t cy, int16
                              int16_t thickness, const struct AmsState& ams,
                              uint8_t unitIndex, bool forceRedraw);
 
+// Filament left on a tray: grams when "grams" is on and the spool reports a
+// weight, else -1 (show remain%).
+int16_t amsTrayGrams(int8_t remain, uint16_t weightG);
+// "810g" / "81%" ("81" without pctSign); "--" when remain is unknown.
+// grams <= 0 falls back to remain, so zeroed structs never print "0g".
+void formatFilamentLeft(char* buf, size_t n, int8_t remain, int16_t grams, bool pctSign = true);
+// Widest value formatFilamentLeft can produce under the current setting.
+const char* filamentLeftWidest(bool pctSign = true);
+
 #endif // DISPLAY_GAUGES_H

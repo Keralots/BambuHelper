@@ -111,7 +111,7 @@ fetch('/wifi/diag').then(function(r){return r.json();}).then(function(d){
 //    Printer:  pname, ip, serial, code, connmode, region, cl_token, cl_serial,
 //              cl_pname, dualp, gs0..gs5, lx0..lx1, px0..px2, is0..is1, amsv
 //    Display:  bright, nighten, nstart, nend, nbright, ssbright, keepon, afterprint,
-//              fmins, afterfin, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, invcol,
+//              fmins, afterfin, dack, fintm, kps, pong, abar, slbl, timem, fanmp, hidelp, amsg, invcol,
 //              cydcls, cyd32e, rskin, card, cleft, cbot, cready, rotation, tz, use24h, datefmt, clk_time, clk_date,
 //              clk_size, clk_dsize, clk_hidedate, noz_max, bed_max, cht_max, pwr_max,
 //              gsmooth, warn_thr, warn_clr,
@@ -588,6 +588,7 @@ R"rawliteral(
       <label for="hidelp">Hide layer/power line in status bar</label>
     </label>
     <div class="help-text" style="padding-left:28px" data-gauges-only>Frees width for the filament name. Use when you already show layer count and/or power as gauges. Applies to the print screen only (not the finish summary).</div>
+%AMSG_ROW%
 %AMST_ROW%
   </div>
 

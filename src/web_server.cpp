@@ -866,6 +866,7 @@ static void handleToggleSetting() {
   else if (key == "p9s")     dispSettings.portrait9Slots = on;
   else if (key == "clkinfo") dispSettings.showClockInfo = on;
   else if (key == "amst")    dispSettings.amsTrayTypes = on;
+  else if (key == "amsg")    dispSettings.amsGrams = on;
   else if (key == "btnpwr") {
     if (on) dispSettings.gestDouble = GD_PLUG;
     else if (dispSettings.gestDouble == GD_PLUG) dispSettings.gestDouble = GD_OFF;
@@ -926,7 +927,7 @@ static void handleToggleSetting() {
   if (key == "clkhd") { resetClock(); triggerDisplayTransition(); }
   if (key == "hidelp") triggerDisplayTransition();  // repaint status bar with/without readout
   if (key == "rotsplit" || key == "rotsplitf") triggerDisplayTransition();  // flip split layout live
-  if (key == "amst") triggerDisplayTransition();  // force AMS-zone repaint
+  if (key == "amst" || key == "amsg") triggerDisplayTransition();  // force AMS-zone repaint
 #ifdef BOARD_LOW_RAM
   if (key == "dualp") {
     if (!on && rotState.displayIndex == 1) {
@@ -1756,6 +1757,7 @@ static void handleSettingsExport() {
   disp["hideClockDate"] = dispSettings.hideClockDate;
   disp["showClockInfo"] = dispSettings.showClockInfo;
   disp["amsTrayTypes"] = dispSettings.amsTrayTypes;
+  disp["amsGrams"] = dispSettings.amsGrams;
   disp["landscape8Slots"] = dispSettings.landscape8Slots;
   disp["portrait9Slots"] = dispSettings.portrait9Slots;
   disp["buttonPowerControl"] = dispSettings.buttonPowerControl;
@@ -2136,6 +2138,7 @@ static void handleSettingsImportFinish() {
     if (disp["hideClockDate"].is<bool>()) dispSettings.hideClockDate = disp["hideClockDate"].as<bool>();
     if (disp["showClockInfo"].is<bool>()) dispSettings.showClockInfo = disp["showClockInfo"].as<bool>();
     if (disp["amsTrayTypes"].is<bool>())  dispSettings.amsTrayTypes = disp["amsTrayTypes"].as<bool>();
+    if (disp["amsGrams"].is<bool>())      dispSettings.amsGrams = disp["amsGrams"].as<bool>();
     if (disp["landscape8Slots"].is<bool>()) dispSettings.landscape8Slots = disp["landscape8Slots"].as<bool>();
     if (disp["portrait9Slots"].is<bool>())  dispSettings.portrait9Slots = disp["portrait9Slots"].as<bool>();
     if (disp["buttonPowerControl"].is<bool>()) {
