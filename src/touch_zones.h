@@ -28,6 +28,14 @@ bool touchZoneAt(int16_t x, int16_t y, uint8_t* id, uint8_t* arg);
 // Zone under the latest touchscreen press (false: no coordinates / no zone).
 bool touchZoneOfPress(uint8_t* id, uint8_t* arg);
 
+// --- Strokes ------------------------------------------------------------------
+// The latest touch stroke moved past a tap (cancels holds, no zone tap).
+bool touchStrokeMoved();
+// Horizontal swipe of the latest stroke: +1 right, -1 left, 0 none.
+int8_t touchStrokeSwipeX();
+// Vertical swipe of the latest stroke: -1 up, +1 down, 0 none.
+int8_t touchStrokeSwipeY();
+
 // Touch test screen (SCREEN_TOUCH_TEST): opened from the portal, closed by a
 // 2 s still hold, the portal, or 3 min without a touch.
 void touchTestRequest(bool on);

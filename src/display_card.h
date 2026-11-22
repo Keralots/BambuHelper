@@ -18,6 +18,8 @@ bool drawCardIdle(PrinterSlot& p, bool force);
 // Tap stop on Ready / Print complete: flips to the other view (AMS or status)
 // for a while (true), or flips back and returns false so the tap carries on.
 bool cardAmsPeekToggle(const BambuState& s);
+// The last Ready / finish frame drawn was the AMS page.
+bool cardAmsPageShown();
 // Progress-bar shimmer for the card on screen; true when it drew this call.
 bool tickCardShimmer();
 // Scrolls a job name too long for the hero column; true when it drew this call.
@@ -43,6 +45,7 @@ inline bool drawCardPrinting(PrinterSlot&, bool) { return false; }
 inline bool drawCardFinished(PrinterSlot&, bool) { return false; }
 inline bool drawCardIdle(PrinterSlot&, bool) { return false; }
 inline bool cardAmsPeekToggle(const BambuState&) { return false; }
+inline bool cardAmsPageShown() { return false; }
 inline bool tickCardShimmer() { return false; }
 inline bool tickCardMarquee() { return false; }
 inline bool tickCardColon() { return false; }

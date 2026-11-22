@@ -325,6 +325,13 @@ bool buttonPressRaw(int16_t* x, int16_t* y) {
   return true;
 }
 
+bool buttonStrokeRaw(int16_t* px, int16_t* py, int16_t* lx, int16_t* ly) {
+  // live* keeps the last point after the finger lifts, so this works on release.
+  if (buttonType != BTN_TOUCHSCREEN || !pressHasXY) return false;
+  *px = pressX; *py = pressY; *lx = liveX; *ly = liveY;
+  return true;
+}
+
 bool buttonTouchRaw(int16_t* x, int16_t* y) {
   if (buttonType != BTN_TOUCHSCREEN || !liveHasXY || !stableState) return false;
   *x = liveX; *y = liveY;

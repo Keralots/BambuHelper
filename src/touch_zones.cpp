@@ -90,6 +90,38 @@ bool touchZoneOfPress(uint8_t* id, uint8_t* arg) {
   return touchZoneAt(x, y, id, arg);
 }
 
+// --- Strokes ---------------------------------------------------------------------
+static const int16_t STROKE_MOVE_PX = 20;   // above this a stroke is no longer a tap
+
+static bool strokeDelta(int16_t* dx, int16_t* dy) {
+  int16_t px, py, lx, ly, x0, y0, x1, y1;
+  if (!buttonStrokeRaw(&px, &py, &lx, &ly)) return false;
+  touchRawToScreen(px, py, &x0, &y0);
+  touchRawToScreen(lx, ly, &x1, &y1);
+  *dx = x1 - x0; *dy = y1 - y0;
+  return true;
+}
+
+bool touchStrokeMoved() {
+  int16_t dx, dy;
+  return strokeDelta(&dx, &dy) && (abs(dx) > STROKE_MOVE_PX || abs(dy) > STROKE_MOVE_PX);
+}
+
+int8_t touchStrokeSwipeX() {
+  int16_t dx, dy;
+  if (!strokeDelta(&dx, &dy)) return 0;
+  // A quarter of the width, and clearly more sideways than up/down.
+  if (abs(dx) < displayDevice().width() / 4 || abs(dx) < 2 * abs(dy)) return 0;
+  return dx > 0 ? 1 : -1;
+}
+
+int8_t touchStrokeSwipeY() {
+  int16_t dx, dy;
+  if (!strokeDelta(&dx, &dy)) return 0;
+  if (abs(dy) < displayDevice().height() / 4 || abs(dy) < 2 * abs(dx)) return 0;
+  return dy > 0 ? 1 : -1;
+}
+
 // --- Touch test screen state ----------------------------------------------------
 static const uint32_t TOUCH_TEST_IDLE_MS = 180000;
 static const uint32_t TOUCH_TEST_EXIT_MS = 2000;   // finger held still this long closes it

@@ -1996,6 +1996,8 @@ bool cardSkinActive() {
   return dispSettings.cardStyle == 1;
 }
 
+bool cardAmsPageShown() { return g_amsShown; }
+
 bool cardAmsPeekToggle(const BambuState& s) {
   if (!cardSkinActive()) return false;
   if (g_peek) { g_peek = false; return false; }      // tapping out continues the cycle

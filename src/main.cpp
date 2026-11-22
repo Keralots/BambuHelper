@@ -686,6 +686,44 @@ static void registerTap(bool fromTouch) {
   pcLastTapMs = now;
 }
 
+#if HAS_TOUCH_ZONES
+// Swipe up = AMS: the Cards AMS page where it exists (Ready / Print complete),
+// else the detail screen of the feeding unit (or the first one).
+static bool swipeUpAms() {
+  if (amsGestureAvailable() && !cardAmsPageShown())
+    return cardAmsPeekToggle(displayedPrinter().state);
+  const AmsState& a = displayedPrinter().state.ams;
+  const uint8_t u = (a.activeTray < AMS_MAX_TRAYS) ? a.activeTray / AMS_TRAYS_PER_UNIT : 0;
+  return openAmsDetail(u) || (u && openAmsDetail(0));
+}
+
+// Swipe down closes what swipe up opened.
+static bool swipeDownClose() {
+  if (getScreenState() == SCREEN_AMS_DETAIL) { closeAmsDetail(); return true; }
+  if (amsGestureAvailable() && cardAmsPageShown()) {
+    cardAmsPeekToggle(displayedPrinter().state);
+    return true;
+  }
+  return false;
+}
+
+// Touchscreen release: swipes where they have a job, anything else is a tap
+// (a stroke that wandered off skips the zone under it).
+static void touchRelease() {
+  const int8_t sx = touchStrokeSwipeX(), sy = touchStrokeSwipeY();
+  if (sx && nextPrinterGestureAvailable()) {
+    pcPendingClicks = 0;
+    cycleDisplayedPrinterFromButton();
+    return;
+  }
+  if ((sy < 0 && swipeUpAms()) || (sy > 0 && swipeDownClose())) {
+    pcPendingClicks = 0;
+    return;
+  }
+  registerTap(!touchStrokeMoved());
+}
+#endif
+
 // Modal input state machine. Called every loop while SCREEN_POWER_CONFIRM is up.
 static void handlePowerConfirmInput(bool held) {
   uint32_t now = millis();
@@ -854,8 +892,15 @@ static void handleWakeButton() {
   const bool holdLed = dispSettings.gestHold == GH_LED && ledSettings.enabled;
   const bool holdAms = dispSettings.gestHold == GH_AMS && cardSkinActive();
 
+  // A finger that moves is swiping, not holding: no hold gesture may start.
+#if HAS_TOUCH_ZONES
+  const bool swiping = isButtonHeld() && touchStrokeMoved();
+#else
+  const bool swiping = false;
+#endif
+
   // Tick the dimmer every loop regardless of state - it owns the 2 s save debounce.
-  bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim || !holdLed);
+  bool holdConsumed = ledHoldDimUpdate(held, holdMs, suppressDim || !holdLed || swiping);
 
   // #177: a single hold on the "Printer Off" screen opens the power-confirm modal
   // pre-armed for ON (no double-click, no wait-for-release). suppressDim above kept
@@ -863,7 +908,7 @@ static void handleWakeButton() {
   static bool offHoldFired = false;
   if (offScreenNow) {
     if (!held) offHoldFired = false;
-    else if (!offHoldFired && holdMs >= POWER_OFF_HOLD_OPEN_MS) {
+    else if (!offHoldFired && !swiping && holdMs >= POWER_OFF_HOLD_OPEN_MS) {
       offHoldFired = true;
       pcPendingClicks = 0;                 // drop any tap buffered before the hold
       openPowerConfirm(rotState.displayIndex, /*preArmedHold=*/true, holdMs);
@@ -879,7 +924,7 @@ static void handleWakeButton() {
   static bool amsHoldFired = false;
   if (!held) {
     amsHoldFired = false;
-  } else if (holdAms && !suppressDim && !amsHoldFired && holdMs >= GESTURE_HOLD_MS &&
+  } else if (holdAms && !suppressDim && !swiping && !amsHoldFired && holdMs >= GESTURE_HOLD_MS &&
              amsGestureAvailable()) {
     amsHoldFired = true;
     pcPendingClicks = 0;
@@ -890,11 +935,29 @@ static void handleWakeButton() {
   // No hold gesture in use: take the ORIGINAL press-edge path (with the
   // multi-click shim). holdConsumed is always false here.
   if (!holdLed && !holdAms) {
+#if HAS_TOUCH_ZONES
+    // The touchscreen resolves on release instead, so a swipe is never also a
+    // tap; feedback still comes on the press. Board buttons keep the press edge.
+    // Armed only by a press edge seen here: a press an earlier intercept took
+    // (PIN, blackout wake, ...) must not tap again when the finger lifts.
+    static bool touchArmed = false;
+    if (touchPress || boardPress) {
+      buzzerPlayClick();
+      ledOnUserInteraction();
+    }
+    if (boardPress) registerTap(false);
+    if (touchPress) touchArmed = true;
+    if (touchArmed && !isButtonHeld()) {
+      touchArmed = false;
+      touchRelease();
+    }
+#else
     if (touchPress || boardPress) {
       buzzerPlayClick();
       ledOnUserInteraction();
       registerTap(touchPress);
     }
+#endif
     return;
   }
 
@@ -915,7 +978,12 @@ static void handleWakeButton() {
 
   if (releaseEdge && !holdConsumedThisPress) {
     // Was a tap - fire deferred actions (sub-100 ms perceived delay).
+#if HAS_TOUCH_ZONES
+    if (pressWasTouch) touchRelease();
+    else registerTap(false);
+#else
     registerTap(pressWasTouch);
+#endif
   }
 }
 
