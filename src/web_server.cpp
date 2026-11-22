@@ -2800,11 +2800,14 @@ static void handleCaptiveDetect() {
 // assets and the AP-mode captive probes goes through the guard. Upload chunks
 // are dropped silently when not signed in, so nothing reaches flash; the
 // finish handler then answers 401.
-static WebServer::THandlerFunction G(WebServer::THandlerFunction fn) {
-  return [fn]() { if (portalAuthGuard()) fn(); };
+// One out-of-line helper per shape keeps each route a plain call; wrapping
+// std::functions at every call site cost ~10 KB on the 4 MB boards.
+typedef void (*RouteFn)();
+static void __attribute__((noinline)) onG(const char* uri, HTTPMethod m, RouteFn fn) {
+  server.on(uri, m, [fn]() { if (portalAuthGuard()) fn(); });
 }
-static WebServer::THandlerFunction GU(WebServer::THandlerFunction fn) {
-  return [fn]() { if (portalAuthOk()) fn(); };
+static void __attribute__((noinline)) onGU(const char* uri, HTTPMethod m, RouteFn fn, RouteFn up) {
+  server.on(uri, m, [fn]() { if (portalAuthGuard()) fn(); }, [up]() { if (portalAuthOk()) up(); });
 }
 
 void initWebServer() {
@@ -2818,56 +2821,56 @@ void initWebServer() {
   server.on("/canonical.html", HTTP_GET, handleCaptiveDetect);       // Firefox
 
   server.on("/", HTTP_GET, handleRoot);
-  server.on("/save/wifi", HTTP_POST, G(handleSaveWifi));
-  server.on("/wifi/diag", HTTP_GET, G(handleWifiDiag));
-  server.on("/save/printer", HTTP_POST, G(handleSavePrinter));
-  server.on("/save/gaugelayout", HTTP_POST, G(handleSaveGaugeLayout));
-  server.on("/save/rotation", HTTP_POST, G(handleSaveRotation));
-  server.on("/save/power", HTTP_POST, G(handleSavePower));
-  server.on("/power/config", HTTP_GET, G(handleGetPowerConfig));
-  server.on("/power/stats", HTTP_GET, G(handleGetPowerStats));
-  server.on("/power/control", HTTP_POST, G(handlePowerControl));
-  server.on("/buzzer/test", HTTP_POST, G(handleBuzzerTest));
-  server.on("/led/preview", HTTP_POST, G(handleLedPreview));
-  server.on("/led/test", HTTP_POST, G(handleLedTest));
-  server.on("/printer/config", HTTP_GET, G(handlePrinterConfig));
-  server.on("/printer/clear", HTTP_POST, G(handleClearPrinter));
-  server.on("/light/config", HTTP_POST, G(handleLightConfig));
-  server.on("/light/set", HTTP_POST, G(handleLightSet));
-  server.on("/apply", HTTP_POST, G(handleApply));
-  server.on("/brightness", HTTP_GET, G(handleBrightnessPreview));
+  onG("/save/wifi", HTTP_POST, handleSaveWifi);
+  onG("/wifi/diag", HTTP_GET, handleWifiDiag);
+  onG("/save/printer", HTTP_POST, handleSavePrinter);
+  onG("/save/gaugelayout", HTTP_POST, handleSaveGaugeLayout);
+  onG("/save/rotation", HTTP_POST, handleSaveRotation);
+  onG("/save/power", HTTP_POST, handleSavePower);
+  onG("/power/config", HTTP_GET, handleGetPowerConfig);
+  onG("/power/stats", HTTP_GET, handleGetPowerStats);
+  onG("/power/control", HTTP_POST, handlePowerControl);
+  onG("/buzzer/test", HTTP_POST, handleBuzzerTest);
+  onG("/led/preview", HTTP_POST, handleLedPreview);
+  onG("/led/test", HTTP_POST, handleLedTest);
+  onG("/printer/config", HTTP_GET, handlePrinterConfig);
+  onG("/printer/clear", HTTP_POST, handleClearPrinter);
+  onG("/light/config", HTTP_POST, handleLightConfig);
+  onG("/light/set", HTTP_POST, handleLightSet);
+  onG("/apply", HTTP_POST, handleApply);
+  onG("/brightness", HTTP_GET, handleBrightnessPreview);
   server.on("/status", HTTP_GET, handleStatus);
-  server.on("/api/timezones", HTTP_GET, G(handleTimezones));
-  server.on("/reset", HTTP_GET, G(handleReset));
-  server.on("/reboot", HTTP_POST, G(handleReboot));
-  server.on("/debug", HTTP_GET, G(handleDebug));
-  server.on("/card.bmp", HTTP_GET, G(handleCardBmp));
-  server.on("/screen.bmp", HTTP_GET, G(handleScreenBmp));
-  server.on("/debug/toggle", HTTP_POST, G(handleDebugToggle));
-  server.on("/save/toggle", HTTP_POST, G(handleToggleSetting));
-  server.on("/glow/test", HTTP_POST, G(handleGlowTest));
+  onG("/api/timezones", HTTP_GET, handleTimezones);
+  onG("/reset", HTTP_GET, handleReset);
+  onG("/reboot", HTTP_POST, handleReboot);
+  onG("/debug", HTTP_GET, handleDebug);
+  onG("/card.bmp", HTTP_GET, handleCardBmp);
+  onG("/screen.bmp", HTTP_GET, handleScreenBmp);
+  onG("/debug/toggle", HTTP_POST, handleDebugToggle);
+  onG("/save/toggle", HTTP_POST, handleToggleSetting);
+  onG("/glow/test", HTTP_POST, handleGlowTest);
   server.on("/app.css", HTTP_GET, handleAppCss);
   server.on("/app.js", HTTP_GET, handleAppJs);
-  server.on("/cloud/logout", HTTP_POST, G(handleCloudLogout));
-  server.on("/cloud/printers", HTTP_GET, G(handleCloudPrinters));
+  onG("/cloud/logout", HTTP_POST, handleCloudLogout);
+  onG("/cloud/printers", HTTP_GET, handleCloudPrinters);
 #if HAS_CLOUD_LOGIN
-  server.on("/cloud/login", HTTP_POST, G(handleCloudLoginStart));
-  server.on("/cloud/login/code", HTTP_POST, G(handleCloudLoginCode));
-  server.on("/cloud/login/status", HTTP_GET, G(handleCloudLoginStatus));
-  server.on("/cloud/login/selftest", HTTP_GET, G(handleCloudSelfTest));
+  onG("/cloud/login", HTTP_POST, handleCloudLoginStart);
+  onG("/cloud/login/code", HTTP_POST, handleCloudLoginCode);
+  onG("/cloud/login/status", HTTP_GET, handleCloudLoginStatus);
+  onG("/cloud/login/selftest", HTTP_GET, handleCloudSelfTest);
 #endif
-  server.on("/lan/scan", HTTP_POST, G(handleLanScan));
-  server.on("/lan/scan", HTTP_GET, G(handleLanScan));
-  server.on("/settings/export", HTTP_GET, G(handleSettingsExport));
-  server.on("/settings/import", HTTP_POST, G(handleSettingsImportFinish), GU(handleSettingsImportUpload));
-  server.on("/ota/upload", HTTP_POST, G(handleOtaFinish), GU(handleOtaUpload));
+  onG("/lan/scan", HTTP_POST, handleLanScan);
+  onG("/lan/scan", HTTP_GET, handleLanScan);
+  onG("/settings/export", HTTP_GET, handleSettingsExport);
+  onGU("/settings/import", HTTP_POST, handleSettingsImportFinish, handleSettingsImportUpload);
+  onGU("/ota/upload", HTTP_POST, handleOtaFinish, handleOtaUpload);
   // Deliberately outside ENABLE_OTA_AUTO: rolling back must work exactly on
   // the boards too constrained for the online-update path.
-  server.on("/ota/slots", HTTP_GET, G(handleOtaSlots));
-  server.on("/ota/rollback", HTTP_POST, G(handleOtaRollback));
+  onG("/ota/slots", HTTP_GET, handleOtaSlots);
+  onG("/ota/rollback", HTTP_POST, handleOtaRollback);
 #ifdef ENABLE_OTA_AUTO
-  server.on("/ota/auto", HTTP_POST, G(handleOtaAuto));
-  server.on("/ota/status", HTTP_GET, G(handleOtaStatus));
+  onG("/ota/auto", HTTP_POST, handleOtaAuto);
+  onG("/ota/status", HTTP_GET, handleOtaStatus);
 #endif
   server.onNotFound(handleNotFound);
   const char* collected[] = {"X-MD5", "Cookie"};   // Authorization is always collected
