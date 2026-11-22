@@ -1,3 +1,4 @@
+#include "portal_auth.h"
 #include "display_ui.h"
 #include "display_gauges.h"
 #include "display_split.h"
@@ -5444,6 +5445,8 @@ void nightWake() {
 }
 
 uint8_t getEffectiveBrightness() {
+  // Someone asked for the sign-in PIN: readable even at night or from sleep.
+  if (currentScreen == SCREEN_PORTAL_PIN) return brightness;
   // A woken blackout uses the screensaver level, not full brightness - the user
   // set night to 0, so the peek stays as dim as the screensaver they tuned.
   if (isNightModeActive() && dpSettings.nightBrightness == 0 && nightWakeHeld()) {
@@ -5743,6 +5746,41 @@ static void hmsEntryLines(uint32_t attr, uint32_t code,
   }
 }
 
+// Portal sign-in PIN. Static page: drawn once per entry (or when the PIN rolls).
+static void drawPortalPin() {
+  static char prevPin[8] = "";
+  const char* pin = portalAuthScreenPin();
+  if (!pin) return;                       // main.cpp closes the screen next loop
+  if (!forceRedraw && strcmp(pin, prevPin) == 0) return;
+  strlcpy(prevPin, pin, sizeof(prevPin));
+
+  const uint16_t bg = dispSettings.bgColor;
+  tft.fillScreen(bg);
+  markFrameDirty();
+  const int16_t W = uiW(), H = uiH(), cx = W / 2, cy = H / 2;
+
+  tft.setTextDatum(MC_DATUM);
+  setFont(tft, FONT_7SEG);
+  const int16_t pinH = (int16_t)tft.fontHeight();
+  setFont(tft, LY_F_BODY);
+  const int16_t bodyH = (int16_t)tft.fontHeight();
+  setFont(tft, LY_F_SMALL);
+  const int16_t smallH = (int16_t)tft.fontHeight();
+
+  setFont(tft, LY_F_BODY);
+  tft.setTextColor(CLR_TEXT, bg);
+  tft.drawString("Portal PIN", cx, cy - pinH / 2 - bodyH);
+
+  setFont(tft, FONT_7SEG);
+  tft.setTextColor(dispSettings.statusOkColor, bg);
+  tft.drawString(pin, cx, cy);
+
+  setFont(tft, LY_F_SMALL);
+  tft.setTextColor(CLR_TEXT_DIM, bg);
+  tft.drawString("Type it in the browser", cx, cy + pinH / 2 + smallH);
+  tft.drawString("Valid 2 min - tap to hide", cx, cy + pinH / 2 + smallH * 2 + 2);
+}
+
 static void drawHmsScreen() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
@@ -5939,7 +5977,8 @@ void updateDisplay() {
     // renderer to report the frame drawn, so blanking it mid-handshake would
     // stall the modal until morning.
     bool blackout = (currentScreen != SCREEN_OFF) &&
-                    (currentScreen != SCREEN_POWER_CONFIRM) && isNightBlackout();
+                    (currentScreen != SCREEN_POWER_CONFIRM) &&
+                    (currentScreen != SCREEN_PORTAL_PIN) && isNightBlackout();
     if (blackout != prevBlackout) {
       prevBlackout = blackout;
       setBacklight(getEffectiveBrightness());
@@ -6163,6 +6202,10 @@ void updateDisplay() {
 #if HAS_HMS_UI
       drawHmsScreen();
 #endif
+      break;
+
+    case SCREEN_PORTAL_PIN:
+      drawPortalPin();
       break;
 
     case SCREEN_FINISHED:

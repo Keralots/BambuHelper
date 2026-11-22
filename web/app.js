@@ -1,3 +1,16 @@
+/* Portal security: a 401 means this browser is no longer signed in - reload,
+   and the device answers / with its sign-in page. */
+(function(){
+  var f = window.fetch;
+  if (!f) return;
+  window.fetch = function(){
+    return f.apply(this, arguments).then(function(r){
+      if (r.status === 401 && !window.bhAuthReload) { window.bhAuthReload = 1; location.reload(); }
+      return r;
+    });
+  };
+})();
+
 /* ============ Loader / section dispatcher ============ */
 var SECTION_LABELS = {
   printer: 'Printer Settings',
@@ -1953,6 +1966,52 @@ function factoryReset(){
   location = '/reset';
 }
 
+/* ============ Security (portal PIN) ============ */
+var secHasPin = false;
+function secModeChanged(){
+  var m = document.getElementById('secMode').value;
+  var row = document.getElementById('secPinRow');
+  var pin = document.getElementById('secPin');
+  row.style.display = (m === '1') ? '' : 'none';
+  pin.placeholder = secHasPin ? 'Leave empty to keep the current PIN' : '';
+  var h = {
+    '0': 'Anyone on your network can open this page, change settings and upload firmware.',
+    '1': 'Sign in with your PIN. Forgot it? The sign-in page can show a one-time PIN on the device. For curl, pass the PIN as the password: curl -u x:PIN ... The Companion Tool cannot push settings while a PIN is on.',
+    '2': 'Each sign-in shows a fresh 6-digit PIN on the device screen for 2 minutes. curl and the Companion Tool cannot push settings in this mode - switch Security off for that.'
+  };
+  document.getElementById('secHelp').textContent = h[m] || '';
+}
+function secLoad(){
+  if (!document.getElementById('secCard')) return;
+  fetch('/auth/config').then(function(r){return r.ok ? r.json() : null;}).then(function(j){
+    if (!j) return;
+    secHasPin = !!j.hasPin;
+    document.getElementById('secMode').value = String(j.mode);
+    document.getElementById('secLogout').style.display = j.signedIn ? '' : 'none';
+    secModeChanged();
+  }).catch(function(e){console.warn('secLoad:', e);});
+}
+function saveSecurity(){
+  var m = document.getElementById('secMode').value;
+  var pin = document.getElementById('secPin').value.trim();
+  var st = document.getElementById('secStatus');
+  if (m === '1' && !pin && !secHasPin) { st.textContent = 'Enter a PIN first.'; return; }
+  if (pin && !/^[0-9]{4,8}$/.test(pin)) { st.textContent = 'The PIN must be 4-8 digits.'; return; }
+  var body = 'mode=' + m + (m === '1' && pin ? '&pin=' + encodeURIComponent(pin) : '');
+  fetch('/auth/config', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: body})
+    .then(function(r){return r.text().then(function(t){return {ok:r.ok, t:t};});})
+    .then(function(r){
+      if (!r.ok) { st.textContent = r.t; return; }
+      document.getElementById('secPin').value = '';
+      st.textContent = m === '0' ? 'Security off.' : 'Saved. This browser stays signed in.';
+      showToast('Security saved');
+      secLoad();
+    }).catch(function(){ st.textContent = 'Save failed.'; });
+}
+function secLogout(){
+  fetch('/auth/logout', {method:'POST'}).then(function(){ location.reload(); });
+}
+
 /* ============ After-print reveal ============ */
 function toggleAfterPrint(){
   var v = document.getElementById('afterprint').value;
@@ -2031,6 +2090,7 @@ applyThemeMode(document.documentElement.getAttribute('data-theme') || 'dark');
   setTimeout(function(){ selectPowerTab(0); }, 140);
   refreshHwInfo();
   initRollback();
+  secLoad();
   refreshTopStatusDots();
   setInterval(refreshTopStatusDots, 5000);
 })();

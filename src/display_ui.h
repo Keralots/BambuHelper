@@ -24,7 +24,8 @@ enum ScreenState {
   SCREEN_CAMERA,        // fullscreen P1/A1 chamber image (#120); tap to exit
   SCREEN_POWER_CONFIRM, // fullscreen plug on/off confirmation (#136); hold to confirm
   SCREEN_DRY_PEEK,      // AMS drying view tapped up during a print (#150); auto-closes
-  SCREEN_HMS            // printer error detail; tap to open while one is active
+  SCREEN_HMS,           // printer error detail; tap to open while one is active
+  SCREEN_PORTAL_PIN     // portal sign-in PIN, shown on request from the browser
 };
 
 // How long a tapped-up error screen stays before it drops back on its own.
