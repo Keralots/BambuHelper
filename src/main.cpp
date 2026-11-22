@@ -14,6 +14,7 @@
 #include "display_edge_glow.h"
 #include "display_card.h"       // cardAmsPeekToggle
 #include "hms_lookup.h"
+#include "portal_auth.h"
 #include "tasmota.h"
 #include "battery.h"
 #include "camera_client.h"
@@ -287,6 +288,29 @@ static bool hmsScreenExpired() {
 static void closeHmsScreen() {
   rotState.lastRotateMs = millis();
   setScreenState(SCREEN_PRINTING);
+}
+
+// --- Portal sign-in PIN (SCREEN_PORTAL_PIN) -----------------------------------
+// Opened when a browser asks for an on-screen PIN, closed when it expires, is
+// used, or the user taps. Sleep screens go back to sleep; anything else hands
+// back to the state machine like the error screen does.
+static ScreenState pinPriorScreen = SCREEN_IDLE;
+
+static void handlePortalPinScreen() {
+  const char* pin = portalAuthScreenPin();
+  ScreenState cur = getScreenState();
+  if (pin && cur != SCREEN_PORTAL_PIN) {
+    // OTA and the plug confirm own the screen; the PIN stays valid meanwhile.
+    if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_SPLASH) return;
+    pinPriorScreen = cur;
+    setScreenState(SCREEN_PORTAL_PIN);
+    setBacklight(getEffectiveBrightness());
+  } else if (!pin && cur == SCREEN_PORTAL_PIN) {
+    rotState.lastRotateMs = millis();
+    setScreenState(isSleepStickyScreen(pinPriorScreen) || pinPriorScreen == SCREEN_AP_MODE
+                   ? pinPriorScreen : SCREEN_PRINTING);
+    setBacklight(getEffectiveBrightness());
+  }
 }
 
 // --- Finish vs AMS drying (#183) --------------------------------------------
@@ -677,6 +701,15 @@ static void handleWakeButton() {
     return;
   }
 
+  // Portal PIN screen: any press hides it, nothing else.
+  if (getScreenState() == SCREEN_PORTAL_PIN) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (touchPress || boardPress) { buzzerPlayClick(); portalAuthDismissScreen(); }
+    wasHeldPrev = held;
+    holdConsumedThisPress = false;
+    return;
+  }
+
   // Night blackout on a live screen: the panel is dark, so swallow the press as
   // a wake before it reaches the multi-click buffer or the tap cycle - a
   // double-click here would open the power-confirm modal over a screen the user
@@ -961,6 +994,7 @@ static void updateDisplayedPrinterScreenState() {
   // machine (dismissed only by the modal's own input / timeout). Placed after OTA
   // so an auto-OTA still preempts it.
   if (current == SCREEN_POWER_CONFIRM) return;
+  if (current == SCREEN_PORTAL_PIN) return;   // closed by handlePortalPinScreen()
 
   // Printer error detail is sticky for its window: hold it against the auto
   // state machine until the user taps out, the error clears, or the window runs
@@ -1303,7 +1337,7 @@ static void handleErrorAlerts() {
   const ScreenState cur = getScreenState();
   // OTA and the power-confirm modal are not interruptible: one is writing
   // flash, the other is holding a frozen target the user is confirming.
-  if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM) return;
+  if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_PORTAL_PIN) return;
   // Leaving SCREEN_OFF / SCREEN_CLOCK restores the backlight unconditionally,
   // so the wake bit cannot gate the backlight - it gates whether we change
   // screens from a sleeping display at all.
@@ -1659,6 +1693,7 @@ void loop() {
 #endif
 
   thumbService();
+  handlePortalPinScreen();
   updateDisplay();
 
   // MQTT and rotation after display update - TLS reconnect can block for
@@ -1672,6 +1707,7 @@ void loop() {
     if (getScreenState() != SCREEN_CAMERA &&
         getScreenState() != SCREEN_POWER_CONFIRM &&
         getScreenState() != SCREEN_HMS &&
+        getScreenState() != SCREEN_PORTAL_PIN &&
         getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 

@@ -1325,6 +1325,24 @@ R"rawliteral(
     </div>
   </div>
 
+  <div class="card" id="secCard">
+    <div class="card-head"><div><h3>Security</h3><p>Ask for a PIN before anyone on your network can open this page. <code>/status</code> stays open for integrations.</p></div></div>
+    <div class="field"><label for="secMode">Portal access</label>
+      <select id="secMode" data-nodirty onchange="secModeChanged()">
+        <option value="0">Open, no PIN</option>
+        <option value="1">My own PIN</option>
+        <option value="2">PIN shown on the device</option>
+      </select></div>
+    <div class="field" id="secPinRow" style="display:none"><label for="secPin">PIN, 4-8 digits</label>
+      <input type="password" id="secPin" data-nodirty inputmode="numeric" maxlength="8" autocomplete="new-password"></div>
+    <div class="help-text" id="secHelp"></div>
+    <div class="action-bar" style="gap:var(--sp-2);flex-wrap:wrap">
+      <button type="button" class="btn btn-primary" onclick="saveSecurity()">Save security</button>
+      <button type="button" class="btn btn-ghost" id="secLogout" style="display:none" onclick="secLogout()">Sign out this browser</button>
+    </div>
+    <div id="secStatus" role="status" aria-live="polite" class="small" style="margin-top:var(--sp-2)"></div>
+  </div>
+
   <div class="card" style="border-color:rgba(220, 69, 56, 0.30)">
     <div class="card-head"><div><h3 style="color:var(--danger)">Danger zone</h3><p>Destructive operations and experimental settings. Unlock to reveal.</p></div></div>
     <label class="check-row">
