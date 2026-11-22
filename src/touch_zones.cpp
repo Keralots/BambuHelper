@@ -52,6 +52,13 @@ static uint8_t   tzCount = 0;
 
 void touchZonesClear() { tzCount = 0; }
 
+void touchZonesClearId(uint8_t id) {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < tzCount; i++)
+    if (tzList[i].id != id) tzList[n++] = tzList[i];
+  tzCount = n;
+}
+
 void touchZoneSet(uint8_t id, uint8_t arg, int16_t x, int16_t y, int16_t w, int16_t h) {
   if (id == TZ_NONE || w <= 0 || h <= 0) return;
   TouchZone* z = nullptr;
@@ -93,7 +100,8 @@ static bool         ttWanted = false;
 static uint32_t     ttActivityMs = 0;
 static TouchTestTap ttTaps[TT_MAX];
 static uint8_t      ttCount = 0, ttHead = 0;   // ring, ttHead = next write
-static int16_t      ttMinX, ttMaxX, ttMinY, ttMaxY;  // raw extents seen since open
+static int16_t      ttMinX = INT16_MAX, ttMaxX = INT16_MIN;  // raw extents seen since open
+static int16_t      ttMinY = INT16_MAX, ttMaxY = INT16_MIN;
 static bool         ttAnchored = false;
 static int16_t      ttAnchorX, ttAnchorY;
 static uint32_t     ttAnchorMs;
@@ -170,6 +178,13 @@ String touchTestJson() {
     s += "{\"x\":"; s += t[i].x; s += ",\"y\":"; s += t[i].y;
     s += ",\"rx\":"; s += t[i].rx; s += ",\"ry\":"; s += t[i].ry;
     s += ",\"zone\":"; s += t[i].zone; s += ",\"arg\":"; s += t[i].arg; s += '}';
+  }
+  s += "],\"zones\":[";   // what the screen behind registered (debug)
+  for (uint8_t i = 0; i < tzCount; i++) {
+    const TouchZone& z = tzList[i];
+    if (i) s += ',';
+    s += '['; s += z.id; s += ','; s += z.arg; s += ','; s += z.x; s += ',';
+    s += z.y; s += ','; s += z.w; s += ','; s += z.h; s += ']';
   }
   s += "]}";
   return s;

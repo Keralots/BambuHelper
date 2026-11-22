@@ -17,6 +17,7 @@
 #include "tasmota.h"         // plug watts / kWh
 #include "battery.h"
 #include "thumb_fetch.h"
+#include "touch_zones.h"
 
 // ---------------------------------------------------------------------------
 //  Frame snapshot. Everything the card shows, captured once per tick; the
@@ -26,7 +27,7 @@
 enum CardKind : uint8_t { CK_PRINTING = 0, CK_FINISHED = 1, CK_IDLE = 2, CK_AMS = 3 };
 
 struct CardTray  { uint16_t color; char type[12]; uint8_t present; uint8_t active; int8_t remain;
-                   char mark; int16_t grams; };   // grams -1 = show remain%   // idle swatch list: 'x' tray, '|' unit gap, '/' HT group
+                   char mark; int16_t grams; uint8_t unitP1; };   // grams -1 = show remain%   // idle swatch list: 'x' tray, '|' unit gap, '/' HT group
 struct CardCell  { char lbl[10]; char lblShort[7]; int16_t val; uint8_t unit; uint8_t accent; uint16_t vclr; };
 struct CardChip  { uint16_t color; char type[12]; uint8_t known; uint8_t active; int8_t remain; int16_t grams; };
 // AMS page: one tile per tray, boxes = an AMS unit (4 tiles), an AMS HT or the external spool (1 tile).
@@ -63,6 +64,7 @@ struct CardFrame {
   uint32_t thumbGen;
   // AMS column / strip; amsInBand = square: the slots replace the 2nd temperature row
   uint8_t  amsShow, amsInBand;
+  uint8_t  amsUnitP1;   // AMS unit listed + 1 (0 = none / EXT only / 5th+ unit) - tap target
   char     amsLabel[12];
   char     amsHum[8];
   uint8_t  trayCount;
@@ -432,6 +434,9 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s, uint8_t slot) {
   // No unit to list; an external spool alone still earns the column.
   if (!own && !ov && !a.vtPresent) return;
   f.amsShow = 1;
+#if HAS_TOUCH_ZONES
+  if (own) f.amsUnitP1 = (uint8_t)(u + 1);
+#endif
   if (own || ov) {
     const AmsUnit& au = a.units[u];
     if (au.id >= 128) snprintf(f.amsLabel, sizeof(f.amsLabel), "AMS HT");
@@ -662,6 +667,41 @@ static void drawSlot(Cv& cv, const CardTray& t, const CardFrame& f,
   cv.text(buf, x + tx, cy + 1, FONT_CARD_LBL, fg, lgfx::textdatum_t::middle_left);
 }
 
+// Ready screen: per-unit bounding boxes of what was drawn, registered at the end.
+#if HAS_TOUCH_ZONES
+struct UnitBoxes {
+  int16_t x0[AMS_TRAY_UNITS], y0[AMS_TRAY_UNITS], x1[AMS_TRAY_UNITS], y1[AMS_TRAY_UNITS];
+  UnitBoxes() { for (uint8_t i = 0; i < AMS_TRAY_UNITS; i++) { x0[i] = y0[i] = INT16_MAX; x1[i] = y1[i] = INT16_MIN; } }
+  void add(uint8_t unitP1, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!unitP1 || unitP1 > AMS_TRAY_UNITS) return;
+    const uint8_t u = unitP1 - 1;
+    x0[u] = std::min(x0[u], x); y0[u] = std::min(y0[u], y);
+    x1[u] = std::max<int16_t>(x1[u], x + w); y1[u] = std::max<int16_t>(y1[u], y + h);
+  }
+  // padX / padY widen the tap target past the drawn swatches.
+  void commit(int16_t padX, int16_t padY) const {
+    for (uint8_t u = 0; u < AMS_TRAY_UNITS; u++)
+      if (x0[u] < x1[u])
+        touchZoneSet(TZ_AMS_UNIT, u, x0[u] - padX, y0[u] - padY,
+                     x1[u] - x0[u] + 2 * padX, y1[u] - y0[u] + 2 * padY);
+  }
+};
+#else
+struct UnitBoxes {   // compiled out: no tap targets on this board
+  void add(uint8_t, int16_t, int16_t, int16_t, int16_t) {}
+  void commit(int16_t, int16_t) const {}
+};
+#endif
+
+// The listed AMS unit as a tap target (opens its detail screen).
+static void cardAmsZone(const CardFrame& f, int16_t x, int16_t y, int16_t w, int16_t h) {
+#if HAS_TOUCH_ZONES
+  if (f.amsUnitP1) touchZoneSet(TZ_AMS_UNIT, f.amsUnitP1 - 1, x, y, w, h);
+#else
+  (void)f; (void)x; (void)y; (void)w; (void)h;
+#endif
+}
+
 static void drawAmsColumn(Cv& cv, const CardFrame& f, const CardGeo& g) {
   const int16_t x = g.pad, w = g.amsColW;
   cv.text(f.amsLabel, x, g.amsHdrY, FONT_CARD_LBL, f.dim, lgfx::textdatum_t::top_left);
@@ -671,6 +711,7 @@ static void drawAmsColumn(Cv& cv, const CardFrame& f, const CardGeo& g) {
     const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
     drawSlot(cv, t, f, x, g.amsRowY + r * g.amsRowH, w, g.amsRowH - 3);
   }
+  cardAmsZone(f, 0, g.amsHdrY, x + w + 6, g.amsRowY + rows * g.amsRowH - g.amsHdrY);
   int16_t rx = g.pad + g.amsColW + 6;
   cv.vline(rx, g.hdrRule + 8, g.botRuleAms - g.hdrRule - 16, f.track);
 }
@@ -690,6 +731,8 @@ static void drawAmsStrip(Cv& cv, const CardFrame& f, const CardGeo& g) {
     const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
     drawSlot(cv, t, f, x0 + (n % cols) * slotW, g.stripY + dy + (n / cols) * rowH, slotW - 8, g.stripH);
   }
+  cardAmsZone(f, 0, g.stripLblY + dy, g.W,
+              g.stripY + dy + ((n + cols - 1) / cols - 1) * rowH + g.stripH - (g.stripLblY + dy));
 }
 
 
@@ -812,6 +855,7 @@ static void drawBottom(Cv& cv, const CardFrame& f, const CardGeo& g, int16_t rul
       const CardTray& t = (r < f.trayCount) ? f.trays[r] : f.ext;
       drawSlot(cv, t, f, x0 + n * slotW, y, slotW - 6, h);
     }
+    cardAmsZone(f, 0, top, g.W, y + h - top);
   }
   // One row: each cell gets what its label/value needs plus an even share of
   // the slack, so a "250" next to "33" no longer runs into it. Grid: equal.
@@ -1262,6 +1306,12 @@ static bool drawIdleList(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, int
     const int16_t cx = x0 + (k % cols) * (cw + colGap), top = y + (k / cols) * rowH;
     const int16_t cy = top + cv.S(8);
     const bool known = t.present && t.remain >= 0;
+#if HAS_TOUCH_ZONES
+    // Per row: one unit's trays can sit in different columns here.
+    if (t.unitP1)
+      touchZoneSet(TZ_AMS_TRAY, (uint8_t)(((t.unitP1 - 1) << 5) | (k & 31)),
+                   cx - colGap / 2, top, cw + colGap, rowH);
+#endif
     CardChip c = {};
     c.color = t.color; c.known = t.present; c.active = t.active; c.remain = t.remain; c.grams = t.grams;
     drawChipDot(cv, cx + cv.S(7), cy, c, f);
@@ -1295,6 +1345,7 @@ static bool drawIdleColumns(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, 
   if (w < cv.S(22) || h < cv.S(14)) return false;
   char buf[12];
   int16_t x = x0;
+  UnitBoxes ub;
   for (uint8_t k = 0; k < n; k++) {
     const CardTray& t = f.sw[idx[k]];
     if (k) {
@@ -1318,8 +1369,10 @@ static bool drawIdleColumns(Cv& cv, const CardFrame& f, int16_t x0, int16_t xr, 
     cv.useFont(FONT_CARD_LBL);
     fitText(cv, buf, sizeof(buf), t.present && t.type[0] ? t.type : "--", w + gap - 1);
     cv.text(buf, x + w / 2, y + h + cv.S(3), FONT_CARD_LBL, t.active ? f.txt : f.dim, lgfx::textdatum_t::top_center);
+    ub.add(t.unitP1, x, y, w, h + lblH);
     x += w;
   }
+  ub.commit(gap / 2, 4);
   return true;
 }
 
@@ -1376,6 +1429,7 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
     }
     int16_t x = x0, y = g.idleAmsY;
     const int16_t gap = cv.S(4), htW = cv.S(22);
+    UnitBoxes ub;
     for (uint8_t i = 0; i < f.swCount; i++) {
       const CardTray& t = f.sw[i];
       // Width of the block starting here (one unit, or the "HT" label + HT swatches).
@@ -1401,8 +1455,10 @@ static void sceneIdle(Cv& cv, const CardFrame& f, const CardGeo& g) {
       } else {
         cv.rrectOutline(x, y, s, s, 4, f.dim);
       }
+      ub.add(t.unitP1, x, y, s, s);
       x += s + gap;
     }
+    ub.commit(gap, 12);   // swatches are small: a generous band around each unit
   }
   drawBottom(cv, f, g, g.idleBotRule);
 }
@@ -1689,6 +1745,10 @@ static bool present(bool force) {
     Cv cv{full, 0, 0, FONT_NONE};
     cv.k = g.k;
     full->fillSprite(g_mem->cur.bg);
+#if HAS_TOUCH_ZONES
+    touchZonesClearId(TZ_AMS_UNIT);   // the scene re-registers what it lists
+    touchZonesClearId(TZ_AMS_TRAY);
+#endif
     drawScene(cv, g_mem->cur, g);
     full->pushSprite(&tft, 0, 0);
 #if CARD_BAND_RENDER
@@ -2052,6 +2112,9 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
     for (uint8_t t = 0; t < n && f.swCount < cap; t++) {
       uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
       fillTray(f.sw[f.swCount], a.trays[idx], a.activeTray == idx);
+#if HAS_TOUCH_ZONES
+      f.sw[f.swCount].unitP1 = (uint8_t)(u + 1);
+#endif
       f.sw[f.swCount++].mark = 'x';
     }
   }
@@ -2064,6 +2127,9 @@ bool drawCardIdle(PrinterSlot& p, bool force) {
     if (u < AMS_TRAY_UNITS) {
       uint8_t idx = u * AMS_TRAYS_PER_UNIT;
       fillTray(c, a.trays[idx], a.activeTray == idx);
+#if HAS_TOUCH_ZONES
+      c.unitP1 = (uint8_t)(u + 1);
+#endif
     } else if (a.ovUnitId == a.units[u].id && a.ovTray.present) {
       fillTray(c, a.ovTray, a.activeTray == AMS_TRAY_OVERFLOW);   // 5th+ unit: only its feeding tray is kept
     } else {

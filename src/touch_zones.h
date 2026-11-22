@@ -16,9 +16,13 @@ void touchRawToScreen(int16_t rx, int16_t ry, int16_t* sx, int16_t* sy);
 enum TouchZoneId : uint8_t {
   TZ_NONE = 0,
   TZ_TEST_TARGET,   // touch test screen + marks, arg = 0..4
+  TZ_AMS_UNIT,      // an AMS unit on the print / idle screen, arg = unit index
+  TZ_AMS_GAUGE,     // an AMS gauge tile, arg = gauge type (amsUnitOfGauge -> unit)
+  TZ_AMS_TRAY,      // one tray row of a unit, arg = unit << 5 | row
 };
 
 void touchZonesClear();
+void touchZonesClearId(uint8_t id);   // a renderer about to re-register its set
 void touchZoneSet(uint8_t id, uint8_t arg, int16_t x, int16_t y, int16_t w, int16_t h);
 bool touchZoneAt(int16_t x, int16_t y, uint8_t* id, uint8_t* arg);
 // Zone under the latest touchscreen press (false: no coordinates / no zone).

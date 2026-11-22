@@ -45,6 +45,22 @@ void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex) {
   snprintf(out, len, "%s %c", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), 'A' + unitIndex);
   utf8TrimPartial(out);
 }
+
+#if HAS_TOUCH_ZONES
+// AMS unit a gauge tile shows (humidity / temp / filament / bars), or -1.
+int8_t amsUnitOfGauge(uint8_t gt) {
+  if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4)           return gt - GAUGE_AMS_HUM_1;
+  if (gt >= GAUGE_AMS_TEMP_1 && gt <= GAUGE_AMS_TEMP_4)         return gt - GAUGE_AMS_TEMP_1;
+  if (gt >= GAUGE_AMS_FILAMENT_1 && gt <= GAUGE_AMS_FILAMENT_4) return gt - GAUGE_AMS_FILAMENT_1;
+  if (gt >= GAUGE_AMS_BARS_1 && gt <= GAUGE_AMS_BARS_4)         return gt - GAUGE_AMS_BARS_1;
+  return -1;
+}
+
+// AMS gauge tile as a tap target. arg = gauge type (unique per tile).
+static void touchZoneAmsGauge(uint8_t gt, int16_t cx, int16_t cy, int16_t r) {
+  if (amsUnitOfGauge(gt) >= 0) touchZoneSet(TZ_AMS_GAUGE, gt, cx - r, cy - r, 2 * r, 2 * r);
+}
+#endif
 void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
                       uint8_t dryDisplayIdx, uint8_t dryCount) {
   const char* base = gaugeLabelOr(gaugeLabels.amsBase, "AMS");
@@ -2463,6 +2479,9 @@ static void drawAmsStrip(const AmsState& ams,
   // extra rows so toggling between enhanced/default layouts doesn't leave
   // residue pixels below the new layout.
   tft.fillRect(0, zoneY, LY_W, zoneH + 7, CLR_BG);
+#if HAS_TOUCH_ZONES
+  touchZonesClearId(TZ_AMS_UNIT);
+#endif
   if (units == 0 || units > AMS_TRAY_UNITS) return;
 
   // A lone AMS unit doesn't need an "AMS A" caption - drop it and grow the
@@ -2517,6 +2536,11 @@ static void drawAmsStrip(const AmsState& ams,
 
   for (uint8_t u = 0; u < units; u++) {
     int16_t groupX = startX + u * (groupW + LY_AMS_GROUP_GAP);
+#if HAS_TOUCH_ZONES
+    // Whole strip height, widened by half the group gap on each side.
+    touchZoneSet(TZ_AMS_UNIT, u, groupX - LY_AMS_GROUP_GAP / 2, zoneY,
+                 groupW + LY_AMS_GROUP_GAP, zoneH + 7);
+#endif
 
     uint8_t tc = ams.units[u].trayCount;
     if (tc == 0) tc = AMS_TRAYS_PER_UNIT;
@@ -2720,6 +2744,9 @@ static void drawAmsZone(const BambuState& s, bool force) {
                    amsBot - LY_LAND_AMS_TOP, CLR_BG);
     }
 
+#if HAS_TOUCH_ZONES
+    if (units == 0 || units > AMS_TRAY_UNITS) touchZonesClearId(TZ_AMS_UNIT);
+#endif
     if (units == 0 || units > AMS_TRAY_UNITS) return;
 
     const int16_t totalH = amsBot - LY_LAND_AMS_TOP;
@@ -2749,6 +2776,14 @@ static void drawAmsZone(const BambuState& s, bool force) {
     int16_t actualGroupH = barH + labelH;
     int16_t totalUsed = actualGroupH * units + (units - 1) * groupGap;
     int16_t startY = LY_LAND_AMS_TOP + (totalH - totalUsed) / 2;
+
+#if HAS_TOUCH_ZONES
+    // Tap targets: the column split evenly per unit - bigger than the bars.
+    touchZonesClearId(TZ_AMS_UNIT);
+    for (uint8_t u = 0; u < units; u++)
+      touchZoneSet(TZ_AMS_UNIT, u, LY_LAND_AMS_X - 4, LY_LAND_AMS_TOP + u * totalH / units,
+                   LY_LAND_AMS_W + 8, totalH / units);
+#endif
 
     for (uint8_t u = 0; u < units; u++) {
       uint8_t tc = s.ams.units[u].trayCount;
@@ -3325,6 +3360,9 @@ void drawGaugeTile(uint8_t gt, const BambuState& s, uint8_t slotIndex,
       if (fr) tft.fillCircle(cx, cy, r + 2, CLR_BG);
       break;
     default: {
+#if HAS_TOUCH_ZONES
+      if (fr) touchZoneAmsGauge(gt, cx, cy, r);
+#endif
       char amsLbl[64];
       if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
         uint8_t ui = gt - GAUGE_AMS_HUM_1;
@@ -4685,6 +4723,9 @@ static void drawPrinting() {
           break;
         default: {
           // AMS humidity / temperature / filament gauges — index derived from enum value
+#if HAS_TOUCH_ZONES
+          if (fr) touchZoneAmsGauge(gt, cx, cy, gR);
+#endif
           char amsLbl[64];
           if (gt >= GAUGE_AMS_HUM_1 && gt <= GAUGE_AMS_HUM_4) {
             uint8_t ui = gt - GAUGE_AMS_HUM_1;
@@ -5845,6 +5886,166 @@ static void drawTouchTest() {
     markFrameDirty();
   }
 }
+// One AMS unit in full: header (name, temperature, humidity, drying) and a row
+// per tray (colour, full type, % left and grams). Each part repaints only when
+// its own data changes.
+static uint32_t amsMix(uint32_t h, uint32_t v) { return (h ^ v) * 16777619u; }
+
+static void drawAmsDetailRow(const AmsTray& t, bool active, const char* slot,
+                             int16_t y, int16_t h, int16_t W) {
+  const uint16_t bg = dispSettings.bgColor;
+  tft.fillRect(0, y, W, h, bg);
+  const int16_t pad = 8;
+  const int16_t sw = (h - 8 < 40) ? h - 8 : 40;        // swatch side
+  const int16_t sy = y + (h - sw) / 2;
+  if (t.present) {
+    tft.fillRoundRect(pad, sy, sw, sw, 4, t.colorRgb565);
+    tft.drawRoundRect(pad, sy, sw, sw, 4, CLR_TEXT_DIM);  // dark spools on a dark bg
+  } else {
+    tft.drawRoundRect(pad, sy, sw, sw, 4, CLR_TEXT_DIM);
+  }
+  if (active) {
+    tft.drawRoundRect(pad - 3, sy - 3, sw + 6, sw + 6, 6, CLR_TEXT);
+    tft.drawRoundRect(pad - 2, sy - 2, sw + 4, sw + 4, 5, CLR_TEXT);
+  }
+
+  // Amount on the right: % big, grams small underneath when the spool has a weight.
+  char pct[8], grams[12] = "";
+  if (!t.present)       strlcpy(pct, "", sizeof(pct));
+  else if (t.remain < 0) strlcpy(pct, "--", sizeof(pct));
+  else                  snprintf(pct, sizeof(pct), "%d%%", t.remain > 100 ? 100 : t.remain);
+  if (t.present && t.remain >= 0 && t.weightG > 0)
+    snprintf(grams, sizeof(grams), "%dg",
+             (int)(((int32_t)(t.remain > 100 ? 100 : t.remain) * t.weightG + 50) / 100));
+  const int16_t cy = y + h / 2;
+  setFont(tft, LY_F_BODY);
+  const int16_t bodyH = (int16_t)tft.fontHeight();
+  int16_t amountW = tft.textWidth("100%");
+  tft.setTextColor(CLR_TEXT, bg);
+  tft.setTextDatum(grams[0] ? BR_DATUM : MR_DATUM);
+  tft.drawString(pct, W - pad, grams[0] ? cy + 1 : cy);
+  setFont(tft, LY_F_SMALL);
+  if (tft.textWidth("1000g") > amountW) amountW = tft.textWidth("1000g");
+  if (grams[0]) {
+    tft.setTextDatum(TR_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString(grams, W - pad, cy + 2);
+  }
+
+  // Type, full name, between swatch and amount.
+  const int16_t tx = pad + sw + 10;
+  const int16_t tw = W - pad - amountW - 8 - tx;
+  char buf[24];
+  setFont(tft, LY_F_BODY);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(t.present ? CLR_TEXT : CLR_TEXT_DIM, bg);
+  const char* name = !t.present ? "Empty" : (t.type[0] ? t.type : "Unknown");
+  tft.drawString(ellipsizeToWidth(tft, name, tw, buf, sizeof(buf)), tx, cy - bodyH / 4);
+  // Slot code under the name (A1..D4), the way the printer names it.
+  char sub[24];
+  snprintf(sub, sizeof(sub), active ? "%s - In use" : "%s", slot);
+  setFont(tft, LY_F_SMALL);
+  tft.setTextColor(CLR_TEXT_DIM, bg);
+  tft.setTextDatum(TL_DATUM);
+  tft.drawString(sub, tx, cy + bodyH / 4 + 1);
+}
+
+static void drawAmsDetail() {
+  static uint32_t prevHdr = 0;
+  static uint32_t prevRow[AMS_TRAYS_PER_UNIT] = {0};
+  static uint8_t  prevTc = 0;
+  const AmsState& a = displayedPrinter().state.ams;
+  const uint8_t ui = amsDetailUnitIndex();
+  if (ui >= a.trayUnitCount || ui >= AMS_TRAY_UNITS) return;   // main.cpp closes it next loop
+  const AmsUnit& u = a.units[ui];
+  uint8_t tc = u.trayCount ? u.trayCount : AMS_TRAYS_PER_UNIT;
+  if (tc > AMS_TRAYS_PER_UNIT) tc = AMS_TRAYS_PER_UNIT;
+
+  const int16_t W = uiW(), H = uiH();
+  const uint16_t bg = dispSettings.bgColor;
+  setFont(tft, LY_F_BODY);
+  const int16_t bodyH = (int16_t)tft.fontHeight();
+  setFont(tft, LY_F_SMALL);
+  const int16_t smallH = (int16_t)tft.fontHeight();
+  const bool drying = u.dryRemainMin > 0;
+  const int16_t hdrH = bodyH + 10 + (drying ? smallH + 4 : 0);
+  const int16_t footH = smallH + 6;
+  const bool full = forceRedraw || tc != prevTc;
+  if (full) {
+    tft.fillScreen(bg);
+    prevHdr = 0;
+    memset(prevRow, 0, sizeof(prevRow));
+    prevTc = tc;
+    setFont(tft, LY_F_SMALL);
+    tft.setTextDatum(BC_DATUM);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString("Tap to close", W / 2, H - 2);
+    markFrameDirty();
+  }
+
+  // Header
+  uint32_t hh = amsMix(amsMix(amsMix(2166136261u, (uint32_t)(int)(u.temp * 10)),
+                              (u.humidityRaw << 8) | u.humidity), u.dryRemainMin);
+  hh = amsMix(hh, (uint32_t)drying << 16 | ui);
+  if (full || hh != prevHdr) {
+    prevHdr = hh;
+    tft.fillRect(0, 0, W, hdrH, bg);
+    char label[64];
+    formatAmsLetterLabel(label, sizeof(label), ui);
+    const int16_t y = 5 + bodyH / 2;
+    setFont(tft, LY_F_BODY);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(CLR_TEXT, bg);
+    tft.drawString(label, 8, y);
+
+    char hum[12], tmp[10];
+    if (u.humidityRaw > 0) snprintf(hum, sizeof(hum), "RH %u%%", u.humidityRaw);
+    else                   snprintf(hum, sizeof(hum), "RH -");
+    snprintf(tmp, sizeof(tmp), "%d", (int)(u.temp + (u.temp >= 0 ? 0.5f : -0.5f)));
+    tft.setTextDatum(MR_DATUM);
+    tft.setTextColor(amsHumidityColor(u.humidityRaw, u.humidity, true), bg);
+    int16_t x = W - 8;
+    tft.drawString(hum, x, y);
+    x -= tft.textWidth(hum) + 14;
+    // Temperature with a drawn degree mark, as drawCelsiusUnit() does.
+    tft.setTextColor(CLR_TEXT, bg);
+    tft.drawString("C", x, y);
+    x -= tft.textWidth("C") + 2;
+    tft.drawCircle(x - 2, y - bodyH / 4, 2, CLR_TEXT);
+    x -= 6;
+    tft.drawString(tmp, x, y);
+
+    if (drying) {
+      char dry[32];
+      snprintf(dry, sizeof(dry), "Drying - %uh %02um left", u.dryRemainMin / 60, u.dryRemainMin % 60);
+      setFont(tft, LY_F_SMALL);
+      tft.setTextDatum(ML_DATUM);
+      tft.setTextColor(CLR_ORANGE, bg);
+      tft.drawString(dry, 8, bodyH + 10 + smallH / 2);
+    }
+    tft.drawFastHLine(8, hdrH - 1, W - 16, CLR_TEXT_DIM);
+    markFrameDirty();
+  }
+
+  // Tray rows share what is left between header and footer.
+  const int16_t areaY = hdrH + 2, areaH = H - footH - areaY;
+  const int16_t rowH = areaH / tc;
+  for (uint8_t t = 0; t < tc; t++) {
+    const uint8_t idx = ui * AMS_TRAYS_PER_UNIT + t;
+    const AmsTray& tr = a.trays[idx];
+    const bool active = (idx == a.activeTray);
+    uint32_t rh = amsMix(amsMix(amsMix(amsMix(2166136261u, tr.present), tr.colorRgb565),
+                                (uint8_t)tr.remain), tr.weightG);
+    rh = amsMix(amsMix(rh, active), hdrH);
+    for (const char* c = tr.type; *c; c++) rh = amsMix(rh, (uint8_t)*c);
+    if (!full && rh == prevRow[t]) continue;
+    prevRow[t] = rh;
+    char slot[8];
+    snprintf(slot, sizeof(slot), "%c%u", 'A' + ui, (unsigned)(t + 1));
+    drawAmsDetailRow(tr, active, slot, areaY + t * rowH, rowH, W);
+    markFrameDirty();
+  }
+}
 #endif
 
 static void drawHmsScreen() {
@@ -6281,6 +6482,12 @@ void updateDisplay() {
     case SCREEN_TOUCH_TEST:
 #if HAS_TOUCH_ZONES
       drawTouchTest();
+#endif
+      break;
+
+    case SCREEN_AMS_DETAIL:
+#if HAS_TOUCH_ZONES
+      drawAmsDetail();
 #endif
       break;
 

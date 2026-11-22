@@ -291,6 +291,39 @@ static void closeHmsScreen() {
   setScreenState(SCREEN_PRINTING);
 }
 
+// --- AMS unit detail (SCREEN_AMS_DETAIL) -------------------------------------
+// Opened by a tap on an AMS unit's zone; closes on a tap, after 30 s, or when
+// the unit goes away. Same close shape as the error screen.
+#if HAS_TOUCH_ZONES
+static uint8_t amsDetailUnit = 0;
+uint8_t amsDetailUnitIndex() { return amsDetailUnit; }
+
+static const uint32_t AMS_DETAIL_MS = 30000;
+static uint32_t amsDetailUntilMs = 0;
+
+static bool amsDetailValid() {
+  const AmsState& a = displayedPrinter().state.ams;
+  return a.present && amsDetailUnit < a.trayUnitCount && a.units[amsDetailUnit].present;
+}
+
+static bool amsDetailExpired() { return (long)(millis() - amsDetailUntilMs) >= 0; }
+
+static bool openAmsDetail(uint8_t unit) {
+  ScreenState cur = getScreenState();
+  if (cur != SCREEN_IDLE && cur != SCREEN_PRINTING && cur != SCREEN_FINISHED) return false;
+  amsDetailUnit = unit;
+  if (!amsDetailValid()) return false;
+  amsDetailUntilMs = millis() + AMS_DETAIL_MS;
+  setScreenState(SCREEN_AMS_DETAIL);
+  return true;
+}
+
+static void closeAmsDetail() {
+  rotState.lastRotateMs = millis();
+  setScreenState(SCREEN_PRINTING);
+}
+#endif
+
 // --- Portal sign-in PIN (SCREEN_PORTAL_PIN) -----------------------------------
 // Opened when a browser asks for an on-screen PIN, closed when it expires, is
 // used, or the user taps. Sleep screens go back to sleep; anything else hands
@@ -415,6 +448,10 @@ static void doTapActions() {
     }
     return;
   }
+
+#if HAS_TOUCH_ZONES
+  if (cur == SCREEN_AMS_DETAIL) { closeAmsDetail(); return; }
+#endif
 
   // Printer error detail. First stop in the tap cycle while an error stands -
   // it is the thing the user reached for the button about - and tapping out of
@@ -589,7 +626,7 @@ static void runSingleTap() {
   ScreenState cur = getScreenState();
   // Waking and closing an open overlay work the same whatever the mapping.
   bool passThrough = isNightBlackout() || isSleepStickyScreen(cur) ||
-                     cur == SCREEN_HMS || cur == SCREEN_DRY_PEEK;
+                     cur == SCREEN_HMS || cur == SCREEN_DRY_PEEK || cur == SCREEN_AMS_DETAIL;
 #if BOARD_HAS_CAMERA
   if (cur == SCREEN_CAMERA) passThrough = true;
 #endif
@@ -613,9 +650,14 @@ static void runSingleTap() {
 static bool runZoneTap() {
   uint8_t id, arg;
   if (pcPendingClicks || !touchZoneOfPress(&id, &arg)) return false;
-  (void)arg;
   switch (id) {
-    default: return false;
+    case TZ_AMS_UNIT: return openAmsDetail(arg);
+    case TZ_AMS_TRAY: return openAmsDetail(arg >> 5);
+    case TZ_AMS_GAUGE: {
+      int8_t u = amsUnitOfGauge(arg);
+      return u >= 0 && openAmsDetail((uint8_t)u);
+    }
+    default:          return false;
   }
 }
 #endif
@@ -1088,6 +1130,21 @@ static void updateDisplayedPrinterScreenState() {
     return;
   }
 
+#if HAS_TOUCH_ZONES
+  // AMS unit detail: sticky for its window, like the error screen.
+  if (current == SCREEN_AMS_DETAIL) {
+    if (!amsDetailExpired() && amsDetailValid()) {
+      BambuState& as = displayedPrinter().state;
+      if (as.printing)
+        ledSetActivity(as.gcodeStateId == GCODE_PAUSE ? LED_ACT_PAUSED
+                                                      : LED_ACT_PRINTING);
+      return;
+    }
+    closeAmsDetail();
+    return;
+  }
+#endif
+
 #if BOARD_HAS_CAMERA
   // Camera fullscreen (#120) is sticky: entered/exited only by tap. Hold it
   // until the user taps out or the printer can no longer stream, then drop back
@@ -1236,6 +1293,12 @@ static void handleDisplaySleepTimeouts() {
     closeHmsScreen();
     cur = getScreenState();
   }
+#if HAS_TOUCH_ZONES
+  if (cur == SCREEN_AMS_DETAIL && (amsDetailExpired() || !amsDetailValid())) {
+    closeAmsDetail();
+    cur = getScreenState();
+  }
+#endif
 
   if ((cur == SCREEN_FINISHED || (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen)) &&
       !dpSettings.keepDisplayOn && finishActive) {
@@ -1783,6 +1846,7 @@ void loop() {
         getScreenState() != SCREEN_HMS &&
         getScreenState() != SCREEN_PORTAL_PIN &&
         getScreenState() != SCREEN_TOUCH_TEST &&
+        getScreenState() != SCREEN_AMS_DETAIL &&
         getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 

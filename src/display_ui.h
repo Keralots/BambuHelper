@@ -26,8 +26,15 @@ enum ScreenState {
   SCREEN_DRY_PEEK,      // AMS drying view tapped up during a print (#150); auto-closes
   SCREEN_HMS,           // printer error detail; tap to open while one is active
   SCREEN_PORTAL_PIN,    // portal sign-in PIN, shown on request from the browser
-  SCREEN_TOUCH_TEST     // touch orientation check, opened from the portal (HAS_TOUCH_ZONES)
+  SCREEN_TOUCH_TEST,    // touch orientation check, opened from the portal (HAS_TOUCH_ZONES)
+  SCREEN_AMS_DETAIL     // one AMS unit in full, tapped up from its zone (HAS_TOUCH_ZONES)
 };
+
+// AMS unit shown on SCREEN_AMS_DETAIL (index into the displayed printer's
+// ams.units[]). Owned by main.cpp.
+uint8_t amsDetailUnitIndex();
+// AMS unit a gauge tile type shows, or -1 for a non-AMS gauge.
+int8_t amsUnitOfGauge(uint8_t gaugeType);
 
 // How long a tapped-up error screen stays before it drops back on its own.
 // Long enough to read a wrapped sentence, short enough that walking away does

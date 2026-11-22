@@ -437,6 +437,18 @@ static bool resolvePlaceholder(const char* name, String& out) {
 #endif
     return true;
   }
+  if (strcmp(name, "TOUCH_TEST_ROW") == 0) {
+#if HAS_TOUCH_ZONES
+    // Shown by app.js only while Button type = Touchscreen.
+    out  = "<div class=\"field\" id=\"touchTestRow\" style=\"display:none\">";
+    out += "<button type=\"button\" class=\"btn\" onclick=\"touchTestNow(this)\">Touch test</button>";
+    out += "<div class=\"hint\">Puts targets on the screen: tap them to check that touches land "
+           "where your finger is. Hold a finger still for 2 s to close.</div></div>";
+#else
+    out = "";
+#endif
+    return true;
+  }
   if (strcmp(name, "CARD_SKIN_ROW") == 0) {
 #if HAS_CARD_SKIN
     // Print-screen style + its two options. Same /save/toggle path
