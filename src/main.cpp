@@ -15,6 +15,7 @@
 #include "display_card.h"       // cardAmsPeekToggle
 #include "hms_lookup.h"
 #include "portal_auth.h"
+#include "touch_zones.h"
 #include "tasmota.h"
 #include "battery.h"
 #include "camera_client.h"
@@ -313,6 +314,32 @@ static void handlePortalPinScreen() {
   }
 }
 
+// --- Touch test screen (SCREEN_TOUCH_TEST) -----------------------------------
+// Same open/close shape as the PIN screen; the portal asks for it, a 2 s hold,
+// the portal or 60 s without a touch closes it.
+#if HAS_TOUCH_ZONES
+static ScreenState ttPriorScreen = SCREEN_IDLE;
+
+static void handleTouchTestScreen() {
+  const bool want = touchTestWanted();
+  ScreenState cur = getScreenState();
+  if (want && cur != SCREEN_TOUCH_TEST) {
+    if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_SPLASH ||
+        cur == SCREEN_PORTAL_PIN) return;
+    ttPriorScreen = cur;
+    setScreenState(SCREEN_TOUCH_TEST);
+    setBacklight(getEffectiveBrightness());
+  } else if (!want && cur == SCREEN_TOUCH_TEST) {
+    rotState.lastRotateMs = millis();
+    setScreenState(isSleepStickyScreen(ttPriorScreen) || ttPriorScreen == SCREEN_AP_MODE
+                   ? ttPriorScreen : SCREEN_PRINTING);
+    setBacklight(getEffectiveBrightness());
+  }
+}
+#else
+static inline void handleTouchTestScreen() {}
+#endif
+
 // --- Finish vs AMS drying (#183) --------------------------------------------
 // Automatic choice is unchanged: the finish screen keeps the display for its
 // configured window, then drying takes over. A tap overrides it either way.
@@ -580,10 +607,28 @@ static void runSingleTap() {
   }
 }
 
+#if HAS_TOUCH_ZONES
+// A tap on a registered zone runs that zone's action at once - no multi-click
+// wait. Ids without an action fall through to the normal gestures.
+static bool runZoneTap() {
+  uint8_t id, arg;
+  if (pcPendingClicks || !touchZoneOfPress(&id, &arg)) return false;
+  (void)arg;
+  switch (id) {
+    default: return false;
+  }
+}
+#endif
+
 // Entry for every tap. Buffers clicks only when a double-tap action is armed for
 // the shown printer; otherwise the tap is dispatched immediately with no pending
 // state and no rotation-hold.
-static void registerTap() {
+static void registerTap(bool fromTouch) {
+#if HAS_TOUCH_ZONES
+  if (fromTouch && runZoneTap()) return;
+#else
+  (void)fromTouch;
+#endif
   uint8_t slot = rotState.displayIndex;
   if (!doubleTapArmedForSlot(slot)) {
     runSingleTap();
@@ -701,6 +746,30 @@ static void handleWakeButton() {
     return;
   }
 
+#if HAS_TOUCH_ZONES
+  // Touch test: presses only record taps; a 2 s still hold closes it (dragging
+  // does not). The closing hold is swallowed until release - no dim, no tap.
+  static bool ttSwallow = false;
+  if (ttSwallow) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (!held) ttSwallow = false;
+    wasHeldPrev = false;
+    holdConsumedThisPress = false;
+    return;
+  }
+  if (getScreenState() == SCREEN_TOUCH_TEST) {
+    ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
+    if (touchPress) touchTestNoteTap();
+    if (touchTestActivity(isButtonHeld())) {
+      touchTestRequest(false);
+      ttSwallow = true;
+    }
+    wasHeldPrev = held;
+    holdConsumedThisPress = false;
+    return;
+  }
+#endif
+
   // Portal PIN screen: any press hides it, nothing else.
   if (getScreenState() == SCREEN_PORTAL_PIN) {
     ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
@@ -782,17 +851,19 @@ static void handleWakeButton() {
     if (touchPress || boardPress) {
       buzzerPlayClick();
       ledOnUserInteraction();
-      registerTap();
+      registerTap(touchPress);
     }
     return;
   }
 
   // A hold gesture is in use: tap/hold disambiguation, the tap fires on release.
+  static bool pressWasTouch = false;
   if (touchPress || boardPress) {
     // Press edge - immediate feedback (preserves today's snappy feel).
     buzzerPlayClick();
     ledOnUserInteraction();
     holdConsumedThisPress = false;
+    pressWasTouch = touchPress;
   }
 
   if (holdConsumed) holdConsumedThisPress = true;
@@ -802,7 +873,7 @@ static void handleWakeButton() {
 
   if (releaseEdge && !holdConsumedThisPress) {
     // Was a tap - fire deferred actions (sub-100 ms perceived delay).
-    registerTap();
+    registerTap(pressWasTouch);
   }
 }
 
@@ -995,6 +1066,7 @@ static void updateDisplayedPrinterScreenState() {
   // so an auto-OTA still preempts it.
   if (current == SCREEN_POWER_CONFIRM) return;
   if (current == SCREEN_PORTAL_PIN) return;   // closed by handlePortalPinScreen()
+  if (current == SCREEN_TOUCH_TEST) return;   // closed by handleTouchTestScreen()
 
   // Printer error detail is sticky for its window: hold it against the auto
   // state machine until the user taps out, the error clears, or the window runs
@@ -1337,7 +1409,8 @@ static void handleErrorAlerts() {
   const ScreenState cur = getScreenState();
   // OTA and the power-confirm modal are not interruptible: one is writing
   // flash, the other is holding a frozen target the user is confirming.
-  if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_PORTAL_PIN) return;
+  if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_PORTAL_PIN ||
+      cur == SCREEN_TOUCH_TEST) return;
   // Leaving SCREEN_OFF / SCREEN_CLOCK restores the backlight unconditionally,
   // so the wake bit cannot gate the backlight - it gates whether we change
   // screens from a sleeping display at all.
@@ -1694,6 +1767,7 @@ void loop() {
 
   thumbService();
   handlePortalPinScreen();
+  handleTouchTestScreen();
   updateDisplay();
 
   // MQTT and rotation after display update - TLS reconnect can block for
@@ -1708,6 +1782,7 @@ void loop() {
         getScreenState() != SCREEN_POWER_CONFIRM &&
         getScreenState() != SCREEN_HMS &&
         getScreenState() != SCREEN_PORTAL_PIN &&
+        getScreenState() != SCREEN_TOUCH_TEST &&
         getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 

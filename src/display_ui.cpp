@@ -20,6 +20,8 @@
 #include "thumb_fetch.h"
 #include "hms_lookup.h"
 #include "wifi_manager.h"
+#include "touch_zones.h"
+#include "button.h"
 #include <WiFi.h>
 #include <time.h>
 #if PANEL_HAS_IO_EXPANDER
@@ -5446,7 +5448,7 @@ void nightWake() {
 
 uint8_t getEffectiveBrightness() {
   // Someone asked for the sign-in PIN: readable even at night or from sleep.
-  if (currentScreen == SCREEN_PORTAL_PIN) return brightness;
+  if (currentScreen == SCREEN_PORTAL_PIN || currentScreen == SCREEN_TOUCH_TEST) return brightness;
   // A woken blackout uses the screensaver level, not full brightness - the user
   // set night to 0, so the peek stays as dim as the screensaver they tuned.
   if (isNightModeActive() && dpSettings.nightBrightness == 0 && nightWakeHeld()) {
@@ -5781,6 +5783,70 @@ static void drawPortalPin() {
   tft.drawString("Valid 2 min - tap to hide", cx, cy + pinH / 2 + smallH * 2 + 2);
 }
 
+#if HAS_TOUCH_ZONES
+// Touch orientation check: + targets in the corners and centre, a dot wherever
+// the finger is, and the last tap's screen / raw coordinates at the bottom.
+static void drawTouchTest() {
+  static int16_t prevX = -1, prevY = -1;
+  static int16_t prevTapX = -1, prevTapY = -1;
+  const int16_t W = uiW(), H = uiH(), cx = W / 2, cy = H / 2;
+  const uint16_t bg = TFT_BLACK;
+  setFont(tft, LY_F_SMALL);
+  const int16_t smallH = (int16_t)tft.fontHeight();
+
+  if (forceRedraw) {
+    tft.fillScreen(bg);
+    markFrameDirty();
+    const int16_t m = 12, a = 8;
+    const int16_t px[5] = {m, (int16_t)(W - 1 - m), m, (int16_t)(W - 1 - m), cx};
+    const int16_t py[5] = {m, m, (int16_t)(H - 1 - m), (int16_t)(H - 1 - m), cy};
+    for (int i = 0; i < 5; i++) {
+      tft.drawFastHLine(px[i] - a, py[i], 2 * a + 1, TFT_YELLOW);
+      tft.drawFastVLine(px[i], py[i] - a, 2 * a + 1, TFT_YELLOW);
+      touchZoneSet(TZ_TEST_TARGET, i, px[i] - 24, py[i] - 24, 48, 48);
+    }
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, bg);
+    tft.drawString("Touch test", cx, cy - 3 * smallH);
+    tft.setTextColor(CLR_TEXT_DIM, bg);
+    tft.drawString("Tap the + marks", cx, cy - 2 * smallH);
+    tft.drawString("Hold still 2 s to exit", cx, cy + 2 * smallH);
+    prevX = prevY = prevTapX = prevTapY = -1;
+  }
+
+  int16_t rx, ry, x, y;
+  if (buttonTouchRaw(&rx, &ry)) {
+    touchRawToScreen(rx, ry, &x, &y);
+    if (x != prevX || y != prevY) {
+      tft.fillCircle(x, y, 3, TFT_CYAN);
+      markFrameDirty();
+      prevX = x; prevY = y;
+    }
+  }
+
+  TouchTestTap t;
+  if (touchTestTaps(&t, 1) && (t.x != prevTapX || t.y != prevTapY)) {
+    prevTapX = t.x; prevTapY = t.y;
+    tft.drawCircle(t.x, t.y, 6, TFT_GREEN);
+    if (t.zone == TZ_TEST_TARGET) {   // hit-zone check: the target turns green
+      const int16_t m = 12, a = 8;
+      const int16_t tx = (t.arg == 4) ? cx : (t.arg & 1) ? (int16_t)(W - 1 - m) : m;
+      const int16_t ty = (t.arg == 4) ? cy : (t.arg & 2) ? (int16_t)(H - 1 - m) : m;
+      tft.fillRect(tx - a, ty - 1, 2 * a + 1, 3, TFT_GREEN);
+      tft.fillRect(tx - 1, ty - a, 3, 2 * a + 1, TFT_GREEN);
+    }
+    char line[40];
+    snprintf(line, sizeof(line), "x%d y%d  raw %d,%d", t.x, t.y, t.rx, t.ry);
+    const int16_t ly = cy + 3 * smallH + 2;
+    tft.fillRect(0, ly - smallH / 2 - 1, W, smallH + 2, bg);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_GREEN, bg);
+    tft.drawString(line, cx, ly);
+    markFrameDirty();
+  }
+}
+#endif
+
 static void drawHmsScreen() {
   PrinterSlot& p = displayedPrinter();
   BambuState& s = p.state;
@@ -5978,7 +6044,8 @@ void updateDisplay() {
     // stall the modal until morning.
     bool blackout = (currentScreen != SCREEN_OFF) &&
                     (currentScreen != SCREEN_POWER_CONFIRM) &&
-                    (currentScreen != SCREEN_PORTAL_PIN) && isNightBlackout();
+                    (currentScreen != SCREEN_PORTAL_PIN) &&
+                    (currentScreen != SCREEN_TOUCH_TEST) && isNightBlackout();
     if (blackout != prevBlackout) {
       prevBlackout = blackout;
       setBacklight(getEffectiveBrightness());
@@ -6143,6 +6210,9 @@ void updateDisplay() {
 
   if (!cardSkinActive()) cardRelease();   // style switched off: give the RAM back on any screen
   cardShownNow = false;
+#if HAS_TOUCH_ZONES
+  if (forceRedraw) touchZonesClear();     // renderers re-register on this pass
+#endif
   switch (currentScreen) {
     case SCREEN_SPLASH:
       // Splash shown in initDisplay(), auto-advance handled by main.cpp
@@ -6206,6 +6276,12 @@ void updateDisplay() {
 
     case SCREEN_PORTAL_PIN:
       drawPortalPin();
+      break;
+
+    case SCREEN_TOUCH_TEST:
+#if HAS_TOUCH_ZONES
+      drawTouchTest();
+#endif
       break;
 
     case SCREEN_FINISHED:

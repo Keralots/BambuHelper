@@ -53,15 +53,29 @@ void touchInit() {
   }
 }
 
+// Finger count + first point in one burst: 0x02 num, 0x03 XH, 0x04 XL, 0x05 YH, 0x06 YL.
+static bool cst816ReadPoint(uint8_t* buf) {
+  Wire.beginTransmission(CST816_ADDR);
+  Wire.write(CST816_TOUCH_NUM_REG);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom((uint8_t)CST816_ADDR, (uint8_t)5) != 5) return false;
+  for (int i = 0; i < 5; i++) buf[i] = Wire.read();
+  return true;
+}
+
 TouchPoll touchPoll() {
   if (!busReady) return {TouchEvent::Unavailable, false};
-  uint8_t touchNum = 0;
-  if (!cst816ReadReg(CST816_TOUCH_NUM_REG, touchNum)) return {TouchEvent::Unavailable, false};
+  uint8_t b[5];
+  if (!cst816ReadPoint(b)) return {TouchEvent::Unavailable, false};
   if (!seen) {
     Serial.printf("CST816 touch became responsive at runtime (addr 0x%02X)\n", CST816_ADDR);
     seen = true;
   }
-  return {TouchEvent::None, (bool)(touchNum > 0)};
+  const bool down = b[0] > 0;
+  TouchPoll tp = {TouchEvent::None, down, down};
+  tp.x = (int16_t)(((b[1] & 0x0F) << 8) | b[2]);
+  tp.y = (int16_t)(((b[3] & 0x0F) << 8) | b[4]);
+  return tp;
 }
 
 #endif  // USE_CST816

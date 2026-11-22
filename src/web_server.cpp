@@ -24,6 +24,7 @@
 #include "clock_pong.h"
 #include "hms_lookup.h"
 #include "portal_auth.h"
+#include "touch_zones.h"
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
@@ -1198,6 +1199,14 @@ static void handleCloudSelfTest() {
 // "Test" button next to the edge-glow settings: preview the configured effect
 // for ~5 s on whatever screen is up. Accepts the picker's current color so the
 // preview matches even before the user hits Save (applied live, not persisted).
+#if HAS_TOUCH_ZONES
+// Touch test screen: POST on=1/0 opens/closes it, GET returns the recorded taps.
+static void handleTouchTest() {
+  if (server.method() == HTTP_POST) touchTestRequest(server.arg("on") != "0");
+  server.send(200, "application/json", touchTestJson());
+}
+#endif
+
 static void handleGlowTest() {
   if (server.hasArg("clr")) dispSettings.glowColor = htmlToRgb565(server.arg("clr").c_str());
   glowStartTest(rotState.displayIndex);
@@ -2849,6 +2858,10 @@ void initWebServer() {
   onG("/debug/toggle", HTTP_POST, handleDebugToggle);
   onG("/save/toggle", HTTP_POST, handleToggleSetting);
   onG("/glow/test", HTTP_POST, handleGlowTest);
+#if HAS_TOUCH_ZONES
+  onG("/touch/test", HTTP_POST, handleTouchTest);
+  onG("/touch/test", HTTP_GET, handleTouchTest);
+#endif
   server.on("/app.css", HTTP_GET, handleAppCss);
   server.on("/app.js", HTTP_GET, handleAppJs);
   onG("/cloud/logout", HTTP_POST, handleCloudLogout);

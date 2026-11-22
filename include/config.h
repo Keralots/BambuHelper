@@ -244,6 +244,27 @@
 #define TOUCH_WAKE_LONGPRESS  0
 #endif
 
+// Touch zones: the touch backend reports coordinates, so a tap can hit a screen
+// region. Enabled per board once its orientation is verified on the touch test
+// screen; every other board keeps the whole-screen gestures.
+#if defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154)
+#define HAS_TOUCH_ZONES  1
+#else
+#define HAS_TOUCH_ZONES  0
+#endif
+
+// Raw touch -> panel native frame fixups (applied before the display rotation).
+// Default: the controller reports in the panel's native rotation-0 frame.
+#ifndef TOUCH_SWAP_XY
+#define TOUCH_SWAP_XY    0
+#endif
+#ifndef TOUCH_MIRROR_X
+#define TOUCH_MIRROR_X   0
+#endif
+#ifndef TOUCH_MIRROR_Y
+#define TOUCH_MIRROR_Y   0
+#endif
+
 // Buzzer wired to an IO-expander output bit instead of a GPIO (ws_lcd_28c).
 // Selects buzzer_backend_expander.cpp, excludes the GPIO backend, and tells the
 // portal not to ask for a pin.

@@ -33,6 +33,8 @@ enum class TouchEvent : uint8_t {
 struct TouchPoll {
   TouchEvent ev;
   bool isDown;  // meaningful for level backends (ev == None); raw finger-down
+  bool hasXY;   // x/y valid: finger down and the backend reports coordinates
+  int16_t x, y; // raw controller coordinates (controller's own frame)
 };
 
 // Bring up the touch bus/pins + first probe (all logging inside). Called from
