@@ -674,6 +674,9 @@ void triggerDisplayTransition() {
   tft.fillScreen(dispSettings.bgColor);
   markFrameDirty();
   forceRedraw = true;
+#if HAS_TOUCH_ZONES
+  touchZonesClear();   // also called mid-frame (Cards -> classic), past the usual clear
+#endif
   // If the clock is on screen (e.g. a non-displayed printer hit its FINISH edge
   // while idle), the fillScreen above wiped it; reset its private cache so it
   // repaints whole instead of leaving a single stale digit on a blank screen.
@@ -977,9 +980,17 @@ static PrinterOffMode printerOffModeFor(uint8_t slot, const BambuState& s,
   return POM_NORMAL;
 }
 
+bool displayedPrinterOff() {
+  PrinterSlot& p = displayedPrinter();
+  return printerOffModeFor(rotState.displayIndex, p.state, p.config) != POM_NORMAL;
+}
+
 static void drawPrinterOffOverlay(PrinterSlot& p, uint8_t slot, PrinterOffMode mode,
                                   bool fullRedraw) {
   if (!fullRedraw) return;   // static, already on screen
+#if HAS_TOUCH_ZONES
+  touchZonesClear();         // the covered screen's tap targets
+#endif
   markFrameDirty();
   const int16_t cx = uiW() / 2;
   const int16_t cy = uiH() / 2;
@@ -1870,6 +1881,9 @@ static void drawIdle() {
       tft.fillScreen(dispSettings.bgColor);
       markFrameDirty();
       forceRedraw = true;
+#if HAS_TOUCH_ZONES
+      touchZonesClear();   // entered mid-frame: the Ready screen's tap targets are gone
+#endif
     }
     drawIdleDrying(p);
     return;

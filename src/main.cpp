@@ -261,6 +261,40 @@ static void closeDryPeek() {
   setScreenState(SCREEN_PRINTING);
 }
 
+// --- Overlay open / close ------------------------------------------------------
+// The base screen is remembered across stacked overlays. Ready and Print complete
+// are restored as such: re-deriving them from SCREEN_PRINTING would lose the
+// running finish window or bring a dismissed finish screen back.
+static ScreenState overlayPrior = SCREEN_PRINTING;
+
+static bool isOverlayScreen(ScreenState s) {
+  return s == SCREEN_HMS || s == SCREEN_AMS_DETAIL || s == SCREEN_PORTAL_PIN ||
+         s == SCREEN_TOUCH_TEST;
+}
+
+static void openOverlay(ScreenState overlay) {
+  ScreenState cur = getScreenState();
+  if (!isOverlayScreen(cur)) overlayPrior = cur;
+  setScreenState(overlay);
+}
+
+// Anything else goes through SCREEN_PRINTING and the state machine.
+// rotState: auto-rotation was frozen while lastRotateMs kept aging.
+static void closeOverlay() {
+  rotState.lastRotateMs = millis();
+  const bool keep = overlayPrior == SCREEN_IDLE || overlayPrior == SCREEN_FINISHED ||
+                    overlayPrior == SCREEN_AP_MODE || isSleepStickyScreen(overlayPrior);
+  setScreenState(keep ? overlayPrior : SCREEN_PRINTING);
+}
+
+// A finish is about to move the display: drop the overlay and let the state
+// machine start a fresh finish screen.
+static void closeOverlayForFinish() {
+  closeOverlay();
+  setScreenState(SCREEN_PRINTING);
+  finishActive = false;
+}
+
 // --- Printer error detail (SCREEN_HMS) --------------------------------------
 // Tapped up while the displayed printer has an HMS entry or a print_error.
 // Sticky against the auto state machine while it is up; closes on tap, on the
@@ -273,7 +307,9 @@ static bool openHmsScreen(uint32_t windowMs) {
   if (!hmsScreenAvailable()) return false;
   hmsScreenHold = (windowMs == 0);
   hmsScreenUntilMs = millis() + windowMs;
-  setScreenState(SCREEN_HMS);
+  openOverlay(SCREEN_HMS);
+  // An alert that woke the panel does not put it back to sleep.
+  if (isSleepStickyScreen(overlayPrior)) overlayPrior = SCREEN_PRINTING;
   return true;
 }
 
@@ -283,13 +319,7 @@ static bool hmsScreenExpired() {
   return !hmsScreenHold && (long)(millis() - hmsScreenUntilMs) >= 0;
 }
 
-// Same rotation reset as the drying peek: auto-rotation is frozen while this is
-// up but lastRotateMs keeps aging, so without it the user taps out of an error
-// and immediately lands on a different printer.
-static void closeHmsScreen() {
-  rotState.lastRotateMs = millis();
-  setScreenState(SCREEN_PRINTING);
-}
+static void closeHmsScreen() { closeOverlay(); }
 
 // --- AMS unit detail (SCREEN_AMS_DETAIL) -------------------------------------
 // Opened by a tap on an AMS unit's zone; closes on a tap, after 30 s, or when
@@ -302,6 +332,7 @@ static const uint32_t AMS_DETAIL_MS = 30000;
 static uint32_t amsDetailUntilMs = 0;
 
 static bool amsDetailValid() {
+  if (displayedPrinterOff()) return false;   // only stale AMS data behind the overlay
   const AmsState& a = displayedPrinter().state.ams;
   return a.present && amsDetailUnit < a.trayUnitCount && a.units[amsDetailUnit].present;
 }
@@ -314,58 +345,44 @@ static bool openAmsDetail(uint8_t unit) {
   amsDetailUnit = unit;
   if (!amsDetailValid()) return false;
   amsDetailUntilMs = millis() + AMS_DETAIL_MS;
-  setScreenState(SCREEN_AMS_DETAIL);
+  openOverlay(SCREEN_AMS_DETAIL);
   return true;
 }
 
-static void closeAmsDetail() {
-  rotState.lastRotateMs = millis();
-  setScreenState(SCREEN_PRINTING);
-}
+static void closeAmsDetail() { closeOverlay(); }
 #endif
 
 // --- Portal sign-in PIN (SCREEN_PORTAL_PIN) -----------------------------------
 // Opened when a browser asks for an on-screen PIN, closed when it expires, is
-// used, or the user taps. Sleep screens go back to sleep; anything else hands
-// back to the state machine like the error screen does.
-static ScreenState pinPriorScreen = SCREEN_IDLE;
-
+// used, or the user taps.
 static void handlePortalPinScreen() {
   const char* pin = portalAuthScreenPin();
   ScreenState cur = getScreenState();
   if (pin && cur != SCREEN_PORTAL_PIN) {
     // OTA and the plug confirm own the screen; the PIN stays valid meanwhile.
     if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_SPLASH) return;
-    pinPriorScreen = cur;
-    setScreenState(SCREEN_PORTAL_PIN);
+    openOverlay(SCREEN_PORTAL_PIN);
     setBacklight(getEffectiveBrightness());
   } else if (!pin && cur == SCREEN_PORTAL_PIN) {
-    rotState.lastRotateMs = millis();
-    setScreenState(isSleepStickyScreen(pinPriorScreen) || pinPriorScreen == SCREEN_AP_MODE
-                   ? pinPriorScreen : SCREEN_PRINTING);
+    closeOverlay();
     setBacklight(getEffectiveBrightness());
   }
 }
 
 // --- Touch test screen (SCREEN_TOUCH_TEST) -----------------------------------
 // Same open/close shape as the PIN screen; the portal asks for it, a 2 s hold,
-// the portal or 60 s without a touch closes it.
+// the portal or 3 min without a touch closes it.
 #if HAS_TOUCH_ZONES
-static ScreenState ttPriorScreen = SCREEN_IDLE;
-
 static void handleTouchTestScreen() {
   const bool want = touchTestWanted();
   ScreenState cur = getScreenState();
   if (want && cur != SCREEN_TOUCH_TEST) {
     if (cur == SCREEN_OTA_UPDATE || cur == SCREEN_POWER_CONFIRM || cur == SCREEN_SPLASH ||
         cur == SCREEN_PORTAL_PIN) return;
-    ttPriorScreen = cur;
-    setScreenState(SCREEN_TOUCH_TEST);
+    openOverlay(SCREEN_TOUCH_TEST);
     setBacklight(getEffectiveBrightness());
   } else if (!want && cur == SCREEN_TOUCH_TEST) {
-    rotState.lastRotateMs = millis();
-    setScreenState(isSleepStickyScreen(ttPriorScreen) || ttPriorScreen == SCREEN_AP_MODE
-                   ? ttPriorScreen : SCREEN_PRINTING);
+    closeOverlay();
     setBacklight(getEffectiveBrightness());
   }
 }
@@ -466,7 +483,10 @@ static void doTapActions() {
 #endif
     if (openDryPeek()) return;
     closeHmsScreen();
-    if (getActiveConnCount() >= 2) cycleDisplayedPrinterFromButton();
+    if (getActiveConnCount() >= 2) {
+      setScreenState(SCREEN_PRINTING);   // other printer: derive its screen from scratch
+      cycleDisplayedPrinterFromButton();
+    }
     return;
   }
   if ((cur == SCREEN_PRINTING || cur == SCREEN_IDLE || cur == SCREEN_FINISHED) &&
@@ -813,6 +833,10 @@ static void handleWakeButton() {
   // intercept can keep them in sync and avoid a stray release-edge tap on close.
   static bool wasHeldPrev = false;
   static bool holdConsumedThisPress = false;
+  // Touchscreen tap pending its release (HAS_TOUCH_ZONES). Every intercept below
+  // drops it: the release it swallows must not come back as a tap afterwards.
+  static bool touchArmed = false;
+  (void)touchArmed;
 
   // Plug power-confirm modal (#136) owns all input while up. Still tick the dimmer
   // (suppressed) so its 2 s save-debounce keeps draining and no dim session starts,
@@ -823,6 +847,7 @@ static void handleWakeButton() {
     handlePowerConfirmInput(held);
     wasHeldPrev = held;
     holdConsumedThisPress = false;
+    touchArmed = false;
     return;
   }
 
@@ -835,6 +860,7 @@ static void handleWakeButton() {
     if (!held) ttSwallow = false;
     wasHeldPrev = false;
     holdConsumedThisPress = false;
+    touchArmed = false;
     return;
   }
   if (getScreenState() == SCREEN_TOUCH_TEST) {
@@ -846,6 +872,7 @@ static void handleWakeButton() {
     }
     wasHeldPrev = held;
     holdConsumedThisPress = false;
+    touchArmed = false;
     return;
   }
 #endif
@@ -856,6 +883,7 @@ static void handleWakeButton() {
     if (touchPress || boardPress) { buzzerPlayClick(); portalAuthDismissScreen(); }
     wasHeldPrev = held;
     holdConsumedThisPress = false;
+    touchArmed = false;
     return;
   }
 
@@ -876,6 +904,7 @@ static void handleWakeButton() {
     }
     wasHeldPrev = held;
     holdConsumedThisPress = false;
+    touchArmed = false;
     return;
   }
 
@@ -940,7 +969,6 @@ static void handleWakeButton() {
     // tap; feedback still comes on the press. Board buttons keep the press edge.
     // Armed only by a press edge seen here: a press an earlier intercept took
     // (PIN, blackout wake, ...) must not tap again when the finger lifts.
-    static bool touchArmed = false;
     if (touchPress || boardPress) {
       buzzerPlayClick();
       ledOnUserInteraction();
@@ -1066,7 +1094,7 @@ static void handleDisplayedPrinterFinishState(ScreenState current, BambuState& s
 
   if (current != SCREEN_FINISHED && !isSleepStickyScreen(current) &&
       !(current == SCREEN_IDLE && s.ams.anyDrying && finishShowsDrying()) &&
-      !(current == SCREEN_PRINTING && finishActive) &&
+      !(current == SCREEN_PRINTING && finishActive && dpSettings.keepPrintScreen) &&
       !(current == SCREEN_IDLE && finishDismissedByWake)) {
     setScreenState(dpSettings.keepPrintScreen ? SCREEN_PRINTING : SCREEN_FINISHED);
     finishScreenStart = millis();
@@ -1625,9 +1653,10 @@ static void handleGcodeStateTransitions() {
           // printer's drying data under it. Close it and let the state machine
           // land on the finish screen.
           if (getScreenState() == SCREEN_DRY_PEEK) closeDryPeek();
-          // Same for the error screen: it is bound to the printer that was on
-          // screen when it opened, and this branch is about to move away.
-          if (getScreenState() == SCREEN_HMS) closeHmsScreen();
+          // Same for the error and AMS detail screens: they are bound to the
+          // printer that was on screen when they opened.
+          if (getScreenState() == SCREEN_HMS || getScreenState() == SCREEN_AMS_DETAIL)
+            closeOverlayForFinish();
           if (rotState.displayIndex != i) {
             rotState.displayIndex = i;
             triggerDisplayTransition();

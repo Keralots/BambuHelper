@@ -30,6 +30,8 @@ enum ScreenState {
   SCREEN_AMS_DETAIL     // one AMS unit in full, tapped up from its zone (HAS_TOUCH_ZONES)
 };
 
+// The displayed printer is covered by the "Printer Off" / "starting" overlay (#177).
+bool displayedPrinterOff();
 // AMS unit shown on SCREEN_AMS_DETAIL (index into the displayed printer's
 // ams.units[]). Owned by main.cpp.
 uint8_t amsDetailUnitIndex();
