@@ -6,8 +6,10 @@
 #include "display_ui.h"
 #include "button.h"
 
+// Everything here uses `tft` (the active draw target), not displayDevice(): frame
+// sprite boards leave the panel at rotation 0 and rotate the sprite.
 void touchRawToScreen(int16_t rx, int16_t ry, int16_t* sx, int16_t* sy) {
-  auto& d = displayDevice();
+  auto& d = tft;
   const uint8_t r = d.getRotation() & 3;
   const int32_t W = d.width(), H = d.height();          // rotated
   const int32_t nw = (r & 1) ? H : W, nh = (r & 1) ? W : H;  // panel native
@@ -111,14 +113,14 @@ int8_t touchStrokeSwipeX() {
   int16_t dx, dy;
   if (!strokeDelta(&dx, &dy)) return 0;
   // A quarter of the width, and clearly more sideways than up/down.
-  if (abs(dx) < displayDevice().width() / 4 || abs(dx) < 2 * abs(dy)) return 0;
+  if (abs(dx) < tft.width() / 4 || abs(dx) < 2 * abs(dy)) return 0;
   return dx > 0 ? 1 : -1;
 }
 
 int8_t touchStrokeSwipeY() {
   int16_t dx, dy;
   if (!strokeDelta(&dx, &dy)) return 0;
-  if (abs(dy) < displayDevice().height() / 4 || abs(dy) < 2 * abs(dx)) return 0;
+  if (abs(dy) < tft.height() / 4 || abs(dy) < 2 * abs(dx)) return 0;
   return dy > 0 ? 1 : -1;
 }
 
@@ -190,7 +192,7 @@ uint8_t touchTestTaps(TouchTestTap* out, uint8_t max) {
 }
 
 String touchTestJson() {
-  auto& d = displayDevice();
+  auto& d = tft;
   String s;
   s.reserve(96 + TT_MAX * 40);
   s += "{\"active\":";

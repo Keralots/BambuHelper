@@ -25,9 +25,14 @@ static inline void noteLive(const TouchPoll& tp) {
   else if (!tp.isDown) liveHasXY = false;
 }
 static inline void latchPress() { pressHasXY = liveHasXY; pressX = liveX; pressY = liveY; }
+// Edge-managed backends can report the press before its first position.
+static inline void latchLatePress(const TouchPoll& tp) {
+  if (stableState && !pressHasXY && tp.hasXY && tp.ev == TouchEvent::None) latchPress();
+}
 #else
 static inline void noteLive(const TouchPoll&) {}
 static inline void latchPress() {}
+static inline void latchLatePress(const TouchPoll&) {}
 #endif
 
 void sanitizeButtonPin() {
@@ -261,6 +266,7 @@ bool wasButtonPressed() {
     // release (a genuinely held finger whose poll failed mid-hold stays held).
     if (tp.ev == TouchEvent::Unavailable) return false;
     noteLive(tp);
+    latchLatePress(tp);
     // Edge-managed backends (AXS) resolve press/release from ISR activity
     // themselves; map the edge straight to hold state, bypassing the 50 ms
     // debounce. Level backends only ever report None, so they fall through

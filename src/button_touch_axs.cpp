@@ -16,6 +16,9 @@
 
 #define AXS_TOUCH_ADDR 0x3B  // AXS_TOUCH_INT default comes from button_touch_backend.h
 
+// Panel-native portrait frame, with slack for an uncalibrated edge.
+static const int16_t AXS_MAX_X = 340, AXS_MAX_Y = 500;
+
 static bool busReady = false;
 static bool seen = false;
 static bool held = false;                           // "finger currently down"
@@ -39,7 +42,8 @@ static bool axsTouchProbe() {
 // independent drivers (ESPHome axs15231 + me-processware JC3248W535): write the
 // 8-byte read command, read 8 bytes, finger present when data[0]==0 && data[1]!=0.
 // Returns 1 = finger down, 0 = finger up, -1 = read failed (state unknown).
-static int axsReadFinger() {
+// First point: data[2..3] = X, data[4..5] = Y, 12 bits each (data[2] bits 6-7 = event).
+static int axsReadFinger(TouchPoll& tp) {
   static const uint8_t cmd[8] = {0xb5, 0xab, 0xa5, 0x5a, 0x00, 0x00, 0x00, 0x08};
   Wire.beginTransmission(AXS_TOUCH_ADDR);
   Wire.write(cmd, sizeof(cmd));
@@ -49,7 +53,12 @@ static int axsReadFinger() {
   uint8_t i = 0;
   while (Wire.available() && i < sizeof(data)) data[i++] = Wire.read();
   if (got < 2 || i < 2) return -1;
-  return (data[0] == 0 && data[1] != 0) ? 1 : 0;
+  if (data[0] != 0 || data[1] == 0) return 0;
+  const int16_t x = ((data[2] & 0x0F) << 8) | data[3];
+  const int16_t y = ((data[4] & 0x0F) << 8) | data[5];
+  // A short or garbled frame still counts as a finger, just without a position.
+  if (i >= 6 && x <= AXS_MAX_X && y <= AXS_MAX_Y) { tp.hasXY = true; tp.x = x; tp.y = y; }
+  return 1;
 }
 
 void touchInit() {
@@ -96,7 +105,8 @@ TouchPoll touchPoll() {
   // a single stray read can't drop a real hold). This gives clean per-tap
   // boundaries, so a fast double-tap registers as two presses instead of merging
   // into one held contact. If the read fails, fall back to the legacy timer.
-  int finger = axsReadFinger();
+  TouchPoll tp = {TouchEvent::None, false};
+  int finger = axsReadFinger(tp);
   const unsigned long RELEASE_MS       = 200;   // fallback: no finger read
   const unsigned long RELEASE_GUARD_MS = 40;    // finger-up debounce
   bool released = (finger < 0)
@@ -105,7 +115,9 @@ TouchPoll touchPoll() {
 
   if (released && held) {
     held = false;
-    return {TouchEvent::Released, false};
+    tp.ev = TouchEvent::Released;
+    tp.hasXY = false;
+    return tp;
   }
 
   // Press on the INT edge (catches sub-loop taps) or a positive finger read.
@@ -116,10 +128,13 @@ TouchPoll touchPoll() {
     }
     held = true;
     lastIsrMs = nowMs;
-    return {TouchEvent::Pressed, true};
+    tp.ev = TouchEvent::Pressed;   // may carry no position yet: the INT edge comes first
+    tp.isDown = true;
+    return tp;
   }
 
-  return {TouchEvent::None, held};
+  tp.isDown = held;
+  return tp;
 }
 
 #endif  // USE_AXS_TOUCH
