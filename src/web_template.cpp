@@ -351,6 +351,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
 #endif
     out += "</div>";
+#if HAS_TOUCH_ZONES
+    if (buttonType == BTN_TOUCHSCREEN)
+      out += "<div class=\"help-text\">Touchscreen swipes: sideways = next printer, up = AMS, "
+             "down = close it or show the clock. A tap on an AMS unit opens its details.</div>";
+#endif
 #if HAS_CARD_SKIN
     out += "<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>";
 #endif

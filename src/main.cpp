@@ -28,6 +28,7 @@ static unsigned long finishScreenStart = 0;
 static bool finishActive = false;          // guards finishScreenStart against millis() wrap
 static unsigned long idleClockStart = 0;   // when all printers became idle
 static bool idleClockActive = false;       // guards idleClockStart against millis() wrap
+static bool manualClock = false;           // SCREEN_CLOCK opened by a swipe, see manualClockShown()
 static bool finishDismissedByWake = false;  // true once user taps to wake while printer is GCODE_FINISH; cleared on printer state change
 // Tap override of the finish-vs-AMS-drying screen (#183): +1 drying, -1 finish,
 // 0 automatic. Only applies to the slot it was set on.
@@ -123,6 +124,7 @@ static bool isSleepStickyScreen(ScreenState state) {
 
 static void transitionToClockOrOff() {
   if (dpSettings.keepDisplayOn) return;  // screensaver disabled - never sleep
+  manualClock = false;                   // an ordinary screensaver from here on
   finishDryView = 0;
   if (dpSettings.showClockAfterFinish || buttonType == BTN_DISABLED) {
     setScreenState(SCREEN_CLOCK);
@@ -295,6 +297,55 @@ static void closeOverlayForFinish() {
   finishActive = false;
 }
 
+// --- Clock on demand (swipe down) --------------------------------------------
+// SCREEN_CLOCK opened over a live screen. Unlike the screensaver it stays up during
+// a print; a tap, a new print, a finish or an error alert closes it. An idle
+// printer hands it over to the normal sleep timeout.
+#if HAS_TOUCH_ZONES
+static uint8_t manualClockPrinting = 0;   // slots already printing, bit per slot
+
+static uint8_t printingMask() {
+  uint8_t m = 0;
+  for (uint8_t i = 0; i < MAX_ACTIVE_PRINTERS; i++)
+    if (isPrinterConfigured(i) && printers[i].state.printing) m |= (uint8_t)(1u << i);
+  return m;
+}
+
+// The flag dies with the screen: whatever replaces the clock ends it.
+static bool manualClockShown() {
+  if (getScreenState() != SCREEN_CLOCK) manualClock = false;
+  return manualClock;
+}
+
+static bool openManualClock() {
+  ScreenState cur = getScreenState();
+  if (cur != SCREEN_IDLE && cur != SCREEN_PRINTING && cur != SCREEN_FINISHED &&
+      cur != SCREEN_SPLIT) return false;
+  openOverlay(SCREEN_CLOCK);
+  manualClock = true;
+  idleClockActive = false;                // full sleep window from here
+  manualClockPrinting = printingMask();
+  return true;
+}
+
+static void closeManualClock() {
+  manualClock = false;
+  idleClockActive = false;
+  if (finishActive) finishScreenStart = millis();   // else Print complete could time out at once
+  closeOverlay();
+}
+
+// True when a print started since the last call (or since the clock opened).
+static bool manualClockPrintStarted() {
+  const uint8_t m = printingMask();
+  const bool started = (m & ~manualClockPrinting) != 0;
+  manualClockPrinting = m;
+  return started;
+}
+#else
+static inline bool manualClockShown() { return false; }
+#endif
+
 // --- Printer error detail (SCREEN_HMS) --------------------------------------
 // Tapped up while the displayed printer has an HMS entry or a print_error.
 // Sticky against the auto state machine while it is up; closes on tap, on the
@@ -439,6 +490,10 @@ static void doTapActions() {
     nightWake();
     if (!isSleepStickyScreen(cur)) return;
   }
+
+#if HAS_TOUCH_ZONES
+  if (manualClockShown()) { closeManualClock(); return; }
+#endif
 
   if (isSleepStickyScreen(cur)) {
     setBacklight(getEffectiveBrightness());
@@ -717,14 +772,14 @@ static bool swipeUpAms() {
   return openAmsDetail(u) || (u && openAmsDetail(0));
 }
 
-// Swipe down closes what swipe up opened.
-static bool swipeDownClose() {
+// Swipe down closes what swipe up opened; from a live screen it opens the clock.
+static bool swipeDown() {
   if (getScreenState() == SCREEN_AMS_DETAIL) { closeAmsDetail(); return true; }
   if (amsGestureAvailable() && cardAmsPageShown()) {
     cardAmsPeekToggle(displayedPrinter().state);
     return true;
   }
-  return false;
+  return openManualClock();
 }
 
 // Touchscreen release: swipes where they have a job, anything else is a tap
@@ -736,7 +791,7 @@ static void touchRelease() {
     cycleDisplayedPrinterFromButton();
     return;
   }
-  if ((sy < 0 && swipeUpAms()) || (sy > 0 && swipeDownClose())) {
+  if ((sy < 0 && swipeUpAms()) || (sy > 0 && swipeDown())) {
     pcPendingClicks = 0;
     return;
   }
@@ -1241,6 +1296,21 @@ static void updateDisplayedPrinterScreenState() {
   }
 #endif
 
+#if HAS_TOUCH_ZONES
+  // Clock on demand: above the drying wake and split, which would both take it down.
+  if (manualClockShown()) {
+    if (manualClockPrintStarted()) { closeManualClock(); return; }
+    BambuState& cs = displayedPrinter().state;
+    if (cs.printing)
+      ledSetActivity(cs.gcodeStateId == GCODE_PAUSE ? LED_ACT_PAUSED : LED_ACT_PRINTING);
+    else if (cs.gcodeStateId == GCODE_FINISH)
+      handleDisplayedPrinterFinishState(current, cs);   // LED + door ack; leaves the clock up
+    else if (cs.gcodeStateId == GCODE_FAILED)
+      ledSetActivity(LED_ACT_FAILED);
+    return;
+  }
+#endif
+
 #if BOARD_HAS_CAMERA
   // Camera fullscreen (#120) is sticky: entered/exited only by tap. Hold it
   // until the user taps out or the printer can no longer stream, then drop back
@@ -1413,7 +1483,7 @@ static void handleDisplaySleepTimeouts() {
     }
   }
 
-  if ((cur == SCREEN_IDLE || cur == SCREEN_CONNECTING_MQTT ||
+  if ((cur == SCREEN_IDLE || cur == SCREEN_CONNECTING_MQTT || manualClockShown() ||
        (cur == SCREEN_PRINTING && dpSettings.keepPrintScreen)) &&
       !dpSettings.keepDisplayOn && dpSettings.finishDisplayMins > 0) {
     // Don't sleep while AMS is drying - the drying screen is useful
@@ -1573,7 +1643,7 @@ static void handleErrorAlerts() {
   // Leaving SCREEN_OFF / SCREEN_CLOCK restores the backlight unconditionally,
   // so the wake bit cannot gate the backlight - it gates whether we change
   // screens from a sleeping display at all.
-  const bool asleep = isSleepStickyScreen(cur);
+  const bool asleep = isSleepStickyScreen(cur) && !manualClockShown();
   if (asleep && !(mask & 0x08)) return;
 
   if (rotState.displayIndex != alertSlot) {
@@ -1646,6 +1716,8 @@ static void handleGcodeStateTransitions() {
         // back off - the "turn display off after finish" case, most visible when a
         // second printer finishes after the first already put the panel to sleep.
         // The one-shot alert + light + Tasmota bookkeeping below still run.
+        // A clock opened by hand is not a sleeping panel: the finish takes it down.
+        if (manualClockShown()) closeOverlayForFinish();
         if (getScreenState() != SCREEN_POWER_CONFIRM &&
             !isSleepStickyScreen(getScreenState())) {
           // A finish outranks the drying peek (#150): this branch moves
@@ -1944,6 +2016,7 @@ void loop() {
         getScreenState() != SCREEN_PORTAL_PIN &&
         getScreenState() != SCREEN_TOUCH_TEST &&
         getScreenState() != SCREEN_AMS_DETAIL &&
+        !manualClockShown() &&
         getScreenState() != SCREEN_DRY_PEEK) handleRotation();
   }
 
