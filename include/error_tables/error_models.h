@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 
+#define ERROR_MODELS_VER  "202611242216"
 #define ERROR_MODEL_COUNT 16
 
 static const char ERROR_MODEL_SN[ERROR_MODEL_COUNT][4] PROGMEM = {

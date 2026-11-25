@@ -251,6 +251,7 @@ def check_error_tables():
     known = _header_define(ERROR_TABLES / "hms_known.h", "HMS_KNOWN_VER")
     full = _header_define(ERROR_TABLES / "print_error_table.h", "PRINT_ERROR_TABLE_VER")
     lite = _header_define(ERROR_TABLES / "print_error_lite.h", "PRINT_ERROR_TABLE_VER")
+    models = _header_define(ERROR_TABLES / "error_models.h", "ERROR_MODELS_VER")
     if not ERROR_MIRROR.is_file():
         sys.exit(f"error: {ERROR_MIRROR} not found - run tools/gen_error_tables.py")
     try:
@@ -258,13 +259,13 @@ def check_error_tables():
     except (ValueError, KeyError) as exc:
         sys.exit(f"error: cannot read a feed ver from {ERROR_MIRROR}: {exc}")
 
-    for label, ver in (("hms_table.h", table), ("hms_known.h", known),
+    for label, ver in (("hms_table.h", table), ("hms_known.h", known), ("error_models.h", models),
                        ("print_error_table.h", full), ("print_error_lite.h", lite),
                        ("docs/errors/hms_en.json", mirror)):
         print(f"  {label:<26} {ver or 'MISSING'}")
 
-    seen = {v for v in (table, known, full, lite, mirror) if v}
-    if None in (table, known, full, lite):
+    seen = {v for v in (table, known, models, full, lite, mirror) if v}
+    if None in (table, known, models, full, lite):
         sys.exit("error: a generated error table is missing its ver define - "
                  "regenerate with `python tools/gen_error_tables.py`")
     if len(seen) > 1:

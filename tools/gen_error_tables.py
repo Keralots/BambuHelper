@@ -95,6 +95,7 @@ MODELS = [
 ]
 DEFAULT_MODEL = "00M"   # its text is the default variant; also the lite table
 MIN_HMS_CODES = 1500    # smallest real feed is ~1900; an unknown prefix returns 0
+MAX_LOSS = 0.03         # share of a model's described codes a refresh may drop
 
 MAX_TEXT = 200          # stored chars per string, ellipsis included
 ELLIPSIS = "..."
@@ -200,6 +201,23 @@ def load_feeds(in_dir, save_dir):
     return feeds
 
 
+def check_losses(counts, mirror_path, accept):
+    """Refuse a refresh in which a model lost codes: they would go dark on it."""
+    try:
+        with open(mirror_path, "r", encoding="utf-8") as fh:
+            was = json.load(fh).get("models", {})
+    except OSError:
+        return
+    bad = ["%s %s %d -> %d" % (sn, what, old, new)
+           for sn in counts if sn in was
+           for what, old, new in zip(("hms", "print_error"), was[sn], counts[sn])
+           if new < old * (1 - MAX_LOSS)]
+    if bad and not accept:
+        raise SystemExit("described codes dropped more than %d%%: %s\nClassify what "
+                         "disappeared, then re-run with --accept-loss."
+                         % (MAX_LOSS * 100, "; ".join(bad)))
+
+
 def feed_ver(feed):
     return str(feed.get("ver") or feed["data"]["device_hms"].get("ver") or "unknown")
 
@@ -253,6 +271,7 @@ def build_models_header(ver, index):
         "",
         "#include <Arduino.h>",
         "",
+        '#define ERROR_MODELS_VER  "%s"' % ver,
         "#define ERROR_MODEL_COUNT %u" % len(MODELS),
         "",
         "static const char ERROR_MODEL_SN[ERROR_MODEL_COUNT][4] PROGMEM = {",
@@ -534,9 +553,9 @@ def collect_raw(entries):
 
 
 def fetch_wiki_index():
-    """code (16 hex, no separators, upper) -> page path relative to /en/.
+    """({code (16 hex, upper): page path relative to /en/}, complete).
 
-    A wiki outage must never sink a table refresh: any failure returns {} and the
+    A wiki outage must never sink a table refresh: if any model is missing, the
     caller keeps the links already in the mirror.
     """
     models = [sn for sn, _ in MODELS]
@@ -565,19 +584,19 @@ def fetch_wiki_index():
                 break
     except Exception as exc:                                # noqa: BLE001
         print("WARNING: wiki list unreachable (%s)" % exc, file=sys.stderr)
-        return {}
     index = {}
     for sn in models:                   # MODELS order decides between models
         for code, path in found.get(sn, {}).items():
             index.setdefault(code, path)
-    if not index:
-        print("WARNING: wiki list parsed to 0 codes - API changed?", file=sys.stderr)
-    return index
+    missing = [sn for sn in models if not found.get(sn)]
+    if missing:
+        print("WARNING: no wiki links for %s" % ", ".join(missing), file=sys.stderr)
+    return index, not missing
 
 
-def write_mirror(path, ver, hms, err, wiki):
-    """hms / err: {code: {sn: raw text}}."""
-    doc = {"ver": ver, "alt": {}}
+def write_mirror(path, ver, hms, err, wiki, counts):
+    """hms / err: {code: {sn: raw text}}. counts feeds the next check_losses()."""
+    doc = {"ver": ver, "alt": {}, "models": counts}
     for key, table in (("hms", hms), ("err", err)):
         doc[key], doc["alt"][key] = {}, {}
         for code, texts in table.items():
@@ -604,6 +623,9 @@ def main():
     ap.add_argument("--out-dir", default=None,
                     help="output directory (default: <repo>/include/error_tables)")
     ap.add_argument("--dry-run", action="store_true", help="print stats, write nothing")
+    ap.add_argument("--accept-loss", action="store_true",
+                    help="write even if a model lost more than %d%%%% of its codes"
+                         % (MAX_LOSS * 100))
     args = ap.parse_args()
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -627,6 +649,8 @@ def main():
     raw_hms = by_code(per_model("device_hms", collect_raw))
     raw_err = by_code(per_model("device_error", collect_raw))
     index = model_classes(hms_m, err_m)
+    counts = {sn: [len(hms_m[sn]), len(err_m[sn])] for sn, _ in MODELS}
+    check_losses(counts, mirror_path, args.accept_loss)
 
     # The embedded tables and the mirror use different blank filters (folded and
     # truncated vs raw). They must agree per model, or a 4 MB board and a 16 MB
@@ -659,13 +683,13 @@ def main():
         return
 
     print("Loading wiki index...")
-    wiki = fetch_wiki_index()
-    if not wiki and os.path.isfile(mirror_path):
+    wiki, complete = fetch_wiki_index()
+    if not complete and os.path.isfile(mirror_path):
         with open(mirror_path, "r", encoding="utf-8") as fh:
-            wiki = json.load(fh).get("wiki", {})
-        print("WARNING: keeping the %u wiki links already in the mirror" % len(wiki),
+            wiki = dict(json.load(fh).get("wiki", {}), **wiki)
+        print("WARNING: wiki list incomplete, keeping links already in the mirror",
               file=sys.stderr)
-    doc, size = write_mirror(mirror_path, ver, raw_hms, raw_err, wiki)
+    doc, size = write_mirror(mirror_path, ver, raw_hms, raw_err, wiki, counts)
     print("mirror       %u hms + %u print_error, %u + %u with variants, %u wiki "
           "links (%u indexed), %.1f KB"
           % (len(doc["hms"]), len(doc["err"]), len(doc["alt"]["hms"]),

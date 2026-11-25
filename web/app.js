@@ -1536,14 +1536,14 @@ function hmsBareCode(code){
 }
 
 /* alt holds the wordings that differ by printer model: {code: {text: "sn,sn"}},
-   sn being the first 3 serial characters. Missing from older mirrors. */
+   sn being the first 3 serial characters. Missing from older mirrors. The mirror
+   outranks the device text: a 4 MB board carries one wording for all models. */
 function hmsText(kind, code, dev, model){
-  if (dev) return dev;
   var m = _hmsTexts;
-  if (!m || !m[kind]) return '';
+  if (!m || !m[kind]) return dev || '';
   var k = hmsBareCode(code), alt = model && m.alt && m.alt[kind] && m.alt[kind][k];
   for (var t in alt || {}) if (alt[t].split(',').indexOf(model) >= 0) return t;
-  return m[kind][k] || '';
+  return m[kind][k] || dev || '';
 }
 
 /* Every per-code wiki page sits under a model path segment (x1, a1-mini, a2l,
@@ -1572,7 +1572,7 @@ function hmsRender(){
 
     if (d.printError){
       var t = hmsText('err', d.printError, d.printErrorText, d.errModel);
-      if (!t && !d.printErrorText) need = true;
+      if (!HMS_ON_DEVICE) need = true;
       rows += hmsRow(d.printError, d.printErrorCancel ? 0 : 1, '', t, false, '',
                      d.printErrorCancel ? 'Canceled' : 'Print error');
     }

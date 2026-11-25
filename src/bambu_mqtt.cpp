@@ -607,6 +607,7 @@ static void amsSetReadings(AmsUnit& u, JsonObject src) {
 static int amsApplyZones(AmsUnit* g, uint8_t groups, JsonArray zones) {
   int dry = -1;
   uint8_t best[AMS_MAX_UNITS] = {0};
+  const bool complete = zones.size() >= 2;   // a lone zone says nothing about the others
   for (JsonObject z : zones) {
     const int zid = z["zone_id"] | -1;
     if (zid < 0 || zid >= AMS_ZONE_NONE) continue;
@@ -614,6 +615,7 @@ static int amsApplyZones(AmsUnit* g, uint8_t groups, JsonArray zones) {
     for (int slot : z["zone_slots"].as<JsonArray>())
       if (slot >= 0 && slot < 16) slots |= 1u << slot;
     for (uint8_t i = 0; i < groups; i++) {
+      if (!complete && g[i].zone != AMS_ZONE_NONE) continue;
       const uint8_t n = __builtin_popcount((slots >> g[i].trayBase) & 0x0F);
       if (n > best[i] || (n > 0 && n == best[i] && zid < g[i].zone)) {
         best[i] = n;
@@ -939,6 +941,9 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
                   g[i].humidityRaw = was.humidityRaw;
                   g[i].temp = was.temp;
                   g[i].zone = was.zone;
+                } else if (groups > 1) {
+                  g[i].trayCount = 0;
+                  g[i].dryRemainMin = g[i].dryTotalMin = 0;
                 }
                 amsSetReadings(g[i], unit);
               }
@@ -967,13 +972,25 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
 
           // --- Pass 2: tray-level data (only full snapshots) ---
           if (hasTraySnapshot) {
-            memset(s.ams.trays, 0, sizeof(s.ams.trays));
-            for (auto& t : s.ams.trays) t.remain = -1;
+            // A split unit listing fewer slots than it has is a delta: keep the rest.
+            // (A full list names empty slots too.)
+            bool delta = false;
+            for (JsonObject unit : units) {
+              uint8_t known = 0, groups = 0;
+              const uint8_t uid = atoi(unit["id"] | "255");
+              for (uint8_t i = 0; i < s.ams.unitCount && i < AMS_TRAY_UNITS; i++)
+                if (s.ams.units[i].id == uid) { known += s.ams.units[i].trayCount; groups++; }
+              if (groups > 1 && unit["tray"].size() < known) delta = true;
+            }
+            if (!delta) {
+              memset(s.ams.trays, 0, sizeof(s.ams.trays));
+              for (auto& t : s.ams.trays) t.remain = -1;
 
-            // Reset external spool - re-populated if vt_tray present in this message
-            s.ams.vtPresent = false;
-            s.ams.vtType[0] = '\0';
-            s.ams.vtColorRgb565 = 0;
+              // Reset external spool - re-populated if vt_tray present in this message
+              s.ams.vtPresent = false;
+              s.ams.vtType[0] = '\0';
+              s.ams.vtColorRgb565 = 0;
+            }
 
             unitIdx = 0;
             for (JsonObject unit : units) {
@@ -999,7 +1016,9 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
 
                 uint8_t idx = seqIdx * AMS_TRAYS_PER_UNIT + tid;
                 parseTrayFields(tray, s.ams.trays[idx], idx);
-                parsedTrays[grp]++;
+                if (groups == 1) parsedTrays[0]++;
+                else if (tid % AMS_TRAYS_PER_UNIT >= parsedTrays[grp])
+                  parsedTrays[grp] = tid % AMS_TRAYS_PER_UNIT + 1;
               }
               for (uint8_t i = 0; i < groups && seqIdx + i < AMS_TRAY_UNITS; i++) {
                 uint8_t& tc = s.ams.units[seqIdx + i].trayCount;
