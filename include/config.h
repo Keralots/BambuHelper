@@ -247,7 +247,7 @@
 // Touch zones: the touch backend reports coordinates, so a tap can hit a screen
 // region. Enabled per board once its orientation is verified on the touch test
 // screen; every other board keeps the whole-screen gestures.
-#if defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154)
+#if defined(BOARD_IS_WS200) || defined(BOARD_IS_WS154) || defined(BOARD_IS_JC3248W535)
 #define HAS_TOUCH_ZONES  1
 #else
 #define HAS_TOUCH_ZONES  0
