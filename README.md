@@ -151,7 +151,7 @@ The button, buzzer, and status-LED pins default to *disabled* on a DIY build (th
 - **Split dual-printer dashboard** - show two printers at once (stacked in portrait, side-by-side in landscape) with progress bar, status, ETA, and drying view per band
 - **Multi-printer support** - monitor 2 printers simultaneously on ESP32-S3 boards; PSRAM-equipped boards add an experimental opt-in for up to 4 (see Multi-Printer Monitoring for the list); CYD, TZT, and ESP32-C3 have an experimental opt-in 2-printer mode but default to 1 printer
 - **Smart rotation** - automatically shows the printing printer; cycles between both when both are printing
-- **Physical button / touchscreen** - cycle printers and wake display via optional push button or TTP223, board-built-in buttons (Waveshare 1.54"), or the built-in capacitive touchscreens on CYD / TZT / Waveshare 2" / Waveshare 1.54"
+- **Physical button / touchscreen** - cycle printers and wake display via optional push button or TTP223, board-built-in buttons (Waveshare 1.54"), or the built-in capacitive touchscreens on CYD / TZT / Waveshare 2" / Waveshare 1.54" / Guition JC3248W535
 - **Optional LED** - status LED on user-configurable pins: a single PWM channel, a 3-pin RGB LED or a WS2812, with a colour per printer state; hold the button/touch to dim
 - **Optional buzzer** - passive buzzer notifications for print finished, connected, and error events; Waveshare 1.54" uses its built-in ES8311 audio codec and Guition JC3248W535 its onboard NS4168 I2S speaker instead
 - **OTA updates** - update firmware from the device's web interface (manual upload or one-click from GitHub Releases)
@@ -237,6 +237,17 @@ What each gesture does is set under **Screen -> Button & touch gestures** (the c
 | **Hold** | Status LED brightness (default), switch status / AMS page, or nothing |
 
 A wake tap always wakes, and any double-tap action makes a single tap wait about half a second for a possible second one. The status / AMS choices appear only on boards with the Cards style, while Cards is the print screen style.
+
+The touchscreens of the **Waveshare 2"**, **Waveshare 1.54"** and **Guition JC3248W535** also know where you touch (nothing to set up):
+
+| Touch | What it does |
+|---|---|
+| **Tap an AMS unit** | Opens its details: every tray with colour, full filament type, % left and grams, plus temperature, humidity and drying time. Tap again, swipe down or wait 30 seconds to close. Works on the AMS strip, AMS column and AMS gauge tiles |
+| **Swipe left / right** | Next printer (with more than one printer set up) |
+| **Swipe up** | AMS: the Cards AMS page where there is one, otherwise the details of the unit feeding the print |
+| **Swipe down** | Closes the AMS view; from the print, idle, finish or split screen it shows the clock. Tap to leave the clock |
+
+These taps act when the finger lifts, so a swipe is never also a tap. The fifth and later AMS units have no tray details. To check the touch alignment, use **Touch test** under **Hardware -> External button** (shown while Button type is Touchscreen).
 
 ### MQTT Reconnect Backoff
 
@@ -357,7 +368,7 @@ Cycles between printers, wakes the display from sleep, and (when held) dims the 
 - **Waveshare ESP32-S3-Touch-LCD-2** - CST816D capacitive on I2C (GPIO48/47), automatic
 - **Waveshare ESP32-S3-Touch-LCD-1.54** - CST816 capacitive on I2C (GPIO42/41), plus three hardware buttons - BOOT (GPIO0), PWR centre (GPIO5), AUX (GPIO4)
 - **Waveshare ESP32-S3-Touch-LCD-2.8** - CST328 capacitive on I2C (GPIO1/3), reset on GPIO2, automatic
-- **Guition JC3248W535** - AXS15231B capacitive touch on I2C (GPIO4/8), polled (no IRQ wired), automatic
+- **Guition JC3248W535** - AXS15231B capacitive touch on I2C (GPIO4/8), interrupt on GPIO3, automatic
 
 **External TTP223 capacitive touch sensor** (DIY ESP32-S3 / ESP32-S3-Zero / ESP32-C3 builds):
 
