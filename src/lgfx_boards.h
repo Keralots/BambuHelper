@@ -1247,6 +1247,55 @@ public:
 };
 static LGFX_ES3N28P _tft_instance;
 
+
+#elif defined(BOARD_IS_BRO_FREENOVE)
+// --- Freenove FNK0104S ESP32-S3 + 4.0" ST7796 SPI 320x480 --------------------
+// Hardware pinout confirmed with the working Freenove demo:
+//   SCLK=12, MOSI=11, CS=10, DC=46, BL=45; no MISO or LCD reset GPIO.
+// The panel's native geometry is 320x480. Landscape (480x320) is selected
+// through the normal display rotation setting (rotation 1 or 3).
+// FT6336 touch is handled by button_touch_focaltech.cpp on SDA=16/SCL=15.
+class LGFX_BRO_FREENOVE : public lgfx::LGFX_Device {
+  lgfx::Panel_ST7796 _panel;
+  lgfx::Bus_SPI      _bus;
+public:
+  LGFX_BRO_FREENOVE() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host   = SPI2_HOST;
+      cfg.spi_mode   = 0;
+      cfg.freq_write = 40000000;  // start conservatively; hardware demo supports 80MHz
+      cfg.freq_read  = 16000000;
+      cfg.pin_sclk   = 12;
+      cfg.pin_mosi   = 11;
+      cfg.pin_miso   = -1;
+      cfg.pin_dc     = 46;
+      cfg.use_lock   = true;
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs   = 10;
+      cfg.pin_rst  = -1;          // no dedicated LCD reset GPIO; rely on power-on reset
+      cfg.pin_busy = -1;
+      cfg.memory_width  = 320;
+      cfg.memory_height = 480;
+      cfg.panel_width   = 320;
+      cfg.panel_height  = 480;
+      cfg.offset_x      = 0;
+      cfg.offset_y      = 0;
+      cfg.offset_rotation = 0;
+      cfg.invert        = true;  // Freenove demo uses TFT_INVERSION_ON
+      cfg.rgb_order     = false;
+      cfg.readable      = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+static LGFX_BRO_FREENOVE _tft_instance;
+
 #else
   #error "No board variant defined. Set BOARD_IS_<NAME> in your env's build_flags - see platformio.ini / boards/*.ini for the list of supported boards."
 #endif
