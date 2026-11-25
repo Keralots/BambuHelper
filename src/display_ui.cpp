@@ -5900,6 +5900,15 @@ static void drawTouchTest() {
     markFrameDirty();
   }
 }
+// The 320x480 boards have the row height for the 24 px face.
+#if defined(DISPLAY_320x480) && HAS_CARD_SKIN
+static const FontID  AMSD_F_MAIN = FONT_SMALL_2X, AMSD_F_SUB = LY_F_BODY;
+static const int16_t AMSD_SWATCH = 56;
+#else
+static const FontID  AMSD_F_MAIN = LY_F_BODY, AMSD_F_SUB = LY_F_SMALL;
+static const int16_t AMSD_SWATCH = 40;
+#endif
+
 // One AMS unit in full: header (name, temperature, humidity, drying) and a row
 // per tray (colour, full type, % left and grams). Each part repaints only when
 // its own data changes.
@@ -5910,7 +5919,7 @@ static void drawAmsDetailRow(const AmsTray& t, bool active, const char* slot,
   const uint16_t bg = dispSettings.bgColor;
   tft.fillRect(0, y, W, h, bg);
   const int16_t pad = 8;
-  const int16_t sw = (h - 8 < 40) ? h - 8 : 40;        // swatch side
+  const int16_t sw = (h - 8 < AMSD_SWATCH) ? h - 8 : AMSD_SWATCH;  // swatch side
   const int16_t sy = y + (h - sw) / 2;
   if (t.present) {
     tft.fillRoundRect(pad, sy, sw, sw, 4, t.colorRgb565);
@@ -5932,13 +5941,13 @@ static void drawAmsDetailRow(const AmsTray& t, bool active, const char* slot,
     snprintf(grams, sizeof(grams), "%dg",
              (int)(((int32_t)(t.remain > 100 ? 100 : t.remain) * t.weightG + 50) / 100));
   const int16_t cy = y + h / 2;
-  setFont(tft, LY_F_BODY);
+  setFont(tft, AMSD_F_MAIN);
   const int16_t bodyH = (int16_t)tft.fontHeight();
   int16_t amountW = tft.textWidth("100%");
   tft.setTextColor(CLR_TEXT, bg);
   tft.setTextDatum(grams[0] ? BR_DATUM : MR_DATUM);
   tft.drawString(pct, W - pad, grams[0] ? cy + 1 : cy);
-  setFont(tft, LY_F_SMALL);
+  setFont(tft, AMSD_F_SUB);
   if (tft.textWidth("1000g") > amountW) amountW = tft.textWidth("1000g");
   if (grams[0]) {
     tft.setTextDatum(TR_DATUM);
@@ -5950,7 +5959,7 @@ static void drawAmsDetailRow(const AmsTray& t, bool active, const char* slot,
   const int16_t tx = pad + sw + 10;
   const int16_t tw = W - pad - amountW - 8 - tx;
   char buf[24];
-  setFont(tft, LY_F_BODY);
+  setFont(tft, AMSD_F_MAIN);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(t.present ? CLR_TEXT : CLR_TEXT_DIM, bg);
   const char* name = !t.present ? "Empty" : (t.type[0] ? t.type : "Unknown");
@@ -5958,7 +5967,7 @@ static void drawAmsDetailRow(const AmsTray& t, bool active, const char* slot,
   // Slot code under the name (A1..D4), the way the printer names it.
   char sub[24];
   snprintf(sub, sizeof(sub), active ? "%s - In use" : "%s", slot);
-  setFont(tft, LY_F_SMALL);
+  setFont(tft, AMSD_F_SUB);
   tft.setTextColor(CLR_TEXT_DIM, bg);
   tft.setTextDatum(TL_DATUM);
   tft.drawString(sub, tx, cy + bodyH / 4 + 1);
@@ -5977,9 +5986,9 @@ static void drawAmsDetail() {
 
   const int16_t W = uiW(), H = uiH();
   const uint16_t bg = dispSettings.bgColor;
-  setFont(tft, LY_F_BODY);
+  setFont(tft, AMSD_F_MAIN);
   const int16_t bodyH = (int16_t)tft.fontHeight();
-  setFont(tft, LY_F_SMALL);
+  setFont(tft, AMSD_F_SUB);
   const int16_t smallH = (int16_t)tft.fontHeight();
   const bool drying = u.dryRemainMin > 0;
   const int16_t hdrH = bodyH + 10 + (drying ? smallH + 4 : 0);
@@ -5990,7 +5999,7 @@ static void drawAmsDetail() {
     prevHdr = 0;
     memset(prevRow, 0, sizeof(prevRow));
     prevTc = tc;
-    setFont(tft, LY_F_SMALL);
+    setFont(tft, AMSD_F_SUB);
     tft.setTextDatum(BC_DATUM);
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString("Tap to close", W / 2, H - 2);
@@ -6007,7 +6016,7 @@ static void drawAmsDetail() {
     char label[64];
     formatAmsLetterLabel(label, sizeof(label), ui);
     const int16_t y = 5 + bodyH / 2;
-    setFont(tft, LY_F_BODY);
+    setFont(tft, AMSD_F_MAIN);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(CLR_TEXT, bg);
     tft.drawString(label, 8, y);
@@ -6032,7 +6041,7 @@ static void drawAmsDetail() {
     if (drying) {
       char dry[32];
       snprintf(dry, sizeof(dry), "Drying - %uh %02um left", u.dryRemainMin / 60, u.dryRemainMin % 60);
-      setFont(tft, LY_F_SMALL);
+      setFont(tft, AMSD_F_SUB);
       tft.setTextDatum(ML_DATUM);
       tft.setTextColor(CLR_ORANGE, bg);
       tft.drawString(dry, 8, bodyH + 10 + smallH / 2);
