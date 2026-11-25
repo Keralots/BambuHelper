@@ -182,6 +182,17 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code) {
 #endif
 }
 
+// X2D feed (query.php?d=20P) blanks "feed resistance is too high" on every AMS
+// and AMS-HT slot; the printer raises it on ordinary filament changes (#211).
+bool hmsIsBlankForModel(const char* serial, uint32_t attr, uint32_t code) {
+  if (!serial || strncmp(serial, "20P", 3) != 0) return false;
+  if (code != 0x00020025UL) return false;
+  const uint32_t module = attr >> 24;          // 0x07 AMS, 0x18 AMS-HT
+  if (module != 0x07UL && module != 0x18UL) return false;
+  const uint32_t slot = (attr >> 8) & 0xFFUL;
+  return slot >= 0x20UL && slot <= 0x23UL;
+}
+
 // ---------------------------------------------------------------------------
 //  Editorial mute list
 // ---------------------------------------------------------------------------

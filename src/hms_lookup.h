@@ -85,6 +85,11 @@ const char* printErrorLookupText(uint32_t err);
 // which is worth surfacing even with no wording to go with it.
 bool hmsIsDescribed(uint32_t attr, uint32_t code);
 
+// True when Bambu's feed for this printer model blanks a code that the generic
+// feed (the one our tables come from) describes. Same meaning as "undescribed",
+// decided per model by serial prefix, as Bambu Studio does (issue #211).
+bool hmsIsBlankForModel(const char* serial, uint32_t attr, uint32_t code);
+
 // Codes hidden even though Bambu does describe them, because BambuHelper
 // already shows the same condition somewhere that does not read as a fault.
 //
