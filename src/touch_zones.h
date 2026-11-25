@@ -41,7 +41,7 @@ int8_t touchStrokeSwipeY();
 void touchTestRequest(bool on);
 bool touchTestWanted();
 bool touchTestActivity(bool held); // every loop; true = still hold, close it
-void touchTestNoteTap();           // press edge: record where it landed
+bool touchTestNoteTap();           // record where the press landed; false = no position yet
 String touchTestJson();
 
 struct TouchTestTap { int16_t x, y, rx, ry; uint8_t zone, arg; };

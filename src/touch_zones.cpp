@@ -173,9 +173,9 @@ bool touchTestActivity(bool held) {
   return now - ttAnchorMs >= TOUCH_TEST_EXIT_MS;
 }
 
-void touchTestNoteTap() {
+bool touchTestNoteTap() {
   int16_t rx, ry;
-  if (!buttonPressRaw(&rx, &ry)) return;
+  if (!buttonPressRaw(&rx, &ry)) return false;
   TouchTestTap& t = ttTaps[ttHead];
   t.rx = rx; t.ry = ry;
   touchRawToScreen(rx, ry, &t.x, &t.y);
@@ -183,6 +183,7 @@ void touchTestNoteTap() {
   ttHead = (ttHead + 1) % TT_MAX;
   if (ttCount < TT_MAX) ttCount++;
   ttActivityMs = millis();
+  return true;
 }
 
 uint8_t touchTestTaps(TouchTestTap* out, uint8_t max) {

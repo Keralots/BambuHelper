@@ -920,7 +920,11 @@ static void handleWakeButton() {
   }
   if (getScreenState() == SCREEN_TOUCH_TEST) {
     ledHoldDimUpdate(held, holdMs, /*suppressDim=*/true);
-    if (touchPress) touchTestNoteTap();
+    // Edge-managed backends can report the press before its first position.
+    static bool ttTapPending = false;
+    if (touchPress) ttTapPending = true;
+    else if (!isButtonHeld()) ttTapPending = false;
+    if (ttTapPending && touchTestNoteTap()) ttTapPending = false;
     if (touchTestActivity(isButtonHeld())) {
       touchTestRequest(false);
       ttSwallow = true;
