@@ -41,11 +41,12 @@ static unsigned long g_lastConnectMs = 0;
 // ---------------------------------------------------------------------------
 //  Gates
 // ---------------------------------------------------------------------------
-// P1S=01P, P1P=01S, A1=039, A1mini=030 (per Bambu serial-prefix table).
+// P1S=01P, P1P=01S, A1=039, A1mini=030, A2L=26A (per Bambu serial-prefix table).
 static bool isP1A1Serial(const char* s) {
   if (!s || strlen(s) < 3) return false;
   return strncmp(s, "01P", 3) == 0 || strncmp(s, "01S", 3) == 0 ||
-         strncmp(s, "039", 3) == 0 || strncmp(s, "030", 3) == 0;
+         strncmp(s, "039", 3) == 0 || strncmp(s, "030", 3) == 0 ||
+         strncmp(s, "26A", 3) == 0;
 }
 
 bool cameraCanStreamDisplayedPrinter() {

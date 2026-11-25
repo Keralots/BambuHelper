@@ -39,6 +39,10 @@ inline bool isCloudMode(ConnMode m) { return m == CONN_CLOUD || m == CONN_CLOUD_
 // correct even though the unit itself isn't displayed.
 #define AMS_TRAY_OVERFLOW  253
 
+// A unit with more than four trays (AMS 3H: one unit, id 32, nine trays) is kept
+// as consecutive units[] entries sharing its id, four trays each, told apart by
+// trayBase. Everything drawn from units[] is built around groups of four.
+
 struct AmsTray {
   bool     present;        // tray physically present
   uint16_t colorRgb565;    // pre-converted for TFT
@@ -56,7 +60,10 @@ struct AmsUnit {
   uint16_t dryRemainMin;          // minutes remaining, 0 = not drying
   uint16_t dryTotalMin;           // captured at drying start (for progress calc)
   uint8_t  trayCount;             // actual trays parsed (4 for AMS2, 1 for AMS HT)
+  uint8_t  trayBase;              // first tray id of this group: 0, or 4 / 8 on a split unit
+  uint8_t  zone;                  // zone_info id the readings come from, AMS_ZONE_NONE = unit fields
 };
+#define AMS_ZONE_NONE  255
 
 struct AmsState {
   bool     present;               // any AMS data received
@@ -73,6 +80,14 @@ struct AmsState {
   uint16_t vtColorRgb565;
   char     vtType[16];
 };
+
+// This entry is one of several groups of a single physical unit.
+inline bool amsUnitIsSplit(const AmsState& a, uint8_t i) {
+  if (i >= AMS_MAX_UNITS || !a.units[i].present) return false;
+  if (a.units[i].trayBase > 0) return true;
+  return i + 1 < AMS_MAX_UNITS && a.units[i + 1].present &&
+         a.units[i + 1].trayBase > 0 && a.units[i + 1].id == a.units[i].id;
+}
 
 // ── Printer errors: print.hms + print.print_error ───────────────────────────
 #if HAS_HMS_UI
@@ -331,6 +346,7 @@ inline const char* stgCurLabel(int8_t stg) {
     case 75: return "Bed Underside Chk";
     case 76: return "Pre-Extruding";
     case 77: return "Preparing AMS";
+    case 82: return "Stabilizing Bed";   // H3C
     default: return nullptr;
   }
 }

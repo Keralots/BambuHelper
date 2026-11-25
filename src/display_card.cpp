@@ -271,32 +271,39 @@ static void formatClock(time_t t, char* buf, size_t n, char* ampm, size_t an) {
   }
 }
 
-// Raw id of the unit last seen feeding, per printer slot. A dual-nozzle printer
-// reports no tray while the other nozzle prints; keep that unit, not AMS 1.
-static uint8_t g_feedUnitId[MAX_ACTIVE_PRINTERS];
-static bool    g_feedUnitInit = false;
+// Unit (raw id << 8 | trayBase) last seen feeding, per printer slot. A dual-nozzle
+// printer reports no tray while the other nozzle prints; keep that unit, not AMS 1.
+static uint16_t g_feedUnit[MAX_ACTIVE_PRINTERS];
+static bool     g_feedUnitInit = false;
 
-static int8_t unitById(const AmsState& a, uint8_t id) {
+static uint16_t unitKey(const AmsUnit& u) { return (uint16_t)(u.id << 8 | u.trayBase); }
+
+static int8_t unitByKey(const AmsState& a, uint16_t key) {
   for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
-    if (a.units[i].present && a.units[i].id == id) return (int8_t)i;
+    if (a.units[i].present && unitKey(a.units[i]) == key) return (int8_t)i;
   return -1;
+}
+
+// Unit holding tray `tid` of raw unit `id`.
+static int8_t unitOfTray(const AmsState& a, uint8_t id, uint8_t tid) {
+  return unitByKey(a, (uint16_t)(id << 8 | (tid / AMS_TRAYS_PER_UNIT) * AMS_TRAYS_PER_UNIT));
 }
 
 // Unit the column / AMS cells describe: the one feeding, else the one that fed
 // last, else the first present.
 static int8_t displayAmsUnit(const AmsState& a, uint8_t slot) {
-  if (!g_feedUnitInit) { memset(g_feedUnitId, 0xFF, sizeof(g_feedUnitId)); g_feedUnitInit = true; }
+  if (!g_feedUnitInit) { memset(g_feedUnit, 0xFF, sizeof(g_feedUnit)); g_feedUnitInit = true; }
   if (!a.present || a.unitCount == 0) return -1;
   int8_t u = -1;
   if (a.activeTray < AMS_MAX_TRAYS) {
     uint8_t t = a.activeTray / AMS_TRAYS_PER_UNIT;
     if (t < a.unitCount && a.units[t].present) u = (int8_t)t;
   } else if (a.activeTray == AMS_TRAY_OVERFLOW) {
-    u = unitById(a, a.ovUnitId);
+    u = unitOfTray(a, a.ovUnitId, a.ovTrayId);
   }
   if (slot < MAX_ACTIVE_PRINTERS) {
-    if (u >= 0) g_feedUnitId[slot] = a.units[u].id;
-    else if (a.activeTray == 255 && g_feedUnitId[slot] != 0xFF) u = unitById(a, g_feedUnitId[slot]);
+    if (u >= 0) g_feedUnit[slot] = unitKey(a.units[u]);
+    else if (a.activeTray == 255 && g_feedUnit[slot] != 0xFFFF) u = unitByKey(a, g_feedUnit[slot]);
   }
   if (u >= 0) return u;
   for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
@@ -323,17 +330,15 @@ static void resolveMapEntry(const BambuState& s, uint16_t raw, CardChip& c) {
   const uint8_t uid = (uint8_t)(raw >> 8), tid = (uint8_t)(raw & 0xFF);
   c.known = 0; c.active = 0; c.color = dispSettings.textDimColor; c.remain = -1; c.grams = -1;
   strlcpy(c.type, "?", sizeof(c.type));
-  for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++) {
-    if (!a.units[i].present || a.units[i].id != uid) continue;
-    if (i < AMS_TRAY_UNITS && tid < AMS_TRAYS_PER_UNIT) {
-      const AmsTray& t = a.trays[i * AMS_TRAYS_PER_UNIT + tid];
-      if (!t.present) return;
-      c.known = 1; c.color = t.colorRgb565; c.remain = t.remain; c.grams = amsTrayGrams(t.remain, t.weightG);
-      copyType(c.type, sizeof(c.type), t.type);
-      c.active = (a.activeTray == i * AMS_TRAYS_PER_UNIT + tid) ? 1 : 0;
-      return;
-    }
-    break;
+  const int8_t i = unitOfTray(a, uid, tid);
+  if (i >= 0 && i < AMS_TRAY_UNITS) {
+    const uint8_t idx = i * AMS_TRAYS_PER_UNIT + tid % AMS_TRAYS_PER_UNIT;
+    const AmsTray& t = a.trays[idx];
+    if (!t.present) return;
+    c.known = 1; c.color = t.colorRgb565; c.remain = t.remain; c.grams = amsTrayGrams(t.remain, t.weightG);
+    copyType(c.type, sizeof(c.type), t.type);
+    c.active = (a.activeTray == idx) ? 1 : 0;
+    return;
   }
   if (a.ovUnitId == uid && a.ovTrayId == tid && a.ovTray.present) {
     c.known = 1; c.color = a.ovTray.colorRgb565; c.remain = a.ovTray.remain;
@@ -374,12 +379,13 @@ static uint16_t tempClr(float v, uint16_t scaleMax, uint16_t base) {
   return tempOverWarn(v, (float)scaleMax) ? dispSettings.warnColor : base;
 }
 
-// P1P/P1S/A1/A1 mini have no chamber sensor; they still send a placeholder
+// P1P/P1S/A1/A1 mini/A2L have no chamber sensor; they still send a placeholder
 // chamber_temper (5 on a live P1S), so the cell is gated by model, not value.
 static bool hasChamberSensor(const char* serial) {
   if (!serial || strlen(serial) < 3) return true;
   return !(strncmp(serial, "01P", 3) == 0 || strncmp(serial, "01S", 3) == 0 ||
-           strncmp(serial, "039", 3) == 0 || strncmp(serial, "030", 3) == 0);
+           strncmp(serial, "039", 3) == 0 || strncmp(serial, "030", 3) == 0 ||
+           strncmp(serial, "26A", 3) == 0);
 }
 
 static void snapBottom(CardFrame& f, const BambuState& s, const char* serial, uint8_t slot) {
@@ -440,7 +446,8 @@ static void snapAmsColumn(CardFrame& f, const BambuState& s, uint8_t slot) {
   if (own || ov) {
     const AmsUnit& au = a.units[u];
     if (au.id >= 128) snprintf(f.amsLabel, sizeof(f.amsLabel), "AMS HT");
-    else formatAmsNumberLabel(f.amsLabel, sizeof(f.amsLabel), (uint8_t)u);
+    else if (!formatAmsSplitLabel(f.amsLabel, sizeof(f.amsLabel), a, (uint8_t)u))
+      formatAmsNumberLabel(f.amsLabel, sizeof(f.amsLabel), (uint8_t)u);
     if (au.humidityRaw > 0)   snprintf(f.amsHum, sizeof(f.amsHum), "%u%%", au.humidityRaw);
     else if (au.humidity > 0) snprintf(f.amsHum, sizeof(f.amsHum), "%u/5", au.humidity);
   }
@@ -1509,14 +1516,16 @@ static uint8_t buildAmsBoxes(const AmsState& a, CardAmsBox* out, uint8_t cap) {
       if (!au.present || au.id >= 128) continue;
       CardAmsBox& b = out[n++];
       memset(&b, 0, sizeof(b));
-      formatAmsNumberLabel(b.label, sizeof(b.label), u);
+      const bool split = formatAmsSplitLabel(b.label, sizeof(b.label), a, u);
+      if (!split) formatAmsNumberLabel(b.label, sizeof(b.label), u);
       unitEnv(b.env, sizeof(b.env), au);
       b.n = au.trayCount ? au.trayCount : AMS_TRAYS_PER_UNIT;
       if (b.n > AMS_TRAYS_PER_UNIT) b.n = AMS_TRAYS_PER_UNIT;
       const char letter = (char)('A' + (au.id < 26 ? au.id : u));
       for (uint8_t t = 0; t < b.n; t++) {
         const uint8_t idx = u * AMS_TRAYS_PER_UNIT + t;
-        const char slot[4] = { letter, (char)('1' + t), 0, 0 };
+        char slot[4] = { letter, (char)('1' + t), 0, 0 };
+        if (split) snprintf(slot, sizeof(slot), "%u", (unsigned)(uint8_t)(au.trayBase + t + 1));
         fillTile(b.t[t], a.trays[idx], a.activeTray == idx, slot);
       }
     }
