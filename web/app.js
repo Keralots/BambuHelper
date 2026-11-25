@@ -763,6 +763,8 @@ function saveWifi(){
 function toggleBtnPin(){
   var v = document.getElementById('btntype').value;
   document.getElementById('btnPinRow').style.display = (v === '0' || v === '3') ? 'none' : 'block';
+  var tt = document.getElementById('touchTestRow');   /* only on touch-zone boards */
+  if (tt) tt.style.display = (v === '3') ? '' : 'none';
   toggleBuzPin();
   applyGestureVis();
 }
@@ -2037,6 +2039,16 @@ function glowTestNow(){
   var p = new URLSearchParams();
   p.append('clr', document.getElementById('glow_clr').value);
   fetch('/glow/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()});
+}
+
+function touchTestNow(btn){
+  fetch('/touch/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'on=1'})
+    .then(function(r){
+      if (!r.ok) return;
+      btn.textContent = 'Touch test - open on the device';
+      setTimeout(function(){ btn.textContent = 'Touch test'; }, 5000);
+    })
+    .catch(function(){ btn.textContent = 'Touch test'; });
 }
 
 /* ============ Timezone list (AJAX-loaded to keep PROGMEM small) ============ */

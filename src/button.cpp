@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "buzzer.h"
 #include "button_touch_backend.h"
+#include "config.h"
 
 // Touch-driver specifics live in button_touch_<driver>.cpp behind the
 // button_touch_backend.h interface (mirrors the buzzer backends). This file owns
@@ -12,6 +13,27 @@ static bool stableState = false;
 static unsigned long lastChangeMs = 0;
 static unsigned long pressStartMs = 0;
 static const unsigned long DEBOUNCE_MS = 50;
+
+// Touchscreen coordinates (raw controller frame). `live` follows the finger;
+// `press` is latched on the debounced press edge = where the tap landed.
+// Compiled out where nothing reads them (HAS_TOUCH_ZONES).
+#if HAS_TOUCH_ZONES
+static bool    liveHasXY = false, pressHasXY = false;
+static int16_t liveX = 0, liveY = 0, pressX = 0, pressY = 0;
+static inline void noteLive(const TouchPoll& tp) {
+  if (tp.hasXY) { liveX = tp.x; liveY = tp.y; liveHasXY = true; }
+  else if (!tp.isDown) liveHasXY = false;
+}
+static inline void latchPress() { pressHasXY = liveHasXY; pressX = liveX; pressY = liveY; }
+// Edge-managed backends can report the press before its first position.
+static inline void latchLatePress(const TouchPoll& tp) {
+  if (stableState && !pressHasXY && tp.hasXY && tp.ev == TouchEvent::None) latchPress();
+}
+#else
+static inline void noteLive(const TouchPoll&) {}
+static inline void latchPress() {}
+static inline void latchLatePress(const TouchPoll&) {}
+#endif
 
 void sanitizeButtonPin() {
   // Only the GPIO-backed button types use buttonPin. Touchscreen talks over
@@ -243,6 +265,8 @@ bool wasButtonPressed() {
     // A failed bus/read must NOT disturb debounce or hold state - it is not a
     // release (a genuinely held finger whose poll failed mid-hold stays held).
     if (tp.ev == TouchEvent::Unavailable) return false;
+    noteLive(tp);
+    latchLatePress(tp);
     // Edge-managed backends (AXS) resolve press/release from ISR activity
     // themselves; map the edge straight to hold state, bypassing the 50 ms
     // debounce. Level backends only ever report None, so they fall through
@@ -250,6 +274,7 @@ bool wasButtonPressed() {
     if (tp.ev == TouchEvent::Pressed) {
       stableState = true;
       pressStartMs = millis();
+      latchPress();
       return true;
     }
     if (tp.ev == TouchEvent::Released) {
@@ -281,6 +306,7 @@ bool wasButtonPressed() {
   if (raw && !stableState) {
     result = true;
     pressStartMs = millis();
+    if (buttonType == BTN_TOUCHSCREEN) latchPress();
   } else if (!raw && stableState) {
     pressStartMs = 0;
   }
@@ -297,3 +323,24 @@ uint32_t buttonHoldDurationMs() {
   if (!stableState || pressStartMs == 0) return 0;
   return (uint32_t)(millis() - pressStartMs);
 }
+
+#if HAS_TOUCH_ZONES
+bool buttonPressRaw(int16_t* x, int16_t* y) {
+  if (buttonType != BTN_TOUCHSCREEN || !pressHasXY) return false;
+  *x = pressX; *y = pressY;
+  return true;
+}
+
+bool buttonStrokeRaw(int16_t* px, int16_t* py, int16_t* lx, int16_t* ly) {
+  // live* keeps the last point after the finger lifts, so this works on release.
+  if (buttonType != BTN_TOUCHSCREEN || !pressHasXY) return false;
+  *px = pressX; *py = pressY; *lx = liveX; *ly = liveY;
+  return true;
+}
+
+bool buttonTouchRaw(int16_t* x, int16_t* y) {
+  if (buttonType != BTN_TOUCHSCREEN || !liveHasXY || !stableState) return false;
+  *x = liveX; *y = liveY;
+  return true;
+}
+#endif  // HAS_TOUCH_ZONES

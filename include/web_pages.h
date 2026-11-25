@@ -993,6 +993,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
       <label for="btnpin">Button GPIO pin</label>
       <input type="number" id="btnpin" class="mono" min="1" max="48" value="%BTN_PIN%" style="max-width:120px">
     </div>
+%TOUCH_TEST_ROW%
   </div>
 
   <div class="card">

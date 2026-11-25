@@ -15,4 +15,11 @@ void sanitizeButtonPin();  // zero buttonPin if it conflicts with a reserved
 bool isButtonHeld();              // post-debounce stable pressed state
 uint32_t buttonHoldDurationMs();  // 0 if not held, else millis() - press start
 
+// Raw touch-controller coordinates (map with touchRawToScreen()). False for GPIO
+// buttons and backends without coordinates.
+bool buttonPressRaw(int16_t* x, int16_t* y);  // where the latest press started
+bool buttonTouchRaw(int16_t* x, int16_t* y);  // live finger, while held
+// Latest stroke: press point and last point seen (valid during and after it).
+bool buttonStrokeRaw(int16_t* px, int16_t* py, int16_t* lx, int16_t* ly);
+
 #endif // BUTTON_H

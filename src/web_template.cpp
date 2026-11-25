@@ -351,6 +351,11 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += "<span class=\"text-dim small\">This touchscreen often reads a wake touch as a hold.</span>";
 #endif
     out += "</div>";
+#if HAS_TOUCH_ZONES
+    if (buttonType == BTN_TOUCHSCREEN)
+      out += "<div class=\"help-text\">Touchscreen swipes: sideways = next printer, up = AMS, "
+             "down = close it or show the clock. A tap on an AMS unit opens its details.</div>";
+#endif
 #if HAS_CARD_SKIN
     out += "<div class=\"help-text\" id=\"gestAmsNote\"><em>Switch status / AMS page</em> shows the other view on Ready and Print complete for 30 s.</div>";
 #endif
@@ -432,6 +437,18 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += " onchange=\"toggleSetting('cyd32e',this.checked)\">";
     out += "<label for=\"cyd32e\">ESP32-32E clone board (fixes silent speaker + stuck red LED - device will reboot)</label>";
     out += "</label>";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "TOUCH_TEST_ROW") == 0) {
+#if HAS_TOUCH_ZONES
+    // Shown by app.js only while Button type = Touchscreen.
+    out  = "<div class=\"field\" id=\"touchTestRow\" style=\"display:none\">";
+    out += "<button type=\"button\" class=\"btn\" onclick=\"touchTestNow(this)\">Touch test</button>";
+    out += "<div class=\"hint\">Puts targets on the screen: tap them to check that touches land "
+           "where your finger is. Hold a finger still for 2 s to close.</div></div>";
 #else
     out = "";
 #endif
