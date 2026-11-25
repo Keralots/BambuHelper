@@ -249,6 +249,8 @@ def check_error_tables():
     print("\n--- Checking error tables against the portal mirror ---")
     table = _header_define(ERROR_TABLES / "hms_table.h", "HMS_TABLE_VER")
     known = _header_define(ERROR_TABLES / "hms_known.h", "HMS_KNOWN_VER")
+    full = _header_define(ERROR_TABLES / "print_error_table.h", "PRINT_ERROR_TABLE_VER")
+    lite = _header_define(ERROR_TABLES / "print_error_lite.h", "PRINT_ERROR_TABLE_VER")
     if not ERROR_MIRROR.is_file():
         sys.exit(f"error: {ERROR_MIRROR} not found - run tools/gen_error_tables.py")
     try:
@@ -257,11 +259,12 @@ def check_error_tables():
         sys.exit(f"error: cannot read a feed ver from {ERROR_MIRROR}: {exc}")
 
     for label, ver in (("hms_table.h", table), ("hms_known.h", known),
+                       ("print_error_table.h", full), ("print_error_lite.h", lite),
                        ("docs/errors/hms_en.json", mirror)):
         print(f"  {label:<26} {ver or 'MISSING'}")
 
-    seen = {v for v in (table, known, mirror) if v}
-    if table is None or known is None:
+    seen = {v for v in (table, known, full, lite, mirror) if v}
+    if None in (table, known, full, lite):
         sys.exit("error: a generated error table is missing its ver define - "
                  "regenerate with `python tools/gen_error_tables.py`")
     if len(seen) > 1:
@@ -269,7 +272,7 @@ def check_error_tables():
                  "different feed snapshots. A device would suppress codes the "
                  "portal still describes, or list codes it cannot.\n"
                  "Fix with a full `python tools/gen_error_tables.py`, rebuild, "
-                 "and commit all four files together.")
+                 "and commit every generated file together.")
 
 
 def copy_full_to_docs(version: str):

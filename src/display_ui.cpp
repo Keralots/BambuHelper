@@ -5766,14 +5766,14 @@ static uint8_t drawWrappedText(const char* text, int16_t x, int16_t y,
 
 // Official sentence for an entry, or the generic line when this board carries
 // no table for the domain and when Bambu ships the code blank.
-static const char* hmsEntryText(uint32_t attr, uint32_t code) {
+static const char* hmsEntryText(const char* serial, uint32_t attr, uint32_t code) {
   if (attr) {
-    const char* t = hmsLookupText(attr, code);
+    const char* t = hmsLookupText(serial, attr, code);
     return t ? t : HMS_FALLBACK_TEXT;
   }
   // print_error has its own fallback: it is exempt from the undescribed-code
   // rule, so unlike an HMS entry it can genuinely be a code nobody has text for.
-  const char* t = printErrorLookupText(code);
+  const char* t = printErrorLookupText(serial, code);
   return t ? t : PRINT_ERROR_FALLBACK_TEXT;
 }
 
@@ -6127,7 +6127,7 @@ static void drawHmsScreen() {
     // the sentence, so nothing below it moves.
     tft.setTextColor(CLR_TEXT_DIM, bg);
     tft.drawString(codeStr, cx, hdrY + smallH + 1);
-    drawWrappedText(hmsEntryText(attr, code), cx,
+    drawWrappedText(hmsEntryText(p.config.serial, attr, code), cx,
                     topY + bodyH + LY_SC(6) + smallH * 2,
                     maxW, smallH + LY_SC(2), 3, CLR_TEXT, bg, /*centered=*/true);
     if (total > 1) {
@@ -6218,7 +6218,7 @@ static void drawHmsScreen() {
     // above guarantees at least one line fits, so this is never zero.
     int16_t roomLines = (wrapFloor - y) / (smallH + 2);
     if (roomLines > 4) roomLines = 4;
-    const uint8_t lines = drawWrappedText(hmsEntryText(attr, code), margin + 8, y,
+    const uint8_t lines = drawWrappedText(hmsEntryText(p.config.serial, attr, code), margin + 8, y,
                                           maxW - 10, smallH + 2, (uint8_t)roomLines,
                                           CLR_TEXT, bg, /*centered=*/false);
     y += lines * (smallH + 2) + 4;

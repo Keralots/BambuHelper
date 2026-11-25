@@ -1515,8 +1515,7 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
       // The mute list is deliberately not severity-gated: it names two specific
       // codes, and a named code is a decision, not a guess about a snapshot.
       const uint8_t sev = hmsSeverityOf(code);
-      const bool undescribed = (sev != 1) &&
-          (!hmsIsDescribed(attr, code) || hmsIsBlankForModel(serial, attr, code));
+      const bool undescribed = (sev != 1) && !hmsIsDescribed(serial, attr, code);
       // Muting the door needs the door indicator to actually exist on this
       // printer. doorOpen/doorSensorPresent come only from the `stat` bit and
       // home_flag bit 23, never from HMS, so on a printer that reports an open
