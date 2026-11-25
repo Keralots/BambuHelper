@@ -6,11 +6,15 @@
 // The generated tables are huge PROGMEM blobs with internal linkage, so they
 // are included exactly once - here - the same way fonts.cpp owns the VLW data.
 // Regenerate both with: python tools/gen_error_tables.py
-#if HAS_ERROR_TEXT_TABLE
-#include "error_tables/print_error_table.h"
+#if HAS_FULL_HMS_TABLE || HAS_HMS_KNOWN_TABLE
+#include "error_tables/error_models.h"
+#endif
+#if HAS_ERROR_TEXT_TABLE && !HAS_FULL_HMS_TABLE
+#include "error_tables/print_error_lite.h"
 #endif
 #if HAS_FULL_HMS_TABLE
 #include "error_tables/hms_table.h"
+#include "error_tables/print_error_table.h"
 #endif
 #if HAS_HMS_KNOWN_TABLE
 #include "error_tables/hms_known.h"
@@ -41,16 +45,20 @@ const char* hmsSeverityLabel(uint8_t sev) {
 }
 
 const char* hmsModuleLabel(uint32_t attr) {
-  // Module byte, verified against Bambu's live feed: only these five appear
-  // across all 4022 codes. ha-bambulab's bundled map lists more (0x08
-  // "toolhead"), but that file is a merged historical superset and 0x08 is
-  // absent from the current feed - do not add labels we cannot source.
+  // Module bytes of every per-model feed (ver 202611242216). Labels come from
+  // the sentences those codes carry - do not add one we cannot source.
   switch ((attr >> 24) & 0xFF) {
-    case 0x07: return "AMS";    // AMS
-    case 0x18: return "AMS";    // AMS, newer generation - same thing to a user
-    case 0x05: return "MAIN";   // mainboard
-    case 0x03: return "MC";     // motion controller
-    case 0x0C: return "XCAM";   // xcam / lidar
+    case 0x07:                    // AMS
+    case 0x12:                    // AMS lite
+    case 0x18:                    // AMS-HT
+    case 0x2A: return "AMS";      // AMS 3H / 3P
+    case 0x05: return "MAIN";     // mainboard
+    case 0x03: return "MC";       // motion controller
+    case 0x0C: return "XCAM";     // xcam / lidar
+    case 0x08: return "TOOL";     // H3C/P3C toolhead (LockTool, FlexFeed motors)
+    case 0x1A: return "RACK";     // hotend / tool rack
+    case 0x29: return "FILTER";   // air filter
+    case 0x2E: return "DRYER";    // P3C drying module
     default:   return "MODULE";
   }
 }
@@ -99,39 +107,75 @@ static const char* hmsTextById(uint16_t id) {
 }
 #endif
 
-const char* printErrorLookupText(uint32_t err) {
-#if HAS_ERROR_TEXT_TABLE
-  if (err == 0) return NULL;
-  uint16_t lo = 0, hi = PRINT_ERROR_TABLE_COUNT;
-  while (lo < hi) {
-    uint16_t mid = lo + (hi - lo) / 2;
-    uint32_t key = PRINT_ERROR_KEYS[mid];
-    if (key == err) return printErrorTextById(PRINT_ERROR_TEXT_ID[mid]);
-    if (key < err) lo = mid + 1;
-    else           hi = mid;
+#if HAS_FULL_HMS_TABLE || HAS_HMS_KNOWN_TABLE
+// Mask bits for a printer: its model's bit, or every bit when the prefix is
+// unknown (a printer newer than this build) - showing beats hiding there.
+static uint32_t modelBits(const char* serial) {
+  if (serial) {
+    for (uint8_t i = 0; i < ERROR_MODEL_COUNT; i++)
+      if (strncmp(serial, ERROR_MODEL_SN[i], 3) == 0) return 1UL << ERROR_MODEL_IDX[i];
   }
-#else
-  (void)err;
+  return 0xFFFFFFFFUL;
+}
 #endif
-  return NULL;
+
+// First row whose key is not below `want`. Rows of one key are adjacent.
+template <typename K>
+static uint16_t lowerBound(const K* keys, uint16_t count, K want) {
+  uint16_t lo = 0, hi = count;
+  while (lo < hi) {
+    const uint16_t mid = lo + (hi - lo) / 2;
+    if (keys[mid] < want) lo = mid + 1;
+    else                  hi = mid;
+  }
+  return lo;
 }
 
-const char* hmsLookupText(uint32_t attr, uint32_t code) {
 #if HAS_FULL_HMS_TABLE
-  uint64_t want = hmsKeyOf(attr, code);
-  uint16_t lo = 0, hi = HMS_TABLE_COUNT;
-  while (lo < hi) {
-    uint16_t mid = lo + (hi - lo) / 2;
-    uint64_t key = HMS_KEYS[mid];
-    if (key == want) return hmsTextById(HMS_TEXT_ID[mid]);
-    if (key < want) lo = mid + 1;
-    else            hi = mid;
-  }
+// Row for this model, or -1. `first` gets the code's default row, or -1.
+template <typename K>
+static int32_t findRow(const K* keys, const uint8_t* maskId, const uint32_t* masks,
+                       uint16_t count, K want, uint32_t bits, int32_t* first) {
+  uint16_t i = lowerBound<K>(keys, count, want);
+  *first = (i < count && keys[i] == want) ? (int32_t)i : -1;
+  for (; i < count && keys[i] == want; i++)
+    if (masks[maskId[i]] & bits) return i;
+  return -1;
+}
+#endif
+
+const char* printErrorLookupText(const char* serial, uint32_t err) {
+  if (err == 0) return NULL;
+#if HAS_FULL_HMS_TABLE
+  int32_t first;
+  int32_t row = findRow<uint32_t>(PRINT_ERROR_KEYS, PRINT_ERROR_MASK_ID, PRINT_ERROR_MASKS,
+                                  PRINT_ERROR_TABLE_COUNT, err, modelBits(serial), &first);
+  if (row < 0) row = first;
+  return row < 0 ? NULL : printErrorTextById(PRINT_ERROR_TEXT_ID[row]);
+#elif HAS_ERROR_TEXT_TABLE
+  (void)serial;   // one wording per code on a 4 MB board
+  const uint16_t i = lowerBound<uint32_t>(PRINT_ERROR_KEYS, PRINT_ERROR_TABLE_COUNT, err);
+  return (i < PRINT_ERROR_TABLE_COUNT && PRINT_ERROR_KEYS[i] == err)
+             ? printErrorTextById(PRINT_ERROR_TEXT_ID[i]) : NULL;
 #else
+  (void)serial;
+  return NULL;
+#endif
+}
+
+const char* hmsLookupText(const char* serial, uint32_t attr, uint32_t code) {
+#if HAS_FULL_HMS_TABLE
+  int32_t first;
+  int32_t row = findRow<uint64_t>(HMS_KEYS, HMS_MASK_ID, HMS_MASKS, HMS_TABLE_COUNT,
+                                  hmsKeyOf(attr, code), modelBits(serial), &first);
+  if (row < 0) row = first;
+  return row < 0 ? NULL : hmsTextById(HMS_TEXT_ID[row]);
+#else
+  (void)serial;
   (void)attr;
   (void)code;
-#endif
   return NULL;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -139,11 +183,13 @@ const char* hmsLookupText(uint32_t attr, uint32_t code) {
 // ---------------------------------------------------------------------------
 // Two implementations of one question, picked by which table this board carries.
 // A full-table board answers it from the key array it already has; every other
-// board uses hms_known.h, the same keys grouped by attr so they cost 6 KB
-// instead of 194. Both key sets come out of the same generator run.
-bool hmsIsDescribed(uint32_t attr, uint32_t code) {
+// board uses hms_known.h, ~6 KB. Both come out of the same generator run.
+bool hmsIsDescribed(const char* serial, uint32_t attr, uint32_t code) {
+  if (hmsSeverityOf(code) == 1) return true;
 #if HAS_FULL_HMS_TABLE
-  return hmsLookupText(attr, code) != NULL;
+  int32_t first;
+  return findRow<uint64_t>(HMS_KEYS, HMS_MASK_ID, HMS_MASKS, HMS_TABLE_COUNT,
+                           hmsKeyOf(attr, code), modelBits(serial), &first) >= 0;
 #elif HAS_HMS_KNOWN_TABLE
   const uint32_t sev = code >> 16;
   const uint32_t sub = code & 0xFFFF;
@@ -152,45 +198,22 @@ bool hmsIsDescribed(uint32_t attr, uint32_t code) {
   // what keeps this from silently swallowing a whole severity class.
   if (sev > 3 || sub > HMS_KNOWN_SUB_MASK) return false;
 
-  uint16_t lo = 0, hi = HMS_KNOWN_ATTR_COUNT;
-  while (lo < hi) {
-    const uint16_t mid = lo + (hi - lo) / 2;
-    const uint32_t a = HMS_KNOWN_ATTR[mid];
-    if (a == attr) {
-      const uint16_t want = (uint16_t)((sev << HMS_KNOWN_SEV_SHIFT) | sub);
-      uint16_t clo = HMS_KNOWN_IDX[mid], chi = HMS_KNOWN_IDX[mid + 1];
-      while (clo < chi) {
-        const uint16_t cmid = clo + (chi - clo) / 2;
-        const uint16_t c = HMS_KNOWN_CODE[cmid];
-        if (c == want) return true;
-        if (c < want) clo = cmid + 1;
-        else          chi = cmid;
-      }
-      return false;
-    }
-    if (a < attr) lo = mid + 1;
-    else          hi = mid;
-  }
-  return false;
+  const uint16_t a = lowerBound<uint32_t>(HMS_KNOWN_ATTR, HMS_KNOWN_ATTR_COUNT, attr);
+  if (a >= HMS_KNOWN_ATTR_COUNT || HMS_KNOWN_ATTR[a] != attr) return false;
+  const uint16_t start = HMS_KNOWN_IDX[HMS_KNOWN_RUN[a]];
+  const uint16_t len   = HMS_KNOWN_IDX[HMS_KNOWN_RUN[a] + 1] - start;
+  const uint16_t want  = (uint16_t)((sev << HMS_KNOWN_SEV_SHIFT) | sub);
+  const uint16_t i = lowerBound<uint16_t>(HMS_KNOWN_CODE + start, len, want);
+  if (i >= len || HMS_KNOWN_CODE[start + i] != want) return false;
+  return (HMS_KNOWN_MASKS[HMS_KNOWN_MASK_ID[start + i]] & modelBits(serial)) != 0;
 #else
   // No key set compiled in: nothing can be judged, so nothing is suppressed.
   // Reachable only if a future board drops both tables - keep the errors
   // visible rather than silently blind.
+  (void)serial;
   (void)attr;
-  (void)code;
   return true;
 #endif
-}
-
-// X2D feed (query.php?d=20P) blanks "feed resistance is too high" on every AMS
-// and AMS-HT slot; the printer raises it on ordinary filament changes (#211).
-bool hmsIsBlankForModel(const char* serial, uint32_t attr, uint32_t code) {
-  if (!serial || strncmp(serial, "20P", 3) != 0) return false;
-  if (code != 0x00020025UL) return false;
-  const uint32_t module = attr >> 24;          // 0x07 AMS, 0x18 AMS-HT
-  if (module != 0x07UL && module != 0x18UL) return false;
-  const uint32_t slot = (attr >> 8) & 0xFFUL;
-  return slot >= 0x20UL && slot <= 0x23UL;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,13 +252,17 @@ bool hmsIsMuted(uint32_t attr, uint32_t code) {
 // leaves the slot empty so 0003_0002 stands for the rest of the job (#181).
 // Match the slot byte, not module+code: the same 0003_0001 on a unit-level
 // attr is "AMS disabled" (0x51) / "dry cooling" (0x56) / "chamber hot" (0x97).
-// Slots 0x20-0x23 = AMS A-D slots 1-4; AMS-HT A-H are always 0x20.
+// Slots 0x20-0x23 = AMS A-D slots 1-4 and AMS lite (0x12); AMS-HT A-H are always
+// 0x20; AMS 3H/3P (0x2A) has up to nine, 0x20-0x28.
 bool hmsIsSelfResolved(uint32_t attr, uint32_t code) {
   if (code != 0x00030001UL && code != 0x00030002UL) return false;
-  const uint32_t module = attr >> 24;          // 0x07 AMS, 0x18 AMS-HT
-  if (module != 0x07UL && module != 0x18UL) return false;
+  const uint32_t module = attr >> 24;
   const uint32_t slot = (attr >> 8) & 0xFFUL;
-  return slot >= 0x20UL && slot <= 0x23UL;
+  switch (module) {
+    case 0x07UL: case 0x12UL: case 0x18UL: return slot >= 0x20UL && slot <= 0x23UL;
+    case 0x2AUL:                           return slot >= 0x20UL && slot <= 0x28UL;
+    default:                               return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

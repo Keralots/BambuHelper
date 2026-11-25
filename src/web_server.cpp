@@ -533,10 +533,14 @@ static void handleStatus() {
   // same information in fewer bytes, and the card wants it per row anyway.
   if (dispSettings.hmsEnabled && (st.printError != 0 || st.hmsCount > 0)) {
     char codeBuf[HMS_CODE_FULL_STR_LEN];
+    // Model prefix of the serial: picks the mirror's per-model wording.
+    char model[4];
+    strlcpy(model, printers[slot].config.serial, sizeof(model));
+    doc["errModel"] = model;
     if (st.printError != 0) {
       printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
       doc["printError"] = codeBuf;
-      const char* peText = printErrorLookupText(st.printError);
+      const char* peText = printErrorLookupText(printers[slot].config.serial, st.printError);
       if (peText) doc["printErrorText"] = peText;
       // The card says "Canceled", not "error", for a stop the user asked for.
       if (printErrorIsCancel(st.printError)) doc["printErrorCancel"] = true;
@@ -554,7 +558,7 @@ static void handleStatus() {
         if (hmsIsBaseline(st, st.hms[i].attr, st.hms[i].code)) e["baseline"] = true;
         // Only on boards carrying the table. Elsewhere the card falls back to
         // the published mirror, which the browser can reach and we cannot.
-        const char* text = hmsLookupText(st.hms[i].attr, st.hms[i].code);
+        const char* text = hmsLookupText(printers[slot].config.serial, st.hms[i].attr, st.hms[i].code);
         if (text) e["text"] = text;
       }
       if (st.hmsOverflow) doc["hmsOverflow"] = (uint8_t)(st.hmsTotal - st.hmsCount);
@@ -685,7 +689,7 @@ static void handleDebug() {
     if (st.printError != 0) {
       printErrorFormatCode(st.printError, codeBuf, sizeof(codeBuf));
       p["print_error"] = codeBuf;
-      const char* peText = printErrorLookupText(st.printError);
+      const char* peText = printErrorLookupText(printers[i].config.serial, st.printError);
       if (peText) p["print_error_text"] = peText;
     }
     if (st.hmsCount > 0) {
@@ -697,7 +701,7 @@ static void handleDebug() {
         e["sev"] = hmsSeverityOf(st.hms[k].code);
         e["module"] = hmsModuleLabel(st.hms[k].attr);
         e["baseline"] = hmsIsBaseline(st, st.hms[k].attr, st.hms[k].code);
-        const char* text = hmsLookupText(st.hms[k].attr, st.hms[k].code);
+        const char* text = hmsLookupText(printers[i].config.serial, st.hms[k].attr, st.hms[k].code);
         if (text) e["text"] = text;
       }
       p["hms_total"] = st.hmsTotal;

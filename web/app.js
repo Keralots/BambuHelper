@@ -1535,11 +1535,15 @@ function hmsBareCode(code){
   return String(code).replace(/^HMS[_-]/i, '').replace(/[_-]/g, '').toUpperCase();
 }
 
-function hmsText(map, code, dev){
+/* alt holds the wordings that differ by printer model: {code: {text: "sn,sn"}},
+   sn being the first 3 serial characters. Missing from older mirrors. */
+function hmsText(kind, code, dev, model){
   if (dev) return dev;
-  if (!map) return '';
-  var k = hmsBareCode(code);
-  return map[k] || '';
+  var m = _hmsTexts;
+  if (!m || !m[kind]) return '';
+  var k = hmsBareCode(code), alt = model && m.alt && m.alt[kind] && m.alt[kind][k];
+  for (var t in alt || {}) if (alt[t].split(',').indexOf(model) >= 0) return t;
+  return m[kind][k] || '';
 }
 
 /* Every per-code wiki page sits under a model path segment (x1, a1-mini, a2l,
@@ -1549,8 +1553,7 @@ function hmsText(map, code, dev){
    of its links use "-" between the code groups, not "_"). Where the map is
    missing - a full-table board never fetches the mirror, and the text lookup
    can be switched off - link the HMS index, which lists every documented code
-   and never 404s. Only ~224 of 2014 codes have a page at all, so the index is
-   the common case either way. */
+   and never 404s. About half the codes have a page. */
 var HMS_WIKI_INDEX = 'https://wiki.bambulab.com/en/hms/home';
 function hmsWikiUrl(code){
   var m = _hmsTexts && _hmsTexts.wiki, p = m && m[hmsBareCode(code)];
@@ -1560,7 +1563,7 @@ function hmsWikiUrl(code){
 function hmsRender(){
   var el = document.getElementById('hmsLive');
   if (!el || !_hmsLast) return;
-  var h = '', need = false, m = _hmsTexts || {};
+  var h = '', need = false;
 
   for (var i = 0; i < _hmsLast.length; i++){
     var d = _hmsLast[i];
@@ -1568,7 +1571,7 @@ function hmsRender(){
     var rows = '';
 
     if (d.printError){
-      var t = hmsText(m.err, d.printError, d.printErrorText);
+      var t = hmsText('err', d.printError, d.printErrorText, d.errModel);
       if (!t && !d.printErrorText) need = true;
       rows += hmsRow(d.printError, d.printErrorCancel ? 0 : 1, '', t, false, '',
                      d.printErrorCancel ? 'Canceled' : 'Print error');
@@ -1576,7 +1579,7 @@ function hmsRender(){
 
     var a = d.hms || [];
     for (var j = 0; j < a.length; j++){
-      var e = a[j], tx = hmsText(m.hms, e.code, e.text);
+      var e = a[j], tx = hmsText('hms', e.code, e.text, d.errModel);
       if (!tx && !e.text) need = true;
       rows += hmsRow(e.code, e.sev, e.module, tx, e.baseline, hmsWikiUrl(e.code));
     }

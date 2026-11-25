@@ -28,21 +28,23 @@
 // sentence, and the portal really does have it in the published mirror.
 #define HMS_FALLBACK_TEXT  "Description in the web portal"
 
-// The print_error equivalent, and deliberately worded differently. print_error
-// is exempt from the undescribed-code rule - a stopped job is worth reporting
-// with or without wording - so this line is reachable for a code Bambu ships
-// blank, and the mirror drops those blanks too. Promising the portal has the
-// text would be a lie in exactly that case, which is the only case a C3 (no
-// print_error table at all) and a blank feed entry can produce together.
+// The print_error equivalent, worded differently: print_error is exempt from the
+// undescribed-code rule, so it can be a code Bambu ships blank. Only a board with
+// the full table knows that is the case; the others carry a subset or nothing,
+// and the portal may well have the sentence.
+#if HAS_FULL_HMS_TABLE
 #define PRINT_ERROR_FALLBACK_TEXT  "No description published for this code"
+#else
+#define PRINT_ERROR_FALLBACK_TEXT  "See the web portal for this code"
+#endif
 
 // "FATAL" / "SERIOUS" / "COMMON" / "INFO". `sev` is hmsSeverityOf(code);
 // anything outside 1-3 reads as INFO and never alerts.
 const char* hmsSeverityLabel(uint8_t sev);
 
-// "AMS" / "MAIN" / "MC" / "XCAM" / "MODULE". Derived from the top byte of
-// `attr`. Five module bytes exist in Bambu's live feed and all are named;
-// MODULE is the catch-all for anything they add later.
+// "AMS" / "MAIN" / "MC" / "XCAM" / ... Derived from the top byte of `attr`.
+// Every module byte in Bambu's feeds is named; MODULE is the catch-all for
+// anything they add later.
 const char* hmsModuleLabel(uint32_t attr);
 
 // Bambu's own 16-hex-digit ecode, grouped: "0500-0600-0002-0070". The panel
@@ -65,10 +67,18 @@ void printErrorFormatCode(uint32_t err, char* out, size_t outSize);
 // Official Bambu text, or NULL when this board carries no table for the domain
 // or the code is not in it. Callers fall back to HMS_FALLBACK_TEXT plus the
 // module/severity labels above.
-const char* hmsLookupText(uint32_t attr, uint32_t code);
-const char* printErrorLookupText(uint32_t err);
+//
+// `serial` picks the wording for that printer model (first 3 characters). A
+// model the code has no wording for, or an unknown one, gets the default text -
+// this answers "what does it mean", hmsIsDescribed() answers "show it at all".
+const char* hmsLookupText(const char* serial, uint32_t attr, uint32_t code);
+const char* printErrorLookupText(const char* serial, uint32_t err);
 
-// True when Bambu's error feed carries this HMS code with a description.
+// True when Bambu's error feed FOR THIS MODEL carries this HMS code with a
+// description, matched by serial prefix as Bambu Studio does. Bambu blanks a
+// code for one model and describes it for another (issue #211). An unknown
+// prefix is judged against every model. Severity 1 always reads true - FATAL is
+// never suppressed and the 4 MB key set does not carry it.
 //
 // A code the feed does not describe is one the printer's own screen and Bambu
 // Studio both stay silent about - Bambu registers the number and publishes no
@@ -83,12 +93,7 @@ const char* printErrorLookupText(uint32_t err);
 //
 // Deliberately NOT applied to print_error: that means the job actually stopped,
 // which is worth surfacing even with no wording to go with it.
-bool hmsIsDescribed(uint32_t attr, uint32_t code);
-
-// True when Bambu's feed for this printer model blanks a code that the generic
-// feed (the one our tables come from) describes. Same meaning as "undescribed",
-// decided per model by serial prefix, as Bambu Studio does (issue #211).
-bool hmsIsBlankForModel(const char* serial, uint32_t attr, uint32_t code);
+bool hmsIsDescribed(const char* serial, uint32_t attr, uint32_t code);
 
 // Codes hidden even though Bambu does describe them, because BambuHelper
 // already shows the same condition somewhere that does not read as a fault.
