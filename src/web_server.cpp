@@ -1272,12 +1272,13 @@ static void handlePrinterConfig() {
   doc["hasTasmota"]     = tasmotaConfiguredForSlot(slot);      // gates the Power gauge option
 #if BOARD_HAS_CAMERA
   // Camera gauge: only LAN-mode P1/A1 with an access code serve the port-6000
-  // chamber image. (P1S=01P, P1P=01S, A1=039, A1mini=030.)
+  // chamber image. (P1S=01P, P1P=01S, A1=039, A1mini=030, A2L=26A.)
   {
     const char* cs = cfg.serial;
     bool p1a1 = strlen(cs) >= 3 &&
                 (strncmp(cs, "01P", 3) == 0 || strncmp(cs, "01S", 3) == 0 ||
-                 strncmp(cs, "039", 3) == 0 || strncmp(cs, "030", 3) == 0);
+                 strncmp(cs, "039", 3) == 0 || strncmp(cs, "030", 3) == 0 ||
+                 strncmp(cs, "26A", 3) == 0);
     doc["hasLanCamera"] = (cfg.mode == CONN_LOCAL) && cfg.accessCode[0] && p1a1;
   }
 #else

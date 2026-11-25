@@ -203,6 +203,8 @@ const char* nozzleSideLabel(char side);
 // renderer formats AMS labels identically. Each writes a NUL-terminated string.
 void formatAmsNumberLabel(char* out, size_t len, uint8_t unitIndex);   // "<base> 1".."4"
 void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex);   // "<base> A".."D"
+// A split unit's group as its slot range ("5-8"); false = not split, out untouched.
+bool formatAmsSplitLabel(char* out, size_t len, const AmsState& ams, uint8_t unitIndex);
 void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
                       uint8_t dryDisplayIdx, uint8_t dryCount);        // "<base>[ HT] N  (x/y)"
 

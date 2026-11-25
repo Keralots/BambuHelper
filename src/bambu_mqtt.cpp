@@ -67,18 +67,21 @@ static bool isH2SSerial(const char* serial) {
   return serial && strncmp(serial, "093", 3) == 0;
 }
 
-// H2D "094", H2C "31B". Others (X2D) are only detected from extruder.info[].
+// H2D "094", H2D Pro "239", H2C "31B", X2D "20P". Not the H3C / P3C: one extruder
+// that swaps hotends.
 bool isDualNozzleSerial(const char* serial) {
   if (!serial) return false;
-  return strncmp(serial, "094", 3) == 0 || strncmp(serial, "31B", 3) == 0;
+  return strncmp(serial, "094", 3) == 0 || strncmp(serial, "239", 3) == 0 ||
+         strncmp(serial, "31B", 3) == 0 || strncmp(serial, "20P", 3) == 0;
 }
 
 // Printers that report the door sensor in home_flag bit 23 (per Bambu Lab wiki
-// + ha-bambulab convention): X1C "00M", X1E "03W".
+// + ha-bambulab convention): X1C "00M", X1 "00W", X1E "03W".
 // H2 series and P2S use "stat" instead; P1/A1 have no door sensor.
 static bool usesHomeFlagDoorSensor(const char* serial) {
   if (!serial) return false;
   return strncmp(serial, "00M", 3) == 0 ||   // X1C
+         strncmp(serial, "00W", 3) == 0 ||   // X1
          strncmp(serial, "03W", 3) == 0;     // X1E
 }
 
@@ -545,18 +548,86 @@ static void parseTrayFields(JsonObject tray, AmsTray& t, uint8_t logIdx) {
 // Raw unit ids may be non-sequential (e.g. 128 for AMS HT).
 static uint8_t normalizeTrayIndex(const AmsState& ams,
                                   uint8_t rawUnitId, uint8_t trayInUnit) {
-  if (trayInUnit >= AMS_TRAYS_PER_UNIT) return 255;
   // Only the first AMS_TRAY_UNITS units own tray slots. A match past that has
   // unit-level data but no trays[] entry, so it must fall through to the
   // overflow capture rather than index off the end of the array.
   for (uint8_t i = 0; i < ams.unitCount && i < AMS_TRAY_UNITS; i++) {
-    if (ams.units[i].id == rawUnitId)
-      return i * AMS_TRAYS_PER_UNIT + trayInUnit;
+    const AmsUnit& u = ams.units[i];
+    if (u.id == rawUnitId && trayInUnit >= u.trayBase &&
+        trayInUnit - u.trayBase < AMS_TRAYS_PER_UNIT)
+      return i * AMS_TRAYS_PER_UNIT + (trayInUnit - u.trayBase);
   }
   // Fallback: AMS2 compat (rawId 0-3 == seqIdx)
-  if (rawUnitId < AMS_TRAY_UNITS)
+  if (rawUnitId < AMS_TRAY_UNITS && trayInUnit < AMS_TRAYS_PER_UNIT)
     return rawUnitId * AMS_TRAYS_PER_UNIT + trayInUnit;
   return 255;
+}
+
+static bool amsHasSplitUnit(const AmsState& a) {
+  for (uint8_t i = 0; i < a.unitCount && i < AMS_MAX_UNITS; i++)
+    if (amsUnitIsSplit(a, i)) return true;
+  return false;
+}
+
+// units[] entries one raw unit takes: one per four trays, never fewer than it had
+// (a partial update may list only some of its trays, or none).
+static uint8_t amsTrayGroups(JsonObject unit, uint8_t uid, const AmsUnit* prev) {
+  uint8_t groups = 1;
+  for (JsonObject tray : unit["tray"].as<JsonArray>()) {
+    if (!tray["id"].is<const char*>()) continue;
+    const int tid = atoi(tray["id"].as<const char*>());
+    if (tid >= 0 && tid < 3 * AMS_TRAYS_PER_UNIT && tid / AMS_TRAYS_PER_UNIT + 1 > groups)
+      groups = tid / AMS_TRAYS_PER_UNIT + 1;
+  }
+  uint8_t had = 0;
+  for (uint8_t i = 0; i < AMS_MAX_UNITS; i++)
+    if (prev[i].present && prev[i].id == uid) had++;
+  return had > groups ? had : groups;
+}
+
+static void amsSetDryTime(AmsUnit& u, uint16_t dt) {
+  if (dt > 0 && (u.dryRemainMin == 0 || dt > u.dryTotalMin)) u.dryTotalMin = dt;
+  if (dt == 0) u.dryTotalMin = 0;
+  u.dryRemainMin = dt;
+}
+
+// Humidity / temperature fields, on a unit or on one of its zones.
+static void amsSetReadings(AmsUnit& u, JsonObject src) {
+  if (src["humidity"].is<const char*>())
+    u.humidity = atoi(src["humidity"].as<const char*>());
+  if (src["humidity_raw"].is<const char*>())
+    u.humidityRaw = atoi(src["humidity_raw"].as<const char*>());
+  if (src["temp"].is<const char*>())
+    u.temp = atof(src["temp"].as<const char*>());
+}
+
+// Zoned unit (AMS 3H): readings sit in zone_info[]. Each group shows the zone that
+// holds most of its slots (a tie goes to the lower id). Returns the drying timer of
+// zone 0, the heated one, or -1; zone 1 repeats it, sometimes stale.
+static int amsApplyZones(AmsUnit* g, uint8_t groups, JsonArray zones) {
+  int dry = -1;
+  uint8_t best[AMS_MAX_UNITS] = {0};
+  for (JsonObject z : zones) {
+    const int zid = z["zone_id"] | -1;
+    if (zid < 0 || zid >= AMS_ZONE_NONE) continue;
+    uint16_t slots = 0;
+    for (int slot : z["zone_slots"].as<JsonArray>())
+      if (slot >= 0 && slot < 16) slots |= 1u << slot;
+    for (uint8_t i = 0; i < groups; i++) {
+      const uint8_t n = __builtin_popcount((slots >> g[i].trayBase) & 0x0F);
+      if (n > best[i] || (n > 0 && n == best[i] && zid < g[i].zone)) {
+        best[i] = n;
+        g[i].zone = zid;
+      }
+    }
+    if (zid == 0) dry = z["dry_time"] | -1;
+  }
+  for (JsonObject z : zones) {
+    const int zid = z["zone_id"] | -1;
+    for (uint8_t i = 0; i < groups; i++)
+      if (g[i].zone == zid) amsSetReadings(g[i], z);
+  }
+  return dry;
 }
 
 #if HAS_HMS_UI
@@ -746,8 +817,9 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
 
             if (entry["snow"].is<unsigned int>()) {
               uint32_t snow = entry["snow"].as<unsigned int>();
-              uint8_t amsIdx  = snow >> 8;
-              uint8_t trayIdx = snow & 0x03;
+              // unit << 8 | tray, both whole bytes (AMS 3H has nine trays).
+              uint8_t amsIdx  = (snow == 0xFF) ? 255 : (uint8_t)(snow >> 8);
+              uint8_t trayIdx = snow & 0xFF;
               MQTT_LOG("nozzle[%d] snow=%u -> ams=%d tray=%d", id, snow, amsIdx, trayIdx);
               pendingSnowAmsId = amsIdx;
               pendingSnowTrayIdx = trayIdx;
@@ -826,6 +898,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             // Some AMS messages carry tray_now/vt_tray without the nested unit
             // list. Treat those as partial updates; clearing unitCount there
             // makes the landscape AMS column briefly collapse to the 0-AMS layout.
+            AmsUnit prevUnits[AMS_MAX_UNITS];
+            memcpy(prevUnits, s.ams.units, sizeof(prevUnits));
             s.ams.unitCount = 0;
             s.ams.anyDrying = false;
             for (uint8_t i = 0; i < AMS_MAX_UNITS; i++) {
@@ -838,6 +912,8 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
               u.humidity = 0;
               u.humidityRaw = 0;
               u.temp = 0;
+              u.trayBase = 0;
+              u.zone = AMS_ZONE_NONE;
               u.trayCount = savedTrayCount;
               u.dryTotalMin = savedDryTotal;
               u.dryRemainMin = savedDryRemain;
@@ -847,26 +923,39 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
               if (!unit["id"].is<const char*>()) continue;
               uint8_t uid = atoi(unit["id"].as<const char*>());
               if (unitIdx >= AMS_MAX_UNITS) continue;
-              s.ams.unitCount++;
-
-              AmsUnit& u = s.ams.units[unitIdx];
-              u.present = true;
-              u.id = uid;
-              if (!unit["dry_time"].isNull()) {
-                uint16_t dt = unit["dry_time"].as<uint16_t>();
-                if (dt > 0 && (u.dryRemainMin == 0 || dt > u.dryTotalMin))
-                  u.dryTotalMin = dt;
-                if (dt == 0) u.dryTotalMin = 0;
-                u.dryRemainMin = dt;
+              AmsUnit* g = &s.ams.units[unitIdx];
+              uint8_t groups = amsTrayGroups(unit, uid, prevUnits);
+              if (groups > AMS_MAX_UNITS - unitIdx) groups = AMS_MAX_UNITS - unitIdx;
+              JsonArray zones = unit["zone_info"];
+              for (uint8_t i = 0; i < groups; i++) {
+                g[i].present = true;
+                g[i].id = uid;
+                g[i].trayBase = i * AMS_TRAYS_PER_UNIT;
+                // A zoned or split unit sends partial zones; keep what it left out.
+                const AmsUnit& was = prevUnits[unitIdx + i];
+                if ((groups > 1 || !zones.isNull()) && was.present && was.id == uid &&
+                    was.trayBase == g[i].trayBase) {
+                  g[i].humidity = was.humidity;
+                  g[i].humidityRaw = was.humidityRaw;
+                  g[i].temp = was.temp;
+                  g[i].zone = was.zone;
+                }
+                amsSetReadings(g[i], unit);
               }
-              if (unit["humidity"].is<const char*>())
-                u.humidity = atoi(unit["humidity"].as<const char*>());
-              if (unit["humidity_raw"].is<const char*>())
-                u.humidityRaw = atoi(unit["humidity_raw"].as<const char*>());
-              if (unit["temp"].is<const char*>())
-                u.temp = atof(unit["temp"].as<const char*>());
-              if (u.dryRemainMin > 0) s.ams.anyDrying = true;
-              unitIdx++;
+              int dry = zones.isNull() ? -1 : amsApplyZones(g, groups, zones);
+              if (dry < 0 && !unit["dry_time"].isNull()) dry = unit["dry_time"].as<uint16_t>();
+
+              // One drying timer per physical unit: the group in the heated zone.
+              uint8_t dg = 0;
+              for (uint8_t i = 0; i < groups; i++)
+                if (g[i].zone == 0) { dg = i; break; }
+              for (uint8_t i = 0; i < groups; i++)
+                if (i != dg) { g[i].dryRemainMin = 0; g[i].dryTotalMin = 0; }
+              if (dry >= 0) amsSetDryTime(g[dg], dry);
+              if (g[dg].dryRemainMin > 0) s.ams.anyDrying = true;
+
+              s.ams.unitCount += groups;
+              unitIdx += groups;
             }
             // Tray-bearing units: derived here rather than in the tray pass so
             // it is also correct on a partial update that carries the unit list
@@ -893,21 +982,29 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
               // rest keep their unit-level data from pass 1; a tray of theirs
               // that is actually feeding is picked up by the overflow capture.
               if (unitIdx >= AMS_TRAY_UNITS) continue;
+              const uint8_t uid = atoi(unit["id"].as<const char*>());
               uint8_t seqIdx = unitIdx;
-              unitIdx++;
+              do { unitIdx++; }          // every group of a split unit
+              while (unitIdx < s.ams.unitCount && s.ams.units[unitIdx].id == uid &&
+                     s.ams.units[unitIdx].trayBase > 0);
+              const uint8_t groups = unitIdx - seqIdx;
 
               JsonArray trays = unit["tray"];
-              uint8_t parsedTrays = 0;
+              uint8_t parsedTrays[AMS_TRAY_UNITS] = {0};
               for (JsonObject tray : trays) {
                 if (!tray["id"].is<const char*>()) continue;
                 uint8_t tid = atoi(tray["id"].as<const char*>());
-                if (tid >= AMS_TRAYS_PER_UNIT) continue;
+                uint8_t grp = tid / AMS_TRAYS_PER_UNIT;
+                if (grp >= groups || seqIdx + grp >= AMS_TRAY_UNITS) continue;
 
                 uint8_t idx = seqIdx * AMS_TRAYS_PER_UNIT + tid;
                 parseTrayFields(tray, s.ams.trays[idx], idx);
-                parsedTrays++;
+                parsedTrays[grp]++;
               }
-              s.ams.units[seqIdx].trayCount = parsedTrays;
+              for (uint8_t i = 0; i < groups && seqIdx + i < AMS_TRAY_UNITS; i++) {
+                uint8_t& tc = s.ams.units[seqIdx + i].trayCount;
+                if (groups == 1 || parsedTrays[i] > tc) tc = parsedTrays[i];
+              }
             }
           } else if (hasUnitsArray) {
             MQTT_LOG("AMS partial update - unit data refreshed, keeping cached trays");
@@ -929,6 +1026,10 @@ static void parseMqttPayload(byte* payload, unsigned int length, BambuState& s,
             } else if (pendingSnowAmsId == 255) {
               s.ams.activeTray = 255;
               MQTT_LOG("activeTray: snow reports no active tray");
+            } else if (pendingSnowAmsId >= 247 && amsHasSplitUnit(s.ams)) {
+              // 2.85 mm spool as a virtual slot (247-253), not decoded: show none
+              // rather than the tray that fed before it.
+              s.ams.activeTray = 255;
             } else {
               uint8_t normalized = normalizeTrayIndex(s.ams, pendingSnowAmsId, pendingSnowTrayIdx);
               if (normalized != 255) {

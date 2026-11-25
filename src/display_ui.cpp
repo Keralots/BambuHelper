@@ -45,6 +45,14 @@ void formatAmsLetterLabel(char* out, size_t len, uint8_t unitIndex) {
   snprintf(out, len, "%s %c", gaugeLabelOr(gaugeLabels.amsBase, "AMS"), 'A' + unitIndex);
   utf8TrimPartial(out);
 }
+bool formatAmsSplitLabel(char* out, size_t len, const AmsState& ams, uint8_t unitIndex) {
+  if (!amsUnitIsSplit(ams, unitIndex)) return false;
+  const AmsUnit& u = ams.units[unitIndex];
+  const uint8_t n = u.trayCount ? u.trayCount : AMS_TRAYS_PER_UNIT;
+  if (n == 1) snprintf(out, len, "%u", u.trayBase + 1);
+  else        snprintf(out, len, "%u-%u", u.trayBase + 1, u.trayBase + n);
+  return true;
+}
 
 #if HAS_TOUCH_ZONES
 // AMS unit a gauge tile shows (humidity / temp / filament / bars), or -1.
@@ -67,10 +75,13 @@ void formatAmsDryName(char* out, size_t len, bool isHT, uint8_t displayNum,
   char pfx[GAUGE_LABEL_LEN + 4];
   if (isHT) snprintf(pfx, sizeof(pfx), "%s HT", base);
   else      strlcpy(pfx, base, sizeof(pfx));
+  char num[8] = "";
+  // Bus ids past the AMS 1-4 range (AMS 3H = 32) are not a count.
+  if (isHT || displayNum <= AMS_TRAY_UNITS) snprintf(num, sizeof(num), " %u", displayNum);
   if (dryCount > 1)
-    snprintf(out, len, "%s %u  (%u/%u)", pfx, displayNum, dryDisplayIdx + 1, dryCount);
+    snprintf(out, len, "%s%s  (%u/%u)", pfx, num, dryDisplayIdx + 1, dryCount);
   else
-    snprintf(out, len, "%s %u", pfx, displayNum);
+    snprintf(out, len, "%s%s", pfx, num);
   utf8TrimPartial(out);
 }
 
@@ -2589,7 +2600,8 @@ static void drawAmsStrip(const AmsState& ams,
 
     if (!singleAms) {
       char label[64];
-      formatAmsLetterLabel(label, sizeof(label), u);
+      if (!formatAmsSplitLabel(label, sizeof(label), ams, u))
+        formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       setFont(tft, sm ? FONT_SMALL : FONT_BODY);
@@ -2818,7 +2830,8 @@ static void drawAmsZone(const BambuState& s, bool force) {
 
       // AMS label below bars
       char label[64];
-      formatAmsLetterLabel(label, sizeof(label), u);
+      if (!formatAmsSplitLabel(label, sizeof(label), s.ams, u))
+        formatAmsLetterLabel(label, sizeof(label), u);
       tft.setTextDatum(TC_DATUM);
       bool sm = dispSettings.smallLabels;
       setFont(tft, sm ? FONT_SMALL : FONT_BODY);
@@ -6014,7 +6027,8 @@ static void drawAmsDetail() {
     prevHdr = hh;
     tft.fillRect(0, 0, W, hdrH, bg);
     char label[64];
-    formatAmsLetterLabel(label, sizeof(label), ui);
+    if (!formatAmsSplitLabel(label, sizeof(label), a, ui))
+      formatAmsLetterLabel(label, sizeof(label), ui);
     const int16_t y = 5 + bodyH / 2;
     setFont(tft, AMSD_F_MAIN);
     tft.setTextDatum(ML_DATUM);
@@ -6064,7 +6078,8 @@ static void drawAmsDetail() {
     if (!full && rh == prevRow[t]) continue;
     prevRow[t] = rh;
     char slot[8];
-    snprintf(slot, sizeof(slot), "%c%u", 'A' + ui, (unsigned)(t + 1));
+    if (amsUnitIsSplit(a, ui)) snprintf(slot, sizeof(slot), "%u", (unsigned)(u.trayBase + t + 1));
+    else                       snprintf(slot, sizeof(slot), "%c%u", 'A' + ui, (unsigned)(t + 1));
     drawAmsDetailRow(tr, active, slot, areaY + t * rowH, rowH, W);
     markFrameDirty();
   }
