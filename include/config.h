@@ -451,14 +451,6 @@
 #error "HAS_FULL_HMS_TABLE requires HAS_HMS_UI"
 #endif
 
-// Published mirror of Bambu's error-text feed, read by the portal page in the
-// user's browser - never by the device. e.bambulab.com sends no CORS header at
-// all, so the page cannot read the feed directly; GitHub Pages sends
-// "Access-Control-Allow-Origin: *", and release.py refreshes this copy.
-// Boards that carry the full table on-device resolve text themselves and only
-// fall back to this for codes the table does not have.
-#define HMS_MIRROR_URL  "https://keralots.github.io/BambuHelper/errors/hms_en.json"
-
 // Signing into a Bambu account from the device itself (portal form -> cloud
 // token, no Companion Tool). Every board carries it: gzipping the portal's CSS
 // and JS freed ~77 KB of app slot, which is far more than the flow costs even
