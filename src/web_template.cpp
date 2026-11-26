@@ -44,6 +44,26 @@ static String ledHexColor(uint32_t rgb) {
   return String(buf);
 }
 
+// Free-text settings (printer name, SSID, ...) land inside value="..." or as
+// element text, so they must not be able to close the attribute or open a tag.
+static void appendHtmlEscaped(String& out, const char* s) {
+  for (; *s; s++) {
+    switch (*s) {
+      case '&':  out += "&amp;";  break;
+      case '<':  out += "&lt;";   break;
+      case '>':  out += "&gt;";   break;
+      case '"':  out += "&quot;"; break;
+      case '\'': out += "&#39;";  break;
+      default:   out += *s;       break;
+    }
+  }
+}
+
+static void setHtmlEscaped(String& out, const char* s) {
+  out = "";
+  appendHtmlEscaped(out, s);
+}
+
 // ---------------------------------------------------------------------------
 //  Resolve a single template placeholder to its value.
 //  Returns true if name was a known placeholder (even if value is empty).
@@ -54,12 +74,12 @@ static bool resolvePlaceholder(const char* name, String& out) {
   char buf[8];
 
   // --- Printer ---
-  if (strcmp(name, "SSID") == 0)            { out = wifiSSID; return true; }
+  if (strcmp(name, "SSID") == 0)            { setHtmlEscaped(out, wifiSSID); return true; }
   if (strcmp(name, "MODE_LOCAL") == 0)      { out = cfg.mode == CONN_LOCAL ? "selected" : ""; return true; }
   if (strcmp(name, "MODE_CLOUD_ALL") == 0)  { out = isCloudMode(cfg.mode) ? "selected" : ""; return true; }
-  if (strcmp(name, "PNAME") == 0)           { out = cfg.name; return true; }
-  if (strcmp(name, "IP") == 0)              { out = cfg.ip; return true; }
-  if (strcmp(name, "SERIAL") == 0)          { out = cfg.serial; return true; }
+  if (strcmp(name, "PNAME") == 0)           { setHtmlEscaped(out, cfg.name); return true; }
+  if (strcmp(name, "IP") == 0)              { setHtmlEscaped(out, cfg.ip); return true; }
+  if (strcmp(name, "SERIAL") == 0)          { setHtmlEscaped(out, cfg.serial); return true; }
   if (strcmp(name, "REGION_US") == 0)       { out = cfg.region == REGION_US ? "selected" : ""; return true; }
   if (strcmp(name, "REGION_EU") == 0)       { out = cfg.region == REGION_EU ? "selected" : ""; return true; }
   if (strcmp(name, "REGION_CN") == 0)       { out = cfg.region == REGION_CN ? "selected" : ""; return true; }
@@ -68,7 +88,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
     if (!loadCloudToken(tokenBuf, sizeof(tokenBuf))) { out = "No token set"; return true; }
     out = "Token active";
     char email[96];
-    if (loadCloudEmail(email, sizeof(email))) { out += " ("; out += email; out += ")"; }
+    if (loadCloudEmail(email, sizeof(email))) { out += " ("; appendHtmlEscaped(out, email); out += ")"; }
     return true;
   }
 
@@ -119,10 +139,10 @@ static bool resolvePlaceholder(const char* name, String& out) {
   // --- Network ---
   if (strcmp(name, "NET_DHCP") == 0)   { out = netSettings.useDHCP ? "selected" : ""; return true; }
   if (strcmp(name, "NET_STATIC") == 0) { out = netSettings.useDHCP ? "" : "selected"; return true; }
-  if (strcmp(name, "NET_IP") == 0)     { out = netSettings.staticIP; return true; }
-  if (strcmp(name, "NET_GW") == 0)     { out = netSettings.gateway; return true; }
-  if (strcmp(name, "NET_SN") == 0)     { out = netSettings.subnet; return true; }
-  if (strcmp(name, "NET_DNS") == 0)    { out = netSettings.dns; return true; }
+  if (strcmp(name, "NET_IP") == 0)     { setHtmlEscaped(out, netSettings.staticIP); return true; }
+  if (strcmp(name, "NET_GW") == 0)     { setHtmlEscaped(out, netSettings.gateway); return true; }
+  if (strcmp(name, "NET_SN") == 0)     { setHtmlEscaped(out, netSettings.subnet); return true; }
+  if (strcmp(name, "NET_DNS") == 0)    { setHtmlEscaped(out, netSettings.dns); return true; }
   if (strcmp(name, "SHOWIP") == 0)     { out = netSettings.showIPAtStartup ? "checked" : ""; return true; }
   if (strcmp(name, "MDNS_EN") == 0)    { out = netSettings.mdnsEnabled ? "checked" : ""; return true; }
   if (strcmp(name, "MDNS_HOST") == 0)  { out = netSettings.hostname; return true; }
@@ -860,7 +880,7 @@ static bool resolvePlaceholder(const char* name, String& out) {
       out += String(i);
       out += "\">";
       const char* nm = printers[i].config.name;
-      if (nm[0] != '\0') out += nm;
+      if (nm[0] != '\0') appendHtmlEscaped(out, nm);
       else { out += "Printer "; out += String(i + 1); }
       out += "</option>";
     }
