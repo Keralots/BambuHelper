@@ -125,6 +125,7 @@ static bool isSleepStickyScreen(ScreenState state) {
 static void transitionToClockOrOff() {
   if (dpSettings.keepDisplayOn) return;  // screensaver disabled - never sleep
   manualClock = false;                   // an ordinary screensaver from here on
+  setClockFullBright(false);             // manual clock handed over: dim it
   finishDryView = 0;
   if (dpSettings.showClockAfterFinish || buttonType == BTN_DISABLED) {
     setScreenState(SCREEN_CLOCK);
@@ -323,6 +324,7 @@ static bool openManualClock() {
       cur != SCREEN_SPLIT) return false;
   openOverlay(SCREEN_CLOCK);
   manualClock = true;
+  setClockFullBright(true);               // #213: not the dimmed screensaver look
   idleClockActive = false;                // full sleep window from here
   manualClockPrinting = printingMask();
   return true;

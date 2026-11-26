@@ -718,8 +718,18 @@ static bool tryCard(bool (*draw)(PrinterSlot&, bool), PrinterSlot& p) {
   return false;
 }
 
+// Clock on demand (#213): lit like a live screen. Cleared when the clock goes.
+static bool clockFullBright = false;
+
 void setScreenState(ScreenState state) {
+  if (state != SCREEN_CLOCK) clockFullBright = false;
   currentScreen = state;
+}
+
+void setClockFullBright(bool on) {
+  if (clockFullBright == on) return;
+  clockFullBright = on;
+  if (currentScreen == SCREEN_CLOCK) setBacklight(getEffectiveBrightness());
 }
 
 ScreenState getScreenState() {
@@ -5525,7 +5535,7 @@ uint8_t getEffectiveBrightness() {
   if (isNightModeActive() && dpSettings.nightBrightness == 0 && nightWakeHeld()) {
     return dpSettings.screensaverBrightness;
   }
-  if (currentScreen == SCREEN_CLOCK) {
+  if (currentScreen == SCREEN_CLOCK && !clockFullBright) {
     // During night hours, use the dimmer of the two
     if (isNightModeActive()) {
       return min(dpSettings.screensaverBrightness, dpSettings.nightBrightness);

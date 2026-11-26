@@ -164,6 +164,7 @@ uint8_t getEffectiveBrightness(); // current brightness (night or normal)
 bool isNightModeActive();     // night mode enabled AND inside the night window
 bool isNightBlackout();       // night window with brightness 0, no wake override running
 void nightWake();             // button press during a blackout: light the panel briefly
+void setClockFullBright(bool on); // clock opened on demand: normal brightness, not the screensaver level
 
 // True only on portrait layout profiles that define LAYOUT_HAS_SPLIT and are not
 // currently in a landscape rotation. Gates the split (dual-printer) screen so it
