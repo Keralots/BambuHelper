@@ -1248,18 +1248,18 @@ public:
 static LGFX_ES3N28P _tft_instance;
 
 
-#elif defined(BOARD_IS_BRO_FREENOVE)
+#elif defined(BOARD_IS_FNK0104S)
 // --- Freenove FNK0104S ESP32-S3 + 4.0" ST7796 SPI 320x480 --------------------
 // Hardware pinout confirmed with the working Freenove demo:
 //   SCLK=12, MOSI=11, CS=10, DC=46, BL=45; no MISO or LCD reset GPIO.
 // The panel's native geometry is 320x480. Landscape (480x320) is selected
 // through the normal display rotation setting (rotation 1 or 3).
 // FT6336 touch is handled by button_touch_focaltech.cpp on SDA=16/SCL=15.
-class LGFX_BRO_FREENOVE : public lgfx::LGFX_Device {
+class LGFX_FNK0104S : public lgfx::LGFX_Device {
   lgfx::Panel_ST7796 _panel;
   lgfx::Bus_SPI      _bus;
 public:
-  LGFX_BRO_FREENOVE() {
+  LGFX_FNK0104S() {
     {
       auto cfg = _bus.config();
       cfg.spi_host   = SPI2_HOST;
@@ -1294,7 +1294,7 @@ public:
     setPanel(&_panel);
   }
 };
-static LGFX_BRO_FREENOVE _tft_instance;
+static LGFX_FNK0104S _tft_instance;
 
 #else
   #error "No board variant defined. Set BOARD_IS_<NAME> in your env's build_flags - see platformio.ini / boards/*.ini for the list of supported boards."

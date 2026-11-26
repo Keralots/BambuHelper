@@ -61,6 +61,12 @@ void sanitizeButtonPin() {
   if (buttonPin == 3) { clash("WS350 display DC");   return; }
   if (buttonPin == 5) { clash("WS350 display SCLK"); return; }
 #endif
+#if defined(BOARD_IS_FNK0104S)
+  // Display SPI + touch INT/RST (backlight 45 and touch I2C 15/16 are covered above).
+  if (buttonPin == 10 || buttonPin == 11 || buttonPin == 12 ||
+      buttonPin == 46) { clash("FNK0104S display SPI"); return; }
+  if (buttonPin == 17 || buttonPin == 18) { clash("FNK0104S touch INT/RST"); return; }
+#endif
 #if defined(BOARD_IS_SC05X)
   // ST7789 8-bit 8080 parallel bus + control - driving any as a button GPIO
   // disturbs the panel. Backlight 47 and touch 8/9/48 are covered above.
