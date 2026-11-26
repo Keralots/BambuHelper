@@ -31,6 +31,19 @@ void sanitizeBuzzerPin() {
     return;
   }
 #endif
+#if defined(BOARD_IS_FNK0104S)
+  // No GPIO buzzer; keep a stale/manual pin off the display SPI, touch,
+  // USB CDC and octal flash/PSRAM lines (same set as the led.cpp deny-list).
+  {
+    uint8_t p = buzzerSettings.pin;
+    if (p == 10 || p == 11 || p == 12 || p == 46 ||
+        (p >= 15 && p <= 20) || (p >= 26 && p <= 37)) {
+      Serial.printf("Buzzer: pin %d reserved on FNK0104S, disabling\n", p);
+      buzzerSettings.pin = 0;
+      return;
+    }
+  }
+#endif
 #if defined(BOARD_IS_WS200)
   // Waveshare ESP32-S3-Touch-LCD-2.0. Firmware up to v3.7.6 defaulted this
   // board to the CYD's GPIO 26 (see BUZZER_DEFAULT_PIN), which is in the S3

@@ -235,6 +235,14 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
   if (pin > 48) return false;
 
+#elif defined(BOARD_IS_FNK0104S)
+  // Freenove FNK0104S (ST7796 SPI + FT6336 I2C); backlight 45 is caught above
+  if (pin == 10 || pin == 11 || pin == 12 || pin == 46) return false;             // display SPI (CS/MOSI/SCLK/DC)
+  if (pin == 15 || pin == 16 || pin == 17 || pin == 18) return false;             // FT6336 touch I2C + INT/RST
+  if (pin == 19 || pin == 20) return false;                                        // USB CDC D-/D+
+  if (pin >= 26 && pin <= 37) return false;                                        // SPI flash + PSRAM (qio_opi)
+  if (pin > 48) return false;
+
 #elif defined(BOARD_IS_SC01PLUS)
   // Panlee WT32-SC01 Plus (ST7796 8-bit 8080 parallel + FT6336 I2C)
   if (pin == 0 || pin == 3 || pin == 8 || pin == 9 ||

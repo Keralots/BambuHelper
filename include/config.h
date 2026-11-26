@@ -400,7 +400,7 @@
 // Fielded 16 MB devices never reflashed since v3.7.4 still carry the old
 // 1.75 MB OTA slot and will be told to repartition by the portal's update
 // checker; that is a known, accepted one-time migration.
-#if defined(BOARD_IS_WS154) || defined(BOARD_IS_WS200) || \
+#if defined(BOARD_IS_FNK0104S) || defined(BOARD_IS_WS154) || defined(BOARD_IS_WS200) || \
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
@@ -484,8 +484,8 @@
 // =============================================================================
 //  Physical button
 // =============================================================================
-#if defined(BOARD_IS_DIY)
-#define BUTTON_DEFAULT_PIN    0       // DIY: no button assumed; user configures in web UI
+#if defined(BOARD_IS_DIY) || defined(BOARD_IS_FNK0104S)
+#define BUTTON_DEFAULT_PIN    0       // no physical button assumed; user configures in web UI
 #elif defined(DISPLAY_240x320)
 #define BUTTON_DEFAULT_PIN    0       // CYD: GPIO4 is RGB LED, not usable
 #elif defined(BOARD_IS_WS28C)
@@ -542,9 +542,9 @@
 // =============================================================================
 //  Buzzer (optional passive buzzer)
 // =============================================================================
-#if defined(BOARD_IS_DIY)
-// DIY: no buzzer assumed - the generic C3 default (GPIO3) is often the display's
-// MOSI, and the S3 default (GPIO5) a common SCLK. Disable; user picks a free pin.
+#if defined(BOARD_IS_DIY) || defined(BOARD_IS_FNK0104S)
+// No buzzer assumed on this board profile; GPIO assignments remain available
+// for the display, touch controller and future peripherals.
 #define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_C3)
 #define BUZZER_DEFAULT_PIN    3       // C3: GPIO 3 (GPIO 5 is backlight)
