@@ -131,9 +131,18 @@ bool isLedPinAllowed(uint8_t pin) {
   if (pin == 0) return false;
 
   // Generic dynamic conflicts (all boards)
-  if (pin == BACKLIGHT_PIN) return false;
+  int8_t bl = activeBacklightPin();
+  if (bl >= 0 && pin == (uint8_t)bl) return false;
   if (buzzerSettings.enabled && pin == buzzerSettings.pin) return false;
   if (buttonType != BTN_DISABLED && pin == buttonPin) return false;
+
+  return isBoardPinFree(pin);
+}
+
+// Static per-board reservations only (display bus, touch, flash/PSRAM, USB...).
+// Also vets the portal backlight pin, which must not see the dynamic checks above.
+bool isBoardPinFree(uint8_t pin) {
+  if (pin == 0) return false;
 
 #if defined(BOARD_IS_DIY)
   // Standalone (not part of the board #elif chain below): a DIY+C3 build must

@@ -92,6 +92,8 @@ struct DisplaySettings {
                             // (classic: red LED) and red LED on GPIO22. Enables
                             // the amp while the buzzer is on and parks the
                             // moved RGB LED off at boot.
+  uint8_t  backlightPin;    // BACKLIGHT_PIN_RUNTIME boards: BLK GPIO, 0 = none
+                            // (7-pin module). Per-unit wiring, not in backups.
   uint8_t  roundSkin;       // round displays only: printing dashboard skin.
                             // 0 = Rim (rim progress ring + mini gauges),
                             // 1 = Speedo (one large 240-degree arc),
@@ -388,6 +390,8 @@ extern char wifiSSID[33];
 extern char wifiPass[65];
 extern uint8_t brightness;
 extern DisplaySettings dispSettings;
+// Backlight GPIO in effect: BACKLIGHT_PIN, the portal pin on runtime boards, or -1.
+int8_t activeBacklightPin();
 
 // The live neutral text colors (#163). Defined here rather than in config.h so
 // there is exactly one definition and no per-file #undef dance: a drawing file

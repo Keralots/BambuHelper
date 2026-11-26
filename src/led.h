@@ -25,6 +25,7 @@ void applyLedDuty(uint8_t duty);
 // Pin validation. sanitizeLedPin() is called from saveLedSettings() before NVS write.
 void sanitizeLedPin();
 bool isLedPinAllowed(uint8_t pin);
+bool isBoardPinFree(uint8_t pin);  // static board reservations only, no dynamic conflicts
 
 // Same question for a colour driver, which is allowed to claim the board's own
 // onboard RGB pins - the deny-list reserves those precisely so nothing else does.

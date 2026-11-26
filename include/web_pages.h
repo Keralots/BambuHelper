@@ -976,6 +976,7 @@ static const char PAGE_HTML_2[] PROGMEM = R"rawliteral(
     <div class="card-head"><div><h3>Display panel</h3><p>Fixes for panel variants. Only change these if the screen looks wrong.</p></div></div>
 %INVCOL_ROW%
 %CYD_PANEL_ROW%
+%BLPIN_ROW%
   </div>
 
   <div class="card">

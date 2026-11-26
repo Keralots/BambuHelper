@@ -234,6 +234,20 @@
 #define PANEL_BRIGHTNESS_DCS  0
 #endif
 
+// Backlight GPIO chosen in the portal (NVS), not at build time. Round GC9A01
+// modules come as 7-pin (BLK hardwired on) and 8-pin (BLK broken out), so one
+// build serves both. BACKLIGHT_PIN stays -1 there; read activeBacklightPin().
+// BACKLIGHT_PIN_SUGGEST is the portal hint (matches the square build's pin).
+#if defined(BOARD_IS_C3_ROUND)
+#define BACKLIGHT_PIN_RUNTIME  1
+#define BACKLIGHT_PIN_SUGGEST  5
+#elif defined(BOARD_IS_S3_ROUND)
+#define BACKLIGHT_PIN_RUNTIME  1
+#define BACKLIGHT_PIN_SUGGEST  13
+#else
+#define BACKLIGHT_PIN_RUNTIME  0
+#endif
+
 // Display reset/control routed through an I2C IO expander instead of GPIOs:
 // SenseCAP (PCA9535), ws_lcd_350 and ws_lcd_28c (TCA9554). This cap only signals "bring up
 // Wire.h for the expander"; the per-chip register bring-up stays board-specific

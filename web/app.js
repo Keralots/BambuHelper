@@ -1862,6 +1862,23 @@ function waitForReboot(st){
   })();
 }
 
+/* Round GC9A01 boards: backlight GPIO for 8-pin modules (0 = none). The row
+   only exists on those builds. The device reboots so the old pin is released
+   and the Brightness card appears or disappears with the new pin. */
+function saveBlPin(btn){
+  var inp = document.getElementById('blpin'), st = document.getElementById('blpinHint');
+  if (!inp || !st) return;
+  var v = parseInt(inp.value, 10);
+  if (isNaN(v) || v < 0 || v > 48){ showToast('Enter a GPIO 0-48'); return; }
+  btn.disabled = true;
+  fetch('/save/toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key=blpin&val='+v})
+    .then(function(r){
+      if (!r.ok){ btn.disabled = false; showToast('GPIO ' + v + ' is not available on this board'); return; }
+      waitForReboot(st);
+    })
+    .catch(function(e){ btn.disabled = false; showToast('Save failed'); console.warn('saveBlPin:',e); });
+}
+
 /* Rollback: the device tells us whether the inactive app slot holds a
    different, bootable firmware; if so the "Previous firmware" block appears.
    The slot's version is only known when that firmware was new enough to

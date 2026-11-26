@@ -173,12 +173,10 @@ void sanitizeBuzzerPin() {
     return;
   }
 #endif
-#if defined(BACKLIGHT_PIN)
-  if (buzzerSettings.pin == BACKLIGHT_PIN) {
+  if (activeBacklightPin() >= 0 && buzzerSettings.pin == activeBacklightPin()) {
     Serial.printf("Buzzer: pin %d conflicts with backlight, disabling\n", buzzerSettings.pin);
     buzzerSettings.pin = 0;
   }
-#endif
 #endif  // BUZZER_BACKEND_TCA9554
 }
 

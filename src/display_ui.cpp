@@ -343,8 +343,9 @@ static uint8_t lastAppliedBrightness = 0;
 void setBacklight(uint8_t level) {
 #if PANEL_BRIGHTNESS_DCS
   _tft_instance.setBrightness(level);   // AMOLED: DCS 0x51, no PWM pin
-#elif defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
-  analogWrite(BACKLIGHT_PIN, level);
+#else
+  int8_t pin = activeBacklightPin();
+  if (pin >= 0) analogWrite(pin, level);
 #endif
   lastAppliedBrightness = level;
 }
@@ -609,9 +610,11 @@ void initDisplay() {
 
 #if PANEL_BRIGHTNESS_DCS
   setBacklight(200);
-#elif defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
-  pinMode(BACKLIGHT_PIN, OUTPUT);
-  setBacklight(200);
+#else
+  if (activeBacklightPin() >= 0) {
+    pinMode(activeBacklightPin(), OUTPUT);
+    setBacklight(200);
+  }
 #endif
 
   memset(&prevState, 0, sizeof(prevState));
@@ -6273,7 +6276,7 @@ static bool glowScreenEligible() {
 void updateDisplay() {
   // Night blackout (nightBrightness == 0): paint the panel black once and stop
   // rendering for the rest of the window. Backlight 0 alone is not enough -
-  // boards with BACKLIGHT_PIN < 0 (7-pin round GC9A01) have no dimming at all,
+  // boards with no backlight pin (7-pin round GC9A01) have no dimming at all,
   // so blanking the framebuffer is what actually makes them dark. SCREEN_OFF is
   // excluded because it is already a blackout and owns its own backlight.
   {

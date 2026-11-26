@@ -100,13 +100,13 @@ static bool resolvePlaceholder(const char* name, String& out) {
   if (strcmp(name, "BL_DISP") == 0) {
     // Inline style for the Brightness card and the screensaver-brightness
     // field. Boards without a controllable backlight (7-pin round GC9A01
-    // modules wire BLK hardwired on, BACKLIGHT_PIN=-1) hide them entirely -
+    // modules wire BLK hardwired on, no backlight pin set) hide them entirely -
     // setBacklight() is a no-op there and the sliders would do nothing.
     // AMOLED panels dim through a DCS register instead of a pin.
-#if (defined(BACKLIGHT_PIN) && (BACKLIGHT_PIN >= 0)) || PANEL_BRIGHTNESS_DCS
+#if PANEL_BRIGHTNESS_DCS
     out = "";
 #else
-    out = "display:none";
+    out = (activeBacklightPin() >= 0) ? "" : "display:none";
 #endif
     return true;
   }
@@ -422,8 +422,9 @@ static bool resolvePlaceholder(const char* name, String& out) {
     return true;
   }
   if (strcmp(name, "PANEL_CARD_DISP") == 0) {
-    // Hardware > Display panel holds only the 240x320 rows below.
-#if defined(DISPLAY_240x320)
+    // Hardware > Display panel holds only the 240x320 rows and the runtime
+    // backlight pin row below.
+#if defined(DISPLAY_240x320) || BACKLIGHT_PIN_RUNTIME
     out = "";
 #else
     out = "display:none";
@@ -457,6 +458,26 @@ static bool resolvePlaceholder(const char* name, String& out) {
     out += " onchange=\"toggleSetting('cyd32e',this.checked)\">";
     out += "<label for=\"cyd32e\">ESP32-32E clone board (fixes silent speaker + stuck red LED - device will reboot)</label>";
     out += "</label>";
+#else
+    out = "";
+#endif
+    return true;
+  }
+  if (strcmp(name, "BLPIN_ROW") == 0) {
+#if BACKLIGHT_PIN_RUNTIME
+    out  = "<div class=\"field\">";
+    out += "<label for=\"blpin\">Backlight (BLK) GPIO pin</label>";
+    out += "<div class=\"hstack\">";
+    out += "<input type=\"number\" id=\"blpin\" class=\"mono\" min=\"0\" max=\"48\" value=\"";
+    out += String(dispSettings.backlightPin);
+    out += "\" style=\"max-width:120px\">";
+    out += "<button type=\"button\" class=\"btn\" onclick=\"saveBlPin(this)\">Save &amp; reboot</button>";
+    out += "</div>";
+    out += "<div class=\"hint\" id=\"blpinHint\">0 = 7-pin module without a BLK pin (backlight always on, no dimming). "
+           "8-pin module: wire BLK to a free GPIO (e.g. ";
+    out += String(BACKLIGHT_PIN_SUGGEST);
+    out += ") and enter it here to enable brightness and night dimming.</div>";
+    out += "</div>";
 #else
     out = "";
 #endif

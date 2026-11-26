@@ -864,6 +864,27 @@ static void handleToggleSetting() {
   else if (key == "invcol")  dispSettings.invertColors = on;
   else if (key == "cydcls")  dispSettings.cydPanelClassic = on;
   else if (key == "cyd32e")  dispSettings.cyd32eVariant = on;
+#if BACKLIGHT_PIN_RUNTIME
+  else if (key == "blpin") {
+    // 0 = no BLK pin. A pin must be free on this board and not taken by the
+    // button, buzzer or LED; re-saving the current pin is always fine.
+    long p = server.arg("val").toInt();
+    bool ok = (p == 0) || (p == dispSettings.backlightPin);
+    if (!ok && p > 0 && p <= 48 && isLedPinAllowed((uint8_t)p)) {
+      uint8_t u = (uint8_t)p;
+      bool rgb = (ledSettings.driver == LED_DRV_RGB);
+      bool ledUses = ledSettings.enabled &&
+                     (u == ledSettings.pin ||
+                      (rgb && (u == ledSettings.pinG || u == ledSettings.pinB)));
+      ok = !ledUses;
+    }
+    if (!ok) {
+      server.send(400, "text/plain", "Pin not available");
+      return;
+    }
+    dispSettings.backlightPin = (uint8_t)p;
+  }
+#endif
   else if (key == "rskin")   dispSettings.roundSkin = (uint8_t)constrain(server.arg("val").toInt(), 0, 2);
 #if HAS_CARD_SKIN
   else if (key == "card")    dispSettings.cardStyle  = (uint8_t)constrain(server.arg("val").toInt(), 0, 1);
@@ -929,6 +950,7 @@ static void handleToggleSetting() {
       key == "fintm" || key == "hmsen" || key == "hmssev") applyDisplaySettings();
   if (key == "cydcls") scheduleRestart(800);  // panel swap needs a fresh init
   if (key == "cyd32e") scheduleRestart(800);  // re-init amp enable + RGB pins cleanly
+  if (key == "blpin")  scheduleRestart(800);  // release the old pin, re-run pin sanitizers
   if (key == "rskin") triggerDisplayTransition();  // repaint print dashboard with the new skin
   if (key == "card" || key == "cleft" || key == "cbot" || key == "cready") triggerDisplayTransition();
   if (key == "use24h") { resetClock(); resetPongClock(); triggerDisplayTransition(); }

@@ -187,6 +187,7 @@ void defaultDisplaySettings(DisplaySettings& ds) {
   ds.invertColors = false;
   ds.cydPanelClassic = false;
   ds.cyd32eVariant = false;
+  ds.backlightPin = 0;
   ds.roundSkin = 0;
   ds.cardStyle = 0;
   ds.cardLeft = 0;
@@ -405,6 +406,20 @@ static void loadGaugeLabel(const char* key, char* out, size_t outLen) {
   sanitizeGaugeLabel(raw.c_str(), out, outLen);  // defend against corrupt NVS
 }
 
+// Named resolver: the backlight GPIO in effect. A build-time pin wins; runtime
+// boards take the portal pin, re-vetted against the board's static reservations
+// so a corrupt NVS byte can never drive a display or flash line.
+int8_t activeBacklightPin() {
+#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
+  return BACKLIGHT_PIN;
+#elif BACKLIGHT_PIN_RUNTIME
+  uint8_t p = dispSettings.backlightPin;
+  return (p != 0 && isBoardPinFree(p)) ? (int8_t)p : -1;
+#else
+  return -1;
+#endif
+}
+
 // ---------------------------------------------------------------------------
 //  Load settings
 // ---------------------------------------------------------------------------
@@ -582,6 +597,7 @@ void loadSettings() {
   dispSettings.invertColors = prefs.getBool("dsp_inv", def.invertColors);
   dispSettings.cydPanelClassic = prefs.getBool("dsp_cydcls", def.cydPanelClassic);
   dispSettings.cyd32eVariant = prefs.getBool("dsp_cyd32e", def.cyd32eVariant);
+  dispSettings.backlightPin = prefs.getUChar("dsp_blpin", def.backlightPin);
   dispSettings.roundSkin = prefs.getUChar("dsp_rskin", def.roundSkin);
   if (dispSettings.roundSkin > 2) dispSettings.roundSkin = 0;
   dispSettings.cardStyle = prefs.getUChar("dsp_card", def.cardStyle);
@@ -972,6 +988,7 @@ void saveSettings() {
   prefs.putBool("dsp_inv", dispSettings.invertColors);
   prefs.putBool("dsp_cydcls", dispSettings.cydPanelClassic);
   prefs.putBool("dsp_cyd32e", dispSettings.cyd32eVariant);
+  prefs.putUChar("dsp_blpin", dispSettings.backlightPin);
   prefs.putUChar("dsp_rskin", dispSettings.roundSkin);
   prefs.putUChar("dsp_card", dispSettings.cardStyle);
   prefs.putUChar("dsp_cleft", dispSettings.cardLeft);

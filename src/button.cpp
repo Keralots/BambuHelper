@@ -52,9 +52,7 @@ void sanitizeButtonPin() {
   // line, or one of the chip's flash / USB pins - see isDiyReservedPin().
   if (isDiyReservedPin(buttonPin)) { clash("a reserved DIY pin"); return; }
 #endif
-#if defined(BACKLIGHT_PIN) && BACKLIGHT_PIN >= 0
-  if (buttonPin == BACKLIGHT_PIN) { clash("backlight"); return; }
-#endif
+  if (activeBacklightPin() >= 0 && buttonPin == activeBacklightPin()) { clash("backlight"); return; }
 #if defined(USE_AXS_TOUCH)
   if (buttonPin == AXS_TOUCH_SDA) { clash("AXS touch SDA"); return; }
   if (buttonPin == AXS_TOUCH_SCL) { clash("AXS touch SCL"); return; }
