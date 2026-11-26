@@ -1055,15 +1055,15 @@ static FontID fitHumidityValueFont(lgfx::LovyanGFX& gfx, const char* value,
 // Draw gauge value/secondary text transparently on every panel. The center
 // disc is cleared before redraw, so glyphs blend against the bg there; where a
 // large value spills past the inner circle the arc shows through instead of an
-// opaque box. JC3248W535 renders into a readable 16bpp PSRAM frame sprite, so
+// opaque box. Frame-sprite boards render into a readable 16bpp PSRAM sprite, so
 // antialiased readback blends the same as the direct-draw panels — the opaque
 // background (which was what clipped the arc on the small split gauges) is not
 // needed.
 static void setGaugeClearedTextColor(lgfx::LovyanGFX& gfx,
                                      uint16_t fg, uint16_t bg) {
-#if defined(BOARD_IS_JC3248W535)
+#if PANEL_REQUIRES_AXS_FRAME_SPRITE
   // Transparent value text fixed the smaller dual-printer gauges in PORTRAIT,
-  // but the rotated (landscape) JC sprite renders transparent antialiased text
+  // but the rotated (landscape) frame sprite renders transparent antialiased text
   // black. Keep the explicit background in landscape, where the opaque box was
   // always fine; stay transparent in portrait.
   if (dispSettings.rotation == 1 || dispSettings.rotation == 3) {

@@ -196,11 +196,13 @@
 // pushes the whole frame once per loop tick when dirty. The panel itself stays
 // at rotation 0. How the frame reaches the glass is per panel:
 //   PANEL_REQUIRES_AXS_FRAME_SPRITE  JC3248W535 AXS15231B - cannot address an
-//                                    arbitrary Y per draw (Panel_AXS15231B_AGFX)
+//                                    arbitrary Y per draw (Panel_AXS15231B_AGFX);
+//                                    ES3C35P ST77922 QSPI shares the same
+//                                    pushRawPixels() contract (historical AXS name)
 //   PANEL_CO5300_FRAME_SPRITE        CO5300 AMOLED - drops odd-x / odd-width
 //                                    draws, and LovyanGFX's own AMOLED
 //                                    framebuffer mis-strides a 466 px width
-#if defined(BOARD_IS_JC3248W535)
+#if defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_ES3C35P)
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  1
 #else
 #define PANEL_REQUIRES_AXS_FRAME_SPRITE  0
@@ -216,6 +218,13 @@
 #define PANEL_HAS_FRAME_SPRITE  1
 #else
 #define PANEL_HAS_FRAME_SPRITE  0
+#endif
+
+// Panel class behind the AXS-contract frame sprite (display_ui.h FramePanel typedef).
+#if defined(BOARD_IS_ES3C35P)
+#define PANEL_FRAME_IS_ST77922  1
+#else
+#define PANEL_FRAME_IS_ST77922  0
 #endif
 
 // Brightness is a panel DCS register (AMOLED), not a PWM backlight GPIO.
@@ -238,7 +247,7 @@
 // Touch panels where a wake tap reads as a long press (resistive XPT2046 - both the
 // library driver and the LovyanGFX shared-bus one on cyd_2432s024 - and AXS15231B).
 // main.cpp suppresses hold-to-dim on the sleep screens for these.
-#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(BOARD_IS_CYD_2432S024)
+#if defined(USE_XPT2046) || defined(USE_AXS_TOUCH) || defined(USE_ST77922_TOUCH) || defined(BOARD_IS_CYD_2432S024)
 #define TOUCH_WAKE_LONGPRESS  1
 #else
 #define TOUCH_WAKE_LONGPRESS  0
@@ -300,7 +309,7 @@
 #define BOARD_HAS_ONBOARD_RGB_PWM    0
 #endif
 
-#if defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_ES3N28P)
+#if defined(BOARD_IS_S3_ZERO) || defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_ES3C35P)
 #define BOARD_HAS_ONBOARD_RGB_PIXEL  1
 #else
 #define BOARD_HAS_ONBOARD_RGB_PIXEL  0
@@ -404,6 +413,7 @@
     defined(BOARD_IS_WS280) || defined(BOARD_IS_WS350) || \
     defined(BOARD_IS_JC3248W535) || defined(BOARD_IS_SC01PLUS) || \
     defined(BOARD_IS_ES3N28P) || defined(BOARD_IS_SC05X) || \
+    defined(BOARD_IS_ES3C35P) || \
     defined(BOARD_IS_SENSECAP) || defined(BOARD_IS_AMOLED216) || \
     defined(BOARD_IS_WS28C) || defined(BOARD_IS_AMOLED175)
 #define HAS_FULL_HMS_TABLE  1
@@ -595,6 +605,10 @@
 // Waveshare AMOLED 1.75: sound is the ES8311 I2S codec, which ignores the pin.
 // The generic S3 default (GPIO 5) is a QSPI data line here.
 #define BUZZER_DEFAULT_PIN    0
+#elif defined(BOARD_IS_ES3C35P)
+// LCDwiki ES3C35P: no buzzer; audio is an ES8311 codec + amp, which has no GPIO
+// backend here. The generic S3 default (GPIO 5) is this board's SD CLK. Disable (0).
+#define BUZZER_DEFAULT_PIN    0
 #elif defined(BOARD_IS_WS28C)
 // Waveshare 2.8C: the buzzer is expander bit 7, not a GPIO, so there is no pin
 // to configure. 0 keeps the GPIO backend out of it - and the generic S3
@@ -667,6 +681,8 @@
 #if BOARD_HAS_ONBOARD_RGB_PIXEL
 #if defined(BOARD_IS_ES3N28P)
 #define ONBOARD_RGB_DATA_PIN  42
+#elif defined(BOARD_IS_ES3C35P)
+#define ONBOARD_RGB_DATA_PIN  40    // LCDwiki ES3C35P WS2812
 #else
 #define ONBOARD_RGB_DATA_PIN  21    // Waveshare ESP32-S3-Zero
 #endif

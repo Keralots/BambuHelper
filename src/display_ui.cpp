@@ -145,9 +145,9 @@ lgfx::LGFX_Device& displayDevice() { return _tft_instance; }
 // Direct panel pointer for JC3248W535 sprite escape-hatch; nullptr on all
 // other boards so the extern declaration in display_ui.h is always satisfied.
 #if PANEL_REQUIRES_AXS_FRAME_SPRITE
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = _tft_instance.panelAXS();
+FramePanel* g_axs_panel = _tft_instance.framePanel();
 #else
-lgfx::Panel_AXS15231B_AGFX* g_axs_panel = nullptr;
+FramePanel* g_axs_panel = nullptr;
 #endif
 
 #if PANEL_HAS_FRAME_SPRITE
