@@ -623,8 +623,8 @@ static LGFX_SC05X _tft_instance;
 //     and NO initDisplay() reset block is needed (ws_lcd_350 pulses a TCA9554).
 //   - CS is hardwired on the board (the datasheet exposes no LCD_CS), so pin_cs = -1.
 // invert = true: ST7796 IPS, same assumption as ws_lcd_350 (UNTESTED on hardware -
-// flip if colors come out inverted). freq_write can be dropped to 20MHz for first
-// bring-up if the parallel bus is unstable, then raised.
+// flip if colors come out inverted). freq_write is 20MHz: some panels latch nothing
+// at 40MHz (#214).
 class LGFX_SC01PLUS : public lgfx::LGFX_Device {
   lgfx::Panel_ST7796   _panel;
   lgfx::Bus_Parallel8  _bus;
@@ -633,7 +633,7 @@ public:
     {
       auto cfg = _bus.config();
       cfg.port       = 0;          // LCD_CAM (only 0 on ESP32-S3)
-      cfg.freq_write = 40000000;
+      cfg.freq_write = 20000000;   // 40MHz blanks some panels (#214)
       cfg.pin_wr     = 47;         // LCD_WR
       cfg.pin_rd     = -1;
       cfg.pin_rs     = 0;          // LCD_RS (D/C)
